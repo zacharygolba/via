@@ -1,0 +1,41 @@
+[package]
+name = "via"
+version = "0.1.0"
+authors = ["Zachary Golba <zachary.golba@postlight.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytes = "0.5.4"
+failure = "0.1.6"
+futures = "0.3.4"
+http = "0.2.0"
+indexmap = "1.3.2"
+serde = "1.0.104"
+serde_json = "1.0.48"
+
+[dependencies.codegen]
+package = "via-macros"
+path = "via-macros"
+
+[dependencies.hyper]
+default-features = false
+features = ["stream", "tcp"]
+version = "0.13.2"
+
+[dependencies.radr]
+# git = "https://github.com/zacharygolba/radr"
+path = "../radr"
+
+[dependencies.tokio]
+features = ["full"]
+version = "0.2.11"
+
+[dependencies.verbs]
+features = ["http"]
+# git = "https://github.com/zacharygolba/verbs"
+path = "../verbs"
+
+[workspace]
+members = ["via-macros", "examples/*"]
