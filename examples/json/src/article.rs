@@ -4,6 +4,7 @@ use uuid::Uuid;
 use via::prelude::*;
 
 pub type ArticleStore = Store<Article>;
+pub struct ArticleService;
 
 #[derive(Debug, Serialize)]
 pub struct Article {
@@ -18,30 +19,33 @@ pub struct NewArticle {
     title: String,
 }
 
-#[via::post("/")]
-pub async fn create(mut context: Context) -> Result<Json, Error> {
-    let NewArticle { body, title } = context.body().json().await?;
-    let mut store = context.state::<ArticleStore>()?.write().await;
+#[via::scope]
+impl ArticleService {
+    #[post("/")]
+    async fn create(mut context: Context) -> Result<Json, Error> {
+        let NewArticle { body, title } = context.body().json().await?;
+        let mut store = context.state::<ArticleStore>()?.write().await;
 
-    Ok(json! {
-        "article": store.insert(|id| Article { id, body, title }),
-    })
-}
+        Ok(json! {
+            "article": store.insert(|id| Article { id, body, title }),
+        })
+    }
 
-#[via::get("/")]
-pub async fn index(context: Context) -> Result<Json, Error> {
-    let store = context.state::<ArticleStore>()?.read().await;
+    #[get("/")]
+    async fn index(context: Context) -> Result<Json, Error> {
+        let store = context.state::<ArticleStore>()?.read().await;
 
-    Ok(json! {
-        "articles": store.all(),
-    })
-}
+        Ok(json! {
+            "articles": store.all(),
+        })
+    }
 
-#[via::get("/:id")]
-pub async fn find(id: Uuid, context: Context) -> Result<Json, Error> {
-    let store = context.state::<ArticleStore>()?.read().await;
+    #[get("/:id")]
+    async fn find(id: Uuid, context: Context) -> Result<Json, Error> {
+        let store = context.state::<ArticleStore>()?.read().await;
 
-    Ok(json! {
-        "article": store.find(&id),
-    })
+        Ok(json! {
+            "article": store.find(&id),
+        })
+    }
 }
