@@ -5,11 +5,6 @@ pub use verbs::Verb;
 
 pub(crate) type Router = radr::Router<Endpoint>;
 
-pub trait Route: Handler {
-    const VERB: Verb;
-    const PATH: &'static str;
-}
-
 pub trait Scope {
     fn define(self, at: Location);
 }
@@ -62,12 +57,6 @@ impl<'a> Location<'a> {
         Location {
             value: self.value.at(path),
         }
-    }
-
-    #[inline]
-    pub fn route<T: Route>(&mut self, route: T) -> &mut Self {
-        self.at(T::PATH).expose(T::VERB, route);
-        self
     }
 
     #[inline]

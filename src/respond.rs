@@ -5,19 +5,22 @@ use serde::Serialize;
 
 pub type Response = http::Response<Body>;
 
-pub trait Respond {
+pub trait Respond: Sized {
     fn respond(self) -> Result<Response, Error>;
+
+    #[inline]
+    fn status(self, value: u16) -> Status<Self> {
+        Status(value, self)
+    }
 }
 
-pub struct Json {
-    body: Result<Vec<u8>, Error>,
-}
+pub struct Json(Result<Vec<u8>, Error>);
+
+pub struct Status<T: Respond>(u16, T);
 
 #[inline]
 pub fn json<T: Serialize>(value: &T) -> Json {
-    Json {
-        body: serde_json::to_vec(value).map_err(Error::from),
-    }
+    Json(serde_json::to_vec(value).map_err(Error::from))
 }
 
 impl From<Error> for Response {
@@ -34,10 +37,17 @@ impl From<Error> for Response {
     }
 }
 
+impl Respond for () {
+    #[inline]
+    fn respond(self) -> Result<Response, Error> {
+        Ok(Default::default())
+    }
+}
+
 impl Respond for Json {
     #[inline]
     fn respond(self) -> Result<Response, Error> {
-        let mut response = Response::new(self.body?.into());
+        let mut response = Response::new(self.0?.into());
 
         response.headers_mut().insert(
             header::CONTENT_TYPE,
@@ -90,5 +100,16 @@ where
     #[inline]
     fn respond(self) -> Result<Response, Error> {
         self?.respond()
+    }
+}
+
+impl<T: Respond> Respond for Status<T> {
+    #[inline]
+    fn respond(self) -> Result<Response, Error> {
+        let Status(code, value) = self;
+        let mut response = value.respond()?;
+
+        *response.status_mut() = StatusCode::from_u16(code)?;
+        Ok(response)
     }
 }

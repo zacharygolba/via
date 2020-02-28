@@ -19,10 +19,16 @@ pub struct NewArticle {
     title: String,
 }
 
-#[via::scope]
+via::thunk! {
+    const cors = helpers::cors(|allow| {
+        allow.origin("*");
+    });
+}
+
+#[via::scope(plug = [cors])]
 impl ArticleService {
     #[post("/")]
-    async fn create(mut context: Context) -> Result<Json, Error> {
+    async fn create(mut context: Context) -> Result<impl Respond, Error> {
         let NewArticle { body, title } = context.body().json().await?;
         let mut store = context.state::<ArticleStore>()?.write().await;
 
@@ -32,7 +38,7 @@ impl ArticleService {
     }
 
     #[get("/")]
-    async fn index(context: Context) -> Result<Json, Error> {
+    async fn index(context: Context) -> Result<impl Respond, Error> {
         let store = context.state::<ArticleStore>()?.read().await;
 
         Ok(json! {
@@ -41,11 +47,13 @@ impl ArticleService {
     }
 
     #[get("/:id")]
-    async fn find(id: Uuid, context: Context) -> Result<Json, Error> {
+    async fn find(id: Uuid, context: Context) -> Result<impl Respond, Error> {
         let store = context.state::<ArticleStore>()?.read().await;
+        let article = store.find(&id);
 
-        Ok(json! {
-            "article": store.find(&id),
-        })
+        Ok(json! { "article": &article }.status(match article {
+            Some(_) => 200,
+            None => 404,
+        }))
     }
 }

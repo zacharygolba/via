@@ -34,32 +34,23 @@ macro_rules! json {
     { $($tokens:tt)+ } => {
         $crate::respond::json(&serde_json::json!({ $($tokens)+ }))
     };
+    ($status:expr, { $($tokens:tt)+ }) => {
+        ($crate::json! { $($tokens)+ }).status($status)
+    };
 }
 
 #[macro_export]
-macro_rules! sync {
-    ($expr:expr) => {
-        tokio::task::spawn_blocking($expr).await
-    };
+macro_rules! thunk {
+    { $(const $name:ident = $expr:expr;)* } => {
+        $(fn $name() -> impl $crate::Handler {
+            $expr
+        })*
+    }
 }
 
 #[inline]
 pub fn new() -> Application {
     Default::default()
-}
-
-#[inline]
-pub async fn start(application: Application) -> Result<()> {
-    let address = "0.0.0.0:8080".parse()?;
-    let service = MakeService::from(application);
-    let server = Server::bind(&address).serve(service);
-    let ctrlc = async {
-        let message = "failed to install CTRL+C signal handler";
-        tokio::signal::ctrl_c().await.expect(message);
-    };
-
-    println!("Server listening at http://{}/", address);
-    Ok(server.with_graceful_shutdown(ctrlc).await?)
 }
 
 impl Application {
@@ -71,20 +62,26 @@ impl Application {
     }
 
     #[inline]
-    pub fn plug(&mut self, handler: impl Handler) -> &mut Self {
-        self.at("/").plug(handler);
-        self
-    }
-
-    #[inline]
-    pub fn route(&mut self, route: impl Route) -> &mut Self {
-        self.at("/").route(route);
-        self
-    }
-
-    #[inline]
-    pub fn state(&mut self, value: impl Send + Sync + 'static) -> &mut Self {
+    pub fn inject(&mut self, value: impl Send + Sync + 'static) {
         self.state.insert(value);
-        self
+    }
+
+    #[inline]
+    pub fn listen(self) -> Result<(), Error> {
+        use tokio::runtime::Runtime;
+
+        let address = "0.0.0.0:8080".parse()?;
+
+        Runtime::new()?.block_on(async {
+            let service = MakeService::from(self);
+            let server = Server::bind(&address).serve(service);
+            let ctrlc = async {
+                let message = "failed to install CTRL+C signal handler";
+                tokio::signal::ctrl_c().await.expect(message);
+            };
+
+            println!("Server listening at http://{}/", address);
+            Ok(server.with_graceful_shutdown(ctrlc).await?)
+        })
     }
 }

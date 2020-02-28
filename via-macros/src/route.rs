@@ -105,9 +105,10 @@ fn expand_fn(attr: &RouteAttr, item: &mut ItemFn) -> TokenStream {
             }
         }
 
-        impl via::routing::Route for #receiver {
-            const PATH: &'static str = #path;
-            const VERB: via::routing::Verb = #method;
+        impl via::routing::Scope for #receiver {
+            fn define(self, mut parent: via::routing::Location) {
+                parent.at(#path).expose(#method, self);
+            }
         }
     })
 }

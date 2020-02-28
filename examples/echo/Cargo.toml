@@ -6,9 +6,5 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies.tokio]
-features = ["full"]
-version = "0.2.11"
-
 [dependencies.via]
 path = "../.."
