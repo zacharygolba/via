@@ -25,7 +25,7 @@ via::thunk! {
     });
 }
 
-#[via::scope(plug = [cors])]
+#[scope(plug = [cors])]
 impl ArticleService {
     #[post("/")]
     async fn create(mut context: Context) -> Result<impl Respond, Error> {
