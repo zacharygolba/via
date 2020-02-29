@@ -1,4 +1,4 @@
-use crate::{context, http::Extensions, routing, routing::Router, Application, Error, Response};
+use crate::{http::Extensions, routing, routing::Router, Application, Error, Response};
 use futures::future::{ready, FutureExt, Map, Ready};
 use hyper::{service::Service as HyperService, Body};
 use std::{convert::Infallible, sync::Arc, task::*};
@@ -80,7 +80,7 @@ impl HyperService<Request> for Service {
     #[inline]
     fn call(&mut self, request: Request) -> Self::Future {
         let Service { router, state } = self;
-        let context = context::new(state.clone(), request);
+        let context = crate::Context::new(state.clone(), request);
 
         routing::visit(&router, context).map(|result| match result {
             Ok(response) => Ok(response),

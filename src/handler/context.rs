@@ -1,7 +1,7 @@
-use crate::Error;
+use crate::{Error, Respond};
 use bytes::buf::ext::{BufExt, Reader};
 use http::header::{AsHeaderName, HeaderName, HeaderValue};
-use http::{Extensions, Method, Request, StatusCode, Uri, Version};
+use http::{Extensions, Method, Request, Uri, Version};
 use hyper::body::{Body as HyperBody, Buf};
 use serde::de::DeserializeOwned;
 use std::{io::Read, str::FromStr, sync::Arc};
@@ -16,23 +16,6 @@ pub struct Context {
     pub(crate) state: Arc<Extensions>,
 }
 
-pub(crate) fn locate(context: &mut Context) -> (&mut Parameters, &Method, &str) {
-    (
-        &mut context.parameters,
-        context.request.method(),
-        context.request.uri().path(),
-    )
-}
-
-#[inline]
-pub(crate) fn new(state: Arc<Extensions>, request: Request<HyperBody>) -> Context {
-    Context {
-        parameters: Parameters::new(),
-        request: request.map(Body),
-        state,
-    }
-}
-
 impl Body {
     // pub async fn bytes(&mut self) -> Result<Bytes, Error> {
     //     Ok(hyper::body::to_bytes(self.take()).await?)
@@ -41,19 +24,14 @@ impl Body {
     pub async fn json<T: DeserializeOwned>(&mut self) -> Result<T, Error> {
         let reader = self.reader().await?;
 
-        serde_json::from_reader(reader).map_err(|reason| {
-            let status = StatusCode::BAD_REQUEST;
+        serde_json::from_reader(reader).map_err(|error| {
             let body = crate::json! {
-                "errors": [{
-                    "locations": [{
-                        "column": reason.column(),
-                        "line": reason.line(),
-                    }],
-                    "message": reason.to_string(),
-                }],
+                "error": {
+                    "message": format!("{}", error),
+                },
             };
 
-            Error::response(reason, status, body)
+            Error::from(error).catch(body.status(400))
         })
     }
 
@@ -104,7 +82,7 @@ impl Context {
     #[inline]
     pub fn param<T>(&self, name: &str) -> Result<T, Error>
     where
-        T::Err: failure::Fail,
+        Error: From<T::Err>,
         T: FromStr,
     {
         let value = match self.parameters.get(name) {
@@ -112,10 +90,10 @@ impl Context {
             None => todo!(),
         };
 
-        value.parse::<T>().map_err(|reason| {
-            let status = StatusCode::BAD_REQUEST;
-            Error::response(reason, status, status)
-        })
+        match value.parse::<T>() {
+            Ok(response) => Ok(response),
+            Err(error) => Err(Error::from(error)),
+        }
     }
 
     #[inline]
@@ -134,5 +112,25 @@ impl Context {
     #[inline]
     pub fn version(&self) -> Version {
         self.request.version()
+    }
+}
+
+impl Context {
+    #[inline]
+    pub(crate) fn new(state: Arc<Extensions>, request: Request<HyperBody>) -> Context {
+        Context {
+            parameters: Parameters::new(),
+            request: request.map(Body),
+            state,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn locate(&mut self) -> (&mut Parameters, &Method, &str) {
+        (
+            &mut self.parameters,
+            self.request.method(),
+            self.request.uri().path(),
+        )
     }
 }

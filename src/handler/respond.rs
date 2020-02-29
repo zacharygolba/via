@@ -23,27 +23,6 @@ pub fn json<T: Serialize>(value: &T) -> Json {
     Json(serde_json::to_vec(value).map_err(Error::from))
 }
 
-impl From<Error> for Response {
-    #[inline]
-    fn from(error: Error) -> Response {
-        if let Some(response) = error.response {
-            response
-        } else {
-            let mut response = Response::new(error.to_string().into());
-
-            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            response
-        }
-    }
-}
-
-impl Respond for () {
-    #[inline]
-    fn respond(self) -> Result<Response, Error> {
-        Ok(Default::default())
-    }
-}
-
 impl Respond for Json {
     #[inline]
     fn respond(self) -> Result<Response, Error> {

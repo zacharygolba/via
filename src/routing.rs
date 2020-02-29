@@ -1,4 +1,4 @@
-use crate::{context::locate, handler::DynHandler, Context, Future, Handler, Next};
+use crate::{handler::DynHandler, Context, Future, Handler, Next};
 use std::ops::{Deref, DerefMut};
 
 pub use verbs::Verb;
@@ -20,7 +20,7 @@ pub struct Location<'a> {
 }
 
 pub(crate) fn visit(router: &Router, mut context: Context) -> Future {
-    let (parameters, method, path) = locate(&mut context);
+    let (parameters, method, path) = context.locate();
     let matches = router.visit(path).flat_map(|matched| {
         match matched.param {
             Some(("", _)) | Some((_, "")) | None => {}

@@ -1,28 +1,28 @@
-mod failure;
-mod handler;
 mod runtime;
 
-pub mod context;
+pub mod error;
+pub mod handler;
 pub mod helpers;
 pub mod prelude;
-pub mod respond;
 pub mod routing;
 
-use self::{respond::Response, routing::*, runtime::MakeService};
+use self::{routing::*, runtime::MakeService};
 use http::Extensions;
 use hyper::Server;
 use std::pin::Pin;
 
 #[doc(inline)]
-pub use self::{context::Context, failure::Error, handler::*, respond::Respond};
+pub use self::{
+    error::{Error, Result},
+    handler::{Context, Handler, Next, Respond, Response},
+};
 pub use codegen::*;
 pub use http;
 
 #[doc(hidden)]
 pub type Future = Pin<Box<dyn std::future::Future<Output = Result> + Send>>;
-#[doc(hidden)]
-pub type Result<T = Response, E = Error> = std::result::Result<T, E>;
 
+#[doc(hidden)]
 #[derive(Default)]
 pub struct Application {
     router: Router,
@@ -32,7 +32,7 @@ pub struct Application {
 #[macro_export]
 macro_rules! json {
     { $($tokens:tt)+ } => {
-        $crate::respond::json(&serde_json::json!({ $($tokens)+ }))
+        $crate::handler::respond::json(&serde_json::json!({ $($tokens)+ }))
     };
     ($status:expr, { $($tokens:tt)+ }) => {
         ($crate::json! { $($tokens)+ }).status($status)
