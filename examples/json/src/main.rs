@@ -7,7 +7,7 @@ use via::prelude::*;
 fn main() -> Result<(), Error> {
     let mut app = via::new();
 
-    app.at("/articles").scope(ArticleService);
+    app.at("/articles").mount(ArticleService);
     app.inject(ArticleStore::default());
     app.listen()
 }

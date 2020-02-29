@@ -8,6 +8,6 @@ async fn echo(path: String, context: Context) -> String {
 fn main() -> Result<(), Error> {
     let mut app = via::new();
 
-    app.at("/").scope(echo);
+    app.mount(echo);
     app.listen()
 }

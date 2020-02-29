@@ -5,8 +5,8 @@ pub use verbs::Verb;
 
 pub(crate) type Router = radr::Router<Endpoint>;
 
-pub trait Scope {
-    fn define(self, at: Location);
+pub trait Mount {
+    fn into(self, target: &mut Location);
 }
 
 #[derive(Default)]
@@ -60,8 +60,8 @@ impl<'a> Location<'a> {
     }
 
     #[inline]
-    pub fn scope(self, scope: impl Scope) {
-        scope.define(self);
+    pub fn mount(&mut self, mount: impl Mount) {
+        mount.into(self);
     }
 }
 
@@ -78,12 +78,5 @@ impl<'a> DerefMut for Location<'a> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
-    }
-}
-
-impl<T: FnOnce(Location)> Scope for T {
-    #[inline]
-    fn define(self, at: Location) {
-        self(at);
     }
 }

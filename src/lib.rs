@@ -22,7 +22,6 @@ pub use http;
 #[doc(hidden)]
 pub type Future = Pin<Box<dyn std::future::Future<Output = Result> + Send>>;
 
-#[doc(hidden)]
 #[derive(Default)]
 pub struct Application {
     router: Router,
@@ -64,6 +63,11 @@ impl Application {
     #[inline]
     pub fn inject(&mut self, value: impl Send + Sync + 'static) {
         self.state.insert(value);
+    }
+
+    #[inline]
+    pub fn mount(&mut self, mount: impl Mount) {
+        self.at("/").mount(mount);
     }
 
     #[inline]

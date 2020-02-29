@@ -8,6 +8,6 @@ async fn hello() -> &'static str {
 fn main() -> Result<(), Error> {
     let mut app = via::new();
 
-    app.at("/").scope(hello);
+    app.mount(hello);
     app.listen()
 }

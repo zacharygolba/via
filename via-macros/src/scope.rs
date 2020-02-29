@@ -45,8 +45,8 @@ impl ScopeItem {
 
         quote! {
             #scope
-            impl via::routing::Scope for #ty {
-                fn define(self, mut endpoint: via::routing::Location) {
+            impl via::routing::Mount for #ty {
+                fn into(self, endpoint: &mut via::routing::Location) {
                     #(endpoint.plug(#middleware());)*
                     #(#methods)*
                 }
