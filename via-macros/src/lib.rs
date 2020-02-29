@@ -25,7 +25,7 @@ pub fn route(meta: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn scope(meta: TokenStream, input: TokenStream) -> TokenStream {
+pub fn router(meta: TokenStream, input: TokenStream) -> TokenStream {
     let attr = syn::parse_macro_input!(meta as ScopeAttr);
     let item = syn::parse_macro_input!(input as syn::ItemImpl);
 
