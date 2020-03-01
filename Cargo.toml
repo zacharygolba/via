@@ -32,9 +32,7 @@ features = ["full"]
 version = "0.2.11"
 
 [dependencies.verbs]
-features = ["http"]
-# git = "https://github.com/zacharygolba/verbs"
-path = "../verbs"
+git = "https://github.com/zacharygolba/verbs"
 
 [workspace]
 members = ["via-macros", "examples/*"]

@@ -23,6 +23,5 @@ impl ApiRouter {
 impl RootRouter {
     mount! {
         "/api" => Api,
-        "/users" => UserService,
     }
 }
