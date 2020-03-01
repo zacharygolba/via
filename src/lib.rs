@@ -29,6 +29,16 @@ pub struct Application {
 }
 
 #[macro_export]
+macro_rules! middleware {
+    { $($handler:expr),* $(,)* } => {};
+}
+
+#[macro_export]
+macro_rules! mount {
+    { $($tokens:tt)* } => {};
+}
+
+#[macro_export]
 macro_rules! json {
     { $($tokens:tt)+ } => {
         $crate::handler::respond::json(&serde_json::json!({ $($tokens)+ }))

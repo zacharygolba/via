@@ -1,3 +1,4 @@
+use crate::{paths, route::*};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -5,8 +6,7 @@ use syn::{
     punctuated::Punctuated,
 };
 
-use crate::route::{RouteAttr, RouteItem};
-
+type Middleware = Punctuated<syn::Expr, syn::Token![,]>;
 type With = Punctuated<syn::Path, syn::Token![,]>;
 
 pub struct ScopeAttr {
@@ -15,40 +15,37 @@ pub struct ScopeAttr {
 
 pub struct ScopeItem {
     attr: ScopeAttr,
+    data: (Vec<TokenStream>, Vec<TokenStream>),
     item: syn::ItemImpl,
 }
 
 impl ScopeItem {
     pub fn new(attr: ScopeAttr, item: syn::ItemImpl) -> ScopeItem {
-        ScopeItem { attr, item }
+        let data = (vec![], vec![]);
+        ScopeItem { attr, data, item }
     }
 
     pub fn expand(&mut self) -> TokenStream {
-        let mut methods = Vec::new();
-        let middleware = &self.attr.with;
+        use syn::ImplItem::*;
+
+        let mut statements = Vec::new();
         let scope = &mut self.item;
         let ty = &scope.self_ty;
 
         for item in &mut scope.items {
-            let method = match item {
-                syn::ImplItem::Method(value) => value,
+            statements.extend(match item {
+                Macro(item) if paths::middleware(&item.mac.path) => try_expand_middleware(item),
+                Macro(item) if paths::mount(&item.mac.path) => try_expand_mount(item),
+                Method(item) => try_expand_route(ty.clone(), item),
                 _ => continue,
-            };
-
-            let attr = match RouteAttr::extract(&mut method.attrs) {
-                Some(value) => value,
-                _ => continue,
-            };
-
-            methods.push(RouteItem::method(ty.clone(), attr, method.clone()).expand());
+            });
         }
 
         quote! {
             #scope
             impl via::routing::Mount for #ty {
                 fn into(self, endpoint: &mut via::routing::Location) {
-                    #(endpoint.plug(#middleware());)*
-                    #(#methods)*
+                    #(#statements)*
                 }
             }
         }
@@ -56,21 +53,29 @@ impl ScopeItem {
 }
 
 impl Parse for ScopeAttr {
-    fn parse(input: ParseStream) -> parse::Result<ScopeAttr> {
-        let mut with = Vec::new();
-
-        named!(input, |name| match name {
-            "plug" => {
-                let items;
-
-                syn::bracketed!(items in input);
-                with.extend(With::parse_separated_nonempty(&items)?);
-            }
-            _ => {
-                panic!("Unknown argument {}", name);
-            }
-        });
-
-        Ok(ScopeAttr { with })
+    fn parse(_: ParseStream) -> parse::Result<ScopeAttr> {
+        Ok(ScopeAttr { with: Vec::new() })
     }
+}
+
+fn try_expand_middleware(item: &mut syn::ImplItemMacro) -> Option<TokenStream> {
+    let syn::ImplItemMacro { mac, .. } = item;
+    let middleware = mac
+        .parse_body_with(Middleware::parse_terminated)
+        .unwrap()
+        .into_iter();
+
+    Some(quote! {
+        endpoint.plug(#(#middleware)*);
+    })
+}
+
+fn try_expand_mount(item: &mut syn::ImplItemMacro) -> Option<TokenStream> {
+    println!("MOUNT {:#?}", item);
+    None
+}
+
+fn try_expand_route(ty: Box<syn::Type>, item: &mut syn::ImplItemMethod) -> Option<TokenStream> {
+    let attr = RouteAttr::extract(&mut item.attrs)?;
+    Some(RouteItem::method(ty, attr, item.clone()).expand())
 }

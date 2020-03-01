@@ -3,6 +3,7 @@ extern crate proc_macro;
 #[macro_use]
 mod helpers;
 mod params;
+mod paths;
 mod route;
 mod scope;
 

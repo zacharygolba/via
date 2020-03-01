@@ -1,7 +1,7 @@
 use crate::store::Store;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use via::prelude::*;
+use via::{middleware, prelude::*};
 
 pub type ArticleStore = Store<Article>;
 pub struct ArticleService;
@@ -19,14 +19,14 @@ pub struct NewArticle {
     title: String,
 }
 
-via::thunk! {
-    const cors = helpers::cors(|allow| {
-        allow.origin("*");
-    });
-}
-
-#[via::router(plug = [cors])]
+#[via::router]
 impl ArticleService {
+    middleware! {
+        helpers::cors(|allow| {
+            allow.origin("*");
+        }),
+    }
+
     #[post("/")]
     async fn create(mut context: Context) -> Result<impl Respond, Error> {
         let NewArticle { body, title } = context.body().json().await?;
