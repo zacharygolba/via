@@ -7,6 +7,7 @@ use syn::{
 };
 
 type Middleware = Punctuated<syn::Expr, syn::Token![,]>;
+type Mount = Punctuated<MountArm, syn::Token![,]>;
 type With = Punctuated<syn::Path, syn::Token![,]>;
 
 pub struct ScopeAttr {
@@ -17,6 +18,11 @@ pub struct ScopeItem {
     attr: ScopeAttr,
     data: (Vec<TokenStream>, Vec<TokenStream>),
     item: syn::ItemImpl,
+}
+
+struct MountArm {
+    path: syn::LitStr,
+    expr: syn::Expr,
 }
 
 impl ScopeItem {
@@ -52,6 +58,18 @@ impl ScopeItem {
     }
 }
 
+impl Parse for MountArm {
+    fn parse(input: ParseStream) -> parse::Result<MountArm> {
+        Ok(MountArm {
+            path: input.parse()?,
+            expr: {
+                input.parse::<syn::Token![=>]>()?;
+                input.parse()?
+            },
+        })
+    }
+}
+
 impl Parse for ScopeAttr {
     fn parse(_: ParseStream) -> parse::Result<ScopeAttr> {
         Ok(ScopeAttr { with: Vec::new() })
@@ -71,8 +89,15 @@ fn try_expand_middleware(item: &mut syn::ImplItemMacro) -> Option<TokenStream> {
 }
 
 fn try_expand_mount(item: &mut syn::ImplItemMacro) -> Option<TokenStream> {
-    println!("MOUNT {:#?}", item);
-    None
+    let syn::ImplItemMacro { mac, .. } = item;
+    let mount = mac.parse_body_with(Mount::parse_terminated).unwrap();
+    let iter = mount.iter().map(|MountArm { path, expr }| {
+        quote! {
+            endpoint.at(#path).mount(#expr);
+        }
+    });
+
+    Some(iter.collect())
 }
 
 fn try_expand_route(ty: Box<syn::Type>, item: &mut syn::ImplItemMethod) -> Option<TokenStream> {

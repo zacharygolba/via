@@ -4,6 +4,7 @@ use uuid::Uuid;
 use via::{middleware, prelude::*};
 
 pub type ArticleStore = Store<Article>;
+
 pub struct ArticleService;
 
 #[derive(Debug, Serialize)]

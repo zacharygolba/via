@@ -1,5 +1,6 @@
 use crate::{handler::DynHandler, Context, Future, Handler, Next};
 use std::ops::{Deref, DerefMut};
+use verbs::{iter::Every, Map};
 
 pub use verbs::Verb;
 
@@ -11,7 +12,7 @@ pub trait Mount {
 
 #[derive(Default)]
 pub struct Endpoint {
-    verbs: verbs::Map<DynHandler>,
+    verbs: Map<DynHandler>,
     stack: Vec<DynHandler>,
 }
 
@@ -30,9 +31,9 @@ pub(crate) fn visit(router: &Router, mut context: Context) -> Future {
         }
 
         matched.stack.iter().chain(if matched.exact {
-            matched.verbs.get(method.into())
+            matched.verbs.every(method)
         } else {
-            None
+            Every::empty()
         })
     });
 

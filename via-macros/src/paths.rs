@@ -12,4 +12,11 @@ macro_rules! paths { [ $($ident:ident),*  $(,)* ] => {
     })*
 }; }
 
-paths![middleware, mount];
+paths![connect, delete, get, head, middleware, mount, options, patch, post, put, trace];
+
+pub fn method(path: &syn::Path) -> bool {
+    const METHODS: [fn(&syn::Path) -> bool; 9] =
+        [connect, delete, get, head, options, patch, post, put, trace];
+
+    METHODS.iter().any(|method| method(path))
+}

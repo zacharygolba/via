@@ -49,7 +49,7 @@ impl RouteAttr {
         let index = attrs.iter().position(helpers::is_route_attr)?;
         let attr = attrs.remove(index);
 
-        if helpers::is_method_attr(&attr) {
+        if paths::method(&attr.path) {
             let ident = attr.path.get_ident()?;
             let expr = Ident::new(&ident.to_string().to_uppercase(), ident.span());
 

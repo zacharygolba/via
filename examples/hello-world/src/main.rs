@@ -1,6 +1,6 @@
 use via::prelude::*;
 
-#[via::get("/")]
+#[get("/")]
 async fn hello() -> &'static str {
     "Hello, world!"
 }

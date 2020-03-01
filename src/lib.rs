@@ -29,16 +29,6 @@ pub struct Application {
 }
 
 #[macro_export]
-macro_rules! middleware {
-    { $($handler:expr),* $(,)* } => {};
-}
-
-#[macro_export]
-macro_rules! mount {
-    { $($tokens:tt)* } => {};
-}
-
-#[macro_export]
 macro_rules! json {
     { $($tokens:tt)+ } => {
         $crate::handler::respond::json(&serde_json::json!({ $($tokens)+ }))
@@ -49,12 +39,13 @@ macro_rules! json {
 }
 
 #[macro_export]
-macro_rules! thunk {
-    { $(const $name:ident = $expr:expr;)* } => {
-        $(fn $name() -> impl $crate::Handler {
-            $expr
-        })*
-    }
+macro_rules! middleware {
+    { $($handler:expr),* $(,)* } => {};
+}
+
+#[macro_export]
+macro_rules! mount {
+    { $($tokens:tt)* } => {};
 }
 
 #[inline]
