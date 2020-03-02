@@ -1,15 +1,16 @@
-pub mod context;
+mod context;
 pub mod respond;
 
-use crate::{http::StatusCode, Result};
+use crate::Result;
 use std::{collections::VecDeque, pin::Pin};
 
 pub use self::{
-    context::Context,
+    context::{Body, Context},
     respond::{Respond, Response},
 };
 
 pub(crate) type DynHandler = Box<dyn Handler>;
+#[doc(hidden)]
 pub type Future = Pin<Box<dyn std::future::Future<Output = Result> + Send>>;
 
 pub trait Handler: Send + Sync + 'static {
@@ -49,7 +50,7 @@ impl<'a> Next<'a> {
         if let Some(middleware) = self.stack.pop_front() {
             middleware.call(context, self)
         } else {
-            Box::pin(async { StatusCode::NOT_FOUND.respond() })
+            Box::pin(async { "Not Found".status(404).respond() })
         }
     }
 }

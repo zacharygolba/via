@@ -28,7 +28,7 @@ impl Cors {
 
 impl Handler for Cors {
     #[inline]
-    fn call(&self, context: Context, next: Next) -> Future {
+    fn call<'a>(&'a self, context: Context, next: Next<'a>) -> Future {
         let headers = self.headers.clone();
         let future = next.call(context);
 

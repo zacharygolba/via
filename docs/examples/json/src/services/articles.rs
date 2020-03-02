@@ -25,7 +25,7 @@ impl ArticleService {
     }
 
     #[expose(GET, "/")]
-    async fn index(&self) -> impl Respond {
+    async fn list(&self) -> impl Respond {
         let store = self.store.read().await;
 
         respond::json(&Document {

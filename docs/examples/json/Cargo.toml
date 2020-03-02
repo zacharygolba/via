@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 serde_json = "1.0.48"
 uuid = { features = ["serde", "v4"], version = "0.8.1" }
+via = { path = "../../.." }
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,6 +18,3 @@ version = "1.0.104"
 [dependencies.tokio]
 features = ["full"]
 version = "0.2.11"
-
-[dependencies.via]
-path = "../.."

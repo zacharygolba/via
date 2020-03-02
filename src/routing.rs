@@ -1,5 +1,6 @@
 use crate::{handler::DynHandler, Context, Future, Handler, Next};
 use http::Extensions;
+use std::sync::Arc;
 use verbs::Map;
 
 pub use verbs::Verb;

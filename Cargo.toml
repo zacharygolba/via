@@ -17,8 +17,8 @@ lazy_static = "1.4.0"
 mime = "0.3.16"
 
 [dependencies.codegen]
-package = "via-macros"
-path = "via-macros"
+package = "via-codegen"
+path = "codegen"
 
 [dependencies.hyper]
 default-features = false
@@ -36,4 +36,4 @@ version = "0.2.11"
 git = "https://github.com/zacharygolba/verbs"
 
 [workspace]
-members = ["via-macros", "examples/*"]
+members = ["codegen", "contrib/*", "docs/examples/*"]

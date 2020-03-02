@@ -1,4 +1,3 @@
-use failure::Error;
 use syn::{FnArg, Ident, LitStr, Pat, Signature, Type};
 
 #[derive(Clone, Debug)]

@@ -1,10 +1,10 @@
-use crate::{Error, Respond};
+use crate::{respond, Error, Respond};
 use bytes::buf::ext::{BufExt, Reader};
 use http::header::{AsHeaderName, HeaderName, HeaderValue};
 use http::{Extensions, Method, Request, Uri, Version};
 use hyper::body::{Body as HyperBody, Buf};
-use mime::Mime;
 use serde::de::DeserializeOwned;
+use serde_json::json;
 use std::{io::Read, str::FromStr, sync::Arc};
 
 type Parameters = indexmap::IndexMap<&'static str, String>;
@@ -26,11 +26,11 @@ impl Body {
         let reader = self.reader().await?;
 
         serde_json::from_reader(reader).map_err(|error| {
-            let body = crate::json! {
+            let body = respond::json(&json!({
                 "error": {
                     "message": format!("{}", error),
                 },
-            };
+            }));
 
             Error::from(error).catch(body.status(400))
         })

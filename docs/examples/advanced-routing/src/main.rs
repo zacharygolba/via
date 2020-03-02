@@ -5,7 +5,7 @@ use router::RootRouter;
 use via::prelude::*;
 
 fn main() -> Result<(), Error> {
-    let mut app = via::new();
+    let mut app = App::new();
 
     app.mount(RootRouter);
     app.listen()

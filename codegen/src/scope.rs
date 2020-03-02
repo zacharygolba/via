@@ -1,4 +1,4 @@
-use crate::{paths, route::*};
+use crate::{helpers, route::*};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -7,7 +7,6 @@ use syn::{
 };
 
 type Middleware = Punctuated<syn::Expr, syn::Token![,]>;
-type Mount = Punctuated<MountArm, syn::Token![,]>;
 
 pub struct ScopeAttr {
     path: Option<syn::LitStr>,
@@ -16,11 +15,6 @@ pub struct ScopeAttr {
 pub struct ScopeItem {
     attr: ScopeAttr,
     item: syn::ItemImpl,
-}
-
-struct MountArm {
-    path: syn::LitStr,
-    expr: syn::Expr,
 }
 
 impl ScopeItem {
@@ -38,8 +32,9 @@ impl ScopeItem {
 
         for item in &mut scope.items {
             statements.extend(match item {
-                Macro(item) if paths::middleware(&item.mac.path) => try_expand_middleware(item),
-                Macro(item) if paths::mount(&item.mac.path) => try_expand_mount(item),
+                Macro(item) if helpers::is_middleware_macro(&item.mac.path) => {
+                    try_expand_middleware(item)
+                }
                 Method(item) => try_expand_route(ty.clone(), item),
                 _ => continue,
             });
@@ -54,18 +49,6 @@ impl ScopeItem {
                 }
             }
         }
-    }
-}
-
-impl Parse for MountArm {
-    fn parse(input: ParseStream) -> parse::Result<MountArm> {
-        Ok(MountArm {
-            path: input.parse()?,
-            expr: {
-                input.parse::<syn::Token![=>]>()?;
-                input.parse()?
-            },
-        })
     }
 }
 
@@ -91,18 +74,6 @@ fn try_expand_middleware(item: &mut syn::ImplItemMacro) -> Option<TokenStream> {
     Some(quote! {
         #(endpoint.middleware(#middleware);)*
     })
-}
-
-fn try_expand_mount(item: &mut syn::ImplItemMacro) -> Option<TokenStream> {
-    let syn::ImplItemMacro { mac, .. } = item;
-    let mount = mac.parse_body_with(Mount::parse_terminated).unwrap();
-    let iter = mount.iter().map(|MountArm { path, expr }| {
-        quote! {
-            endpoint.at(#path).mount(#expr);
-        }
-    });
-
-    Some(iter.collect())
 }
 
 fn try_expand_route(ty: Box<syn::Type>, item: &mut syn::ImplItemMethod) -> Option<TokenStream> {

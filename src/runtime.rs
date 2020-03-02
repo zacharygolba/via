@@ -1,4 +1,4 @@
-use crate::{http::Extensions, routing, routing::Router, Application, Error, Response};
+use crate::{http::Extensions, routing, routing::Router, App, Error, Response};
 use futures::future::{ready, FutureExt, Map, Ready};
 use hyper::{service::Service as HyperService, Body};
 use std::{convert::Infallible, sync::Arc, task::*};
@@ -22,9 +22,9 @@ impl From<Service> for MakeService {
     }
 }
 
-impl From<Application> for MakeService {
+impl From<App> for MakeService {
     #[inline]
-    fn from(application: Application) -> MakeService {
+    fn from(application: App) -> MakeService {
         MakeService {
             service: application.into(),
         }
@@ -57,9 +57,9 @@ impl Clone for Service {
     }
 }
 
-impl From<Application> for Service {
+impl From<App> for Service {
     #[inline]
-    fn from(application: Application) -> Service {
+    fn from(application: App) -> Service {
         Service {
             router: Arc::new(application.router),
             state: Arc::new(application.state),
@@ -79,10 +79,9 @@ impl HyperService<Request> for Service {
 
     #[inline]
     fn call(&mut self, request: Request) -> Self::Future {
-        let Service { router, state } = self;
-        let context = crate::Context::new(state.clone(), request);
+        let context = crate::Context::new(self.state.clone(), request);
 
-        routing::visit(&router, context).map(|result| match result {
+        routing::visit(&self.router, context).map(|result| match result {
             Ok(response) => Ok(response),
             Err(e) => Ok(e.into()),
         })

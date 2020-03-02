@@ -1,4 +1,4 @@
-use crate::{helpers, params::*, paths};
+use crate::{helpers, params::*};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
