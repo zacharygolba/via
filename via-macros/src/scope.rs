@@ -8,15 +8,13 @@ use syn::{
 
 type Middleware = Punctuated<syn::Expr, syn::Token![,]>;
 type Mount = Punctuated<MountArm, syn::Token![,]>;
-type With = Punctuated<syn::Path, syn::Token![,]>;
 
 pub struct ScopeAttr {
-    with: Vec<syn::Path>,
+    path: Option<syn::LitStr>,
 }
 
 pub struct ScopeItem {
     attr: ScopeAttr,
-    data: (Vec<TokenStream>, Vec<TokenStream>),
     item: syn::ItemImpl,
 }
 
@@ -27,8 +25,7 @@ struct MountArm {
 
 impl ScopeItem {
     pub fn new(attr: ScopeAttr, item: syn::ItemImpl) -> ScopeItem {
-        let data = (vec![], vec![]);
-        ScopeItem { attr, data, item }
+        ScopeItem { attr, item }
     }
 
     pub fn expand(&mut self) -> TokenStream {
@@ -36,6 +33,7 @@ impl ScopeItem {
 
         let mut statements = Vec::new();
         let scope = &mut self.item;
+        let path = self.attr.path.iter();
         let ty = &scope.self_ty;
 
         for item in &mut scope.items {
@@ -50,7 +48,8 @@ impl ScopeItem {
         quote! {
             #scope
             impl via::routing::Mount for #ty {
-                fn into(self, endpoint: &mut via::routing::Location) {
+                fn to(&self, endpoint: &mut via::routing::Location) {
+                    #(let mut endpoint = endpoint.at(#path);)*
                     #(#statements)*
                 }
             }
@@ -71,8 +70,14 @@ impl Parse for MountArm {
 }
 
 impl Parse for ScopeAttr {
-    fn parse(_: ParseStream) -> parse::Result<ScopeAttr> {
-        Ok(ScopeAttr { with: Vec::new() })
+    fn parse(input: ParseStream) -> parse::Result<ScopeAttr> {
+        Ok(if input.is_empty() {
+            ScopeAttr { path: None }
+        } else {
+            ScopeAttr {
+                path: Some(input.parse()?),
+            }
+        })
     }
 }
 
@@ -84,7 +89,7 @@ fn try_expand_middleware(item: &mut syn::ImplItemMacro) -> Option<TokenStream> {
         .into_iter();
 
     Some(quote! {
-        endpoint.plug(#(#middleware)*);
+        #(endpoint.middleware(#middleware);)*
     })
 }
 

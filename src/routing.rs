@@ -1,28 +1,35 @@
 use crate::{handler::DynHandler, Context, Future, Handler, Next};
-use std::ops::{Deref, DerefMut};
-use verbs::{iter::Every, Map};
+use http::Extensions;
+use verbs::Map;
 
 pub use verbs::Verb;
 
 pub(crate) type Router = radr::Router<Endpoint>;
 
-pub trait Mount {
-    fn into(self, target: &mut Location);
-}
-
-#[derive(Default)]
-pub struct Endpoint {
-    verbs: Map<DynHandler>,
-    stack: Vec<DynHandler>,
+pub trait Mount: Send + Sync + 'static {
+    fn to(&self, location: &mut Location);
 }
 
 pub struct Location<'a> {
+    pub(crate) state: &'a mut Extensions,
     pub(crate) value: radr::Location<'a, Endpoint>,
+}
+
+#[derive(Default)]
+pub(crate) struct Endpoint {
+    verbs: Map<DynHandler>,
+    stack: Vec<DynHandler>,
 }
 
 pub(crate) fn visit(router: &Router, mut context: Context) -> Future {
     let (parameters, method, path) = context.locate();
     let matches = router.visit(path).flat_map(|matched| {
+        let verbs = matched.verbs.get(if matched.exact {
+            method.into()
+        } else {
+            Verb::none()
+        });
+
         match matched.param {
             Some(("", _)) | Some((_, "")) | None => {}
             Some((name, value)) => {
@@ -30,11 +37,7 @@ pub(crate) fn visit(router: &Router, mut context: Context) -> Future {
             }
         }
 
-        matched.stack.iter().chain(if matched.exact {
-            matched.verbs.every(method)
-        } else {
-            Every::empty()
-        })
+        matched.stack.iter().chain(verbs)
     });
 
     Next::new(matches).call(context)
@@ -46,7 +49,7 @@ impl Endpoint {
         self
     }
 
-    pub fn plug(&mut self, handler: impl Handler) -> &mut Self {
+    pub fn middleware(&mut self, handler: impl Handler) -> &mut Self {
         self.stack.push(Box::new(handler));
         self
     }
@@ -56,28 +59,24 @@ impl<'a> Location<'a> {
     #[inline]
     pub fn at(&mut self, path: &'static str) -> Location {
         Location {
+            state: self.state,
             value: self.value.at(path),
         }
     }
 
     #[inline]
+    pub fn expose(&mut self, verb: Verb, handler: impl Handler) {
+        self.value.expose(verb, handler);
+    }
+
+    #[inline]
+    pub fn middleware(&mut self, handler: impl Handler) {
+        self.value.middleware(handler);
+    }
+
+    #[inline]
     pub fn mount(&mut self, mount: impl Mount) {
-        mount.into(self);
-    }
-}
-
-impl<'a> Deref for Location<'a> {
-    type Target = Endpoint;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-impl<'a> DerefMut for Location<'a> {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
+        mount.to(self);
+        self.state.insert(mount);
     }
 }

@@ -1,7 +1,7 @@
 use via::prelude::*;
 
-#[get("/")]
-async fn hello() -> &'static str {
+#[via::expose(GET, "/")]
+async fn hello() -> impl Respond {
     "Hello, world!"
 }
 

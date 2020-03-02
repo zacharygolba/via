@@ -3,6 +3,7 @@ use bytes::buf::ext::{BufExt, Reader};
 use http::header::{AsHeaderName, HeaderName, HeaderValue};
 use http::{Extensions, Method, Request, Uri, Version};
 use hyper::body::{Body as HyperBody, Buf};
+use mime::Mime;
 use serde::de::DeserializeOwned;
 use std::{io::Read, str::FromStr, sync::Arc};
 
@@ -13,7 +14,7 @@ pub struct Body(HyperBody);
 pub struct Context {
     pub(crate) parameters: Parameters,
     pub(crate) request: Request<Body>,
-    pub(crate) state: Arc<Extensions>,
+    pub state: Arc<Extensions>,
 }
 
 impl Body {
@@ -54,6 +55,11 @@ impl Context {
     #[inline]
     pub fn body(&mut self) -> &mut Body {
         self.request.body_mut()
+    }
+
+    #[inline]
+    pub fn accepts(&self, mime: &str) -> bool {
+        self.header("accept").map_or(true, |accept| accept == mime)
     }
 
     #[inline]

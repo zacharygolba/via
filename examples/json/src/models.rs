@@ -1,6 +1,10 @@
+pub mod article;
+
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-use uuid::Uuid;
+
+pub use self::article::Article;
+pub use uuid::Uuid;
 
 pub type Store<T> = RwLock<Data<T>>;
 

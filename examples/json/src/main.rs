@@ -1,13 +1,12 @@
-mod article;
-mod store;
+mod models;
+mod services;
 
-use article::{ArticleService, ArticleStore};
+use services::ArticleService;
 use via::prelude::*;
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<()> {
     let mut app = via::new();
 
-    app.at("/articles").mount(ArticleService);
-    app.inject(ArticleStore::default());
+    app.mount(ArticleService::new());
     app.listen()
 }

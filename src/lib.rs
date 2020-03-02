@@ -1,7 +1,7 @@
+mod handler;
 mod runtime;
 
 pub mod error;
-pub mod handler;
 pub mod helpers;
 pub mod prelude;
 pub mod routing;
@@ -14,10 +14,11 @@ use std::pin::Pin;
 #[doc(inline)]
 pub use self::{
     error::{Error, Result},
-    handler::{Context, Handler, Next, Respond, Response},
+    handler::{context, respond, Context, Handler, Next, Respond, Response},
 };
 pub use codegen::*;
 pub use http;
+pub use mime;
 
 #[doc(hidden)]
 pub type Future = Pin<Box<dyn std::future::Future<Output = Result> + Send>>;
@@ -31,7 +32,7 @@ pub struct Application {
 #[macro_export]
 macro_rules! json {
     { $($tokens:tt)+ } => {
-        $crate::handler::respond::json(&serde_json::json!({ $($tokens)+ }))
+        $crate::respond::json(&serde_json::json!({ $($tokens)+ }))
     };
     ($status:expr, { $($tokens:tt)+ }) => {
         ($crate::json! { $($tokens)+ }).status($status)
@@ -57,6 +58,7 @@ impl Application {
     #[inline]
     pub fn at(&mut self, path: &'static str) -> Location {
         Location {
+            state: &mut self.state,
             value: self.router.at(path),
         }
     }

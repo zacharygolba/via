@@ -23,6 +23,11 @@ pub fn json<T: Serialize>(value: &T) -> Json {
     Json(serde_json::to_vec(value).map_err(Error::from))
 }
 
+#[inline]
+pub fn status(code: u16) -> Status<&'static str> {
+    Status(code, "")
+}
+
 impl Respond for Json {
     #[inline]
     fn respond(self) -> Result<Response, Error> {

@@ -46,39 +46,28 @@ impl RouteItem {
 
 impl RouteAttr {
     pub fn extract(attrs: &mut Vec<Attribute>) -> Option<RouteAttr> {
-        let index = attrs.iter().position(helpers::is_route_attr)?;
-        let attr = attrs.remove(index);
+        let index = attrs
+            .iter()
+            .position(|attr| helpers::is_expose_macro(&attr.path))?;
 
-        if paths::method(&attr.path) {
-            let ident = attr.path.get_ident()?;
-            let expr = Ident::new(&ident.to_string().to_uppercase(), ident.span());
-
-            Some(RouteAttr {
-                method: syn::parse_quote! { via::routing::Verb::#expr },
-                path: attr.parse_args().unwrap(),
-            })
-        } else {
-            Some(attr.parse_args().unwrap())
-        }
+        Some(attrs.remove(index).parse_args().unwrap())
     }
 }
 
 impl Parse for RouteAttr {
     fn parse(input: ParseStream) -> parse::Result<Self> {
         let mut method = syn::parse_quote! { via::routing::Verb::all() };
-        let path = input.parse()?;
 
-        named!(input, |name| match name {
-            "method" => {
-                let list = Methods::parse_separated_nonempty(input)?.into_iter();
-                method = syn::parse_quote! { #(via::routing::Verb::#list)|* };
-            }
-            _ => {
-                panic!("Unknown argument {}", name);
-            }
-        });
+        if !input.peek(syn::LitStr) {
+            let list = Methods::parse_separated_nonempty(input)?.into_iter();
+            method = syn::parse_quote! { #(via::routing::Verb::#list)|* };
+            input.parse::<Token![,]>()?;
+        }
 
-        Ok(RouteAttr { method, path })
+        Ok(RouteAttr {
+            method,
+            path: input.parse()?,
+        })
     }
 }
 
@@ -97,6 +86,7 @@ fn expand_fn(attr: &RouteAttr, item: &mut ItemFn) -> TokenStream {
         #item
 
         #[allow(non_camel_case_types)]
+        #[derive(Clone, Copy, Debug)]
         #vis struct #receiver;
 
         impl via::Handler for #receiver {
@@ -106,8 +96,8 @@ fn expand_fn(attr: &RouteAttr, item: &mut ItemFn) -> TokenStream {
         }
 
         impl via::routing::Mount for #receiver {
-            fn into(self, parent: &mut via::routing::Location) {
-                parent.at(#path).expose(#method, self);
+            fn to(&self, location: &mut via::routing::Location) {
+                location.at(#path).expose(#method, *self);
             }
         }
     })
@@ -152,7 +142,7 @@ fn expand_expose_fn(
     let PathArg { params, .. } = PathArg::new(path.clone(), receiver);
     let mut iter = params.iter().peekable();
     let inputs = receiver.inputs.iter().filter_map(|input| match input {
-        FnArg::Receiver(_) => Some(quote! { &self }),
+        FnArg::Receiver(_) => Some(quote! { state.get().unwrap() }),
         FnArg::Typed(_) if iter.peek().is_some() => {
             let Param { name, .. } = iter.next()?;
             Some(quote! { context.param(#name)? })
@@ -161,12 +151,13 @@ fn expand_expose_fn(
     });
 
     quote! {
-        endpoint.at(#path).expose(
-            #method,
-            move |context: via::Context, next: via::Next| async move {
+        endpoint.at(#path).expose(#method, |context: via::Context, next: via::Next| {
+            let state = context.state.clone();
+
+            async move {
                 via::Respond::respond(#target(#(#inputs),*).await)
             }
-        );
+        });
     }
 }
 

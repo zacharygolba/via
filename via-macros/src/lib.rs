@@ -8,17 +8,14 @@ mod route;
 mod scope;
 
 use proc_macro::TokenStream;
-use quote::quote;
 
 use self::{
     route::{RouteAttr, RouteItem},
     scope::{ScopeAttr, ScopeItem},
 };
 
-methods![connect, delete, get, head, options, patch, post, put, trace];
-
 #[proc_macro_attribute]
-pub fn route(meta: TokenStream, input: TokenStream) -> TokenStream {
+pub fn expose(meta: TokenStream, input: TokenStream) -> TokenStream {
     let attr = syn::parse_macro_input!(meta as RouteAttr);
     let item = syn::parse_macro_input!(input as syn::ItemFn);
 
@@ -26,7 +23,7 @@ pub fn route(meta: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn router(meta: TokenStream, input: TokenStream) -> TokenStream {
+pub fn service(meta: TokenStream, input: TokenStream) -> TokenStream {
     let attr = syn::parse_macro_input!(meta as ScopeAttr);
     let item = syn::parse_macro_input!(input as syn::ItemImpl);
 
