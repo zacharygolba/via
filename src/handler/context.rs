@@ -1,10 +1,9 @@
-use crate::{respond, Error, Respond};
+use crate::Error;
 use bytes::buf::ext::{BufExt, Reader};
 use http::header::{AsHeaderName, HeaderName, HeaderValue};
 use http::{Extensions, Method, Request, Uri, Version};
 use hyper::body::{Body as HyperBody, Buf};
 use serde::de::DeserializeOwned;
-use serde_json::json;
 use std::{io::Read, str::FromStr, sync::Arc};
 
 type Parameters = indexmap::IndexMap<&'static str, String>;
@@ -25,15 +24,7 @@ impl Body {
     pub async fn json<T: DeserializeOwned>(&mut self) -> Result<T, Error> {
         let reader = self.reader().await?;
 
-        serde_json::from_reader(reader).map_err(|error| {
-            let body = respond::json(&json!({
-                "error": {
-                    "message": format!("{}", error),
-                },
-            }));
-
-            Error::from(error).catch(body.status(400))
-        })
+        serde_json::from_reader(reader).map_err(|error| Error::from(error).json())
     }
 
     pub async fn text(&mut self) -> Result<String, Error> {

@@ -1,14 +1,11 @@
 use crate::{handler::DynHandler, Context, Future, Handler, Next};
 use http::Extensions;
-use std::sync::Arc;
-use verbs::Map;
-
-pub use verbs::Verb;
+use verbs::{Map, Verb};
 
 pub(crate) type Router = radr::Router<Endpoint>;
 
-pub trait Mount: Send + Sync + 'static {
-    fn to(&self, location: &mut Location);
+pub trait Service: Send + Sync + 'static {
+    fn mount(&self, location: &mut Location);
 }
 
 pub struct Location<'a> {
@@ -76,8 +73,8 @@ impl<'a> Location<'a> {
     }
 
     #[inline]
-    pub fn mount(&mut self, mount: impl Mount) {
-        mount.to(self);
-        self.state.insert(mount);
+    pub fn mount(&mut self, service: impl Service) {
+        service.mount(self);
+        self.state.insert(service);
     }
 }

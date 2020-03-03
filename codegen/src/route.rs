@@ -56,11 +56,11 @@ impl RouteAttr {
 
 impl Parse for RouteAttr {
     fn parse(input: ParseStream) -> parse::Result<Self> {
-        let mut method = syn::parse_quote! { via::routing::Verb::all() };
+        let mut method = syn::parse_quote! { via::verbs::Verb::all() };
 
         if !input.peek(syn::LitStr) {
             let list = Methods::parse_separated_nonempty(input)?.into_iter();
-            method = syn::parse_quote! { #(via::routing::Verb::#list)|* };
+            method = syn::parse_quote! { #(via::verbs::Verb::#list)|* };
             input.parse::<Token![,]>()?;
         }
 
@@ -95,8 +95,8 @@ fn expand_fn(attr: &RouteAttr, item: &mut ItemFn) -> TokenStream {
             }
         }
 
-        impl via::routing::Mount for #receiver {
-            fn to(&self, location: &mut via::routing::Location) {
+        impl via::Service for #receiver {
+            fn mount(&self, location: &mut via::Location) {
                 location.at(#path).expose(#method, *self);
             }
         }

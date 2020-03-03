@@ -42,8 +42,8 @@ impl ScopeItem {
 
         quote! {
             #scope
-            impl via::routing::Mount for #ty {
-                fn to(&self, endpoint: &mut via::routing::Location) {
+            impl via::Service for #ty {
+                fn mount(&self, endpoint: &mut via::Location) {
                     #(let mut endpoint = endpoint.at(#path);)*
                     #(#statements)*
                 }

@@ -1,18 +1,19 @@
 mod error;
 mod handler;
+mod routing;
 mod runtime;
 
 pub mod helpers;
 pub mod prelude;
-pub mod routing;
 
-use self::{routing::*, runtime::MakeService};
+use self::runtime::MakeService;
 use http::Extensions;
 use hyper::Server;
 
-pub use self::{error::*, handler::*};
+pub use self::{error::*, handler::*, routing::*};
 pub use codegen::*;
 pub use http;
+pub use verbs;
 
 #[derive(Default)]
 pub struct App {
@@ -50,8 +51,8 @@ impl App {
     }
 
     #[inline]
-    pub fn mount(&mut self, mount: impl Mount) {
-        self.at("/").mount(mount);
+    pub fn mount(&mut self, service: impl Service) {
+        self.at("/").mount(service);
     }
 
     #[inline]

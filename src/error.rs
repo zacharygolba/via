@@ -1,4 +1,5 @@
-use crate::{http::StatusCode, Respond, Response};
+use crate::{http::StatusCode, respond, Respond, Response};
+use serde_json::json;
 use std::{
     error::Error as StdError,
     fmt::{self, Debug, Display, Formatter},
@@ -36,6 +37,17 @@ impl Error {
             Ok(response) => Error { response, ..self },
             Err(error) => self.chain(error),
         }
+    }
+
+    #[inline]
+    pub fn json(self) -> Error {
+        let body = respond::json(&json!({
+            "error": {
+                "message": format!("{}", self),
+            },
+        }));
+
+        self.catch(body)
     }
 
     #[inline]
