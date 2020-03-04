@@ -1,13 +1,14 @@
 use via::prelude::*;
 
-#[expose(GET, "/")]
+#[http("GET /")]
 async fn hello() -> impl Respond {
     "Hello, world!"
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let mut app = App::new();
 
     app.mount(hello);
-    app.listen()
+    app.listen().await
 }

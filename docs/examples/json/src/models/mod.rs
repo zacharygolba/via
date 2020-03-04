@@ -29,6 +29,15 @@ impl<T> Data<T> {
         self.entries.insert(key.clone(), value);
         &self.entries[&key]
     }
+
+    pub fn remove(&mut self, id: &Uuid) -> Option<T> {
+        self.entries.remove(id)
+    }
+
+    pub fn update(&mut self, id: &Uuid, f: impl FnOnce(&mut T)) -> Option<&T> {
+        f(self.entries.get_mut(id)?);
+        self.entries.get(id)
+    }
 }
 
 impl<T> Default for Data<T> {

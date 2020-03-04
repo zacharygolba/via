@@ -56,21 +56,15 @@ impl App {
     }
 
     #[inline]
-    pub fn listen(self) -> Result<(), Error> {
-        use tokio::runtime::Runtime;
-
+    pub async fn listen(self) -> Result<()> {
         let address = "0.0.0.0:8080".parse()?;
+        let server = Server::bind(&address).serve(MakeService::from(self));
+        let ctrlc = async {
+            let message = "failed to install CTRL+C signal handler";
+            tokio::signal::ctrl_c().await.expect(message);
+        };
 
-        Runtime::new()?.block_on(async {
-            let service = MakeService::from(self);
-            let server = Server::bind(&address).serve(service);
-            let ctrlc = async {
-                let message = "failed to install CTRL+C signal handler";
-                tokio::signal::ctrl_c().await.expect(message);
-            };
-
-            println!("Server listening at http://{}/", address);
-            Ok(server.with_graceful_shutdown(ctrlc).await?)
-        })
+        println!("Server listening at http://{}/", address);
+        Ok(server.with_graceful_shutdown(ctrlc).await?)
     }
 }

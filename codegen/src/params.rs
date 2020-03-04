@@ -14,8 +14,7 @@ pub struct Param {
 }
 
 impl PathArg {
-    pub fn new(lit: LitStr, sig: &Signature) -> PathArg {
-        let value = lit.value();
+    pub fn new(value: String, sig: &Signature) -> PathArg {
         let params = sig
             .inputs
             .iter()

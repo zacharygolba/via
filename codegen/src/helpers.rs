@@ -1,5 +1,8 @@
 thread_local! {
-    static EXPOSE: [syn::Path; 3] = [
+    static EXPOSE: [syn::Path; 6] = [
+        syn::parse_str("::via::http").unwrap(),
+        syn::parse_str("via::http").unwrap(),
+        syn::parse_str("http").unwrap(),
         syn::parse_str("::via::expose").unwrap(),
         syn::parse_str("via::expose").unwrap(),
         syn::parse_str("expose").unwrap(),

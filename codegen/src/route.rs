@@ -1,4 +1,4 @@
-use crate::{helpers, params::*};
+use crate::{helpers, params::*, parse::HttpAttr};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
@@ -9,14 +9,8 @@ use syn::{
 
 type Methods = Punctuated<Ident, Token![|]>;
 
-#[derive(Debug)]
-pub struct RouteAttr {
-    pub method: Expr,
-    pub path: LitStr,
-}
-
 pub struct RouteItem {
-    attr: RouteAttr,
+    attr: HttpAttr,
     item: RouteKind,
 }
 
@@ -26,12 +20,12 @@ enum RouteKind {
 }
 
 impl RouteItem {
-    pub fn new(attr: RouteAttr, item: syn::ItemFn) -> RouteItem {
+    pub fn new(attr: HttpAttr, item: syn::ItemFn) -> RouteItem {
         let item = RouteKind::Fn(item);
         RouteItem { attr, item }
     }
 
-    pub fn method(ty: Box<syn::Type>, attr: RouteAttr, item: syn::ImplItemMethod) -> RouteItem {
+    pub fn method(ty: Box<syn::Type>, attr: HttpAttr, item: syn::ImplItemMethod) -> RouteItem {
         let item = RouteKind::Method(ty, item);
         RouteItem { attr, item }
     }
@@ -44,38 +38,11 @@ impl RouteItem {
     }
 }
 
-impl RouteAttr {
-    pub fn extract(attrs: &mut Vec<Attribute>) -> Option<RouteAttr> {
-        let index = attrs
-            .iter()
-            .position(|attr| helpers::is_expose_macro(&attr.path))?;
-
-        Some(attrs.remove(index).parse_args().unwrap())
-    }
-}
-
-impl Parse for RouteAttr {
-    fn parse(input: ParseStream) -> parse::Result<Self> {
-        let mut method = syn::parse_quote! { via::verbs::Verb::all() };
-
-        if !input.peek(syn::LitStr) {
-            let list = Methods::parse_separated_nonempty(input)?.into_iter();
-            method = syn::parse_quote! { #(via::verbs::Verb::#list)|* };
-            input.parse::<Token![,]>()?;
-        }
-
-        Ok(RouteAttr {
-            method,
-            path: input.parse()?,
-        })
-    }
-}
-
-fn expand_fn(attr: &RouteAttr, item: &mut ItemFn) -> TokenStream {
+fn expand_fn(attr: &HttpAttr, item: &mut ItemFn) -> TokenStream {
     transform_block(&mut item.block);
     transform_sig(&mut item.sig);
 
-    let RouteAttr { method, path } = attr;
+    let HttpAttr { method, path } = attr;
 
     let vis = &item.vis;
     let target = format_ident!("__via_route_fn_{}", &item.sig.ident);
@@ -103,7 +70,7 @@ fn expand_fn(attr: &RouteAttr, item: &mut ItemFn) -> TokenStream {
     })
 }
 
-fn expand_method(ty: &syn::Type, attr: &RouteAttr, item: &mut syn::ImplItemMethod) -> TokenStream {
+fn expand_method(ty: &syn::Type, attr: &HttpAttr, item: &mut syn::ImplItemMethod) -> TokenStream {
     transform_block(&mut item.block);
     transform_sig(&mut item.sig);
 
@@ -113,8 +80,8 @@ fn expand_method(ty: &syn::Type, attr: &RouteAttr, item: &mut syn::ImplItemMetho
     expand_expose_fn(attr, &target, &item.sig)
 }
 
-fn expand_fn_body(attr: &RouteAttr, target: &syn::Path, receiver: &syn::Signature) -> TokenStream {
-    let RouteAttr { path, .. } = attr;
+fn expand_fn_body(attr: &HttpAttr, target: &syn::Path, receiver: &syn::Signature) -> TokenStream {
+    let HttpAttr { path, .. } = attr;
     let PathArg { params, .. } = PathArg::new(path.clone(), receiver);
     let mut iter = params.iter().peekable();
     let inputs = receiver.inputs.iter().filter_map(|input| match input {
@@ -133,12 +100,8 @@ fn expand_fn_body(attr: &RouteAttr, target: &syn::Path, receiver: &syn::Signatur
     }
 }
 
-fn expand_expose_fn(
-    attr: &RouteAttr,
-    target: &syn::Path,
-    receiver: &syn::Signature,
-) -> TokenStream {
-    let RouteAttr { method, path } = attr;
+fn expand_expose_fn(attr: &HttpAttr, target: &syn::Path, receiver: &syn::Signature) -> TokenStream {
+    let HttpAttr { method, path } = attr;
     let PathArg { params, .. } = PathArg::new(path.clone(), receiver);
     let mut iter = params.iter().peekable();
     let inputs = receiver.inputs.iter().filter_map(|input| match input {
