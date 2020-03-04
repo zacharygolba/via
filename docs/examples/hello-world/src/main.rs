@@ -1,6 +1,6 @@
 use via::prelude::*;
 
-#[http("GET /")]
+#[via::http("GET /")]
 async fn hello() -> impl Respond {
     "Hello, world!"
 }
