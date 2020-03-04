@@ -42,7 +42,7 @@ fn expand_fn(attr: &HttpAttr, item: &mut ItemFn) -> TokenStream {
     transform_block(&mut item.block);
     transform_sig(&mut item.sig);
 
-    let HttpAttr { method, path } = attr;
+    let HttpAttr { path, verb } = attr;
 
     let vis = &item.vis;
     let target = format_ident!("__via_route_fn_{}", &item.sig.ident);
@@ -64,7 +64,7 @@ fn expand_fn(attr: &HttpAttr, item: &mut ItemFn) -> TokenStream {
 
         impl via::Service for #receiver {
             fn mount(&self, location: &mut via::Location) {
-                location.at(#path).expose(#method, *self);
+                location.at(#path).expose(#verb, *self);
             }
         }
     })
@@ -101,7 +101,7 @@ fn expand_fn_body(attr: &HttpAttr, target: &syn::Path, receiver: &syn::Signature
 }
 
 fn expand_expose_fn(attr: &HttpAttr, target: &syn::Path, receiver: &syn::Signature) -> TokenStream {
-    let HttpAttr { method, path } = attr;
+    let HttpAttr { path, verb } = attr;
     let PathArg { params, .. } = PathArg::new(path.clone(), receiver);
     let mut iter = params.iter().peekable();
     let inputs = receiver.inputs.iter().filter_map(|input| match input {
@@ -114,7 +114,7 @@ fn expand_expose_fn(attr: &HttpAttr, target: &syn::Path, receiver: &syn::Signatu
     });
 
     quote! {
-        endpoint.at(#path).expose(#method, |context: via::Context, next: via::Next| {
+        endpoint.at(#path).expose(#verb, |context: via::Context, next: via::Next| {
             let state = context.state.clone();
 
             async move {

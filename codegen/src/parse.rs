@@ -1,51 +1,69 @@
 use crate::helpers;
 use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    character::complete::{char, space1},
-    combinator::{map, map_res, opt, rest},
-    multi::separated_list,
-    sequence::pair,
-    IResult,
+    character::complete::{space0, space1},
+    combinator::rest,
+    *,
 };
+use proc_macro2::TokenStream;
+use quote::{quote, ToTokens};
 use syn::{
-    parse::{Parse, ParseStream, Result},
-    Attribute, Expr, LitStr,
+    parse::{self, Parse, ParseStream},
+    Attribute, LitStr, Path,
 };
 
 pub struct HttpAttr {
-    pub method: Expr,
     pub path: String,
+    pub verb: Verbs,
 }
 
-fn http(input: &str) -> IResult<&str, HttpAttr> {
-    let path = map(rest, String::from);
-    let method = map(opt(pair(methods, space1)), |option| {
-        option.map_or_else(
-            || syn::parse_quote! { via::verbs::Verb::all() },
-            |(value, _)| value,
-        )
-    });
-
-    map(pair(method, path), HttpAttr::from)(input)
+#[derive(Debug, Default)]
+pub struct Verbs {
+    items: Vec<Path>,
 }
 
-fn methods(input: &str) -> IResult<&str, Expr> {
-    let parse = |input| syn::parse_str(&format!("via::verbs::Verb::{}", input));
-    let method = alt((
-        tag("CONNECT"),
-        tag("DELETE"),
-        tag("GET"),
-        tag("HEAD"),
-        tag("OPTIONS"),
-        tag("PATCH"),
-        tag("POST"),
-        tag("PUT"),
-        tag("TRACE"),
-    ));
+named!(
+    http_attr<&str, HttpAttr>,
+    map!(
+        delimited!(space0, verbs_and_path, space0),
+        |(verb, path)| HttpAttr { verb, path }
+    )
+);
 
-    map_res(method, parse)(input)
-}
+named!(verbs_and_path<&str, (Verbs, String)>,
+    pair!(
+        map!(opt!(pair!(verbs, space1)), |option| {
+            option.map_or_else(Verbs::default, |(verb, _)| verb)
+        }),
+        map!(rest, String::from)
+    )
+);
+
+named!(verb<&str, Path>,
+    map_res!(
+        alt!(
+            tag!("CONNECT") | tag!("DELETE") | tag!("GET") | tag!("HEAD") |
+            tag!("OPTIONS") | tag!("PATCH") | tag!("POST") | tag!("PUT") |
+            tag!("TRACE")
+        ),
+        |value| {
+            syn::parse_str(&format!("via::verbs::Verb::{}", value))
+        }
+    )
+);
+
+named!(verbs<&str, Verbs>,
+    map!(
+        alt!(
+            map!(verb, |ident| vec![ident]) |
+            delimited!(
+                pair!(char!('['), space0),
+                separated_list!(char!(','), delimited!(space0, verb, space0)),
+                pair!(space0, char!(']'))
+            )
+        ),
+        |items| Verbs { items }
+    )
+);
 
 impl HttpAttr {
     pub fn extract(attrs: &mut Vec<Attribute>) -> Option<HttpAttr> {
@@ -57,17 +75,26 @@ impl HttpAttr {
     }
 }
 
-impl From<(Expr, String)> for HttpAttr {
-    fn from((method, path): (Expr, String)) -> HttpAttr {
-        HttpAttr { method, path }
+impl Parse for HttpAttr {
+    fn parse(input: ParseStream) -> parse::Result<HttpAttr> {
+        let input = input.parse::<LitStr>()?.value();
+        let (_, output) = http_attr(&input).unwrap();
+
+        Ok(output)
     }
 }
 
-impl Parse for HttpAttr {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let input = input.parse::<LitStr>()?.value();
-        let (_, output) = http(&input).unwrap();
+impl ToTokens for Verbs {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let mut expr = quote! {
+            via::verbs::Verb::all()
+        };
 
-        Ok(output)
+        if !self.items.is_empty() {
+            let verb = self.items.iter();
+            expr = quote! { #(#verb)|* };
+        }
+
+        tokens.extend(expr);
     }
 }
