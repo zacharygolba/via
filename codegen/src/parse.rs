@@ -16,7 +16,7 @@ pub struct HttpAttr {
     pub verb: Verbs,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Verbs {
     items: Vec<Path>,
 }

@@ -1,12 +1,12 @@
-use syn::{FnArg, Ident, LitStr, Pat, Signature, Type};
+use syn::{FnArg, Ident, Pat, Signature, Type};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PathArg {
     pub params: Vec<Param>,
     pub value: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Param {
     pub ident: Ident,
     pub name: String,
