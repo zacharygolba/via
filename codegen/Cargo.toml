@@ -10,7 +10,6 @@ edition = "2018"
 proc-macro = true
 
 [dependencies]
-failure = "0.1.6"
 lazy_static = "1.4.0"
 nom = "5.1.1"
 proc-macro2 = "1.0.6"
