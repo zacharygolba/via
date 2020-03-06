@@ -1,5 +1,5 @@
 use super::{Path, Verb};
-// use ansi_term::Colour::Red;
+use ansi_term::Colour::Red;
 use nom::{
     branch::alt,
     character::complete::space1,
@@ -8,7 +8,6 @@ use nom::{
     sequence::separated_pair,
     Err,
 };
-use proc_macro2::Span;
 use std::fmt::Write;
 use syn::{
     parse::{Error, Parse, ParseStream},
@@ -62,7 +61,7 @@ fn hint(output: &mut impl Write, source: &str, cause: &str, title: &str, detail:
     let padding = " ".repeat(source.find(cause).unwrap_or(0) + title.len() + 9);
 
     writeln!(output, r#"{} "{}""#, title, source).unwrap();
-    write!(output, "{}{}", padding, highlight).unwrap();
+    write!(output, "{}{}", padding, Red.paint(highlight)).unwrap();
 }
 
 impl Http {
