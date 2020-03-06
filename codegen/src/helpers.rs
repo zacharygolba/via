@@ -15,10 +15,18 @@ thread_local! {
     ];
 }
 
+static METHODS: [&str; 9] = [
+    "CONNECT", "DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "TRACE",
+];
+
 pub fn is_expose_macro(path: &syn::Path) -> bool {
     EXPOSE.with(|paths| paths.iter().any(|variant| path == variant))
 }
 
 pub fn is_middleware_macro(path: &syn::Path) -> bool {
     MIDDLEWARE.with(|paths| paths.iter().any(|variant| path == variant))
+}
+
+pub fn is_known_http_method(method: &str) -> bool {
+    METHODS.contains(&method)
 }

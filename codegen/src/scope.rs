@@ -1,4 +1,4 @@
-use crate::{helpers, parse::HttpAttr, route::*};
+use crate::{helpers, parser::Http, route::*};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -77,6 +77,6 @@ fn try_expand_middleware(item: &mut syn::ImplItemMacro) -> Option<TokenStream> {
 }
 
 fn try_expand_route(ty: Box<syn::Type>, item: &mut syn::ImplItemMethod) -> Option<TokenStream> {
-    let attr = HttpAttr::extract(&mut item.attrs)?;
+    let attr = Http::extract(&mut item.attrs)?;
     Some(RouteItem::method(ty, attr, item.clone()).expand())
 }
