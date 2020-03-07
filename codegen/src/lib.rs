@@ -7,6 +7,7 @@ mod route;
 mod scope;
 
 use proc_macro::TokenStream;
+use syn::{ItemFn, ItemImpl};
 
 use self::{
     attribute::{Http, Service},
@@ -17,7 +18,7 @@ use self::{
 #[proc_macro_attribute]
 pub fn http(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr = syn::parse_macro_input!(attr as Http);
-    let item = syn::parse_macro_input!(item as syn::ItemFn);
+    let item = syn::parse_macro_input!(item as ItemFn);
 
     RouteItem::new(attr, item).expand().into()
 }
@@ -25,7 +26,7 @@ pub fn http(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn service(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr = syn::parse_macro_input!(attr as Service);
-    let item = syn::parse_macro_input!(item as syn::ItemImpl);
+    let item = syn::parse_macro_input!(item as ItemImpl);
 
     ScopeItem::new(attr, item).expand().into()
 }
