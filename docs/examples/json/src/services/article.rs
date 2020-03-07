@@ -14,14 +14,14 @@ struct Document<T: Serialize> {
 
 #[via::service]
 impl ArticleService {
-    pub fn new() -> ArticleService {
-        Default::default()
-    }
-
-    middleware! {
+    middleware![
         helpers::cors(|allow| {
             allow.origin("*");
         }),
+    ];
+
+    pub fn new() -> ArticleService {
+        Default::default()
     }
 
     #[via::http(GET, "/")]
