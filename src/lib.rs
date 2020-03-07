@@ -21,11 +21,6 @@ pub struct App {
 }
 
 #[macro_export]
-macro_rules! blocking {
-    { $($handler:expr),* $(,)* } => {};
-}
-
-#[macro_export]
 macro_rules! middleware {
     { $($handler:expr),* $(,)* } => {};
 }
