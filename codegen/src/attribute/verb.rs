@@ -34,7 +34,7 @@ impl Parse for Name {
         if METHODS.iter().any(|method| ident == method) {
             Ok(Name(ident))
         } else {
-            Err(input.error("unknown http method"))
+            Err(Error::new(ident.span(), "unknown http method"))
         }
     }
 }
