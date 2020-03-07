@@ -12,7 +12,7 @@ pub struct Options {
     graphiql: bool,
 }
 
-#[service]
+#[via::service]
 impl<Query, Mutation, Scalar> GraphQL<Query, Mutation, Scalar> {
     pub fn new(schema: RootNode<Query, Mutation, Scalar>) -> GraphQL<Query, Mutation, Scalar> {
         GraphQL {
@@ -21,12 +21,12 @@ impl<Query, Mutation, Scalar> GraphQL<Query, Mutation, Scalar> {
         }
     }
 
-    #[via::http("POST /graphql")]
+    #[via::http(POST, "/graphql")]
     async fn query(&self, context: Context) -> impl Respond {
         todo!()
     }
 
-    #[via::http("GET /graphql")]
+    #[via::http(GET, "/graphql")]
     async fn render(&self, context: Context, next: Next) -> impl Respond {
         if !self.options.graphiql {
             return next.call(context).await;

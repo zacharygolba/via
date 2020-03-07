@@ -1,24 +1,21 @@
-use crate::{helpers, parser::Http, route::*};
+use crate::{
+    attribute::{Http, Service},
+    helpers,
+    route::*,
+};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{
-    parse::{self, Parse, ParseStream},
-    punctuated::Punctuated,
-};
+use syn::punctuated::Punctuated;
 
 type Middleware = Punctuated<syn::Expr, syn::Token![,]>;
 
-pub struct ScopeAttr {
-    path: Option<syn::LitStr>,
-}
-
 pub struct ScopeItem {
-    attr: ScopeAttr,
+    attr: Service,
     item: syn::ItemImpl,
 }
 
 impl ScopeItem {
-    pub fn new(attr: ScopeAttr, item: syn::ItemImpl) -> ScopeItem {
+    pub fn new(attr: Service, item: syn::ItemImpl) -> ScopeItem {
         ScopeItem { attr, item }
     }
 
@@ -49,18 +46,6 @@ impl ScopeItem {
                 }
             }
         }
-    }
-}
-
-impl Parse for ScopeAttr {
-    fn parse(input: ParseStream) -> parse::Result<ScopeAttr> {
-        Ok(if input.is_empty() {
-            ScopeAttr { path: None }
-        } else {
-            ScopeAttr {
-                path: Some(input.parse()?),
-            }
-        })
     }
 }
 

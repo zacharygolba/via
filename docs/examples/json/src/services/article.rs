@@ -24,7 +24,7 @@ impl ArticleService {
         }),
     }
 
-    #[via::http("GET /")]
+    #[via::http(GET, "/")]
     async fn index(&self) -> impl Respond {
         let store = self.store.read().await;
 
@@ -33,7 +33,7 @@ impl ArticleService {
         })
     }
 
-    #[via::http("POST /")]
+    #[via::http(POST, "/")]
     async fn create(&self, mut context: Context) -> Result<impl Respond> {
         let NewArticle { body, title } = context.body().json().await?;
         let mut store = self.store.write().await;
@@ -43,7 +43,7 @@ impl ArticleService {
         }))
     }
 
-    #[via::http("GET /:id")]
+    #[via::http(GET, "/:id")]
     async fn show(&self, id: Uuid) -> impl Respond {
         let store = self.store.read().await;
         let data = store.find(&id);
@@ -54,7 +54,7 @@ impl ArticleService {
         })
     }
 
-    #[via::http("PATCH /:id")]
+    #[via::http(PATCH, "/:id")]
     async fn update(&self, id: Uuid, mut context: Context) -> Result<impl Respond> {
         let ChangeSet { body, title } = context.body().json().await?;
         let mut store = self.store.write().await;
@@ -74,7 +74,7 @@ impl ArticleService {
         }))
     }
 
-    #[via::http("DELETE /:id")]
+    #[via::http(DELETE, "/:id")]
     async fn destroy(&self, id: Uuid) -> impl Respond {
         let mut store = self.store.write().await;
 

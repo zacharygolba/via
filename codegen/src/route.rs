@@ -1,16 +1,7 @@
-use crate::{
-    params::{self, Param},
-    parser::Http,
-};
+use crate::attribute::{Http, Param};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{
-    parse::{self, Parse, ParseStream},
-    punctuated::Punctuated,
-    Attribute, Expr, FnArg, Ident, ItemFn, LitStr, Token,
-};
-
-type Methods = Punctuated<Ident, Token![|]>;
+use syn::{FnArg, ItemFn};
 
 pub struct RouteItem {
     attr: Http,
@@ -85,12 +76,11 @@ fn expand_method(ty: &syn::Type, attr: &Http, item: &mut syn::ImplItemMethod) ->
 
 fn expand_fn_body(attr: &Http, target: &syn::Path, receiver: &syn::Signature) -> TokenStream {
     let Http { path, .. } = attr;
-    let params = params::extract(&path, receiver.inputs.iter());
-    let mut iter = params.iter().peekable();
+    let mut params = path.params(receiver.inputs.iter()).peekable();
     let inputs = receiver.inputs.iter().filter_map(|input| match input {
         FnArg::Receiver(_) => Some(quote! { &self }),
-        FnArg::Typed(_) if iter.peek().is_some() => {
-            let Param { name, .. } = iter.next()?;
+        FnArg::Typed(_) if params.peek().is_some() => {
+            let Param { name, .. } = params.next()?;
             Some(quote! { context.param(#name)? })
         }
         FnArg::Typed(_) => Some(quote! { context }),
@@ -105,12 +95,11 @@ fn expand_fn_body(attr: &Http, target: &syn::Path, receiver: &syn::Signature) ->
 
 fn expand_expose_fn(attr: &Http, target: &syn::Path, receiver: &syn::Signature) -> TokenStream {
     let Http { path, verb } = attr;
-    let params = params::extract(&path, receiver.inputs.iter());
-    let mut iter = params.iter().peekable();
+    let mut params = path.params(receiver.inputs.iter()).peekable();
     let inputs = receiver.inputs.iter().filter_map(|input| match input {
         FnArg::Receiver(_) => Some(quote! { state.get().unwrap() }),
-        FnArg::Typed(_) if iter.peek().is_some() => {
-            let Param { name, .. } = iter.next()?;
+        FnArg::Typed(_) if params.peek().is_some() => {
+            let Param { name, .. } = params.next()?;
             Some(quote! { context.param(#name)? })
         }
         FnArg::Typed(_) => Some(quote! { context }),

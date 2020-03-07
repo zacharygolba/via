@@ -1,18 +1,16 @@
 extern crate proc_macro;
 
+mod attribute;
 mod helpers;
-mod params;
-mod parser;
 mod route;
 mod scope;
 
 use proc_macro::TokenStream;
-// use quote::quote;
 
 use self::{
-    parser::Http,
+    attribute::{Http, Service},
     route::RouteItem,
-    scope::{ScopeAttr, ScopeItem},
+    scope::ScopeItem,
 };
 
 #[proc_macro_attribute]
@@ -25,7 +23,7 @@ pub fn http(meta: TokenStream, input: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn service(meta: TokenStream, input: TokenStream) -> TokenStream {
-    let attr = syn::parse_macro_input!(meta as ScopeAttr);
+    let attr = syn::parse_macro_input!(meta as Service);
     let item = syn::parse_macro_input!(input as syn::ItemImpl);
 
     ScopeItem::new(attr, item).expand().into()
