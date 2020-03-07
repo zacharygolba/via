@@ -1,10 +1,10 @@
 use crate::{
-    http::header::{self, HeaderValue},
+    http::header::{self, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue},
     Error,
 };
 use hyper::body::Body;
 use serde::Serialize;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 pub type Response = http::Response<Body>;
 
@@ -12,14 +12,33 @@ pub trait Respond: Sized {
     fn respond(self) -> Result<Response, Error>;
 
     #[inline]
-    fn status(self, value: u16) -> Status<Self> {
-        Status(value, self)
+    fn header<K, V>(self, key: K, value: V) -> Header<Self>
+    where
+        HeaderName: TryFrom<K, Error = InvalidHeaderName>,
+        HeaderValue: TryFrom<V, Error = InvalidHeaderValue>,
+    {
+        Header {
+            entry: HeaderName::try_from(key)
+                .map_err(Error::from)
+                .and_then(|key| Ok((key, HeaderValue::try_from(value)?))),
+            value: self,
+        }
+    }
+
+    #[inline]
+    fn status(self, value: u16) -> StatusCode<Self> {
+        StatusCode(value, self)
     }
 }
 
 pub struct Json(Result<Vec<u8>, Error>);
 
-pub struct Status<T: Respond>(u16, T);
+pub struct Header<T: Respond> {
+    entry: Result<(HeaderName, HeaderValue), Error>,
+    value: T,
+}
+
+pub struct StatusCode<T: Respond>(u16, T);
 
 #[inline]
 pub fn json<T: Serialize>(value: &T) -> Json {
@@ -27,8 +46,8 @@ pub fn json<T: Serialize>(value: &T) -> Json {
 }
 
 #[inline]
-pub fn status(code: u16) -> Status<&'static str> {
-    Status(code, "")
+pub fn status(code: u16) -> StatusCode<&'static str> {
+    StatusCode(code, "")
 }
 
 impl Respond for Json {
@@ -41,6 +60,17 @@ impl Respond for Json {
             HeaderValue::from_static("application/json"),
         );
 
+        Ok(response)
+    }
+}
+
+impl<T: Respond> Respond for Header<T> {
+    #[inline]
+    fn respond(self) -> Result<Response, Error> {
+        let (key, value) = self.entry?;
+        let mut response = self.value.respond()?;
+
+        response.headers_mut().append(key, value);
         Ok(response)
     }
 }
@@ -77,10 +107,10 @@ where
     }
 }
 
-impl<T: Respond> Respond for Status<T> {
+impl<T: Respond> Respond for StatusCode<T> {
     #[inline]
     fn respond(self) -> Result<Response, Error> {
-        let Status(code, value) = self;
+        let StatusCode(code, value) = self;
         let mut response = value.respond()?;
 
         *response.status_mut() = code.try_into()?;
