@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
-    parse::{Parse, ParseStream, Result},
+    parse::{Error, Parse, ParseStream},
     punctuated::Punctuated,
     token::Comma,
     Ident,
@@ -28,7 +28,7 @@ impl ToTokens for Name {
 }
 
 impl Parse for Name {
-    fn parse(input: ParseStream) -> Result<Name> {
+    fn parse(input: ParseStream) -> Result<Name, Error> {
         let ident = input.parse()?;
 
         if METHODS.iter().any(|method| ident == method) {
@@ -46,7 +46,7 @@ impl Verb {
 }
 
 impl Parse for Verb {
-    fn parse(input: ParseStream) -> Result<Verb> {
+    fn parse(input: ParseStream) -> Result<Verb, Error> {
         let mut list = Punctuated::new();
         let items;
 

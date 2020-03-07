@@ -3,7 +3,7 @@ mod util;
 mod verb;
 
 use syn::{
-    parse::{Parse, ParseStream, Result},
+    parse::{Error, Parse, ParseStream},
     token::Comma,
     Attribute, LitStr,
 };
@@ -45,7 +45,7 @@ impl Http {
 }
 
 impl Parse for Http {
-    fn parse(input: ParseStream) -> Result<Http> {
+    fn parse(input: ParseStream) -> Result<Http, Error> {
         let mut verb = Verb::new();
         let path;
 
@@ -62,7 +62,7 @@ impl Parse for Http {
 }
 
 impl Parse for Service {
-    fn parse(input: ParseStream) -> Result<Service> {
+    fn parse(input: ParseStream) -> Result<Service, Error> {
         Ok(Service {
             path: if input.peek(LitStr) {
                 Some(input.parse()?)
