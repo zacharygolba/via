@@ -2,13 +2,12 @@ mod error;
 mod handler;
 mod routing;
 mod runtime;
+mod server;
 
 pub mod helpers;
 pub mod prelude;
 
-use self::runtime::MakeService;
 use http::Extensions;
-use hyper::Server;
 
 pub use self::{error::*, handler::*, routing::*};
 pub use codegen::*;
@@ -57,14 +56,6 @@ impl App {
 
     #[inline]
     pub async fn listen(self) -> Result<()> {
-        let address = "0.0.0.0:8080".parse()?;
-        let server = Server::bind(&address).serve(MakeService::from(self));
-        let ctrlc = async {
-            let message = "failed to install CTRL+C signal handler";
-            tokio::signal::ctrl_c().await.expect(message);
-        };
-
-        println!("Server listening at http://{}/", address);
-        Ok(server.with_graceful_shutdown(ctrlc).await?)
+        server::serve(self).await
     }
 }
