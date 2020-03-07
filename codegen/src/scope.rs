@@ -1,11 +1,7 @@
-use crate::{
-    attribute::{Http, Service},
-    helpers,
-    route::*,
-};
+use crate::{attribute::Service, route::*, util::MacroPath};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::punctuated::Punctuated;
+use syn::{parse::Error, punctuated::Punctuated, ImplItemMacro, ImplItemMethod, Type};
 
 type Middleware = Punctuated<syn::Expr, syn::Token![,]>;
 
@@ -28,13 +24,16 @@ impl ScopeItem {
         let ty = &scope.self_ty;
 
         for item in &mut scope.items {
-            statements.extend(match item {
-                Macro(item) if helpers::is_middleware_macro(&item.mac.path) => {
-                    try_expand_middleware(item)
-                }
-                Method(item) => try_expand_route(ty.clone(), item),
+            let result = match item {
+                Macro(item) => try_expand_middleware(item),
+                Method(item) => try_expand_http(ty.clone(), item),
                 _ => continue,
-            });
+            };
+
+            match result {
+                Ok(tokens) => statements.extend(tokens),
+                Err(e) => return e.to_compile_error().into(),
+            }
         }
 
         quote! {
@@ -49,19 +48,27 @@ impl ScopeItem {
     }
 }
 
-fn try_expand_middleware(item: &mut syn::ImplItemMacro) -> Option<TokenStream> {
-    let syn::ImplItemMacro { mac, .. } = item;
-    let middleware = mac
-        .parse_body_with(Middleware::parse_terminated)
-        .unwrap()
-        .into_iter();
+fn try_expand_http(ty: Box<Type>, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
+    let mut iter = item.attrs.iter();
+    let http = match iter.position(|attr| attr.path == MacroPath::Http) {
+        Some(index) => item.attrs.remove(index).parse_args()?,
+        None => return Ok(TokenStream::new()),
+    };
 
-    Some(quote! {
-        #(endpoint.middleware(#middleware);)*
-    })
+    Ok(RouteItem::method(ty, http, item.clone()).expand())
 }
 
-fn try_expand_route(ty: Box<syn::Type>, item: &mut syn::ImplItemMethod) -> Option<TokenStream> {
-    let attr = Http::extract(&mut item.attrs)?;
-    Some(RouteItem::method(ty, attr, item.clone()).expand())
+fn try_expand_middleware(item: &mut ImplItemMacro) -> Result<TokenStream, Error> {
+    if item.mac.path != MacroPath::Middleware {
+        return Ok(TokenStream::new());
+    }
+
+    let middleware = item
+        .mac
+        .parse_body_with(Middleware::parse_terminated)?
+        .into_iter();
+
+    Ok(quote! {
+        #(endpoint.middleware(#middleware);)*
+    })
 }

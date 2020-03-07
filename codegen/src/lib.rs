@@ -1,7 +1,8 @@
 extern crate proc_macro;
 
 mod attribute;
-mod helpers;
+mod util;
+
 mod route;
 mod scope;
 
@@ -14,17 +15,17 @@ use self::{
 };
 
 #[proc_macro_attribute]
-pub fn http(meta: TokenStream, input: TokenStream) -> TokenStream {
-    let attr = syn::parse_macro_input!(meta as Http);
-    let item = syn::parse_macro_input!(input as syn::ItemFn);
+pub fn http(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr = syn::parse_macro_input!(attr as Http);
+    let item = syn::parse_macro_input!(item as syn::ItemFn);
 
     RouteItem::new(attr, item).expand().into()
 }
 
 #[proc_macro_attribute]
-pub fn service(meta: TokenStream, input: TokenStream) -> TokenStream {
-    let attr = syn::parse_macro_input!(meta as Service);
-    let item = syn::parse_macro_input!(input as syn::ItemImpl);
+pub fn service(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr = syn::parse_macro_input!(attr as Service);
+    let item = syn::parse_macro_input!(item as syn::ItemImpl);
 
     ScopeItem::new(attr, item).expand().into()
 }

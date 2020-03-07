@@ -5,7 +5,7 @@ mod verb;
 use syn::{
     parse::{Error, Parse, ParseStream},
     token::Comma,
-    Attribute, LitStr,
+    LitStr,
 };
 
 pub use self::{
@@ -28,20 +28,6 @@ pub struct Http {
 
 pub struct Service {
     pub path: Option<Path>,
-}
-
-impl Http {
-    pub fn extract(attrs: &mut Vec<Attribute>) -> Option<Http> {
-        let index = attrs
-            .iter()
-            .map(|attr| &attr.path)
-            .position(|path| PATHS.with(|paths| paths.iter().any(|item| path == item)))?;
-
-        match attrs.remove(index).parse_args() {
-            Ok(attr) => Some(attr),
-            Err(message) => panic!("{}", message),
-        }
-    }
 }
 
 impl Parse for Http {
