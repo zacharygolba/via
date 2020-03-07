@@ -127,7 +127,7 @@ impl Parse for Path {
 
         match token.value().parse() {
             Ok(path) => Ok(path),
-            Err(msg) => Err(input.error(msg)),
+            Err(msg) => Err(Error::new(token.span(), msg)),
         }
     }
 }
