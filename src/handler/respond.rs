@@ -1,7 +1,10 @@
-use crate::http::header::{self, HeaderValue};
-use crate::{http::StatusCode, Error};
+use crate::{
+    http::header::{self, HeaderValue},
+    Error,
+};
 use hyper::body::Body;
 use serde::Serialize;
+use std::convert::TryInto;
 
 pub type Response = http::Response<Body>;
 
@@ -49,19 +52,6 @@ impl Respond for Response {
     }
 }
 
-impl Respond for StatusCode {
-    #[inline]
-    fn respond(self) -> Result<Response, Error> {
-        let mut response = Response::new(match self.canonical_reason() {
-            Some(reason) => reason.into(),
-            None => Body::empty(),
-        });
-
-        *response.status_mut() = self;
-        Ok(response)
-    }
-}
-
 impl Respond for &'static str {
     #[inline]
     fn respond(self) -> Result<Response, Error> {
@@ -93,7 +83,7 @@ impl<T: Respond> Respond for Status<T> {
         let Status(code, value) = self;
         let mut response = value.respond()?;
 
-        *response.status_mut() = StatusCode::from_u16(code)?;
+        *response.status_mut() = code.try_into()?;
         Ok(response)
     }
 }
