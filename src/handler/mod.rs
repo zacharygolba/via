@@ -9,19 +9,19 @@ pub use self::{
     respond::{Respond, Response},
 };
 
-pub(crate) type DynHandler = Box<dyn Handler>;
+pub(crate) type DynMiddleware = Box<dyn Middleware>;
 #[doc(hidden)]
 pub type Future = Pin<Box<dyn std::future::Future<Output = Result> + Send>>;
 
-pub trait Handler: Send + Sync + 'static {
+pub trait Middleware: Send + Sync + 'static {
     fn call<'a>(&'a self, context: Context, next: Next<'a>) -> Future;
 }
 
 pub struct Next<'a> {
-    stack: VecDeque<&'a DynHandler>,
+    stack: VecDeque<&'a DynMiddleware>,
 }
 
-impl<F, T> Handler for T
+impl<F, T> Middleware for T
 where
     F::Output: Respond,
     F: std::future::Future + Send + 'static,
@@ -38,7 +38,7 @@ impl<'a> Next<'a> {
     #[inline]
     pub(crate) fn new<T>(stack: T) -> Next<'a>
     where
-        T: Iterator<Item = &'a DynHandler>,
+        T: Iterator<Item = &'a DynMiddleware>,
     {
         Next {
             stack: stack.collect(),

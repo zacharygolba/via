@@ -50,7 +50,7 @@ fn expand_fn(attr: &Http, item: &mut ItemFn) -> TokenStream {
         #[derive(Clone, Copy, Debug)]
         #vis struct #receiver;
 
-        impl via::Handler for #receiver {
+        impl via::Middleware for #receiver {
             fn call(&self, context: via::Context, next: via::Next) -> via::Future {
                 Box::pin(#middleware)
             }

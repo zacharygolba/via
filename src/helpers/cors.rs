@@ -1,6 +1,6 @@
 use crate::{
     http::header::{self, HeaderMap, HeaderValue},
-    Context, Future, Handler, Next,
+    Context, Future, Middleware, Next,
 };
 
 #[derive(Default)]
@@ -9,7 +9,7 @@ pub struct Cors {
 }
 
 #[inline]
-pub fn cors(builder: impl FnOnce(&mut Cors)) -> impl Handler {
+pub fn cors(builder: impl FnOnce(&mut Cors)) -> impl Middleware {
     let mut middleware = Cors::default();
 
     builder(&mut middleware);
@@ -26,7 +26,7 @@ impl Cors {
     }
 }
 
-impl Handler for Cors {
+impl Middleware for Cors {
     #[inline]
     fn call<'a>(&'a self, context: Context, next: Next<'a>) -> Future {
         let headers = self.headers.clone();

@@ -1,4 +1,4 @@
-use crate::{handler::DynHandler, Context, Future, Handler, Next};
+use crate::{handler::DynMiddleware, Context, Future, Middleware, Next};
 use http::Extensions;
 use verbs::{Map, Verb};
 
@@ -15,8 +15,8 @@ pub struct Location<'a> {
 
 #[derive(Default)]
 pub(crate) struct Endpoint {
-    verbs: Map<DynHandler>,
-    stack: Vec<DynHandler>,
+    verbs: Map<DynMiddleware>,
+    stack: Vec<DynMiddleware>,
 }
 
 pub(crate) fn visit(router: &Router, mut context: Context) -> Future {
@@ -42,12 +42,12 @@ pub(crate) fn visit(router: &Router, mut context: Context) -> Future {
 }
 
 impl Endpoint {
-    pub fn expose(&mut self, verb: Verb, handler: impl Handler) -> &mut Self {
+    pub fn expose(&mut self, verb: Verb, handler: impl Middleware) -> &mut Self {
         self.verbs.insert(verb, Box::new(handler));
         self
     }
 
-    pub fn middleware(&mut self, handler: impl Handler) -> &mut Self {
+    pub fn middleware(&mut self, handler: impl Middleware) -> &mut Self {
         self.stack.push(Box::new(handler));
         self
     }
@@ -63,12 +63,12 @@ impl<'a> Location<'a> {
     }
 
     #[inline]
-    pub fn expose(&mut self, verb: Verb, handler: impl Handler) {
+    pub fn expose(&mut self, verb: Verb, handler: impl Middleware) {
         self.value.expose(verb, handler);
     }
 
     #[inline]
-    pub fn middleware(&mut self, handler: impl Handler) {
+    pub fn middleware(&mut self, handler: impl Middleware) {
         self.value.middleware(handler);
     }
 
