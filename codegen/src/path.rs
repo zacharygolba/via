@@ -1,4 +1,4 @@
-use super::util::{fatal, IResult};
+use crate::util::{fatal, IResult};
 use nom::{
     branch::alt,
     bytes::complete::{take, take_till},
