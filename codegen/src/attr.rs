@@ -5,8 +5,8 @@ use syn::{
     parse::{Error, Parse, ParseStream},
     punctuated::Punctuated,
     spanned::Spanned,
-    Block, Expr, FnArg, ImplItem, ImplItemMacro, ImplItemMethod, ItemFn, ItemImpl, LitStr,
-    ReturnType, Signature, Token,
+    Expr, FnArg, ImplItem, ImplItemMacro, ImplItemMethod, ItemFn, ItemImpl, LitStr, Signature,
+    Token,
 };
 
 pub struct Http {
@@ -44,34 +44,13 @@ fn validate(sig: &Signature) -> Result<(), Error> {
     }
 }
 
-fn transform(block: &mut Block, sig: &mut Signature) -> Result<(), Error> {
-    let implt = syn::parse_str::<Token![impl]>("impl")?;
-
-    *block = syn::parse_quote! {{
-        async move #block
-    }};
-
-    sig.asyncness = None;
-    sig.output = match &sig.output {
-        ReturnType::Default => syn::parse_quote! {
-            -> #implt std::future::Future<Output = ()>
-        },
-        ReturnType::Type(_, ty) => syn::parse_quote! {
-            -> #implt std::future::Future<Output = #ty>
-        },
-    };
-
-    Ok(())
-}
-
 impl Expand<ImplItemMethod> for Http {
     fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
-        validate(&item.sig)?;
-        transform(&mut item.block, &mut item.sig)?;
-
         let Http { path, verb } = self;
         let arguments = inputs(path.params(item.sig.inputs.iter()), item.sig.inputs.iter());
         let target = &item.sig.ident;
+
+        validate(&item.sig)?;
 
         Ok(quote! {
             location.at(#path).expose(#verb, |context: via::Context, next: via::Next| {
@@ -87,14 +66,13 @@ impl Expand<ImplItemMethod> for Http {
 
 impl Expand<ItemFn> for Http {
     fn expand(&self, item: &mut ItemFn) -> Result<TokenStream, Error> {
-        validate(&item.sig)?;
-        transform(&mut item.block, &mut item.sig)?;
-
         let Http { path, verb } = self;
         let arguments = inputs(path.params(item.sig.inputs.iter()), item.sig.inputs.iter());
-        let target = format_ident!("__via_route_fn_{}", &item.sig.ident);
+        let target = format_ident!("__via_http_fn_{}", &item.sig.ident);
         let ident = std::mem::replace(&mut item.sig.ident, target.clone());
         let vis = &item.vis;
+
+        validate(&item.sig)?;
 
         Ok(quote! {
             #item
@@ -144,9 +122,13 @@ impl Expand<ItemImpl> for Service {
         let ty = &item.self_ty;
 
         for item in &mut item.items {
-            if let ImplItem::Method(method) = item {
-                statements.push(self.expand(method)?);
-            }
+            statements.push(if let ImplItem::Macro(m) = item {
+                self.expand(m)?
+            } else if let ImplItem::Method(m) = item {
+                self.expand(m)?
+            } else {
+                continue;
+            });
         }
 
         Ok(quote! {
