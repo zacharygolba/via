@@ -1,11 +1,11 @@
-use crate::{handler::DynMiddleware, Context, Future, Middleware, Next};
-use http::Extensions;
-use verbs::{Map, Verb};
+use crate::{handler::DynMiddleware, http::Extensions, Context, Future, Middleware, Next};
+use std::sync::Arc;
+use verbs::*;
 
 pub(crate) type Router = radr::Router<Endpoint>;
 
 pub trait Service: Send + Sync + 'static {
-    fn mount(&self, location: &mut Location);
+    fn mount(self: Arc<Self>, location: &mut Location);
 }
 
 pub struct Location<'a> {
@@ -74,7 +74,6 @@ impl<'a> Location<'a> {
 
     #[inline]
     pub fn mount(&mut self, service: impl Service) {
-        service.mount(self);
-        self.state.insert(service);
+        Arc::new(service).mount(self);
     }
 }

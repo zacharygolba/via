@@ -25,12 +25,15 @@ where
     let mut scope = vec![quote! { next }, quote! { context }];
 
     inputs.filter_map(move |input| match input {
-        FnArg::Receiver(_) => Some(quote! { state.get().unwrap() }),
-        FnArg::Typed(_) if params.peek().is_some() => {
-            let Param { name, .. } = params.next()?;
-            Some(quote! { context.param(#name)? })
+        FnArg::Receiver(_) => Some(quote! { &service }),
+        FnArg::Typed(_) => {
+            if params.peek().is_some() {
+                let Param { name, .. } = params.next()?;
+                Some(quote! { context.param(#name)? })
+            } else {
+                scope.pop()
+            }
         }
-        FnArg::Typed(_) => scope.pop(),
     })
 }
 
@@ -39,10 +42,10 @@ impl Expand<ImplItemMethod> for Http {
         let Http { path, verb } = self;
         let arguments = inputs(path, item.sig.inputs.iter());
         let target = &item.sig.ident;
-        let state = item.sig.inputs.iter().take(1).filter_map(|input| {
+        let scope = item.sig.inputs.iter().take(1).filter_map(|input| {
             if let FnArg::Receiver(_) = input {
                 Some(quote! {
-                    let state = context.state.clone();
+                    let service = std::sync::Arc::clone(&service);
                 })
             } else {
                 None
@@ -56,14 +59,15 @@ impl Expand<ImplItemMethod> for Http {
             ));
         }
 
-        Ok(quote! {
-            location.at(#path).expose(#verb, |context: via::Context, next: via::Next| {
-                #(#state)*
+        Ok(quote! {{
+            let service = std::sync::Arc::clone(&self);
+            location.at(#path).expose(#verb, move |context: via::Context, next: via::Next| {
+                #(#scope)*
                 async move {
                     via::Respond::respond(Self::#target(#(#arguments),*).await)
                 }
             });
-        })
+        }})
     }
 }
 
@@ -98,7 +102,7 @@ impl Expand<ItemFn> for Http {
             }
 
             impl via::Service for #ident {
-                fn mount(&self, location: &mut via::Location) {
+                fn mount(self: std::sync::Arc<Self>, location: &mut via::Location) {
                     location.at(#path).expose(#verb, *self);
                 }
             }
@@ -143,7 +147,7 @@ impl Expand<ItemImpl> for Service {
             #item
 
             impl via::Service for #ty {
-                fn mount(&self, location: &mut via::Location) {
+                fn mount(self: std::sync::Arc<Self>, location: &mut via::Location) {
                     #(let mut location = location.at(#path);)*
                     #(#statements)*
                 }
