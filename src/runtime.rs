@@ -1,9 +1,9 @@
-use crate::{http::Extensions, routing, routing::Router, App, Error, Response};
+use crate::{App, Body, Error, Response};
 use futures::future::{ready, FutureExt, Map, Ready};
-use hyper::{service::Service as HyperService, Body};
+use hyper::service::Service as HyperService;
 use std::{convert::Infallible, sync::Arc, task::*};
 
-type Request = crate::http::Request<Body>;
+type Request = crate::http::Request<hyper::Body>;
 type Result<T = Response, E = Infallible> = std::result::Result<T, E>;
 
 pub struct MakeService {
@@ -11,8 +11,7 @@ pub struct MakeService {
 }
 
 pub struct Service {
-    router: Arc<Router>,
-    state: Arc<Extensions>,
+    app: Arc<App>,
 }
 
 impl From<Service> for MakeService {
@@ -24,10 +23,8 @@ impl From<Service> for MakeService {
 
 impl From<App> for MakeService {
     #[inline]
-    fn from(application: App) -> MakeService {
-        MakeService {
-            service: application.into(),
-        }
+    fn from(app: App) -> MakeService {
+        Service::from(app).into()
     }
 }
 
@@ -51,19 +48,15 @@ impl Clone for Service {
     #[inline]
     fn clone(&self) -> Service {
         Service {
-            router: Arc::clone(&self.router),
-            state: Arc::clone(&self.state),
+            app: Arc::clone(&self.app),
         }
     }
 }
 
 impl From<App> for Service {
     #[inline]
-    fn from(application: App) -> Service {
-        Service {
-            router: Arc::new(application.router),
-            state: Arc::new(application.state),
-        }
+    fn from(app: App) -> Service {
+        Service { app: Arc::new(app) }
     }
 }
 
@@ -79,11 +72,11 @@ impl HyperService<Request> for Service {
 
     #[inline]
     fn call(&mut self, request: Request) -> Self::Future {
-        let context = crate::Context::new(self.state.clone(), request);
+        let request = request.map(Body);
 
-        routing::visit(&self.router, context).map(|result| match result {
+        self.app.call(request).map(|result| match result {
             Ok(response) => Ok(response),
-            Err(e) => Ok(e.into()),
+            Err(error) => Ok(error.into()),
         })
     }
 }

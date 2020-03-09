@@ -1,4 +1,4 @@
-use crate::{handler::DynMiddleware, http::Extensions, Context, Future, Middleware, Next};
+use crate::{handler::DynMiddleware, http::Extensions, Middleware};
 use std::sync::Arc;
 use verbs::*;
 
@@ -15,30 +15,8 @@ pub struct Location<'a> {
 
 #[derive(Default)]
 pub(crate) struct Endpoint {
-    verbs: Map<DynMiddleware>,
-    stack: Vec<DynMiddleware>,
-}
-
-pub(crate) fn visit(router: &Router, mut context: Context) -> Future {
-    let (parameters, method, path) = context.locate();
-    let matches = router.visit(path).flat_map(|matched| {
-        let verbs = matched.verbs.get(if matched.exact {
-            method.into()
-        } else {
-            Verb::none()
-        });
-
-        match matched.param {
-            Some(("", _)) | Some((_, "")) | None => {}
-            Some((name, value)) => {
-                parameters.insert(name, value.to_owned());
-            }
-        }
-
-        matched.stack.iter().chain(verbs)
-    });
-
-    Next::new(matches).call(context)
+    pub(crate) verbs: Map<DynMiddleware>,
+    pub(crate) stack: Vec<DynMiddleware>,
 }
 
 impl Endpoint {

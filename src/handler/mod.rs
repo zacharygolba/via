@@ -5,7 +5,7 @@ use crate::Result;
 use std::{collections::VecDeque, pin::Pin};
 
 pub use self::{
-    context::{Body, Context},
+    context::*,
     respond::{Respond, Response},
 };
 

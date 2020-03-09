@@ -7,7 +7,8 @@ mod server;
 pub mod helpers;
 pub mod prelude;
 
-use http::Extensions;
+use self::{handler::Request, http::Extensions, verbs::Verb};
+use std::sync::Arc;
 
 pub use self::{error::*, handler::*, routing::*};
 pub use codegen::*;
@@ -17,7 +18,7 @@ pub use verbs;
 #[derive(Default)]
 pub struct App {
     router: Router,
-    state: Extensions,
+    state: Arc<Extensions>,
 }
 
 #[macro_export]
@@ -34,14 +35,40 @@ impl App {
     #[inline]
     pub fn at(&mut self, path: &'static str) -> Location {
         Location {
-            state: &mut self.state,
+            state: Arc::get_mut(&mut self.state).unwrap(),
             value: self.router.at(path),
         }
     }
 
     #[inline]
+    pub fn call(&self, request: Request) -> Future {
+        let mut context = Context::new(self.state.clone(), request);
+        let parameters = &mut context.parameters;
+        let method = context.request.method();
+        let route = context.request.uri().path();
+        let next = Next::new(self.router.visit(route).flat_map(|matched| {
+            let verbs = matched.verbs.get(if matched.exact {
+                method.into()
+            } else {
+                Verb::none()
+            });
+
+            match matched.param {
+                Some(("", _)) | Some((_, "")) | None => {}
+                Some((name, value)) => {
+                    parameters.insert(name, value.to_owned());
+                }
+            }
+
+            matched.stack.iter().chain(verbs)
+        }));
+
+        next.call(context)
+    }
+
+    #[inline]
     pub fn inject(&mut self, value: impl Send + Sync + 'static) {
-        self.state.insert(value);
+        Arc::get_mut(&mut self.state).unwrap().insert(value);
     }
 
     #[inline]

@@ -1,19 +1,20 @@
 use crate::Error;
 use bytes::buf::ext::{BufExt, Reader};
 use http::header::{AsHeaderName, HeaderName, HeaderValue};
-use http::{Extensions, Method, Request, Uri, Version};
+use http::{Extensions, Method, Uri, Version};
 use hyper::body::{Body as HyperBody, Buf};
 use serde::de::DeserializeOwned;
 use std::{io::Read, str::FromStr, sync::Arc};
 
 type Parameters = indexmap::IndexMap<&'static str, String>;
+pub(crate) type Request = http::Request<Body>;
 
-pub struct Body(HyperBody);
+pub struct Body(pub(crate) HyperBody);
 
 pub struct Context {
     pub(crate) parameters: Parameters,
-    pub(crate) request: Request<Body>,
-    pub state: Arc<Extensions>,
+    pub(crate) request: Request,
+    pub(crate) state: Arc<Extensions>,
 }
 
 impl Body {
@@ -114,20 +115,11 @@ impl Context {
 
 impl Context {
     #[inline]
-    pub(crate) fn new(state: Arc<Extensions>, request: Request<HyperBody>) -> Context {
+    pub(crate) fn new(state: Arc<Extensions>, request: Request) -> Context {
         Context {
             parameters: Parameters::new(),
-            request: request.map(Body),
+            request,
             state,
         }
-    }
-
-    #[inline]
-    pub(crate) fn locate(&mut self) -> (&mut Parameters, &Method, &str) {
-        (
-            &mut self.parameters,
-            self.request.method(),
-            self.request.uri().path(),
-        )
     }
 }

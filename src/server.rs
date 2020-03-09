@@ -20,7 +20,7 @@ pub async fn serve(app: App) -> Result<()> {
 
 impl Options {
     fn env() -> Result<Options> {
-        let mut host = "::1".parse()?;
+        let mut host = "0.0.0.0".parse()?;
         let mut port = 8080;
 
         if let Some(value) = env::var("HOST").ok() {

@@ -17,40 +17,41 @@ pub struct Service {
     pub path: Option<Path>,
 }
 
-fn inputs<'a, I>(path: &'a Path, inputs: I) -> impl Iterator<Item = TokenStream> + 'a
+fn inputs<'a, I>(path: &'a Path, inputs: I) -> TokenStream
 where
     I: Clone + Iterator<Item = &'a FnArg> + 'a,
 {
+    let mut context = Some(quote! { context });
     let mut params = path.params(inputs.clone()).peekable();
-    let mut scope = vec![quote! { next }, quote! { context }];
-
-    inputs.filter_map(move |input| match input {
+    let argument = inputs.filter_map(move |input| match input {
         FnArg::Receiver(_) => Some(quote! { &service }),
         FnArg::Typed(_) => {
             if params.peek().is_some() {
                 let Param { name, .. } = params.next()?;
                 Some(quote! { context.param(#name)? })
             } else {
-                scope.pop()
+                context.take()
             }
         }
-    })
+    });
+
+    quote! {
+        #(#argument),*
+    }
 }
 
 impl Expand<ImplItemMethod> for Http {
     fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
         let Http { path, verb } = self;
+        let mut service = quote! {};
         let arguments = inputs(path, item.sig.inputs.iter());
         let target = &item.sig.ident;
-        let scope = item.sig.inputs.iter().take(1).filter_map(|input| {
-            if let FnArg::Receiver(_) = input {
-                Some(quote! {
-                    let service = std::sync::Arc::clone(&service);
-                })
-            } else {
-                None
-            }
-        });
+
+        if let Some(FnArg::Receiver(_)) = item.sig.inputs.iter().next() {
+            service = quote! {
+                let service = std::sync::Arc::clone(&service);
+            };
+        }
 
         if item.sig.asyncness.is_none() {
             return Err(Error::new(
@@ -62,9 +63,9 @@ impl Expand<ImplItemMethod> for Http {
         Ok(quote! {{
             let service = std::sync::Arc::clone(&self);
             location.at(#path).expose(#verb, move |context: via::Context, next: via::Next| {
-                #(#scope)*
+                #service
                 async move {
-                    via::Respond::respond(Self::#target(#(#arguments),*).await)
+                    via::Respond::respond(Self::#target(#arguments).await)
                 }
             });
         }})
@@ -96,7 +97,7 @@ impl Expand<ItemFn> for Http {
             impl via::Middleware for #ident {
                 fn call(&self, context: via::Context, next: via::Next) -> via::Future {
                     Box::pin(async move {
-                        via::Respond::respond(#target(#(#arguments),*).await)
+                        via::Respond::respond(#target(#arguments).await)
                     })
                 }
             }
