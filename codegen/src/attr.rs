@@ -5,8 +5,7 @@ use syn::{
     parse::{Error, Parse, ParseStream},
     punctuated::Punctuated,
     spanned::Spanned,
-    Expr, FnArg, ImplItem, ImplItemMacro, ImplItemMethod, ItemFn, ItemImpl, LitStr, Signature,
-    Token,
+    Expr, FnArg, ImplItem, ImplItemMacro, ImplItemMethod, ItemFn, ItemImpl, LitStr, Token,
 };
 
 pub struct Http {
@@ -35,22 +34,18 @@ where
     })
 }
 
-fn validate(sig: &Signature) -> Result<(), Error> {
-    let msg = "the http attribute macro can only be applied to async functions and methods";
-
-    match sig.asyncness {
-        Some(_) => Ok(()),
-        None => Err(Error::new(sig.span(), msg)),
-    }
-}
-
 impl Expand<ImplItemMethod> for Http {
     fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
         let Http { path, verb } = self;
         let arguments = inputs(path.params(item.sig.inputs.iter()), item.sig.inputs.iter());
         let target = &item.sig.ident;
 
-        validate(&item.sig)?;
+        if item.sig.asyncness.is_none() {
+            return Err(Error::new(
+                item.sig.span(),
+                "the http attribute macro can only be applied to async methods",
+            ));
+        }
 
         Ok(quote! {
             location.at(#path).expose(#verb, |context: via::Context, next: via::Next| {
@@ -72,7 +67,12 @@ impl Expand<ItemFn> for Http {
         let ident = std::mem::replace(&mut item.sig.ident, target.clone());
         let vis = &item.vis;
 
-        validate(&item.sig)?;
+        if item.sig.asyncness.is_none() {
+            return Err(Error::new(
+                item.sig.span(),
+                "the http attribute macro can only be applied to async functions",
+            ));
+        }
 
         Ok(quote! {
             #item
