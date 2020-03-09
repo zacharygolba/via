@@ -47,7 +47,7 @@ impl Error {
             },
         }));
 
-        self.catch(body)
+        self.catch(body.status(400))
     }
 
     #[inline]
