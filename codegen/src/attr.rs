@@ -22,6 +22,7 @@ where
     I: Clone + Iterator<Item = &'a FnArg> + 'a,
 {
     let mut params = path.params(inputs.clone()).peekable();
+    let mut scope = vec![quote! { next }, quote! { context }];
 
     inputs.filter_map(move |input| match input {
         FnArg::Receiver(_) => Some(quote! { state.get().unwrap() }),
@@ -29,7 +30,7 @@ where
             let Param { name, .. } = params.next()?;
             Some(quote! { context.param(#name)? })
         }
-        FnArg::Typed(_) => Some(quote! { context }),
+        FnArg::Typed(_) => scope.pop(),
     })
 }
 
