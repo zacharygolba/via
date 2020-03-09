@@ -43,7 +43,7 @@ impl Error {
     pub fn json(self) -> Error {
         let body = respond::json(&json!({
             "error": {
-                "message": format!("{}", self),
+                "message": self.to_string(),
             },
         }));
 
