@@ -38,6 +38,15 @@ impl Expand<ImplItemMethod> for Http {
         let Http { path, verb } = self;
         let arguments = inputs(path, item.sig.inputs.iter());
         let target = &item.sig.ident;
+        let state = item.sig.inputs.iter().take(1).filter_map(|input| {
+            if let FnArg::Receiver(_) = input {
+                Some(quote! {
+                    let state = context.state.clone();
+                })
+            } else {
+                None
+            }
+        });
 
         if item.sig.asyncness.is_none() {
             return Err(Error::new(
@@ -48,8 +57,7 @@ impl Expand<ImplItemMethod> for Http {
 
         Ok(quote! {
             location.at(#path).expose(#verb, |context: via::Context, next: via::Next| {
-                let state = context.state.clone();
-
+                #(#state)*
                 async move {
                     via::Respond::respond(Self::#target(#(#arguments),*).await)
                 }
