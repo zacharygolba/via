@@ -17,12 +17,11 @@ pub struct Service {
     pub path: Option<Path>,
 }
 
-fn inputs<'a, I, P>(params: P, inputs: I) -> impl Iterator<Item = TokenStream> + 'a
+fn inputs<'a, I>(path: &'a Path, inputs: I) -> impl Iterator<Item = TokenStream> + 'a
 where
-    I: Iterator<Item = &'a FnArg> + 'a,
-    P: Iterator<Item = Param<'a>> + 'a,
+    I: Clone + Iterator<Item = &'a FnArg> + 'a,
 {
-    let mut params = params.peekable();
+    let mut params = path.params(inputs.clone()).peekable();
 
     inputs.filter_map(move |input| match input {
         FnArg::Receiver(_) => Some(quote! { state.get().unwrap() }),
@@ -37,7 +36,7 @@ where
 impl Expand<ImplItemMethod> for Http {
     fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
         let Http { path, verb } = self;
-        let arguments = inputs(path.params(item.sig.inputs.iter()), item.sig.inputs.iter());
+        let arguments = inputs(path, item.sig.inputs.iter());
         let target = &item.sig.ident;
 
         if item.sig.asyncness.is_none() {
@@ -62,7 +61,7 @@ impl Expand<ImplItemMethod> for Http {
 impl Expand<ItemFn> for Http {
     fn expand(&self, item: &mut ItemFn) -> Result<TokenStream, Error> {
         let Http { path, verb } = self;
-        let arguments = inputs(path.params(item.sig.inputs.iter()), item.sig.inputs.iter());
+        let arguments = inputs(path, item.sig.inputs.iter());
         let target = format_ident!("__via_http_fn_{}", &item.sig.ident);
         let ident = std::mem::replace(&mut item.sig.ident, target.clone());
         let vis = &item.vis;
