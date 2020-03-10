@@ -1,6 +1,6 @@
 use crate::{path::*, util::*, verb::*};
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 use syn::{
     parse::{Error, Parse, ParseStream},
     punctuated::Punctuated,
@@ -8,12 +8,13 @@ use syn::{
 };
 
 pub struct Http {
-    pub path: Path,
-    pub verb: Verb,
+    meta: TokenStream,
+    path: Path,
+    verb: Verb,
 }
 
 pub struct Service {
-    pub path: Option<Path>,
+    path: Option<Path>,
 }
 
 fn inputs<'a, I>(path: &'a Path, inputs: I) -> TokenStream
@@ -52,7 +53,7 @@ where
 
 impl Expand<ImplItemMethod> for Http {
     fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
-        let Http { path, verb } = self;
+        let Http { path, verb, .. } = self;
         let mut service = quote! {};
         let arguments = inputs(path, item.sig.inputs.iter());
         let target = &item.sig.ident;
@@ -76,25 +77,19 @@ impl Expand<ImplItemMethod> for Http {
 
 impl Expand<ItemFn> for Http {
     fn expand(&self, item: &mut ItemFn) -> Result<TokenStream, Error> {
-        let Http { path, verb } = self;
-        let arguments = inputs(path, item.sig.inputs.iter());
-        let target = format_ident!("__via_http_fn_{}", &item.sig.ident);
-        let ident = std::mem::replace(&mut item.sig.ident, target.clone());
+        let Http { meta, .. } = self;
+        let ident = &item.sig.ident;
         let vis = &item.vis;
 
         Ok(quote! {
-            #item
-
             #[allow(non_camel_case_types)]
             #[derive(Clone, Copy, Debug)]
             #vis struct #ident;
 
-            impl via::Service for #ident {
-                fn mount(self: std::sync::Arc<Self>, location: &mut via::Location) {
-                    location.at(#path).expose(#verb, |context: via::Context, next: via::Next| async move {
-                        via::Respond::respond(#target(#arguments).await)
-                    });
-                }
+            #[via::service]
+            impl #ident {
+                #[via::http(#meta)]
+                #item
             }
         })
     }
@@ -103,6 +98,7 @@ impl Expand<ItemFn> for Http {
 impl Parse for Http {
     fn parse(input: ParseStream) -> Result<Http, Error> {
         let mut verb = Verb::new();
+        let meta = input.fork().parse::<TokenStream>()?;
         let path;
 
         if input.peek(LitStr) {
@@ -113,7 +109,7 @@ impl Parse for Http {
             path = input.parse()?;
         }
 
-        Ok(Http { path, verb })
+        Ok(Http { meta, path, verb })
     }
 }
 

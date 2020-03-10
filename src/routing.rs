@@ -57,7 +57,7 @@ impl<'a> Location<'a> {
 
     #[inline]
     pub fn mount(&mut self, service: impl Service) {
-        Arc::new(service).mount(self);
+        Service::mount(Arc::new(service), self);
     }
 }
 
