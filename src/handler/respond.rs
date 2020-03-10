@@ -1,8 +1,6 @@
 use crate::{
-    http::header::{
-        self, HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue,
-    },
-    Error,
+    http::header::{self, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue},
+    Error, Result,
 };
 use hyper::body::Body;
 use serde::Serialize;
@@ -20,17 +18,7 @@ pub trait Respond: Sized {
         HeaderValue: TryFrom<V, Error = InvalidHeaderValue>,
     {
         Header {
-            entry: HeaderName::try_from(key)
-                .map_err(Error::from)
-                .and_then(|key| Ok((key, HeaderValue::try_from(value)?))),
-            value: self,
-        }
-    }
-
-    #[inline]
-    fn headers(self, headers: HeaderMap) -> Headers<Self> {
-        Headers {
-            headers,
+            entry: Header::<Self>::entry(key, value),
             value: self,
         }
     }
@@ -45,11 +33,6 @@ pub struct Json(Result<Vec<u8>, Error>);
 
 pub struct Header<T: Respond> {
     entry: Result<(HeaderName, HeaderValue), Error>,
-    value: T,
-}
-
-pub struct Headers<T: Respond> {
-    headers: HeaderMap,
     value: T,
 }
 
@@ -79,6 +62,17 @@ impl Respond for Json {
     }
 }
 
+impl<T: Respond> Header<T> {
+    #[inline]
+    fn entry<K, V>(key: K, value: V) -> Result<(HeaderName, HeaderValue)>
+    where
+        HeaderName: TryFrom<K, Error = InvalidHeaderName>,
+        HeaderValue: TryFrom<V, Error = InvalidHeaderValue>,
+    {
+        Ok((HeaderName::try_from(key)?, HeaderValue::try_from(value)?))
+    }
+}
+
 impl<T: Respond> Respond for Header<T> {
     #[inline]
     fn respond(self) -> Result<Response, Error> {
@@ -86,16 +80,6 @@ impl<T: Respond> Respond for Header<T> {
         let (key, value) = self.entry?;
 
         response.headers_mut().append(key, value);
-        Ok(response)
-    }
-}
-
-impl<T: Respond> Respond for Headers<T> {
-    #[inline]
-    fn respond(self) -> Result<Response, Error> {
-        let mut response = self.value.respond()?;
-
-        response.headers_mut().extend(self.headers);
         Ok(response)
     }
 }
