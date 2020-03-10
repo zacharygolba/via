@@ -12,7 +12,7 @@ struct Document<T: Serialize> {
     data: T,
 }
 
-#[service]
+#[service("/articles")]
 impl ArticleService {
     pub fn new() -> ArticleService {
         Default::default()

@@ -24,20 +24,7 @@ pub(crate) struct Router {
     routes: radr::Router<Endpoint>,
 }
 
-impl Endpoint {
-    pub fn expose(&mut self, verb: Verb, handler: impl Middleware) -> &mut Self {
-        self.verbs.insert(verb, Arc::new(handler));
-        self
-    }
-
-    pub fn middleware(&mut self, handler: impl Middleware) -> &mut Self {
-        self.stack.push(Arc::new(handler));
-        self
-    }
-}
-
 impl<'a> Location<'a> {
-    #[inline]
     pub fn at(&mut self, path: &'static str) -> Location {
         Location {
             state: self.state,
@@ -45,18 +32,16 @@ impl<'a> Location<'a> {
         }
     }
 
-    #[inline]
-    pub fn expose(&mut self, verb: Verb, handler: impl Middleware) {
-        self.value.expose(verb, handler);
+    #[doc(hidden)]
+    pub fn expose(&mut self, verb: Verb, middleware: impl Middleware) {
+        self.value.verbs.insert(verb, Arc::new(middleware));
     }
 
-    #[inline]
-    pub fn middleware(&mut self, handler: impl Middleware) {
-        self.value.middleware(handler);
+    pub fn middleware(&mut self, middleware: impl Middleware) {
+        self.value.stack.push(Arc::new(middleware));
     }
 
-    #[inline]
-    pub fn mount(&mut self, service: impl Service) {
+    pub fn service(&mut self, service: impl Service) {
         Service::mount(Arc::new(service), self);
     }
 }

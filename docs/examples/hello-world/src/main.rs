@@ -7,8 +7,8 @@ async fn hello() -> impl Respond {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut app = App::new();
+    let mut app = via::new();
 
-    app.mount(hello);
+    app.service(hello);
     app.listen().await
 }

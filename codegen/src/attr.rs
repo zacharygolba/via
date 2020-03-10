@@ -17,7 +17,7 @@ pub struct Service {
     path: Option<Path>,
 }
 
-fn inputs<'a, I>(path: &'a Path, inputs: I) -> TokenStream
+fn expand_arguments<'a, I>(path: &'a Path, inputs: I) -> TokenStream
 where
     I: Clone + Iterator<Item = &'a FnArg> + 'a,
 {
@@ -40,7 +40,7 @@ where
     }
 }
 
-fn receiver<'a, I>(mut inputs: I) -> Option<&'a mut FnArg>
+fn get_mut_receiver<'a, I>(mut inputs: I) -> Option<&'a mut FnArg>
 where
     I: Iterator<Item = &'a mut FnArg>,
 {
@@ -55,10 +55,10 @@ impl Expand<ImplItemMethod> for Http {
     fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
         let Http { path, verb, .. } = self;
         let mut service = quote! {};
-        let arguments = inputs(path, item.sig.inputs.iter());
+        let arguments = expand_arguments(path, item.sig.inputs.iter());
         let target = &item.sig.ident;
 
-        if let Some(input) = receiver(item.sig.inputs.iter_mut()) {
+        if let Some(input) = get_mut_receiver(item.sig.inputs.iter_mut()) {
             service = quote! { let service = std::sync::Arc::clone(&service); };
             *input = syn::parse_quote! { self: std::sync::Arc<Self> };
         }

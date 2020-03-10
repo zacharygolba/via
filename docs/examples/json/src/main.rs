@@ -6,8 +6,8 @@ use via::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut app = App::new();
+    let mut app = via::new();
 
-    app.at("/articles").mount(ArticleService::new());
+    app.service(ArticleService::new());
     app.listen().await
 }
