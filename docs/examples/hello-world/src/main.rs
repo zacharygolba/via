@@ -1,4 +1,3 @@
-use std::future::Future;
 use via::prelude::*;
 
 #[http(GET, "/")]

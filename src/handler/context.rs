@@ -115,7 +115,18 @@ impl Context {
 
 impl Context {
     #[inline]
-    pub(crate) fn new(state: Arc<Extensions>, request: Request) -> Context {
+    pub(crate) fn locate(&mut self) -> (&mut Parameters, &Method, &str) {
+        (
+            &mut self.parameters,
+            self.request.method(),
+            self.request.uri().path(),
+        )
+    }
+}
+
+impl From<(Arc<Extensions>, Request)> for Context {
+    #[inline]
+    fn from((state, request): (Arc<Extensions>, Request)) -> Context {
         Context {
             parameters: Parameters::new(),
             request,

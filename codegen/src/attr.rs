@@ -16,15 +16,14 @@ pub struct Service {
     pub path: Option<Path>,
 }
 
-fn inputs<'a, I>(path: &'a Path, inputs: I) -> impl Iterator<Item = TokenStream> + 'a
+fn inputs<'a, I>(path: &'a Path, inputs: I) -> TokenStream
 where
     I: Clone + Iterator<Item = &'a FnArg> + 'a,
 {
     let mut params = path.params(inputs.clone()).peekable();
     let mut scope = vec![quote! { next }, quote! { context }];
-
-    inputs.filter_map(move |input| match input {
-        FnArg::Receiver(_) => Some(quote! { &service }),
+    let argument = inputs.filter_map(move |input| match input {
+        FnArg::Receiver(_) => Some(quote! { service }),
         FnArg::Typed(_) => {
             if params.peek().is_some() {
                 let Param { name, .. } = params.next()?;
@@ -33,7 +32,22 @@ where
                 scope.pop()
             }
         }
-    })
+    });
+
+    quote! {
+        #(#argument),*
+    }
+}
+
+fn receiver<'a, I>(mut inputs: I) -> Option<&'a mut FnArg>
+where
+    I: Iterator<Item = &'a mut FnArg>,
+{
+    if let input @ &mut FnArg::Receiver(_) = inputs.next()? {
+        Some(input)
+    } else {
+        None
+    }
 }
 
 impl Expand<ImplItemMethod> for Http {
@@ -43,10 +57,9 @@ impl Expand<ImplItemMethod> for Http {
         let arguments = inputs(path, item.sig.inputs.iter());
         let target = &item.sig.ident;
 
-        if let Some(FnArg::Receiver(_)) = item.sig.inputs.iter().next() {
-            service = quote! {
-                let service = std::sync::Arc::clone(&service);
-            };
+        if let Some(input) = receiver(item.sig.inputs.iter_mut()) {
+            service = quote! { let service = std::sync::Arc::clone(&service); };
+            *input = syn::parse_quote! { self: std::sync::Arc<Self> };
         }
 
         Ok(quote! {{
@@ -54,7 +67,7 @@ impl Expand<ImplItemMethod> for Http {
             location.at(#path).expose(#verb, move |context: via::Context, next: via::Next| {
                 #service
                 async move {
-                    via::Respond::respond(Self::#target(#(#arguments),*).await)
+                    via::Respond::respond(Self::#target(#arguments).await)
                 }
             });
         }})
@@ -76,17 +89,11 @@ impl Expand<ItemFn> for Http {
             #[derive(Clone, Copy, Debug)]
             #vis struct #ident;
 
-            impl via::Middleware for #ident {
-                fn call(&self, context: via::Context, next: via::Next) -> via::Future {
-                    Box::pin(async move {
-                        via::Respond::respond(#target(#(#arguments),*).await)
-                    })
-                }
-            }
-
             impl via::Service for #ident {
                 fn mount(self: std::sync::Arc<Self>, location: &mut via::Location) {
-                    location.at(#path).expose(#verb, *self);
+                    location.at(#path).expose(#verb, |context: via::Context, next: via::Next| async move {
+                        via::Respond::respond(#target(#arguments).await)
+                    });
                 }
             }
         })

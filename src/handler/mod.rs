@@ -2,51 +2,50 @@ mod context;
 pub mod respond;
 
 use crate::Result;
-use std::{collections::VecDeque, pin::Pin};
+use futures::future::BoxFuture;
+use std::{collections::VecDeque, sync::Arc};
 
 pub use self::{
     context::*,
     respond::{Respond, Response},
 };
 
-pub(crate) type DynMiddleware = Box<dyn Middleware>;
-#[doc(hidden)]
-pub type Future = Pin<Box<dyn std::future::Future<Output = Result> + Send>>;
+pub(crate) type ArcMiddleware = Arc<dyn Middleware>;
 
 pub trait Middleware: Send + Sync + 'static {
-    fn call<'a>(&'a self, context: Context, next: Next<'a>) -> Future;
+    fn call(&self, context: Context, next: Next) -> BoxFuture<'static, Result>;
 }
 
-pub struct Next<'a> {
-    stack: VecDeque<&'a DynMiddleware>,
+pub struct Next {
+    stack: VecDeque<ArcMiddleware>,
 }
 
 impl<F, T> Middleware for T
 where
     F::Output: Respond,
     F: std::future::Future + Send + 'static,
-    T: for<'a> Fn(Context, Next<'a>) -> F + Send + Sync + 'static,
+    T: Fn(Context, Next) -> F + Send + Sync + 'static,
 {
     #[inline]
-    fn call(&self, context: Context, next: Next) -> Future {
+    fn call(&self, context: Context, next: Next) -> BoxFuture<'static, Result> {
         let future = self(context, next);
         Box::pin(async { future.await.respond() })
     }
 }
 
-impl<'a> Next<'a> {
+impl Next {
     #[inline]
-    pub(crate) fn new<T>(stack: T) -> Next<'a>
+    pub(crate) fn new<'a, I>(stack: I) -> Next
     where
-        T: Iterator<Item = &'a DynMiddleware>,
+        I: Iterator<Item = &'a ArcMiddleware>,
     {
         Next {
-            stack: stack.collect(),
+            stack: stack.cloned().collect(),
         }
     }
 
     #[inline]
-    pub fn call(mut self, context: Context) -> Future {
+    pub fn call(mut self, context: Context) -> BoxFuture<'static, Result> {
         if let Some(middleware) = self.stack.pop_front() {
             middleware.call(context, self)
         } else {

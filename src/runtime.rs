@@ -1,23 +1,24 @@
-use crate::{App, Body, Error, Response};
-use futures::future::{ready, FutureExt, Map, Ready};
+use crate::{http::Extensions, routing::Router, App, Body, Response};
+use futures::future::{ready, BoxFuture, FutureExt, Map, Ready};
 use hyper::service::Service as HyperService;
-use std::{convert::Infallible, sync::Arc, task::*};
+use std::{convert::Infallible, ops::Deref, sync::Arc, task::*};
 
 type Request = crate::http::Request<hyper::Body>;
 type Result<T = Response, E = Infallible> = std::result::Result<T, E>;
 
-pub struct MakeService {
-    service: Service,
-}
+pub struct MakeService(Service);
 
-pub struct Service {
-    app: Arc<App>,
+pub struct Service(Arc<Value>);
+
+pub struct Value {
+    router: Router,
+    state: Arc<Extensions>,
 }
 
 impl From<Service> for MakeService {
     #[inline]
     fn from(service: Service) -> MakeService {
-        MakeService { service }
+        MakeService(service)
     }
 }
 
@@ -40,29 +41,40 @@ impl<T> HyperService<T> for MakeService {
 
     #[inline]
     fn call(&mut self, _: T) -> Self::Future {
-        ready(Ok(self.service.clone()))
+        let MakeService(service) = self;
+        ready(Ok(service.clone()))
     }
 }
 
 impl Clone for Service {
     #[inline]
     fn clone(&self) -> Service {
-        Service {
-            app: Arc::clone(&self.app),
-        }
+        Service(Arc::clone(&self.0))
+    }
+}
+
+impl Deref for Service {
+    type Target = Value;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
 impl From<App> for Service {
     #[inline]
     fn from(app: App) -> Service {
-        Service { app: Arc::new(app) }
+        let App { router, state } = app;
+        let state = Arc::new(state);
+
+        Service(Arc::new(Value { router, state }))
     }
 }
 
 impl HyperService<Request> for Service {
     type Error = Infallible;
-    type Future = Map<crate::Future, fn(Result<Response, Error>) -> Result>;
+    type Future = Map<BoxFuture<'static, crate::Result>, fn(crate::Result) -> Result>;
     type Response = Response;
 
     #[inline]
@@ -73,10 +85,13 @@ impl HyperService<Request> for Service {
     #[inline]
     fn call(&mut self, request: Request) -> Self::Future {
         let request = request.map(Body);
+        let state = self.state.clone();
 
-        self.app.call(request).map(|result| match result {
-            Ok(response) => Ok(response),
-            Err(error) => Ok(error.into()),
-        })
+        self.router
+            .visit((state, request).into())
+            .map(|result| match result {
+                Ok(response) => Ok(response),
+                Err(error) => Ok(error.into()),
+            })
     }
 }

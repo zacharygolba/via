@@ -1,5 +1,7 @@
 use crate::{
-    http::header::{self, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue},
+    http::header::{
+        self, HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue,
+    },
     Error,
 };
 use hyper::body::Body;
@@ -26,6 +28,14 @@ pub trait Respond: Sized {
     }
 
     #[inline]
+    fn headers(self, headers: HeaderMap) -> Headers<Self> {
+        Headers {
+            headers,
+            value: self,
+        }
+    }
+
+    #[inline]
     fn status(self, value: u16) -> StatusCode<Self> {
         StatusCode(value, self)
     }
@@ -35,6 +45,11 @@ pub struct Json(Result<Vec<u8>, Error>);
 
 pub struct Header<T: Respond> {
     entry: Result<(HeaderName, HeaderValue), Error>,
+    value: T,
+}
+
+pub struct Headers<T: Respond> {
+    headers: HeaderMap,
     value: T,
 }
 
@@ -67,10 +82,20 @@ impl Respond for Json {
 impl<T: Respond> Respond for Header<T> {
     #[inline]
     fn respond(self) -> Result<Response, Error> {
-        let (key, value) = self.entry?;
         let mut response = self.value.respond()?;
+        let (key, value) = self.entry?;
 
         response.headers_mut().append(key, value);
+        Ok(response)
+    }
+}
+
+impl<T: Respond> Respond for Headers<T> {
+    #[inline]
+    fn respond(self) -> Result<Response, Error> {
+        let mut response = self.value.respond()?;
+
+        response.headers_mut().extend(self.headers);
         Ok(response)
     }
 }

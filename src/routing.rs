@@ -1,32 +1,37 @@
-use crate::{handler::DynMiddleware, http::Extensions, Middleware};
+use crate::{handler::ArcMiddleware, Context, Middleware, Next, Result};
+use futures::future::BoxFuture;
+use http::Extensions;
 use std::sync::Arc;
 use verbs::*;
-
-pub(crate) type Router = radr::Router<Endpoint>;
 
 pub trait Service: Send + Sync + 'static {
     fn mount(self: Arc<Self>, location: &mut Location);
 }
 
 pub struct Location<'a> {
-    pub(crate) state: &'a mut Extensions,
-    pub(crate) value: radr::Location<'a, Endpoint>,
+    state: &'a mut Extensions,
+    value: radr::Location<'a, Endpoint>,
 }
 
 #[derive(Default)]
 pub(crate) struct Endpoint {
-    pub(crate) verbs: Map<DynMiddleware>,
-    pub(crate) stack: Vec<DynMiddleware>,
+    verbs: Map<ArcMiddleware>,
+    stack: Vec<ArcMiddleware>,
+}
+
+#[derive(Default)]
+pub(crate) struct Router {
+    routes: radr::Router<Endpoint>,
 }
 
 impl Endpoint {
     pub fn expose(&mut self, verb: Verb, handler: impl Middleware) -> &mut Self {
-        self.verbs.insert(verb, Box::new(handler));
+        self.verbs.insert(verb, Arc::new(handler));
         self
     }
 
     pub fn middleware(&mut self, handler: impl Middleware) -> &mut Self {
-        self.stack.push(Box::new(handler));
+        self.stack.push(Arc::new(handler));
         self
     }
 }
@@ -53,5 +58,38 @@ impl<'a> Location<'a> {
     #[inline]
     pub fn mount(&mut self, service: impl Service) {
         Arc::new(service).mount(self);
+    }
+}
+
+impl Router {
+    #[inline]
+    pub fn at<'a>(&'a mut self, state: &'a mut Extensions, path: &'static str) -> Location<'a> {
+        Location {
+            state,
+            value: self.routes.at(path),
+        }
+    }
+
+    #[inline]
+    pub fn visit(&self, mut context: Context) -> BoxFuture<'static, Result> {
+        let (parameters, method, path) = context.locate();
+        let matches = self.routes.visit(path).flat_map(|matched| {
+            let verbs = matched.verbs.get(if matched.exact {
+                method.into()
+            } else {
+                Verb::none()
+            });
+
+            match matched.param {
+                Some(("", _)) | Some((_, "")) | None => {}
+                Some((name, value)) => {
+                    parameters.insert(name, value.to_owned());
+                }
+            }
+
+            matched.stack.iter().chain(verbs)
+        });
+
+        Next::new(matches).call(context)
     }
 }
