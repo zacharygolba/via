@@ -4,7 +4,6 @@ use quote::{format_ident, quote};
 use syn::{
     parse::{Error, Parse, ParseStream},
     punctuated::Punctuated,
-    spanned::Spanned,
     Expr, FnArg, ImplItem, ImplItemMacro, ImplItemMethod, ItemFn, ItemImpl, LitStr, Token,
 };
 
@@ -17,27 +16,24 @@ pub struct Service {
     pub path: Option<Path>,
 }
 
-fn inputs<'a, I>(path: &'a Path, inputs: I) -> TokenStream
+fn inputs<'a, I>(path: &'a Path, inputs: I) -> impl Iterator<Item = TokenStream> + 'a
 where
     I: Clone + Iterator<Item = &'a FnArg> + 'a,
 {
-    let mut context = Some(quote! { context });
     let mut params = path.params(inputs.clone()).peekable();
-    let argument = inputs.filter_map(move |input| match input {
+    let mut scope = vec![quote! { next }, quote! { context }];
+
+    inputs.filter_map(move |input| match input {
         FnArg::Receiver(_) => Some(quote! { &service }),
         FnArg::Typed(_) => {
             if params.peek().is_some() {
                 let Param { name, .. } = params.next()?;
                 Some(quote! { context.param(#name)? })
             } else {
-                context.take()
+                scope.pop()
             }
         }
-    });
-
-    quote! {
-        #(#argument),*
-    }
+    })
 }
 
 impl Expand<ImplItemMethod> for Http {
@@ -53,19 +49,12 @@ impl Expand<ImplItemMethod> for Http {
             };
         }
 
-        if item.sig.asyncness.is_none() {
-            return Err(Error::new(
-                item.sig.span(),
-                "the http attribute macro can only be applied to async methods",
-            ));
-        }
-
         Ok(quote! {{
-            let service = std::sync::Arc::clone(&self);
+            #service
             location.at(#path).expose(#verb, move |context: via::Context, next: via::Next| {
                 #service
                 async move {
-                    via::Respond::respond(Self::#target(#arguments).await)
+                    via::Respond::respond(Self::#target(#(#arguments),*).await)
                 }
             });
         }})
@@ -80,13 +69,6 @@ impl Expand<ItemFn> for Http {
         let ident = std::mem::replace(&mut item.sig.ident, target.clone());
         let vis = &item.vis;
 
-        if item.sig.asyncness.is_none() {
-            return Err(Error::new(
-                item.sig.span(),
-                "the http attribute macro can only be applied to async functions",
-            ));
-        }
-
         Ok(quote! {
             #item
 
@@ -97,7 +79,7 @@ impl Expand<ItemFn> for Http {
             impl via::Middleware for #ident {
                 fn call(&self, context: via::Context, next: via::Next) -> via::Future {
                     Box::pin(async move {
-                        via::Respond::respond(#target(#arguments).await)
+                        via::Respond::respond(#target(#(#arguments),*).await)
                     })
                 }
             }
@@ -150,6 +132,7 @@ impl Expand<ItemImpl> for Service {
             impl via::Service for #ty {
                 fn mount(self: std::sync::Arc<Self>, location: &mut via::Location) {
                     #(let mut location = location.at(#path);)*
+                    let service = self;
                     #(#statements)*
                 }
             }
