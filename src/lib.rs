@@ -8,6 +8,7 @@ pub mod helpers;
 pub mod prelude;
 
 use http::Extensions;
+use std::net::ToSocketAddrs;
 
 pub use self::{error::*, handler::*, routing::*};
 pub use codegen::*;
@@ -18,6 +19,10 @@ pub struct App {
     router: Router,
     state: Extensions,
 }
+
+/// A marker trait used to describe types that can be injected into the global
+/// state of an application.
+pub trait State: Send + Sync + 'static {}
 
 #[macro_export]
 macro_rules! middleware {
@@ -39,8 +44,12 @@ impl App {
     }
 
     #[inline]
-    pub async fn listen(self) -> Result<()> {
-        server::serve(self).await
+    pub async fn listen(self, address: impl ToSocketAddrs) -> Result<()> {
+        if let Some(address) = address.to_socket_addrs()?.next() {
+            server::serve(self, address).await
+        } else {
+            todo!()
+        }
     }
 
     #[inline]
@@ -54,10 +63,9 @@ impl App {
     }
 
     #[inline]
-    pub fn state<T>(&mut self, value: T)
-    where
-        T: Send + Sync + 'static,
-    {
+    pub fn state(&mut self, value: impl State) {
         self.state.insert(value);
     }
 }
+
+impl<T: Send + Sync + 'static> State for T {}
