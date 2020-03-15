@@ -1,5 +1,4 @@
-use crate::{Context, Middleware, Next, Result};
-use futures::future::BoxFuture;
+use crate::{BoxFuture, Context, Middleware, Next, Result};
 use http::header::{self, HeaderMap, HeaderValue};
 
 #[derive(Default)]
@@ -8,10 +7,10 @@ pub struct Cors {
 }
 
 #[inline]
-pub fn cors(configure: impl FnOnce(&mut Cors)) -> Cors {
+pub fn cors(f: impl FnOnce(&mut Cors)) -> Cors {
     let mut middleware = Default::default();
 
-    configure(&mut middleware);
+    f(&mut middleware);
     middleware
 }
 
@@ -26,7 +25,7 @@ impl Cors {
 }
 
 impl Middleware for Cors {
-    fn call(&self, context: Context, next: Next) -> BoxFuture<'static, Result> {
+    fn call(&self, context: Context, next: Next) -> BoxFuture<Result> {
         let headers = self.headers.clone();
 
         Box::pin(async move {

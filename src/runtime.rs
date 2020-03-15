@@ -1,31 +1,25 @@
-use crate::{http::Extensions, routing::Router, App, Body, Response};
-use futures::future::{ready, BoxFuture, FutureExt, Map, Ready};
+use crate::{Application, Body, BoxFuture, Response};
+use futures::future::{ready, FutureExt, Map, Ready};
 use hyper::service::Service as HyperService;
-use std::{convert::Infallible, ops::Deref, sync::Arc, task::*};
+use std::{convert::Infallible, sync::Arc, task::*};
 
 type Request = crate::http::Request<hyper::Body>;
 type Result<T = Response, E = Infallible> = std::result::Result<T, E>;
 
-pub struct MakeService(Service);
-
-pub struct Service(Arc<Value>);
-
-pub struct Value {
-    router: Router,
-    state: Arc<Extensions>,
+pub struct MakeService {
+    service: Service,
 }
 
-impl From<Service> for MakeService {
-    #[inline]
-    fn from(service: Service) -> MakeService {
-        MakeService(service)
-    }
+pub struct Service {
+    app: Arc<Application>,
 }
 
-impl From<App> for MakeService {
+impl From<Application> for MakeService {
     #[inline]
-    fn from(app: App) -> MakeService {
-        Service::from(app).into()
+    fn from(app: Application) -> MakeService {
+        MakeService {
+            service: app.into(),
+        }
     }
 }
 
@@ -41,40 +35,29 @@ impl<T> HyperService<T> for MakeService {
 
     #[inline]
     fn call(&mut self, _: T) -> Self::Future {
-        let MakeService(service) = self;
-        ready(Ok(service.clone()))
+        ready(Ok(self.service.clone()))
     }
 }
 
 impl Clone for Service {
     #[inline]
     fn clone(&self) -> Service {
-        Service(Arc::clone(&self.0))
+        Service {
+            app: Arc::clone(&self.app),
+        }
     }
 }
 
-impl Deref for Service {
-    type Target = Value;
-
+impl From<Application> for Service {
     #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<App> for Service {
-    #[inline]
-    fn from(app: App) -> Service {
-        let App { router, state } = app;
-        let state = Arc::new(state);
-
-        Service(Arc::new(Value { router, state }))
+    fn from(app: Application) -> Service {
+        Service { app: Arc::new(app) }
     }
 }
 
 impl HyperService<Request> for Service {
     type Error = Infallible;
-    type Future = Map<BoxFuture<'static, crate::Result>, fn(crate::Result) -> Result>;
+    type Future = Map<BoxFuture<crate::Result>, fn(crate::Result) -> Result>;
     type Response = Response;
 
     #[inline]
@@ -84,14 +67,11 @@ impl HyperService<Request> for Service {
 
     #[inline]
     fn call(&mut self, request: Request) -> Self::Future {
-        let request = request.map(Body);
-        let state = self.state.clone();
+        let context = self.app.context(request.map(Body));
 
-        self.router
-            .visit((state, request).into())
-            .map(|result| match result {
-                Ok(response) => Ok(response),
-                Err(error) => Ok(error.into()),
-            })
+        self.app.routes.visit(context).map(|result| match result {
+            Ok(response) => Ok(response),
+            Err(error) => Ok(error.into()),
+        })
     }
 }

@@ -1,37 +1,29 @@
-use crate::{handler::ArcMiddleware, Context, Middleware, Next, Result};
-use futures::future::BoxFuture;
-use http::Extensions;
+use crate::{ArcMiddleware, BoxFuture, Context, Middleware, Next, Result, State};
+use radr::{Label, Location};
 use std::sync::Arc;
 use verbs::*;
 
 pub trait Service: Send + Sync + 'static {
-    fn mount(self: Arc<Self>, location: &mut Location);
+    fn mount(self: Arc<Self>, router: &mut Router);
 }
 
-pub struct Location<'a> {
-    state: &'a mut Extensions,
-    value: radr::Location<'a, Endpoint>,
+pub struct Router<'a> {
+    state: &'a mut State,
+    value: Location<'a, Endpoint>,
 }
 
 #[derive(Default)]
-pub(crate) struct Endpoint {
+pub(crate) struct Routes {
+    router: radr::Router<Endpoint>,
+}
+
+#[derive(Default)]
+struct Endpoint {
     verbs: Map<ArcMiddleware>,
     stack: Vec<ArcMiddleware>,
 }
 
-#[derive(Default)]
-pub(crate) struct Router {
-    routes: radr::Router<Endpoint>,
-}
-
-impl<'a> Location<'a> {
-    pub fn at(&mut self, path: &'static str) -> Location {
-        Location {
-            state: self.state,
-            value: self.value.at(path),
-        }
-    }
-
+impl<'a> Router<'a> {
     #[doc(hidden)]
     pub fn expose(&mut self, verb: Verb, middleware: impl Middleware) {
         self.value.verbs.insert(verb, Arc::new(middleware));
@@ -41,28 +33,35 @@ impl<'a> Location<'a> {
         self.value.stack.push(Arc::new(middleware));
     }
 
+    pub fn namespace(&mut self, pattern: &'static str) -> Router {
+        Router {
+            state: self.state,
+            value: self.value.at(pattern),
+        }
+    }
+
     pub fn service(&mut self, service: impl Service) {
         Service::mount(Arc::new(service), self);
     }
 }
 
-impl Router {
+impl Routes {
     #[inline]
-    pub fn at<'a>(&'a mut self, state: &'a mut Extensions, path: &'static str) -> Location<'a> {
-        Location {
+    pub fn namespace<'a>(&'a mut self, state: &'a mut State, pattern: &'static str) -> Router<'a> {
+        Router {
             state,
-            value: self.routes.at(path),
+            value: self.router.at(pattern),
         }
     }
 
     #[inline]
-    pub fn visit(&self, mut context: Context) -> BoxFuture<'static, Result> {
+    pub fn visit(&self, mut context: Context) -> BoxFuture<Result> {
         let (parameters, method, path) = context.locate();
-        let matches = self.routes.visit(path).flat_map(|matched| {
-            let verbs = matched.verbs.get(if matched.exact {
-                method.into()
-            } else {
-                Verb::none()
+        let matches = self.router.visit(path).flat_map(|matched| {
+            let verbs = matched.verbs.get(match matched.label {
+                Label::CatchAll(_) => method.into(),
+                _ if matched.exact => method.into(),
+                _ => Verb::none(),
             });
 
             match matched.param {

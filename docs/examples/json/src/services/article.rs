@@ -18,12 +18,6 @@ impl ArticleService {
         Default::default()
     }
 
-    middleware! {
-        helpers::cors(|allow| {
-            allow.origin("*");
-        }),
-    }
-
     #[http(GET, "/")]
     async fn index(&self) -> impl Respond {
         let store = self.store.read().await;
@@ -78,7 +72,7 @@ impl ArticleService {
     async fn destroy(&self, id: Uuid) -> impl Respond {
         let mut store = self.store.write().await;
 
-        respond::status(match store.remove(&id) {
+        ().status(match store.remove(&id) {
             Some(_) => 204,
             None => 404,
         })

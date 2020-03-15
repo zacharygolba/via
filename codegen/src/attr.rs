@@ -65,7 +65,7 @@ impl Expand<ImplItemMethod> for Http {
 
         Ok(quote! {{
             #service
-            location.at(#path).expose(#verb, move |context: via::Context, next: via::Next| {
+            router.namespace(#path).expose(#verb, move |context: via::Context, next: via::Next| {
                 #service
                 async move {
                     via::Respond::respond(Self::#target(#arguments).await)
@@ -115,28 +115,29 @@ impl Parse for Http {
 
 impl Expand<ItemImpl> for Service {
     fn expand(&self, item: &mut ItemImpl) -> Result<TokenStream, Error> {
-        let mut statements = Vec::new();
+        let mut middleware = Vec::new();
+        let mut routes = Vec::new();
         let path = self.path.iter();
         let ty = &item.self_ty;
 
         for item in &mut item.items {
-            statements.push(if let ImplItem::Macro(m) = item {
-                self.expand(m)?
+            if let ImplItem::Macro(m) = item {
+                middleware.push(self.expand(m)?);
             } else if let ImplItem::Method(m) = item {
-                self.expand(m)?
-            } else {
-                continue;
-            });
+                routes.push(self.expand(m)?);
+            }
         }
 
         Ok(quote! {
             #item
 
             impl via::Service for #ty {
-                fn mount(self: std::sync::Arc<Self>, location: &mut via::Location) {
-                    #(let mut location = location.at(#path);)*
+                fn mount(self: std::sync::Arc<Self>, router: &mut via::Router) {
+                    #(let mut router = router.namespace(#path);)*
                     let service = self;
-                    #(#statements)*
+
+                    #(#routes)*
+                    #(#middleware)*
                 }
             }
         })
@@ -145,18 +146,16 @@ impl Expand<ItemImpl> for Service {
 
 impl Expand<ImplItemMacro> for Service {
     fn expand(&self, item: &mut ImplItemMacro) -> Result<TokenStream, Error> {
-        if item.mac.path != MacroPath::Middleware {
-            return Ok(TokenStream::new());
+        type List = Punctuated<Expr, Token![,]>;
+
+        let mac = &item.mac;
+
+        if let Some(method) = MacroPath::method(&mac.path) {
+            let value = mac.parse_body_with(List::parse_terminated)?.into_iter();
+            Ok(quote! { #(router.#method(#value);)* })
+        } else {
+            Ok(TokenStream::new())
         }
-
-        let middleware = item
-            .mac
-            .parse_body_with(Punctuated::<Expr, Token![,]>::parse_terminated)?
-            .into_iter();
-
-        Ok(quote! {
-            #(location.middleware(#middleware);)*
-        })
     }
 }
 

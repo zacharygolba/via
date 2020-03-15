@@ -1,8 +1,8 @@
-use crate::{runtime::MakeService, App, Result};
+use crate::{runtime::MakeService, Application, Result};
 use hyper::Server;
 use std::net::SocketAddr;
 
-pub async fn serve(app: App, address: SocketAddr) -> Result<()> {
+pub async fn serve(app: Application, address: SocketAddr) -> Result<()> {
     let server = Server::bind(&address).serve(MakeService::from(app));
     let ctrlc = async {
         let message = "failed to install CTRL+C signal handler";

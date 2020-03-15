@@ -1,10 +1,10 @@
-use crate::Error;
+use crate::{error::Error, respond, Result, State, Value};
 use bytes::buf::ext::{BufExt, Reader};
 use http::header::{AsHeaderName, HeaderName, HeaderValue};
-use http::{Extensions, Method, Uri, Version};
+use http::{Method, Uri, Version};
 use hyper::body::{Body as HyperBody, Buf};
 use serde::de::DeserializeOwned;
-use std::{io::Read, str::FromStr, sync::Arc};
+use std::{io::Read, str::FromStr};
 
 type Parameters = indexmap::IndexMap<&'static str, String>;
 pub(crate) type Request = http::Request<Body>;
@@ -14,7 +14,7 @@ pub struct Body(pub(crate) HyperBody);
 pub struct Context {
     pub(crate) parameters: Parameters,
     pub(crate) request: Request,
-    pub(crate) state: Arc<Extensions>,
+    pub(crate) state: State,
 }
 
 impl Body {
@@ -22,13 +22,12 @@ impl Body {
     //     Ok(hyper::body::to_bytes(self.take()).await?)
     // }
 
-    pub async fn json<T: DeserializeOwned>(&mut self) -> Result<T, Error> {
+    pub async fn json<'a, T: DeserializeOwned>(&'a mut self) -> Result<T> {
         let reader = self.reader().await?;
-
-        serde_json::from_reader(reader).map_err(|error| Error::from(error).json())
+        serde_json::from_reader(reader).map_err(Error::from)
     }
 
-    pub async fn text(&mut self) -> Result<String, Error> {
+    pub async fn text(&mut self) -> Result<String> {
         let mut reader = self.reader().await?;
         let mut value = String::new();
 
@@ -37,7 +36,7 @@ impl Body {
     }
 
     #[inline]
-    async fn reader(&mut self) -> Result<Reader<impl Buf>, Error> {
+    async fn reader(&mut self) -> Result<Reader<impl Buf>> {
         let value = std::mem::replace(&mut self.0, Default::default());
         Ok(hyper::body::aggregate(value).await?.reader())
     }
@@ -65,10 +64,12 @@ impl Context {
     }
 
     #[inline]
-    pub fn local<T>(&self) -> Option<&T>
-    where
-        T: Send + Sync + 'static,
-    {
+    pub fn global<T: Value>(&self) -> Result<&T, Error> {
+        self.state.get()
+    }
+
+    #[inline]
+    pub fn local<T: Value>(&self) -> Option<&T> {
         self.request.extensions().get()
     }
 
@@ -95,14 +96,6 @@ impl Context {
     }
 
     #[inline]
-    pub fn state<T>(&self) -> Result<&T, Error>
-    where
-        T: Send + Sync + 'static,
-    {
-        Ok(self.state.get::<T>().unwrap())
-    }
-
-    #[inline]
     pub fn uri(&self) -> &Uri {
         self.request.uri()
     }
@@ -124,9 +117,9 @@ impl Context {
     }
 }
 
-impl From<(Arc<Extensions>, Request)> for Context {
+impl From<(State, Request)> for Context {
     #[inline]
-    fn from((state, request): (Arc<Extensions>, Request)) -> Context {
+    fn from((state, request): (State, Request)) -> Context {
         Context {
             parameters: Parameters::new(),
             request,

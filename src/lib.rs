@@ -1,48 +1,56 @@
-mod error;
 mod handler;
 mod routing;
 mod runtime;
 mod server;
+mod state;
+mod util;
 
-pub mod helpers;
+pub mod error;
+pub mod plugin;
 pub mod prelude;
 
-use http::Extensions;
 use std::net::ToSocketAddrs;
 
-pub use self::{error::*, handler::*, routing::*};
+pub(crate) use self::{
+    handler::{ArcMiddleware, Request},
+    routing::Routes,
+    state::State,
+};
+
+#[doc(inline)]
+pub use self::{error::Result, handler::*, routing::*, state::Value};
 pub use codegen::*;
 pub use http;
+
+#[doc(hidden)]
 pub use verbs;
 
-pub struct App {
-    router: Router,
-    state: Extensions,
-}
+pub type BoxFuture<T> = futures::future::BoxFuture<'static, T>;
 
-/// A marker trait used to describe types that can be injected into the global
-/// state of an application.
-pub trait State: Send + Sync + 'static {}
+pub struct Application {
+    routes: Routes,
+    state: State,
+}
 
 #[macro_export]
 macro_rules! middleware {
-    { $($handler:expr),* $(,)* } => {};
+    { $($middleware:expr),* $(,)* } => {};
+}
+
+#[macro_export]
+macro_rules! services {
+    { $($service:expr),* $(,)* } => {};
 }
 
 #[inline]
-pub fn new() -> App {
-    App {
-        router: Default::default(),
+pub fn new() -> Application {
+    Application {
+        routes: Default::default(),
         state: Default::default(),
     }
 }
 
-impl App {
-    #[inline]
-    pub fn at(&mut self, path: &'static str) -> Location {
-        self.router.at(&mut self.state, path)
-    }
-
+impl Application {
     #[inline]
     pub async fn listen(self, address: impl ToSocketAddrs) -> Result<()> {
         if let Some(address) = address.to_socket_addrs()?.next() {
@@ -53,19 +61,29 @@ impl App {
     }
 
     #[inline]
-    pub fn middleware(&mut self, handler: impl Middleware) {
-        self.at("/").middleware(handler);
+    pub fn middleware(&mut self, middleware: impl Middleware) {
+        self.namespace("/").middleware(middleware);
+    }
+
+    #[inline]
+    pub fn namespace(&mut self, pattern: &'static str) -> Router {
+        self.routes.namespace(&mut self.state, pattern)
     }
 
     #[inline]
     pub fn service(&mut self, service: impl Service) {
-        self.at("/").service(service);
+        self.namespace("/").service(service);
     }
 
     #[inline]
-    pub fn state(&mut self, value: impl State) {
+    pub fn state(&mut self, value: impl Value) {
         self.state.insert(value);
     }
 }
 
-impl<T: Send + Sync + 'static> State for T {}
+impl Application {
+    #[inline]
+    pub(crate) fn context(&self, request: Request) -> Context {
+        (self.state.clone(), request).into()
+    }
+}

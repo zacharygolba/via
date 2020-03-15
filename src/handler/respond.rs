@@ -1,15 +1,16 @@
-use crate::{
-    http::header::{self, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue},
-    Error, Result,
+use crate::Result;
+use http::{
+    header::{HeaderName, InvalidHeaderName, InvalidHeaderValue},
+    HeaderValue, StatusCode,
 };
-use hyper::body::Body;
+use hyper::Body;
 use serde::Serialize;
 use std::convert::{TryFrom, TryInto};
 
 pub type Response = http::Response<Body>;
 
 pub trait Respond: Sized {
-    fn respond(self) -> Result<Response, Error>;
+    fn respond(self) -> Result<Response>;
 
     #[inline]
     fn header<K, V>(self, key: K, value: V) -> Header<Self>
@@ -18,47 +19,89 @@ pub trait Respond: Sized {
         HeaderValue: TryFrom<V, Error = InvalidHeaderValue>,
     {
         Header {
+            chain: self,
             entry: Header::<Self>::entry(key, value),
-            value: self,
         }
     }
 
     #[inline]
-    fn status(self, value: u16) -> StatusCode<Self> {
-        StatusCode(value, self)
+    fn status(self, value: u16) -> Status<Self> {
+        Status { chain: self, value }
     }
 }
 
-pub struct Json(Result<Vec<u8>, Error>);
+#[non_exhaustive]
+pub enum Format {
+    Json(Result<Body>),
+    Html(Body),
+}
 
 pub struct Header<T: Respond> {
-    entry: Result<(HeaderName, HeaderValue), Error>,
-    value: T,
+    chain: T,
+    entry: Result<(HeaderName, HeaderValue)>,
 }
 
-pub struct StatusCode<T: Respond>(u16, T);
-
-#[inline]
-pub fn json<T: Serialize>(value: &T) -> Json {
-    Json(serde_json::to_vec(value).map_err(Error::from))
+pub struct Status<T: Respond> {
+    chain: T,
+    value: u16,
 }
 
 #[inline]
-pub fn status(code: u16) -> StatusCode<&'static str> {
-    StatusCode(code, "")
+pub fn html(body: impl Into<String>) -> Format {
+    Format::Html(Body::from(body.into()))
 }
 
-impl Respond for Json {
+#[inline]
+pub fn json(body: &impl Serialize) -> Format {
+    Format::Json(match serde_json::to_vec(body) {
+        Ok(bytes) => Ok(bytes.into()),
+        Err(e) => Err(e.into()),
+    })
+}
+
+macro_rules! media {
+    ($body:expr, $type:expr) => {{
+        use http::header::CONTENT_TYPE;
+
+        let mut response = Response::new($body);
+        let headers = response.headers_mut();
+
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static($type));
+        response
+    }};
+}
+
+impl Respond for &'static str {
     #[inline]
-    fn respond(self) -> Result<Response, Error> {
-        let mut response = Response::new(self.0?.into());
+    fn respond(self) -> Result<Response> {
+        Ok(media!(self.into(), "text/plain"))
+    }
+}
 
-        response.headers_mut().insert(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
+impl Respond for String {
+    #[inline]
+    fn respond(self) -> Result<Response> {
+        Ok(media!(self.into(), "text/plain"))
+    }
+}
 
+impl Respond for () {
+    #[inline]
+    fn respond(self) -> Result<Response> {
+        let mut response = Response::default();
+
+        *response.status_mut() = StatusCode::NO_CONTENT;
         Ok(response)
+    }
+}
+
+impl Respond for Format {
+    #[inline]
+    fn respond(self) -> Result<Response> {
+        Ok(match self {
+            Format::Html(body) => media!(body, "text/html"),
+            Format::Json(body) => media!(body?, "application/json"),
+        })
     }
 }
 
@@ -69,14 +112,17 @@ impl<T: Respond> Header<T> {
         HeaderName: TryFrom<K, Error = InvalidHeaderName>,
         HeaderValue: TryFrom<V, Error = InvalidHeaderValue>,
     {
-        Ok((HeaderName::try_from(key)?, HeaderValue::try_from(value)?))
+        let key = HeaderName::try_from(key)?;
+        let value = HeaderValue::try_from(value)?;
+
+        Ok((key, value))
     }
 }
 
 impl<T: Respond> Respond for Header<T> {
     #[inline]
-    fn respond(self) -> Result<Response, Error> {
-        let mut response = self.value.respond()?;
+    fn respond(self) -> Result<Response> {
+        let mut response = self.chain.respond()?;
         let (key, value) = self.entry?;
 
         response.headers_mut().append(key, value);
@@ -86,43 +132,25 @@ impl<T: Respond> Respond for Header<T> {
 
 impl Respond for Response {
     #[inline]
-    fn respond(self) -> Result<Response, Error> {
+    fn respond(self) -> Result<Response> {
         Ok(self)
     }
 }
 
-impl Respond for &'static str {
+impl<T: Respond> Respond for Result<T> {
     #[inline]
-    fn respond(self) -> Result<Response, Error> {
-        Ok(Response::new(self.into()))
-    }
-}
-
-impl Respond for String {
-    #[inline]
-    fn respond(self) -> Result<Response, Error> {
-        Ok(Response::new(self.into()))
-    }
-}
-
-impl<T: Respond, E> Respond for Result<T, E>
-where
-    Error: From<E>,
-    T: Respond,
-{
-    #[inline]
-    fn respond(self) -> Result<Response, Error> {
+    fn respond(self) -> Result<Response> {
         self?.respond()
     }
 }
 
-impl<T: Respond> Respond for StatusCode<T> {
+impl<T: Respond> Respond for Status<T> {
     #[inline]
-    fn respond(self) -> Result<Response, Error> {
-        let StatusCode(code, value) = self;
-        let mut response = value.respond()?;
+    fn respond(self) -> Result<Response> {
+        let mut response = self.chain.respond()?;
+        let status = self.value.try_into()?;
 
-        *response.status_mut() = code.try_into()?;
+        *response.status_mut() = status;
         Ok(response)
     }
 }

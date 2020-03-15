@@ -1,21 +1,7 @@
 use nom::error::{context, VerboseError};
 use proc_macro2::TokenStream;
 use std::cmp::PartialEq;
-use syn::{parse::Error, Path};
-
-thread_local! {
-    static HTTP: [Path; 3] = [
-        syn::parse_str("::via::http").unwrap(),
-        syn::parse_str("via::http").unwrap(),
-        syn::parse_str("http").unwrap(),
-    ];
-
-    static MIDDLEWARE: [Path; 3] = [
-        syn::parse_str("::via::middleware").unwrap(),
-        syn::parse_str("via::middleware").unwrap(),
-        syn::parse_str("middleware").unwrap(),
-    ];
-}
+use syn::{parse::Error, Ident, Path};
 
 pub type IResult<'a, T> = nom::IResult<&'a str, T, VerboseError<&'a str>>;
 
@@ -27,6 +13,7 @@ pub trait Expand<T> {
 pub enum MacroPath {
     Http,
     Middleware,
+    Services,
 }
 
 pub fn expand<T>(expander: &impl Expand<T>, item: &mut T) -> TokenStream {
@@ -48,14 +35,25 @@ where
     })
 }
 
+impl MacroPath {
+    pub fn method(path: &Path) -> Option<Ident> {
+        if *path == MacroPath::Middleware {
+            Some(syn::parse_str("middleware").unwrap())
+        } else if *path == MacroPath::Services {
+            Some(syn::parse_str("service").unwrap())
+        } else {
+            None
+        }
+    }
+}
+
 impl PartialEq<Path> for MacroPath {
     fn eq(&self, other: &Path) -> bool {
-        let cmp = |array: &[Path; 3]| array.iter().any(|path| other == path);
-
-        match self {
-            MacroPath::Http => HTTP.with(cmp),
-            MacroPath::Middleware => MIDDLEWARE.with(cmp),
-        }
+        other.get_ident().map_or(false, |ident| match self {
+            MacroPath::Http => ident == "http",
+            MacroPath::Middleware => ident == "middleware",
+            MacroPath::Services => ident == "services",
+        })
     }
 }
 
