@@ -1,12 +1,16 @@
 use nom::error::{context, VerboseError};
 use proc_macro2::TokenStream;
 use std::cmp::PartialEq;
-use syn::{parse::Error, Ident, Path};
+use syn::{parse::Error, Ident, Pat, Path};
 
 pub type IResult<'a, T> = nom::IResult<&'a str, T, VerboseError<&'a str>>;
 
 pub trait Expand<T> {
     fn expand(&self, item: &mut T) -> Result<TokenStream, Error>;
+}
+
+pub trait Identify {
+    fn ident(&self) -> Option<&Ident>;
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -33,6 +37,22 @@ where
         Err(Error(e)) => Err(Failure(e)),
         result => result,
     })
+}
+
+impl Identify for Pat {
+    fn ident(&self) -> Option<&Ident> {
+        if let Pat::Ident(value) = self {
+            Some(&value.ident)
+        } else {
+            None
+        }
+    }
+}
+
+impl Identify for Path {
+    fn ident(&self) -> Option<&Ident> {
+        self.get_ident()
+    }
 }
 
 impl MacroPath {

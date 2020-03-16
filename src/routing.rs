@@ -4,9 +4,11 @@ use std::sync::Arc;
 use verbs::*;
 
 pub trait Service: Send + Sync + 'static {
+    #[doc(hidden)]
     fn mount(self: Arc<Self>, router: &mut Router);
 }
 
+#[doc(hidden)]
 pub struct Router<'a> {
     state: &'a mut State,
     value: Location<'a, Endpoint>,
@@ -33,6 +35,7 @@ impl<'a> Router<'a> {
         self.value.stack.push(Arc::new(middleware));
     }
 
+    #[doc(hidden)]
     pub fn namespace(&mut self, pattern: &'static str) -> Router {
         Router {
             state: self.state,
@@ -46,7 +49,7 @@ impl<'a> Router<'a> {
 }
 
 impl Routes {
-    #[inline]
+    #[doc(hidden)]
     pub fn namespace<'a>(&'a mut self, state: &'a mut State, pattern: &'static str) -> Router<'a> {
         Router {
             state,

@@ -4,6 +4,7 @@ use quote::quote;
 use syn::{
     parse::{Error, Parse, ParseStream},
     punctuated::Punctuated,
+    spanned::Spanned,
     Expr, FnArg, ImplItem, ImplItemMacro, ImplItemMethod, ItemFn, ItemImpl, LitStr, Token,
 };
 
@@ -25,14 +26,17 @@ where
     let mut scope = vec![quote! { next }, quote! { context }];
     let argument = inputs.filter_map(move |input| match input {
         FnArg::Receiver(_) => Some(quote! { service }),
-        FnArg::Typed(_) => {
-            if params.peek().is_some() {
-                let Param { name, .. } = params.next()?;
+        FnArg::Typed(_) => match params.next() {
+            Some(Param { ident, pat, .. }) if pat.ident() == Some(ident) => {
+                let name = ident.to_string();
                 Some(quote! { context.param(#name)? })
-            } else {
-                scope.pop()
             }
-        }
+            Some(Param { ident, pat, .. }) => {
+                let message = format!("expected identifer {}", ident);
+                Some(Error::new(pat.span(), message).to_compile_error())
+            }
+            None => scope.pop(),
+        },
     });
 
     quote! {
@@ -55,8 +59,13 @@ impl Expand<ImplItemMethod> for Http {
     fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
         let Http { path, verb, .. } = self;
         let mut service = quote! {};
+        let mut router = quote! { router };
         let arguments = expand_arguments(path, item.sig.inputs.iter());
         let target = &item.sig.ident;
+
+        if path != "/" {
+            router = quote! { router.namespace(#path) };
+        }
 
         if let Some(input) = get_mut_receiver(item.sig.inputs.iter_mut()) {
             service = quote! { let service = std::sync::Arc::clone(&service); };
@@ -65,7 +74,7 @@ impl Expand<ImplItemMethod> for Http {
 
         Ok(quote! {{
             #service
-            router.namespace(#path).expose(#verb, move |context: via::Context, next: via::Next| {
+            #router.expose(#verb, move |context: via::Context, next: via::Next| {
                 #service
                 async move {
                     via::Respond::respond(Self::#target(#arguments).await)
@@ -88,7 +97,7 @@ impl Expand<ItemFn> for Http {
 
             #[via::service]
             impl #ident {
-                #[via::http(#meta)]
+                #[http(#meta)]
                 #item
             }
         })
@@ -165,8 +174,14 @@ impl Expand<ImplItemMethod> for Service {
         let option = iter.position(|attr| attr.path == MacroPath::Http);
 
         if let Some(index) = option {
-            let attr = item.attrs.remove(index);
-            attr.parse_args::<Http>()?.expand(item)
+            let input = item.attrs.remove(index);
+            let mut http = input.parse_args::<Http>()?;
+
+            if let Some(path) = &self.path {
+                http.path = path.concat(&http.path);
+            }
+
+            http.expand(item)
         } else {
             Ok(TokenStream::new())
         }

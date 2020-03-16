@@ -1,10 +1,10 @@
-use crate::{error::Error, respond, Result, State, Value};
-use bytes::buf::ext::{BufExt, Reader};
+use crate::{error::Error, Result, State, Value};
+use bytes::buf::ext::BufExt;
 use http::header::{AsHeaderName, HeaderName, HeaderValue};
 use http::{Method, Uri, Version};
-use hyper::body::{Body as HyperBody, Buf};
+use hyper::body::Body as HyperBody;
 use serde::de::DeserializeOwned;
-use std::{io::Read, str::FromStr};
+use std::{io::Read, mem::replace, str::FromStr};
 
 type Parameters = indexmap::IndexMap<&'static str, String>;
 pub(crate) type Request = http::Request<Body>;
@@ -18,27 +18,35 @@ pub struct Context {
 }
 
 impl Body {
-    // pub async fn bytes(&mut self) -> Result<Bytes, Error> {
-    //     Ok(hyper::body::to_bytes(self.take()).await?)
-    // }
+    #[inline]
+    pub async fn json<T>(&mut self) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        let reader = self.read().await?;
 
-    pub async fn json<'a, T: DeserializeOwned>(&'a mut self) -> Result<T> {
-        let reader = self.reader().await?;
-        serde_json::from_reader(reader).map_err(Error::from)
+        match serde_json::from_reader(reader) {
+            Ok(value) => Ok(value),
+            Err(e) => Err(e.into()),
+        }
     }
 
+    #[inline]
+    pub async fn read(&mut self) -> Result<impl Read> {
+        Ok(hyper::body::aggregate(self.take()).await?.reader())
+    }
+
+    #[inline]
     pub async fn text(&mut self) -> Result<String> {
-        let mut reader = self.reader().await?;
         let mut value = String::new();
 
-        reader.read_to_string(&mut value)?;
+        self.read().await?.read_to_string(&mut value)?;
         Ok(value)
     }
 
     #[inline]
-    async fn reader(&mut self) -> Result<Reader<impl Buf>> {
-        let value = std::mem::replace(&mut self.0, Default::default());
-        Ok(hyper::body::aggregate(value).await?.reader())
+    fn take(&mut self) -> HyperBody {
+        replace(&mut self.0, Default::default())
     }
 }
 

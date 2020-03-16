@@ -1,6 +1,7 @@
 use crate::{http::StatusCode, respond, util, Respond, Response};
 use serde_json::json;
 use std::{
+    convert::TryInto,
     error::Error as StdError,
     fmt::{self, Debug, Display, Formatter},
 };
@@ -17,11 +18,46 @@ pub struct Error {
     value: DynError,
 }
 
+#[macro_export]
+macro_rules! bail {
+    ($($tokens:tt)*) => {{
+        use $crate::error::Error;
+        let value = format!($($tokens)*);
+        return Err(Error::message(value));
+    }};
+}
+
+#[derive(Debug)]
+struct Bail {
+    message: String,
+}
+
 struct Wrapped {
     error: Error,
 }
 
+impl Display for Bail {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Display::fmt(&self.message, f)
+    }
+}
+
+impl StdError for Bail {
+    #[inline]
+    fn source(&self) -> Option<&Source> {
+        None
+    }
+}
+
 impl Error {
+    #[inline]
+    pub fn message(value: impl Into<String>) -> Error {
+        Error::from(Bail {
+            message: value.into(),
+        })
+    }
+
     #[inline]
     pub fn chain(self, error: impl Into<DynError>) -> Error {
         Error {
@@ -60,6 +96,20 @@ impl Error {
             Some(&**source)
         } else {
             None
+        }
+    }
+
+    #[inline]
+    pub fn status(mut self, value: u16) -> Error {
+        match &mut self.response {
+            Some(response) => {
+                *response.status_mut() = value.try_into().unwrap();
+                self
+            }
+            None => {
+                self.response = Some(Response::default());
+                self.status(value)
+            }
         }
     }
 }

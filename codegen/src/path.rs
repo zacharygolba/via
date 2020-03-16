@@ -11,7 +11,7 @@ use nom::{
 };
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
-use std::str::FromStr;
+use std::{iter::Extend, str::FromStr};
 use syn::{
     parse::{Error, Parse, ParseStream},
     FnArg, Ident, LitStr, Pat, Type,
@@ -20,7 +20,7 @@ use syn::{
 #[derive(Clone)]
 pub struct Param<'a> {
     pub ident: &'a Ident,
-    pub name: String,
+    pub pat: &'a Pat,
     pub ty: &'a Type,
 }
 
@@ -81,6 +81,16 @@ impl Part {
 }
 
 impl Path {
+    pub fn concat(&self, other: &Path) -> Path {
+        let own = self.params.iter().cloned();
+        let rest = other.params.iter().cloned();
+
+        Path {
+            params: own.chain(rest).collect(),
+            value: other.value.clone(),
+        }
+    }
+
     pub fn params<'a, I>(&'a self, iter: I) -> impl Iterator<Item = Param>
     where
         I: Iterator<Item = &'a FnArg>,
@@ -91,18 +101,15 @@ impl Path {
             iter.next();
         }
 
-        iter.zip(&self.params).filter_map(|(input, ident)| {
-            let name = ident.to_string();
-            let (pat, ty) = match input {
-                FnArg::Receiver(_) => return None,
-                FnArg::Typed(value) => (&*value.pat, &*value.ty),
-            };
-
-            match pat {
-                Pat::Ident(p) if ident == &p.ident => Some(Param { ident, name, ty }),
-                _ => None,
-            }
-        })
+        iter.zip(&self.params)
+            .filter_map(|(input, ident)| match input {
+                FnArg::Receiver(_) => unreachable!(),
+                FnArg::Typed(value) => Some(Param {
+                    ident,
+                    pat: &value.pat,
+                    ty: &value.ty,
+                }),
+            })
     }
 }
 
@@ -129,6 +136,12 @@ impl Parse for Path {
             Ok(path) => Ok(path),
             Err(msg) => Err(Error::new(token.span(), msg)),
         }
+    }
+}
+
+impl PartialEq<str> for Path {
+    fn eq(&self, other: &str) -> bool {
+        self.value == other
     }
 }
 

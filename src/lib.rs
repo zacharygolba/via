@@ -5,9 +5,11 @@ mod server;
 mod state;
 mod util;
 
+#[macro_use]
 pub mod error;
 pub mod plugin;
 pub mod prelude;
+pub mod services;
 
 use std::net::ToSocketAddrs;
 
@@ -62,22 +64,22 @@ impl Application {
 
     #[inline]
     pub fn middleware(&mut self, middleware: impl Middleware) {
-        self.namespace("/").middleware(middleware);
-    }
-
-    #[inline]
-    pub fn namespace(&mut self, pattern: &'static str) -> Router {
-        self.routes.namespace(&mut self.state, pattern)
+        self.root().middleware(middleware);
     }
 
     #[inline]
     pub fn service(&mut self, service: impl Service) {
-        self.namespace("/").service(service);
+        self.root().service(service);
     }
 
     #[inline]
     pub fn state(&mut self, value: impl Value) {
         self.state.insert(value);
+    }
+
+    #[inline]
+    fn root(&mut self) -> Router {
+        self.routes.namespace(&mut self.state, "/")
     }
 }
 
