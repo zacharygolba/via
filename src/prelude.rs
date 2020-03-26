@@ -1,4 +1,5 @@
 pub use crate::{
-    middleware, plugin, respond, services, Context, Middleware, Next, Respond, Result,
+    middleware, plugin, respond, services, Context, Error, Middleware, Next, Respond, Response,
+    Result,
 };
 pub use codegen::*;

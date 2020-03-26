@@ -5,11 +5,10 @@ mod server;
 mod state;
 mod util;
 
-#[macro_use]
 pub mod error;
 pub mod plugin;
 pub mod prelude;
-pub mod services;
+// pub mod services;
 
 use std::net::ToSocketAddrs;
 
@@ -20,7 +19,12 @@ pub(crate) use self::{
 };
 
 #[doc(inline)]
-pub use self::{error::Result, handler::*, routing::*, state::Value};
+pub use self::{
+    error::{Error, Result},
+    handler::*,
+    routing::*,
+    state::Value,
+};
 pub use codegen::*;
 pub use http;
 

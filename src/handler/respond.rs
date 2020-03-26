@@ -7,6 +7,9 @@ use hyper::Body;
 use serde::Serialize;
 use std::convert::{TryFrom, TryInto};
 
+#[doc(hidden)]
+pub use serde_json::json as jsonlit;
+
 pub type Response = http::Response<Body>;
 
 pub trait Respond: Sized {
@@ -57,6 +60,13 @@ pub fn json(body: &impl Serialize) -> Format {
         Ok(bytes) => Ok(bytes.into()),
         Err(e) => Err(e.into()),
     })
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! json {
+    { $($tokens:tt)+ } => {
+        $crate::respond::json(&$crate::respond::jsonlit!($($tokens)+))
+    };
 }
 
 macro_rules! media {

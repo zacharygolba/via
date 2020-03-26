@@ -1,7 +1,11 @@
 use crate::{Application, Body, BoxFuture, Response};
 use futures::future::{ready, FutureExt, Map, Ready};
 use hyper::service::Service as HyperService;
-use std::{convert::Infallible, sync::Arc, task::*};
+use std::{
+    convert::{Infallible, TryInto},
+    sync::Arc,
+    task::*,
+};
 
 type Request = crate::http::Request<hyper::Body>;
 type Result<T = Response, E = Infallible> = std::result::Result<T, E>;
@@ -68,10 +72,8 @@ impl HyperService<Request> for Service {
     #[inline]
     fn call(&mut self, request: Request) -> Self::Future {
         let context = self.app.context(request.map(Body));
+        let future = self.app.routes.visit(context);
 
-        self.app.routes.visit(context).map(|result| match result {
-            Ok(response) => Ok(response),
-            Err(error) => Ok(error.into()),
-        })
+        future.map(|result| Ok(result.unwrap_or_else(Response::from)))
     }
 }

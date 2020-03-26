@@ -1,4 +1,4 @@
-use crate::{error::Error, Result, State, Value};
+use crate::{error, Error, Result, State, Value};
 use bytes::buf::ext::BufExt;
 use http::header::{AsHeaderName, HeaderName, HeaderValue};
 use http::{Method, Uri, Version};
@@ -27,7 +27,7 @@ impl Body {
 
         match serde_json::from_reader(reader) {
             Ok(value) => Ok(value),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(Error::from(e).status(400)),
         }
     }
 
@@ -72,7 +72,7 @@ impl Context {
     }
 
     #[inline]
-    pub fn global<T: Value>(&self) -> Result<&T, Error> {
+    pub fn global<T: Value>(&self) -> Result<&T> {
         self.state.get()
     }
 
@@ -87,20 +87,17 @@ impl Context {
     }
 
     #[inline]
-    pub fn param<T>(&self, name: &str) -> Result<T, Error>
+    pub fn param<T>(&self, name: &str) -> Result<T>
     where
         Error: From<T::Err>,
         T: FromStr,
     {
         let value = match self.parameters.get(name) {
             Some(value) => value,
-            None => todo!(),
+            None => error::bail!(r#"unknown parameter "{}""#, name),
         };
 
-        match value.parse::<T>() {
-            Ok(response) => Ok(response),
-            Err(error) => Err(Error::from(error)),
-        }
+        Ok(value.parse()?)
     }
 
     #[inline]

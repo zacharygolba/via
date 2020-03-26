@@ -143,7 +143,7 @@ impl Expand<ItemImpl> for Service {
             impl via::Service for #ty {
                 fn mount(self: std::sync::Arc<Self>, router: &mut via::Router) {
                     #(let mut router = router.namespace(#path);)*
-                    let service = self;
+                    let service = self.clone();
 
                     #(#routes)*
                     #(#middleware)*

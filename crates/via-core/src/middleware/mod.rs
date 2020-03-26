@@ -1,28 +1,25 @@
-mod context;
-pub mod respond;
+pub mod context;
 
-use crate::{BoxFuture, Result};
-use std::{collections::VecDeque, sync::Arc};
+use crate::{BoxFuture, Respond, Result};
+use std::{collections::VecDeque, future::Future, sync::Arc};
 
-pub use self::{
-    context::*,
-    respond::{Respond, Response},
-};
+#[doc(inline)]
+pub use self::context::Context;
 
-pub(crate) type ArcMiddleware = Arc<dyn Middleware>;
+pub type DynMiddleware = Arc<dyn Middleware>;
 
 pub trait Middleware: Send + Sync + 'static {
     fn call(&self, context: Context, next: Next) -> BoxFuture<Result>;
 }
 
 pub struct Next {
-    stack: VecDeque<ArcMiddleware>,
+    stack: VecDeque<DynMiddleware>,
 }
 
 impl<F, T> Middleware for T
 where
     F::Output: Respond,
-    F: std::future::Future + Send + 'static,
+    F: Future + Send + 'static,
     T: Fn(Context, Next) -> F + Send + Sync + 'static,
 {
     #[inline]
@@ -33,11 +30,7 @@ where
 }
 
 impl Next {
-    #[inline]
-    pub(crate) fn new<'a, I>(stack: I) -> Next
-    where
-        I: Iterator<Item = &'a ArcMiddleware>,
-    {
+    pub(crate) fn new<'a>(stack: impl Iterator<Item = &'a DynMiddleware>) -> Self {
         Next {
             stack: stack.cloned().collect(),
         }
@@ -45,21 +38,10 @@ impl Next {
 
     #[inline]
     pub fn call(mut self, context: Context) -> BoxFuture<Result> {
-        if let Some(middleware) = self.pop() {
+        if let Some(middleware) = self.stack.pop_front() {
             middleware.call(context, self)
         } else {
             Box::pin(async { "Not Found".status(404).respond() })
         }
-    }
-
-    #[inline]
-    pub fn chain(mut self, next: Next) -> Next {
-        self.stack.extend(next.stack);
-        self
-    }
-
-    #[inline]
-    fn pop(&mut self) -> Option<ArcMiddleware> {
-        self.stack.pop_front()
     }
 }

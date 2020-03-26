@@ -1,5 +1,5 @@
 [package]
-name = "via"
+name = "via-core"
 version = "0.1.0"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2018"
@@ -8,33 +8,17 @@ edition = "2018"
 
 [dependencies]
 bytes = "0.5.4"
-error = { package = "via-error", path = "crates/via-error" }
+error = { package = "via-error", path = "../via-error" }
 futures = "0.3.4"
 http = "0.2.0"
+hyper = { default-features = false, features = ["stream", "tcp"], version = "0.13.2" }
 indexmap = "1.3.2"
-lazy_static = "1.4.0"
+smallvec = "1.2.0"
 serde = "1.0.104"
 serde_json = "1.0.48"
-mime = "0.3.16"
-
-[dependencies.codegen]
-package = "via-codegen"
-path = "codegen"
-
-[dependencies.hyper]
-default-features = false
-features = ["stream", "tcp"]
-version = "0.13.2"
 
 [dependencies.radr]
 git = "https://github.com/zacharygolba/radr"
 
-[dependencies.tokio]
-features = ["full"]
-version = "0.2.11"
-
 [dependencies.verbs]
 git = "https://github.com/zacharygolba/verbs"
-
-[workspace]
-members = ["codegen", "contrib/*", "crates/*", "docs/examples/*"]
