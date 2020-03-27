@@ -2,6 +2,7 @@ use crate::{middleware::DynMiddleware, Context, Middleware, Next};
 use std::sync::Arc;
 use verbs::Map;
 
+#[doc(hidden)]
 pub use verbs::Verb;
 
 pub type Location<'a> = radr::Location<'a, Route>;

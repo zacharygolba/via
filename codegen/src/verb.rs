@@ -67,7 +67,7 @@ impl ToTokens for Verb {
         let items = list.iter();
 
         tokens.extend(if list.is_empty() {
-            quote! { via::verbs::Verb::all() }
+            quote! { via::routing::Verb::all() }
         } else {
             quote! { #(#items)|* }
         });
