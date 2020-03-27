@@ -17,6 +17,10 @@ serde = "1.0.104"
 serde_json = "1.0.48"
 mime = "0.3.16"
 
+[dependencies.core]
+package = "via-core"
+path = "crates/via-core"
+
 [dependencies.codegen]
 package = "via-codegen"
 path = "codegen"

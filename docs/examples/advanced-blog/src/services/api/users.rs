@@ -8,20 +8,20 @@ connect!(UsersService);
 
 #[service("/:id")]
 impl UserService {
-    #[http(GET, "/")]
+    #[action(GET, "/")]
     async fn show(&self, id: i32) -> Result<impl Respond> {
         Ok(Document {
             data: User::find(&self.pool, id).await?,
         })
     }
 
-    #[http(PATCH, "/")]
+    #[action(PATCH, "/")]
     async fn update(&self, id: i32, mut context: Context) -> Result<impl Respond> {
-        let body: Document<ChangeSet> = context.body().json().await?;
+        let body: Document<ChangeSet> = context.read().json().await?;
         Ok(format!("Update User: {}", id))
     }
 
-    #[http(DELETE, "/")]
+    #[action(DELETE, "/")]
     async fn destroy(&self, id: i32) -> Result<impl Respond> {
         Ok(format!("Destroy User: {}", id))
     }
@@ -29,27 +29,27 @@ impl UserService {
 
 #[service("/users")]
 impl UsersService {
-    services! {
+    mount! {
         UserService::new(&self.pool),
     }
 
-    #[http(GET, "/")]
+    #[action(GET, "/")]
     async fn index(&self) -> Result<impl Respond> {
         Ok(Document {
             data: User::all(&self.pool).await?,
         })
     }
 
-    #[http(POST, "/")]
+    #[action(POST, "/")]
     async fn create(&self, mut context: Context) -> Result<impl Respond> {
-        let body: Document<NewUser> = context.body().json().await?;
+        let body: Document<NewUser> = context.read().json().await?;
 
         Ok(Document {
             data: body.data.insert(&self.pool).await?,
         })
     }
 
-    #[http(GET, "/:id/posts")]
+    #[action(GET, "/:id/posts")]
     async fn posts(&self, id: i32) -> Result<impl Respond> {
         Ok(Document {
             data: Post::by_user(&self.pool, id).await?,

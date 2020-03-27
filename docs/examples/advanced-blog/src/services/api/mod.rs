@@ -15,14 +15,14 @@ pub struct Document<T> {
 
 #[service("/api")]
 impl ApiService {
-    middleware! {
+    includes! {
         error::handler,
-        plugin::cors(|allow| {
+        middleware::cors(|allow| {
             allow.origin("*");
         }),
     }
 
-    services! {
+    mount! {
         PostsService::new(&self.pool),
         UsersService::new(&self.pool),
     }
@@ -36,6 +36,6 @@ impl<T> Document<T> {
 
 impl<T: Serialize> Respond for Document<T> {
     fn respond(self) -> Result<Response> {
-        respond::json(&self).respond()
+        response::json(&self).respond()
     }
 }

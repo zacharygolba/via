@@ -7,8 +7,8 @@ pub struct Cors {
 }
 
 #[inline]
-pub fn cors(f: impl FnOnce(&mut Cors)) -> Cors {
-    let mut middleware = Default::default();
+pub fn cors(f: impl FnOnce(&mut Cors)) -> impl Middleware {
+    let mut middleware = Cors::default();
 
     f(&mut middleware);
     middleware

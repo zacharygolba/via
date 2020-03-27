@@ -1,95 +1,91 @@
-mod handler;
-mod routing;
-mod runtime;
-mod server;
-mod state;
-mod util;
+mod service;
 
-pub mod error;
-pub mod plugin;
-pub mod prelude;
-// pub mod services;
-
-use std::net::ToSocketAddrs;
-
-pub(crate) use self::{
-    handler::{ArcMiddleware, Request},
-    routing::Routes,
-    state::State,
-};
-
-#[doc(inline)]
-pub use self::{
-    error::{Error, Result},
-    handler::*,
-    routing::*,
-    state::Value,
-};
-pub use codegen::*;
-pub use http;
-
-#[doc(hidden)]
-pub use verbs;
-
-pub type BoxFuture<T> = futures::future::BoxFuture<'static, T>;
-
-pub struct Application {
-    routes: Routes,
-    state: State,
+pub mod middleware;
+pub mod prelude {
+    pub use super::{action, includes, mount, service};
+    pub use super::{
+        middleware::{self, Context, Middleware, Next},
+        response::{self, Respond, Response},
+        routing::Target,
+        Error, Result,
+    };
 }
 
+#[doc(inline)]
+pub use self::middleware::{Context, Middleware, Next};
+pub use codegen::*;
+pub use core::{response, routing, BoxFuture, Error, Respond, Result};
+pub use http;
+
+use self::{routing::*, service::MakeService};
+use futures::future::{FutureExt, Map};
+use hyper::Server;
+use std::{
+    convert::Infallible,
+    net::{SocketAddr, ToSocketAddrs},
+};
+
+type CallFuture = Map<BoxFuture<Result>, fn(Result) -> Result<HttpResponse, Infallible>>;
+type HttpRequest = http::Request<hyper::Body>;
+type HttpResponse = http::Response<hyper::Body>;
+
 #[macro_export]
-macro_rules! middleware {
+macro_rules! includes {
     { $($middleware:expr),* $(,)* } => {};
 }
 
 #[macro_export]
-macro_rules! services {
+macro_rules! mount {
     { $($service:expr),* $(,)* } => {};
 }
 
-#[inline]
+pub struct Application {
+    router: Router,
+}
+
 pub fn new() -> Application {
     Application {
-        routes: Default::default(),
-        state: Default::default(),
+        router: Default::default(),
+    }
+}
+
+fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
+    match sources.to_socket_addrs()?.next() {
+        Some(value) => Ok(value),
+        None => todo!(),
     }
 }
 
 impl Application {
-    #[inline]
+    pub fn at(&mut self, pattern: &'static str) -> Location {
+        self.router.at(pattern)
+    }
+
     pub async fn listen(self, address: impl ToSocketAddrs) -> Result<()> {
-        if let Some(address) = address.to_socket_addrs()?.next() {
-            server::serve(self, address).await
-        } else {
-            todo!()
-        }
+        let address = get_addr(address)?;
+        let server = Server::bind(&address).serve(MakeService::from(self));
+        let ctrlc = async {
+            let message = "failed to install CTRL+C signal handler";
+            tokio::signal::ctrl_c().await.expect(message);
+        };
+
+        println!("Server listening at http://{}", address);
+        Ok(server.with_graceful_shutdown(ctrlc).await?)
     }
 
-    #[inline]
-    pub fn middleware(&mut self, middleware: impl Middleware) {
-        self.root().middleware(middleware);
-    }
+    fn call(&self, request: HttpRequest) -> CallFuture {
+        let mut context = Context::from(request);
+        let next = self.router.visit(&mut context);
 
-    #[inline]
-    pub fn service(&mut self, service: impl Service) {
-        self.root().service(service);
-    }
-
-    #[inline]
-    pub fn state(&mut self, value: impl Value) {
-        self.state.insert(value);
-    }
-
-    #[inline]
-    fn root(&mut self) -> Router {
-        self.routes.namespace(&mut self.state, "/")
+        next.call(context).map(|result| match result {
+            Ok(response) => Ok(response.into()),
+            Err(error) => Ok(error.into()),
+        })
     }
 }
 
-impl Application {
-    #[inline]
-    pub(crate) fn context(&self, request: Request) -> Context {
-        (self.state.clone(), request).into()
+impl Target for Application {
+    fn mount<T: Service>(&mut self, service: T) {
+        self.router.at("/").mount(service);
     }
 }

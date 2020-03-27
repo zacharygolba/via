@@ -96,6 +96,12 @@ impl Respond for Response {
     }
 }
 
+impl From<Response> for http::Response<Body> {
+    fn from(response: Response) -> Self {
+        response.value
+    }
+}
+
 impl Deref for Response {
     type Target = http::Response<Body>;
 

@@ -22,7 +22,7 @@ impl ToTokens for Name {
         let Name(ident) = self;
 
         tokens.extend(quote! {
-            via::verbs::Verb::#ident
+            via::routing::Verb::#ident
         })
     }
 }

@@ -6,7 +6,7 @@ use std::{collections::VecDeque, future::Future, sync::Arc};
 #[doc(inline)]
 pub use self::context::Context;
 
-pub type DynMiddleware = Arc<dyn Middleware>;
+pub(crate) type DynMiddleware = Arc<dyn Middleware>;
 
 pub trait Middleware: Send + Sync + 'static {
     fn call(&self, context: Context, next: Next) -> BoxFuture<Result>;

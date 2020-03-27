@@ -13,7 +13,7 @@ pub fn json(body: &impl serde::Serialize) -> impl Respond {
 }
 
 macro_rules! media(($body:expr, $type:expr) => {{
-    use $crate::http::header::{CONTENT_TYPE, HeaderValue};
+    use http::header::{CONTENT_TYPE, HeaderValue};
 
     let mut response = Response::new($body);
     let headers = response.headers_mut();

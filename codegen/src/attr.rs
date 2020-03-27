@@ -8,7 +8,7 @@ use syn::{
     Expr, FnArg, ImplItem, ImplItemMacro, ImplItemMethod, ItemFn, ItemImpl, LitStr, Token,
 };
 
-pub struct Http {
+pub struct Action {
     meta: TokenStream,
     path: Path,
     verb: Verb,
@@ -29,7 +29,7 @@ where
         FnArg::Typed(_) => match params.next() {
             Some(Param { ident, pat, .. }) if pat.ident() == Some(ident) => {
                 let name = ident.to_string();
-                Some(quote! { context.param(#name)? })
+                Some(quote! { context.params().get(#name)? })
             }
             Some(Param { ident, pat, .. }) => {
                 let message = format!("expected identifer {}", ident);
@@ -55,16 +55,16 @@ where
     }
 }
 
-impl Expand<ImplItemMethod> for Http {
+impl Expand<ImplItemMethod> for Action {
     fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
-        let Http { path, verb, .. } = self;
+        let Action { path, verb, .. } = self;
+        let mut location = quote! { location };
         let mut service = quote! {};
-        let mut router = quote! { router };
         let arguments = expand_arguments(path, item.sig.inputs.iter());
         let target = &item.sig.ident;
 
         if path != "/" {
-            router = quote! { router.namespace(#path) };
+            location = quote! { location.at(#path) };
         }
 
         if let Some(input) = get_mut_receiver(item.sig.inputs.iter_mut()) {
@@ -74,7 +74,7 @@ impl Expand<ImplItemMethod> for Http {
 
         Ok(quote! {{
             #service
-            #router.expose(#verb, move |context: via::Context, next: via::Next| {
+            #location.expose(#verb, move |context: via::Context, next: via::Next| {
                 #service
                 async move {
                     via::Respond::respond(Self::#target(#arguments).await)
@@ -84,9 +84,9 @@ impl Expand<ImplItemMethod> for Http {
     }
 }
 
-impl Expand<ItemFn> for Http {
+impl Expand<ItemFn> for Action {
     fn expand(&self, item: &mut ItemFn) -> Result<TokenStream, Error> {
-        let Http { meta, .. } = self;
+        let Action { meta, .. } = self;
         let ident = &item.sig.ident;
         let vis = &item.vis;
 
@@ -97,15 +97,15 @@ impl Expand<ItemFn> for Http {
 
             #[via::service]
             impl #ident {
-                #[http(#meta)]
+                #[action(#meta)]
                 #item
             }
         })
     }
 }
 
-impl Parse for Http {
-    fn parse(input: ParseStream) -> Result<Http, Error> {
+impl Parse for Action {
+    fn parse(input: ParseStream) -> Result<Action, Error> {
         let mut verb = Verb::new();
         let meta = input.fork().parse::<TokenStream>()?;
         let path;
@@ -118,7 +118,7 @@ impl Parse for Http {
             path = input.parse()?;
         }
 
-        Ok(Http { meta, path, verb })
+        Ok(Action { meta, path, verb })
     }
 }
 
@@ -140,9 +140,9 @@ impl Expand<ItemImpl> for Service {
         Ok(quote! {
             #item
 
-            impl via::Service for #ty {
-                fn mount(self: std::sync::Arc<Self>, router: &mut via::Router) {
-                    #(let mut router = router.namespace(#path);)*
+            impl via::routing::Service for #ty {
+                fn mount(self: std::sync::Arc<Self>, location: &mut via::routing::Location) {
+                    #(let mut location = location.at(#path);)*
                     let service = self.clone();
 
                     #(#routes)*
@@ -161,7 +161,7 @@ impl Expand<ImplItemMacro> for Service {
 
         if let Some(method) = MacroPath::method(&mac.path) {
             let value = mac.parse_body_with(List::parse_terminated)?.into_iter();
-            Ok(quote! { #(router.#method(#value);)* })
+            Ok(quote! { #(location.#method(#value);)* })
         } else {
             Ok(TokenStream::new())
         }
@@ -171,17 +171,17 @@ impl Expand<ImplItemMacro> for Service {
 impl Expand<ImplItemMethod> for Service {
     fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
         let mut iter = item.attrs.iter();
-        let option = iter.position(|attr| attr.path == MacroPath::Http);
+        let option = iter.position(|attr| attr.path == MacroPath::Action);
 
         if let Some(index) = option {
             let input = item.attrs.remove(index);
-            let mut http = input.parse_args::<Http>()?;
+            let mut action = input.parse_args::<Action>()?;
 
             if let Some(path) = &self.path {
-                http.path = path.concat(&http.path);
+                action.path = path.concat(&action.path);
             }
 
-            http.expand(item)
+            action.expand(item)
         } else {
             Ok(TokenStream::new())
         }

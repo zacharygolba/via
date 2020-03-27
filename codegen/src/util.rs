@@ -15,9 +15,9 @@ pub trait Identify {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MacroPath {
-    Http,
-    Middleware,
-    Services,
+    Action,
+    Includes,
+    Mount,
 }
 
 pub fn expand<T>(expander: &impl Expand<T>, item: &mut T) -> TokenStream {
@@ -57,10 +57,10 @@ impl Identify for Path {
 
 impl MacroPath {
     pub fn method(path: &Path) -> Option<Ident> {
-        if *path == MacroPath::Middleware {
-            Some(syn::parse_str("middleware").unwrap())
-        } else if *path == MacroPath::Services {
-            Some(syn::parse_str("service").unwrap())
+        if *path == MacroPath::Includes {
+            Some(syn::parse_str("include").unwrap())
+        } else if *path == MacroPath::Mount {
+            Some(syn::parse_str("mount").unwrap())
         } else {
             None
         }
@@ -70,9 +70,9 @@ impl MacroPath {
 impl PartialEq<Path> for MacroPath {
     fn eq(&self, other: &Path) -> bool {
         other.get_ident().map_or(false, |ident| match self {
-            MacroPath::Http => ident == "http",
-            MacroPath::Middleware => ident == "middleware",
-            MacroPath::Services => ident == "services",
+            MacroPath::Action => ident == "action",
+            MacroPath::Includes => ident == "includes",
+            MacroPath::Mount => ident == "mount",
         })
     }
 }

@@ -5,16 +5,16 @@ mod path;
 mod util;
 mod verb;
 
-use self::attr::{Http, Service};
+use self::attr::{Action, Service};
 use proc_macro::TokenStream;
 use syn::{ItemFn, ItemImpl};
 
 #[proc_macro_attribute]
-pub fn http(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn action(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut item = syn::parse_macro_input!(item as ItemFn);
-    let http = syn::parse_macro_input!(attr as Http);
+    let action = syn::parse_macro_input!(attr as Action);
 
-    util::expand(&http, &mut item).into()
+    util::expand(&action, &mut item).into()
 }
 
 #[proc_macro_attribute]

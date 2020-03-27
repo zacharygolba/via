@@ -2,8 +2,8 @@ use crate::{Error, Result};
 use bytes::{buf::ext::BufExt, Buf, Bytes};
 use futures::Stream;
 use http::header::{self, AsHeaderName, HeaderMap, HeaderName, HeaderValue};
-use http::{Method, Request, Uri, Version};
-use hyper::{body::aggregate, Body as HyperBody};
+use http::{Method, Uri, Version};
+use hyper::body::{aggregate, Body as HyperBody};
 use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 use std::{
@@ -15,13 +15,13 @@ use std::{
     task::{self, Poll},
 };
 
-pub struct Body {
-    value: HyperBody,
-}
+type Request = http::Request<HyperBody>;
+
+pub struct Body(HyperBody);
 
 pub struct Context {
     params: Parameters,
-    request: Request<HyperBody>,
+    request: Request,
 }
 
 #[derive(Clone, Copy)]
@@ -29,6 +29,7 @@ pub struct Headers<'a> {
     entries: &'a HeaderMap,
 }
 
+#[derive(Default, Clone)]
 pub struct Parameters {
     entries: IndexMap<&'static str, String>,
 }
@@ -38,7 +39,7 @@ impl Body {
     where
         T: DeserializeOwned,
     {
-        let reader = aggregate(self.value).await?.reader();
+        let reader = aggregate(self.0).await?.reader();
 
         match serde_json::from_reader(reader) {
             Ok(value) => Ok(value),
@@ -47,7 +48,7 @@ impl Body {
     }
 
     pub async fn text(self) -> Result<String> {
-        let src = aggregate(self.value).await?;
+        let src = aggregate(self.0).await?;
         let mut dest = String::with_capacity(src.remaining());
 
         src.reader().read_to_string(&mut dest)?;
@@ -55,7 +56,7 @@ impl Body {
     }
 
     pub async fn vec(self) -> Result<Vec<u8>> {
-        let src = aggregate(self.value).await?;
+        let src = aggregate(self.0).await?;
         let mut dest = Vec::with_capacity(src.remaining());
 
         src.reader().read_to_end(&mut dest)?;
@@ -65,7 +66,7 @@ impl Body {
 
 impl Debug for Body {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Debug::fmt(&self.value, f)
+        Debug::fmt(&self.0, f)
     }
 }
 
@@ -76,7 +77,7 @@ impl Stream for Body {
         mut self: Pin<&mut Self>,
         context: &mut task::Context,
     ) -> Poll<Option<Self::Item>> {
-        match Stream::poll_next(Pin::new(&mut self.value), context) {
+        match Stream::poll_next(Pin::new(&mut self.0), context) {
             Poll::Ready(option) => Poll::Ready(option.map(|result| Ok(result?))),
             Poll::Pending => Poll::Pending,
         }
@@ -84,11 +85,6 @@ impl Stream for Body {
 }
 
 impl Context {
-    pub(crate) fn locate(context: &mut Context) -> (&mut Parameters, &Method, &str) {
-        let Context { params, request } = context;
-        (params, request.method(), request.uri().path())
-    }
-
     pub fn headers(&self) -> Headers {
         Headers {
             entries: self.request.headers(),
@@ -107,9 +103,7 @@ impl Context {
         let body = self.request.body_mut();
         let empty = HyperBody::empty();
 
-        Body {
-            value: replace(body, empty),
-        }
+        Body(replace(body, empty))
     }
 
     pub fn uri(&self) -> &Uri {
@@ -118,6 +112,24 @@ impl Context {
 
     pub fn version(&self) -> Version {
         self.request.version()
+    }
+}
+
+#[doc(hidden)]
+impl Context {
+    pub fn locate(&mut self) -> (&mut Parameters, &Method, &str) {
+        let Context { params, request } = self;
+        (params, request.method(), request.uri().path())
+    }
+}
+
+#[doc(hidden)]
+impl From<Request> for Context {
+    fn from(request: Request) -> Self {
+        Context {
+            params: Default::default(),
+            request,
+        }
     }
 }
 
