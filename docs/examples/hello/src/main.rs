@@ -1,4 +1,4 @@
-use via::prelude::*;
+use via::system::*;
 
 #[action(GET, "/hello/:name")]
 async fn hello(name: String) -> impl Respond {

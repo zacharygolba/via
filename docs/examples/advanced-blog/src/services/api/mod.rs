@@ -4,7 +4,7 @@ mod users;
 
 use self::{posts::PostsService, users::UsersService};
 use serde::{Deserialize, Serialize};
-use via::prelude::*;
+use via::system::*;
 
 connect!(ApiService);
 

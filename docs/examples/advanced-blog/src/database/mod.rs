@@ -9,7 +9,7 @@ pub mod prelude {
 }
 
 use diesel::{prelude::*, r2d2};
-use via::prelude::*;
+use via::system::*;
 
 type ConnectionManager = r2d2::ConnectionManager<PgConnection>;
 pub type Pool = r2d2::Pool<ConnectionManager>;

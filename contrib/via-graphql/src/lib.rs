@@ -1,5 +1,5 @@
 // use juniper::RootNode;
-// use via::prelude::*;
+// use via::system::*;
 
 // #[derive(Debug)]
 // pub struct GraphQL<Query, Mutation, Scalar> {
