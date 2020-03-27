@@ -1,6 +1,6 @@
 pub mod middleware;
 pub mod response;
-pub mod router;
+pub mod routing;
 
 pub use error::Error;
 
