@@ -16,6 +16,7 @@ pub use self::middleware::{Context, Middleware, Next};
 pub use codegen::*;
 pub use core::{response, routing, BoxFuture, Error, Respond, Result};
 pub use http;
+pub use verbs;
 
 use self::{routing::*, service::MakeService};
 use futures::future::{FutureExt, Map};

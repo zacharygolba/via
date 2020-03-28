@@ -22,7 +22,7 @@ impl ToTokens for Name {
         let Name(ident) = self;
 
         tokens.extend(quote! {
-            via::routing::Verb::#ident
+            via::verbs::Verb::#ident
         })
     }
 }
@@ -67,7 +67,7 @@ impl ToTokens for Verb {
         let items = list.iter();
 
         tokens.extend(if list.is_empty() {
-            quote! { via::routing::Verb::all() }
+            quote! { via::verbs::Verb::all() }
         } else {
             quote! { #(#items)|* }
         });
