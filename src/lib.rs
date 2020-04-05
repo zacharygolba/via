@@ -1,24 +1,33 @@
-mod service;
-
-pub mod middleware;
-pub mod system {
-    pub use super::{action, includes, mount, service};
-    pub use super::{
-        middleware::{self, Context, Middleware, Next},
-        response::{self, Respond, Response},
-        routing::Target,
-        Error, Result,
+#[macro_export]
+macro_rules! bail {
+    ($($tokens:tt)+) => {
+        Err($crate::error::Bail {
+            message: format!($($tokens)+)
+        })?
     };
 }
 
+mod service;
+
+pub mod error;
+pub mod middleware;
+pub mod prelude;
+pub mod response;
+pub mod routing;
+pub mod view;
+
 #[doc(inline)]
-pub use self::middleware::{Context, Middleware, Next};
-pub use codegen::*;
-pub use core::{response, routing, BoxFuture, Error, Respond, Result};
+pub use self::{
+    error::{Error, ResultExt},
+    middleware::{Context, Middleware, Next},
+    response::Respond,
+};
+pub use codegen::{action, service};
+
 pub use http;
 pub use verbs;
 
-use self::{routing::*, service::MakeService};
+use self::{response::Response, routing::*, service::MakeService};
 use futures::future::{FutureExt, Map};
 use hyper::Server;
 use std::{
@@ -30,6 +39,9 @@ type CallFuture = Map<BoxFuture<Result>, fn(Result) -> Result<HttpResponse, Infa
 type HttpRequest = http::Request<hyper::Body>;
 type HttpResponse = http::Response<hyper::Body>;
 
+pub type BoxFuture<T> = futures::future::BoxFuture<'static, T>;
+pub type Result<T = response::Response, E = Error> = std::result::Result<T, E>;
+
 #[macro_export]
 macro_rules! includes {
     { $($middleware:expr),* $(,)* } => {};
@@ -39,6 +51,11 @@ macro_rules! includes {
 macro_rules! mount {
     { $($service:expr),* $(,)* } => {};
 }
+
+#[macro_export]
+macro_rules! only([$($method:ident),*] => {
+    $crate::middleware::filter::only($($crate::verbs::Verb::$method)|*)
+});
 
 pub struct Application {
     router: Router,
@@ -78,10 +95,8 @@ impl Application {
         let mut context = Context::from(request);
         let next = self.router.visit(&mut context);
 
-        next.call(context).map(|result| match result {
-            Ok(response) => Ok(response.into()),
-            Err(error) => Ok(error.into()),
-        })
+        next.call(context)
+            .map(|result| Ok(result.unwrap_or_else(Response::from).into()))
     }
 }
 

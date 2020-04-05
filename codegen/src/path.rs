@@ -113,6 +113,15 @@ impl Path {
     }
 }
 
+impl Default for Path {
+    fn default() -> Self {
+        Path {
+            params: Default::default(),
+            value: "/".to_owned(),
+        }
+    }
+}
+
 impl FromStr for Path {
     type Err = &'static str;
 

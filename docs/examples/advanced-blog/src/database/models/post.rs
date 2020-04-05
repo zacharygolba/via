@@ -1,7 +1,7 @@
 use crate::database::prelude::*;
 use diesel::dsl::{Eq, Filter, IsNotNull, Select};
 use serde::{Deserialize, Serialize};
-use via::system::*;
+use via::prelude::*;
 
 pub use schema::posts;
 

@@ -1,8 +1,6 @@
 use crate::{middleware::DynMiddleware, Context, Middleware, Next};
 use std::sync::Arc;
-use verbs::Map;
-
-pub use verbs::Verb;
+use verbs::*;
 
 pub type Location<'a> = radr::Location<'a, Route>;
 

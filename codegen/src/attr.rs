@@ -5,9 +5,10 @@ use syn::{
     parse::{Error, Parse, ParseStream},
     punctuated::Punctuated,
     spanned::Spanned,
-    Expr, FnArg, ImplItem, ImplItemMacro, ImplItemMethod, ItemFn, ItemImpl, LitStr, Token,
+    Expr, FnArg, ImplItem, ImplItemMacro, ImplItemMethod, ItemFn, ItemImpl, LitStr, PatType, Token,
 };
 
+#[derive(Default)]
 pub struct Action {
     meta: TokenStream,
     path: Path,
@@ -18,6 +19,30 @@ pub struct Service {
     path: Option<Path>,
 }
 
+fn expand_argument<'a>(
+    params: &mut impl Iterator<Item = Param<'a>>,
+    scope: &mut Vec<TokenStream>,
+    pat: &PatType,
+) -> Option<TokenStream> {
+    let context = syn::parse_str::<syn::Ident>("Context").unwrap();
+
+    if pat.ty.is(&context) {
+        while let Some(_) = params.next() {}
+    }
+
+    match params.next() {
+        Some(Param { ident, pat, .. }) if pat.ident() == Some(ident) => {
+            let name = ident.to_string();
+            Some(quote! { context.params().get(#name)? })
+        }
+        Some(Param { ident, pat, .. }) => {
+            let message = format!("expected identifer {}", ident);
+            Some(Error::new(pat.span(), message).to_compile_error())
+        }
+        None => scope.pop(),
+    }
+}
+
 fn expand_arguments<'a, I>(path: &'a Path, inputs: I) -> TokenStream
 where
     I: Clone + Iterator<Item = &'a FnArg> + 'a,
@@ -26,17 +51,7 @@ where
     let mut scope = vec![quote! { next }, quote! { context }];
     let argument = inputs.filter_map(move |input| match input {
         FnArg::Receiver(_) => Some(quote! { service }),
-        FnArg::Typed(_) => match params.next() {
-            Some(Param { ident, pat, .. }) if pat.ident() == Some(ident) => {
-                let name = ident.to_string();
-                Some(quote! { context.params().get(#name)? })
-            }
-            Some(Param { ident, pat, .. }) => {
-                let message = format!("expected identifer {}", ident);
-                Some(Error::new(pat.span(), message).to_compile_error())
-            }
-            None => scope.pop(),
-        },
+        FnArg::Typed(pat) => expand_argument(&mut params, &mut scope, pat),
     });
 
     quote! {
@@ -106,14 +121,21 @@ impl Expand<ItemFn> for Action {
 
 impl Parse for Action {
     fn parse(input: ParseStream) -> Result<Action, Error> {
+        if input.is_empty() {
+            return Ok(Default::default());
+        }
+
+        let mut path = Default::default();
         let mut verb = Verb::new();
         let meta = input.fork().parse::<TokenStream>()?;
-        let path;
 
         if input.peek(LitStr) {
             path = input.parse()?;
         } else {
             verb = input.parse()?;
+        }
+
+        if input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
             path = input.parse()?;
         }
@@ -175,7 +197,11 @@ impl Expand<ImplItemMethod> for Service {
 
         if let Some(index) = option {
             let input = item.attrs.remove(index);
-            let mut action = input.parse_args::<Action>()?;
+            let mut action = if input.tokens.is_empty() {
+                Default::default()
+            } else {
+                input.parse_args::<Action>()?
+            };
 
             if let Some(path) = &self.path {
                 action.path = path.concat(&action.path);

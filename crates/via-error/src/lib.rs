@@ -12,6 +12,11 @@ pub use self::macros::Message;
 
 pub type Source = (dyn StdError + 'static);
 
+pub trait ResultExt<T> {
+    fn json(self) -> Result<T, Error>;
+    fn status(self, code: u16) -> Result<T, Error>;
+}
+
 #[derive(Debug)]
 pub struct Error {
     respond: Respond,
@@ -88,5 +93,18 @@ impl<'a> Iterator for Iter<'a> {
 impl From<Error> for Box<dyn StdError + Send> {
     fn from(error: Error) -> Self {
         error.source
+    }
+}
+
+impl<T, E> ResultExt<T> for Result<T, E>
+where
+    Error: From<E>,
+{
+    fn json(self) -> Result<T, Error> {
+        self.map_err(|e| Error::from(e).json())
+    }
+
+    fn status(self, code: u16) -> Result<T, Error> {
+        self.map_err(|e| Error::from(e).status(code))
     }
 }

@@ -1,12 +1,21 @@
-use via::system::*;
+use via::prelude::*;
 
 use super::Document;
 use crate::database::models::post::*;
 
 connect!(PostsService);
 
+async fn authenticate(context: Context, next: Next) -> Result<impl Respond> {
+    println!("authenticate");
+    next.call(context).await
+}
+
 #[service("/posts")]
 impl PostsService {
+    includes! {
+        via::only![DELETE, POST, PATCH](authenticate),
+    }
+
     #[action(GET, "/")]
     async fn index(&self) -> Result<impl Respond> {
         Ok(Document {

@@ -1,7 +1,7 @@
 use crate::database::prelude::*;
 use diesel::dsl::{Eq, Filter};
 use serde::{Deserialize, Serialize};
-use via::system::*;
+use via::prelude::*;
 
 pub use schema::users;
 
@@ -56,5 +56,13 @@ impl User {
             .filter(users::id.eq(id))
             .first_async(pool)
             .await?)
+    }
+
+    pub async fn login(pool: &Pool, username: String, password: String) -> Result<Option<User>> {
+        Ok(users::table
+            .filter(users::username.eq(username))
+            .first_async(pool)
+            .await
+            .optional()?)
     }
 }

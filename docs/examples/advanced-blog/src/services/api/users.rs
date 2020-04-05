@@ -1,4 +1,4 @@
-use via::system::*;
+use via::prelude::*;
 
 use super::Document;
 use crate::database::models::{post::Post, user::*};

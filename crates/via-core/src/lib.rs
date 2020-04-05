@@ -1,14 +1,14 @@
+#[macro_use]
+pub mod error;
 pub mod middleware;
 pub mod response;
 pub mod routing;
 
-pub use error::Error;
-
 #[doc(inline)]
 pub use self::{
+    error::{Error, Result},
     middleware::{Context, Middleware, Next},
-    response::Respond,
+    response::{Respond, Response},
 };
 
 pub type BoxFuture<T> = futures::future::BoxFuture<'static, T>;
-pub type Result<T = response::Response, E = Error> = std::result::Result<T, E>;

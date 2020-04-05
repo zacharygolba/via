@@ -1,4 +1,11 @@
-pub mod cors;
+mod handler;
+mod session;
 
-pub use self::{context::Context, cors::cors};
-pub use core::middleware::*;
+pub mod context;
+pub mod filter;
+
+pub(crate) use handler::DynMiddleware;
+
+#[doc(inline)]
+pub use self::context::{cookies, Context};
+pub use handler::{Middleware, Next};

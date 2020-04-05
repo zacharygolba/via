@@ -3,8 +3,9 @@ mod posts;
 mod users;
 
 use self::{posts::PostsService, users::UsersService};
+use crate::database::models::user::User;
 use serde::{Deserialize, Serialize};
-use via::system::*;
+use via::prelude::*;
 
 connect!(ApiService);
 
@@ -17,9 +18,6 @@ pub struct Document<T> {
 impl ApiService {
     includes! {
         error::handler,
-        middleware::cors(|allow| {
-            allow.origin("*");
-        }),
     }
 
     mount! {

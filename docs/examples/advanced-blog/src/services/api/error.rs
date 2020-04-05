@@ -1,6 +1,6 @@
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use tokio_diesel::AsyncError;
-use via::system::*;
+use via::prelude::*;
 
 use super::Document;
 

@@ -47,7 +47,6 @@ impl Serialize for Error {
 }
 
 impl Default for Respond {
-    #[inline]
     fn default() -> Self {
         Respond {
             format: None,
@@ -60,7 +59,6 @@ impl<T> From<Error> for Response<T>
 where
     Vec<u8>: Into<T>,
 {
-    #[inline]
     fn from(error: Error) -> Response<T> {
         respond(error).unwrap_or_else(|error| {
             let bytes = b"Internal Server Error".to_vec();

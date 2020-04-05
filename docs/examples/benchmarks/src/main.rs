@@ -1,4 +1,4 @@
-use via::system::*;
+use via::prelude::*;
 
 #[action(GET, "/text")]
 async fn text() -> impl Respond {

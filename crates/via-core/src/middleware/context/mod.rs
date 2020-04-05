@@ -20,8 +20,8 @@ type Request = http::Request<HyperBody>;
 pub struct Body(HyperBody);
 
 pub struct Context {
-    params: Parameters,
-    request: Request,
+    pub(super) request: Request,
+    pub(super) state: State,
 }
 
 #[derive(Clone, Copy)]
@@ -32,6 +32,11 @@ pub struct Headers<'a> {
 #[derive(Default, Clone)]
 pub struct Parameters {
     entries: IndexMap<&'static str, String>,
+}
+
+#[derive(Default)]
+pub(super) struct State {
+    pub(super) params: Parameters,
 }
 
 impl Body {
@@ -85,10 +90,27 @@ impl Stream for Body {
 }
 
 impl Context {
+    pub fn get<T>(&self) -> Result<&T>
+    where
+        T: Send + Sync + 'static,
+    {
+        match self.request.extensions().get() {
+            Some(value) => Ok(value),
+            None => crate::bail!("unknown type"),
+        }
+    }
+
     pub fn headers(&self) -> Headers {
         Headers {
             entries: self.request.headers(),
         }
+    }
+
+    pub fn insert<T>(&mut self, value: T)
+    where
+        T: Send + Sync + 'static,
+    {
+        self.request.extensions_mut().insert(value);
     }
 
     pub fn method(&self) -> &Method {
@@ -96,7 +118,7 @@ impl Context {
     }
 
     pub fn params(&self) -> &Parameters {
-        &self.params
+        &self.state.params
     }
 
     pub fn read(&mut self) -> Body {
@@ -118,8 +140,11 @@ impl Context {
 #[doc(hidden)]
 impl Context {
     pub fn locate(&mut self) -> (&mut Parameters, &Method, &str) {
-        let Context { params, request } = self;
-        (params, request.method(), request.uri().path())
+        (
+            &mut self.state.params,
+            self.request.method(),
+            self.request.uri().path(),
+        )
     }
 }
 
@@ -127,8 +152,8 @@ impl Context {
 impl From<Request> for Context {
     fn from(request: Request) -> Self {
         Context {
-            params: Default::default(),
             request,
+            state: Default::default(),
         }
     }
 }
@@ -167,7 +192,7 @@ impl Parameters {
         if let Some(value) = self.entries.get(name) {
             Ok(value.parse()?)
         } else {
-            error::bail!(r#"unknown parameter "{}""#, name)
+            crate::bail!(r#"unknown parameter "{}""#, name)
         }
     }
 

@@ -1,6 +1,6 @@
 use via::{
     http::header::{self, HeaderMap, HeaderValue},
-    Context, BoxFuture, Middleware, Next, Result
+    BoxFuture, Context, Middleware, Next, Result,
 };
 
 #[derive(Default)]
@@ -8,7 +8,6 @@ pub struct Cors {
     headers: HeaderMap,
 }
 
-#[inline]
 pub fn cors(configure: impl FnOnce(&mut Cors)) -> Cors {
     let mut middleware = Default::default();
 

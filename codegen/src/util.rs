@@ -1,7 +1,7 @@
 use nom::error::{context, VerboseError};
 use proc_macro2::TokenStream;
 use std::cmp::PartialEq;
-use syn::{parse::Error, Ident, Pat, Path};
+use syn::{parse::Error, Ident, Pat, Path, Type};
 
 pub type IResult<'a, T> = nom::IResult<&'a str, T, VerboseError<&'a str>>;
 
@@ -11,6 +11,12 @@ pub trait Expand<T> {
 
 pub trait Identify {
     fn ident(&self) -> Option<&Ident>;
+    fn is(&self, other: &impl Identify) -> bool {
+        match (self.ident(), other.ident()) {
+            (Some(left), Some(right)) => left == right,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -39,6 +45,12 @@ where
     })
 }
 
+impl Identify for Ident {
+    fn ident(&self) -> Option<&Ident> {
+        Some(self)
+    }
+}
+
 impl Identify for Pat {
     fn ident(&self) -> Option<&Ident> {
         if let Pat::Ident(value) = self {
@@ -52,6 +64,16 @@ impl Identify for Pat {
 impl Identify for Path {
     fn ident(&self) -> Option<&Ident> {
         self.get_ident()
+    }
+}
+
+impl Identify for Type {
+    fn ident(&self) -> Option<&Ident> {
+        if let Type::Path(ty) = self {
+            ty.path.ident()
+        } else {
+            None
+        }
     }
 }
 
