@@ -2,41 +2,42 @@
 name = "via"
 version = "0.1.0"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 auth = { package = "via-auth", path = "crates/via-auth" }
-bytes = "0.5.4"
-cookie = { features = ["secure", "percent-encode"], version = "0.13.3" }
-futures = "0.3.4"
-http = "0.2.0"
-indexmap = "1.3.2"
+bytes = "1.6.0"
+cookie = { features = ["secure", "percent-encode"], version = "0.18.1" }
+futures = "0.3.30"
+http = "1.1.0"
+http-body-util = "0.1.1"
+indexmap = "2.2.6"
 lazy_static = "1.4.0"
-serde = "1.0.104"
-serde_json = "1.0.48"
-mime = "0.3.16"
+serde = "1.0.202"
+serde_json = "1.0.117"
+mime = "0.3.17"
 owning_ref = "0.4.1"
+hyper-util = { features = ["tokio"], version = "0.1.3" }
 
 [dependencies.codegen]
 package = "via-codegen"
 path = "codegen"
 
 [dependencies.hyper]
-default-features = false
-features = ["stream", "tcp"]
-version = "0.13.2"
+features = ["http1", "server"]
+version = "1.3.1"
 
 [dependencies.radr]
 git = "https://github.com/zacharygolba/radr"
 
 [dependencies.tokio]
 features = ["full"]
-version = "0.2.11"
+version = "1.37.0"
 
 [dependencies.verbs]
-git = "https://github.com/zacharygolba/verbs"
+path = "../verbs"
 
 [workspace]
 members = ["codegen", "contrib/*", "crates/*", "docs/examples/*"]

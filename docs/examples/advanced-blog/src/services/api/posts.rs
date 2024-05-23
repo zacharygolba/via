@@ -40,7 +40,7 @@ impl PostsService {
     }
 
     #[action(PATCH, "/:id")]
-    async fn update(&self, id: i32, mut context: Context) -> Result<impl Respond> {
+    async fn update(&self, id: i32, context: Context) -> Result<impl Respond> {
         Ok(format!("Update Post: {}", id))
     }
 

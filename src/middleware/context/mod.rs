@@ -1,29 +1,26 @@
-pub mod cookies;
+// pub mod cookies;
 
-use self::cookies::CookieJar;
 use crate::{Error, Result};
-use bytes::{buf::ext::BufExt, Buf, Bytes};
-use futures::Stream;
+use bytes::Buf;
 use http::header::{self, AsHeaderName, HeaderMap, HeaderName, HeaderValue};
 use http::{Method, Uri, Version};
-use hyper::body::{aggregate, Body as HyperBody};
+use http_body_util::{BodyExt, Empty};
+use hyper::body::{Bytes, Incoming};
 use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
+use std::io::Read;
 use std::{
     fmt::{self, Debug, Formatter},
-    io::Read,
     mem::replace,
-    pin::Pin,
     str::FromStr,
-    task::{self, Poll},
+    // task::{self, Poll},
 };
 
-pub use self::cookies::cookies;
+type Request = http::Request<Body>;
 
-type Request = http::Request<HyperBody>;
+pub struct Body(BodyState);
 
-pub struct Body(HyperBody);
-
+#[derive(Debug)]
 pub struct Context {
     pub(super) request: Request,
     pub(super) state: State,
@@ -39,10 +36,15 @@ pub struct Parameters {
     entries: IndexMap<&'static str, String>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(super) struct State {
-    pub(super) cookies: Option<CookieJar>,
     pub(super) params: Parameters,
+}
+
+#[derive(Debug)]
+enum BodyState {
+    Empty(Empty<Bytes>),
+    Incoming(Incoming),
 }
 
 impl Body {
@@ -50,28 +52,38 @@ impl Body {
     where
         T: DeserializeOwned,
     {
-        let reader = aggregate(self.0).await?.reader();
-
-        match serde_json::from_reader(reader) {
-            Ok(value) => Ok(value),
-            Err(e) => Err(Error::from(e).status(400).json()),
-        }
+        let reader = self.aggregate().await?.reader();
+        serde_json::from_reader(reader).map_err(|e| Error::from(e).status(400).json())
     }
 
     pub async fn text(self) -> Result<String> {
-        let src = aggregate(self.0).await?;
-        let mut dest = String::with_capacity(src.remaining());
-
-        src.reader().read_to_string(&mut dest)?;
-        Ok(dest)
+        let bytes = self.vec().await?;
+        Ok(String::from_utf8(bytes)?)
     }
 
     pub async fn vec(self) -> Result<Vec<u8>> {
-        let src = aggregate(self.0).await?;
-        let mut dest = Vec::with_capacity(src.remaining());
+        let buf = self.aggregate().await?;
+        let mut bytes = Vec::with_capacity(buf.remaining());
 
-        src.reader().read_to_end(&mut dest)?;
-        Ok(dest)
+        buf.reader().read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }
+}
+
+impl Body {
+    fn incoming(incoming: Incoming) -> Self {
+        Body(BodyState::Incoming(incoming))
+    }
+
+    fn empty() -> Self {
+        Body(BodyState::Empty(Empty::new()))
+    }
+
+    async fn aggregate(self) -> Result<impl Buf> {
+        Ok(match self.0 {
+            BodyState::Empty(empty) => empty.collect().await?.aggregate(),
+            BodyState::Incoming(incoming) => incoming.collect().await?.aggregate(),
+        })
     }
 }
 
@@ -81,32 +93,28 @@ impl Debug for Body {
     }
 }
 
-impl Stream for Body {
-    type Item = Result<Bytes>;
+// impl Stream for Body {
+//     type Item = Result<Bytes>;
 
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        context: &mut task::Context,
-    ) -> Poll<Option<Self::Item>> {
-        match Stream::poll_next(Pin::new(&mut self.0), context) {
-            Poll::Ready(option) => Poll::Ready(option.map(|result| Ok(result?))),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
+//     fn poll_next(
+//         mut self: Pin<&mut Self>,
+//         context: &mut task::Context,
+//     ) -> Poll<Option<Self::Item>> {
+//         match Stream::poll_next(Pin::new(&mut self.0), context) {
+//             Poll::Ready(option) => Poll::Ready(option.map(|result| Ok(result?))),
+//             Poll::Pending => Poll::Pending,
+//         }
+//     }
+// }
 
 impl Context {
-    pub fn cookies(&self) -> Result<&CookieJar> {
-        Ok(self.state.cookies.as_ref().unwrap())
-    }
-
     pub fn get<T>(&self) -> Result<&T>
     where
         T: Send + Sync + 'static,
     {
         match self.request.extensions().get() {
             Some(value) => Ok(value),
-            None => bail!("unknown type"),
+            None => crate::bail!("unknown type"),
         }
     }
 
@@ -118,7 +126,7 @@ impl Context {
 
     pub fn insert<T>(&mut self, value: T)
     where
-        T: Send + Sync + 'static,
+        T: Clone + Send + Sync + 'static,
     {
         self.request.extensions_mut().insert(value);
     }
@@ -132,10 +140,7 @@ impl Context {
     }
 
     pub fn read(&mut self) -> Body {
-        let body = self.request.body_mut();
-        let empty = HyperBody::empty();
-
-        Body(replace(body, empty))
+        replace(self.request.body_mut(), Body::empty())
     }
 
     pub fn uri(&self) -> &Uri {
@@ -163,6 +168,16 @@ impl From<Request> for Context {
     fn from(request: Request) -> Self {
         Context {
             request,
+            state: Default::default(),
+        }
+    }
+}
+
+#[doc(hidden)]
+impl From<crate::HttpRequest> for Context {
+    fn from(request: crate::HttpRequest) -> Self {
+        Context {
+            request: request.map(Body::incoming),
             state: Default::default(),
         }
     }
@@ -202,7 +217,7 @@ impl Parameters {
         if let Some(value) = self.entries.get(name) {
             Ok(value.parse()?)
         } else {
-            bail!(r#"unknown parameter "{}""#, name)
+            crate::bail!(r#"unknown parameter "{}""#, name)
         }
     }
 

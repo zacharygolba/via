@@ -30,11 +30,7 @@ impl<T> HyperService<T> for MakeService {
     type Future = Ready<Result<Self::Response>>;
     type Response = Service;
 
-    fn poll_ready(&mut self, _: &mut Context) -> Poll<Result> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, _: T) -> Self::Future {
+    fn call(&self, _: T) -> Self::Future {
         ready(Ok(self.service.clone()))
     }
 }
@@ -60,11 +56,7 @@ impl HyperService<HttpRequest> for Service {
     type Future = CallFuture;
     type Response = HttpResponse;
 
-    fn poll_ready(&mut self, _: &mut Context) -> Poll<Result> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, request: HttpRequest) -> Self::Future {
+    fn call(&self, request: HttpRequest) -> Self::Future {
         self.application.call(request)
     }
 }

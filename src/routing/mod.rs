@@ -10,6 +10,9 @@ pub trait Service: Send + Sync + 'static {
 
 pub trait Target {
     fn mount<T: Service>(&mut self, service: T);
+    fn service<T: Service>(&mut self, service: T) {
+        self.mount(service)
+    }
 }
 
 #[derive(Default)]

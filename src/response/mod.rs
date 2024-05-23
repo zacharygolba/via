@@ -1,18 +1,22 @@
 #[macro_use]
 mod format;
 
-use crate::{Error, Result};
 use http::{
     header::{HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue},
     status::{InvalidStatusCode, StatusCode},
 };
+use http_body_util::Full;
+use hyper::body::Bytes;
 use std::{
     convert::TryFrom,
     ops::{Deref, DerefMut},
 };
 
+use crate::{Error, Result};
+
 pub use self::format::*;
-pub use hyper::Body;
+
+pub type Body = Full<Bytes>;
 
 pub trait Respond: Sized {
     fn respond(self) -> Result<Response>;

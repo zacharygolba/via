@@ -10,7 +10,7 @@ use std::future::Future;
 use self::basic::BasicStrategy;
 
 type AuthResult<T = CurrentUser> = Result<Option<T>, Error>;
-type CurrentUser = Box<dyn Send + Sync>;
+type CurrentUser = ();
 
 pub trait ContextExt {
     fn session(&self) -> Result<&Session>;
@@ -27,7 +27,7 @@ pub struct Authenticate<T: Strategy> {
     strategy: T,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Session {
     user: Option<CurrentUser>,
 }
@@ -75,8 +75,6 @@ impl Session {
     }
 
     fn new(user: impl Send + Sync + 'static) -> Self {
-        Session {
-            user: Some(Box::new(user)),
-        }
+        Session { user: Some(()) }
     }
 }

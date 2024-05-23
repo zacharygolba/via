@@ -7,18 +7,19 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bytes = "0.5.4"
-cookie = { features = ["secure", "percent-encode"], version = "0.13.3" }
-futures = "0.3.4"
-http = "0.2.0"
-hyper = { default-features = false, features = ["stream", "tcp"], version = "0.13.2" }
-indexmap = "1.3.2"
-smallvec = "1.2.0"
-serde = "1.0.104"
-serde_json = "1.0.48"
+bytes = "1.6.0"
+cookie = { features = ["secure", "percent-encode"], version = "0.18.1" }
+futures = "0.3.30"
+http = "1.1.0"
+http-body-util = "0.1.1"
+hyper = "1.3.1"
+indexmap = "2.2.6"
+smallvec = "1.13.2"
+serde = "1.0.202"
+serde_json = "1.0.117"
 
 [dependencies.radr]
 git = "https://github.com/zacharygolba/radr"
 
 [dependencies.verbs]
-git = "https://github.com/zacharygolba/verbs"
+path = "../../../verbs"

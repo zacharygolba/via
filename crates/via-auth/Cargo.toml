@@ -7,8 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-base64 = "0.12.0"
+base64 = "0.22.1"
 core = { package = "via-core", path = "../via-core" }
 error = { package = "via-error", path = "../via-error" }
-futures = "0.3.4"
-http = "0.2.0"
+futures = "0.3.30"
+http = "1.1.0"
+

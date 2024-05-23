@@ -12,6 +12,6 @@ async fn main() -> Result<()> {
     let mut app = via::new();
     let pool = database::pool()?;
 
-    app.mount(ApiService::new(&pool));
+    app.service(ApiService::new(&pool));
     app.listen(("0.0.0.0", 8080)).await
 }

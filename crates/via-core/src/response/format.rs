@@ -1,6 +1,5 @@
-use super::{Respond, Response};
+use super::{Body, Respond, Response};
 use crate::Result;
-use hyper::Body;
 
 struct Json(Result<Body>);
 

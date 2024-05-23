@@ -37,7 +37,7 @@ pub struct SignedJar<'a> {
 
 pub fn cookies(secret: &[u8]) -> Middleware {
     Middleware {
-        secret: Key::from_master(secret).into(),
+        secret: Key::from(secret).into(),
     }
 }
 

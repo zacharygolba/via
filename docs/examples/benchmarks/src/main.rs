@@ -12,7 +12,7 @@ async fn unit() -> impl Respond {}
 async fn main() -> Result<()> {
     let mut app = via::new();
 
-    app.mount(text);
-    app.mount(unit);
+    app.service(text);
+    app.service(unit);
     app.listen(("0.0.0.0", 8080)).await
 }
