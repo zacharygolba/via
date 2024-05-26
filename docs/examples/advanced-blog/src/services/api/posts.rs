@@ -1,29 +1,37 @@
 use via::prelude::*;
 
 use super::Document;
-use crate::database::models::post::*;
+use crate::database::{models::post::*, Pool};
 
-connect!(PostsService);
+pub struct PostsService {
+    pool: Pool,
+}
 
 async fn authenticate(context: Context, next: Next) -> Result<impl Respond> {
     println!("authenticate");
     next.call(context).await
 }
 
+impl PostsService {
+    pub fn new(pool: &Pool) -> Self {
+        Self { pool: pool.clone() }
+    }
+}
+
 #[service("/posts")]
 impl PostsService {
     includes! {
-        via::only![DELETE, POST, PATCH](authenticate),
+        via::only![DELETE, PATCH, POST, PUT](authenticate),
     }
 
-    #[action(GET, "/")]
+    #[endpoint(GET, "/")]
     async fn index(&self) -> Result<impl Respond> {
         Ok(Document {
             data: Post::public(&self.pool).await?,
         })
     }
 
-    #[action(POST, "/")]
+    #[endpoint(POST, "/")]
     async fn create(&self, mut context: Context) -> Result<impl Respond> {
         let body: Document<NewPost> = context.read().json().await?;
 
@@ -32,19 +40,19 @@ impl PostsService {
         })
     }
 
-    #[action(GET, "/:id")]
+    #[endpoint(GET, "/:id")]
     async fn show(&self, id: i32) -> Result<impl Respond> {
         Ok(Document {
             data: Post::find(&self.pool, id).await?,
         })
     }
 
-    #[action(PATCH, "/:id")]
+    #[endpoint(PATCH, "/:id")]
     async fn update(&self, id: i32, context: Context) -> Result<impl Respond> {
         Ok(format!("Update Post: {}", id))
     }
 
-    #[action(DELETE, "/:id")]
+    #[endpoint(DELETE, "/:id")]
     async fn destroy(&self, id: i32) -> Result<impl Respond> {
         Ok(format!("Destroy Post: {}", id))
     }

@@ -1,59 +1,94 @@
-use crate::{middleware::DynMiddleware, Context, Middleware, Next};
+use router::{Router as GenericRouter, Verb};
 use std::sync::Arc;
-use verbs::*;
 
-pub type Location<'a> = radr::Location<'a, Route>;
+use crate::{middleware::DynMiddleware, Context, Middleware, Next};
+
+pub type Location<'a> = router::Location<'a, Route>;
 
 pub trait Service: Send + Sync + 'static {
-    fn mount(self: Arc<Self>, to: &mut Location);
+    fn connect(self: Arc<Self>, to: &mut Location);
 }
 
-pub trait Target {
-    fn mount<T: Service>(&mut self, service: T);
+pub trait Endpoint {
+    fn delegate<T: Service>(&mut self, service: T);
 }
+
+#[derive(Default)]
+pub struct Router(GenericRouter<Route>);
 
 #[derive(Default)]
 pub struct Route {
-    verbs: Map<DynMiddleware>,
     stack: Vec<DynMiddleware>,
 }
 
-#[derive(Default)]
-pub struct Router {
-    value: radr::Router<Route>,
-}
-
-impl<'a> Target for Location<'a> {
-    fn mount<T: Service>(&mut self, service: T) {
-        Service::mount(Arc::new(service), self);
+impl<'a> Endpoint for Location<'a> {
+    fn delegate<T: Service>(&mut self, service: T) {
+        Service::connect(Arc::new(service), self);
     }
 }
 
 impl Route {
-    pub fn expose(&mut self, verb: Verb, action: impl Middleware) {
-        self.verbs.insert(verb, Arc::new(action));
+    pub fn connect(&mut self, middleware: impl Middleware) {
+        self.handle(Verb::CONNECT, middleware);
     }
 
-    pub fn include(&mut self, middleware: impl Middleware) {
+    pub fn delete(&mut self, middleware: impl Middleware) {
+        self.handle(Verb::DELETE, middleware);
+    }
+
+    pub fn get(&mut self, middleware: impl Middleware) {
+        self.handle(Verb::GET, middleware);
+    }
+
+    pub fn head(&mut self, middleware: impl Middleware) {
+        self.handle(Verb::HEAD, middleware);
+    }
+
+    pub fn options(&mut self, middleware: impl Middleware) {
+        self.handle(Verb::OPTIONS, middleware);
+    }
+
+    pub fn patch(&mut self, middleware: impl Middleware) {
+        self.handle(Verb::PATCH, middleware);
+    }
+
+    pub fn post(&mut self, middleware: impl Middleware) {
+        self.handle(Verb::POST, middleware);
+    }
+
+    pub fn put(&mut self, middleware: impl Middleware) {
+        self.handle(Verb::PUT, middleware);
+    }
+
+    pub fn trace(&mut self, middleware: impl Middleware) {
+        self.handle(Verb::TRACE, middleware);
+    }
+
+    pub fn handle(&mut self, verb: Verb, middleware: impl Middleware) {
+        self.include(move |context: Context, next: Next| {
+            if verb.intersects(context.method().into()) {
+                middleware.call(context, next)
+            } else {
+                next.call(context)
+            }
+        });
+    }
+
+    pub fn include(&mut self, middleware: impl Middleware) -> &mut Self {
         self.stack.push(Arc::new(middleware));
+        self
     }
 }
 
 impl Router {
     pub fn at(&mut self, pattern: &'static str) -> Location {
-        self.value.at(pattern)
+        self.0.at(pattern)
     }
 
     pub fn visit(&self, context: &mut Context) -> Next {
-        let (parameters, method, path) = context.locate();
+        let (parameters, _, path) = context.locate();
 
-        Next::new(self.value.visit(path).flat_map(|route| {
-            let verbs = route.verbs.get(match route.label {
-                radr::Label::CatchAll(_) => method.into(),
-                _ if route.exact => method.into(),
-                _ => Verb::none(),
-            });
-
+        Next::new(self.0.visit(path).flat_map(|route| {
             match route.param {
                 Some(("", _)) | Some((_, "")) | None => {}
                 Some((name, value)) => {
@@ -61,7 +96,7 @@ impl Router {
                 }
             }
 
-            route.stack.iter().chain(verbs)
+            route.stack.iter()
         }))
     }
 }

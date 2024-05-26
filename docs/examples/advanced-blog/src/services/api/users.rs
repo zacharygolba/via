@@ -1,46 +1,66 @@
 use via::prelude::*;
 
 use super::Document;
-use crate::database::models::{post::Post, user::*};
+use crate::database::{
+    models::{post::Post, user::*},
+    Pool,
+};
 
-connect!(UserService);
-connect!(UsersService);
+pub struct UserService {
+    pool: Pool,
+}
+
+pub struct UsersService {
+    pool: Pool,
+}
+
+impl UserService {
+    pub fn new(pool: &Pool) -> Self {
+        Self { pool: pool.clone() }
+    }
+}
 
 #[service("/:id")]
 impl UserService {
-    #[action(GET, "/")]
+    #[endpoint(GET, "/")]
     async fn show(&self, id: i32) -> Result<impl Respond> {
         Ok(Document {
             data: User::find(&self.pool, id).await?,
         })
     }
 
-    #[action(PATCH, "/")]
+    #[endpoint(PATCH, "/")]
     async fn update(&self, id: i32, mut context: Context) -> Result<impl Respond> {
         let body: Document<ChangeSet> = context.read().json().await?;
         Ok(format!("Update User: {}", id))
     }
 
-    #[action(DELETE, "/")]
+    #[endpoint(DELETE, "/")]
     async fn destroy(&self, id: i32) -> Result<impl Respond> {
         Ok(format!("Destroy User: {}", id))
     }
 }
 
+impl UsersService {
+    pub fn new(pool: &Pool) -> Self {
+        Self { pool: pool.clone() }
+    }
+}
+
 #[service("/users")]
 impl UsersService {
-    mount! {
+    delegate! {
         UserService::new(&self.pool),
     }
 
-    #[action(GET, "/")]
+    #[endpoint(GET, "/")]
     async fn index(&self) -> Result<impl Respond> {
         Ok(Document {
             data: User::all(&self.pool).await?,
         })
     }
 
-    #[action(POST, "/")]
+    #[endpoint(POST, "/")]
     async fn create(&self, mut context: Context) -> Result<impl Respond> {
         let body: Document<NewUser> = context.read().json().await?;
 
@@ -49,7 +69,7 @@ impl UsersService {
         })
     }
 
-    #[action(GET, "/:id/posts")]
+    #[endpoint(GET, "/:id/posts")]
     async fn posts(&self, id: i32) -> Result<impl Respond> {
         Ok(Document {
             data: Post::by_user(&self.pool, id).await?,

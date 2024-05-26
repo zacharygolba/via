@@ -89,6 +89,10 @@ impl Response {
             value: http::Response::new(body.into()),
         }
     }
+
+    pub fn status_code(&self) -> StatusCode {
+        self.value.status()
+    }
 }
 
 impl Respond for Response {
@@ -176,5 +180,11 @@ impl<T: Respond> Respond for WithStatusCode<T> {
 
         *response.status_mut() = self.status?;
         Ok(response)
+    }
+}
+
+impl Respond for serde_json::Value {
+    fn respond(self) -> Result<Response> {
+        json(&self).respond()
     }
 }

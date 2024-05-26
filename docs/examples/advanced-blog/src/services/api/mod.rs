@@ -2,27 +2,36 @@ mod error;
 mod posts;
 mod users;
 
-use self::{posts::PostsService, users::UsersService};
-use crate::database::models::user::User;
 use serde::{Deserialize, Serialize};
 use via::prelude::*;
 
-connect!(ApiService);
+use self::{posts::PostsService, users::UsersService};
+use crate::database::Pool;
+
+pub struct ApiService {
+    pool: Pool,
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Document<T> {
     pub data: T,
 }
 
+impl ApiService {
+    pub fn new(pool: &Pool) -> Self {
+        Self { pool: pool.clone() }
+    }
+}
+
 #[service("/api")]
 impl ApiService {
-    includes! {
-        error::handler,
-    }
-
-    mount! {
+    delegate! {
         PostsService::new(&self.pool),
         UsersService::new(&self.pool),
+    }
+
+    includes! {
+        error::handler,
     }
 }
 

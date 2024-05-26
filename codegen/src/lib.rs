@@ -5,14 +5,14 @@ mod path;
 mod util;
 mod verb;
 
-use self::attr::{Action, Service};
+use self::attr::{Endpoint, Service};
 use proc_macro::TokenStream;
 use syn::{ItemFn, ItemImpl};
 
 #[proc_macro_attribute]
-pub fn action(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn endpoint(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut item = syn::parse_macro_input!(item as ItemFn);
-    let action = syn::parse_macro_input!(attr as Action);
+    let action = syn::parse_macro_input!(attr as Endpoint);
 
     util::expand(&action, &mut item).into()
 }

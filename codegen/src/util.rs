@@ -21,9 +21,9 @@ pub trait Identify {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MacroPath {
-    Action,
+    Delegate,
+    Endpoint,
     Includes,
-    Mount,
 }
 
 pub fn expand<T>(expander: &impl Expand<T>, item: &mut T) -> TokenStream {
@@ -81,8 +81,8 @@ impl MacroPath {
     pub fn method(path: &Path) -> Option<Ident> {
         if *path == MacroPath::Includes {
             Some(syn::parse_str("include").unwrap())
-        } else if *path == MacroPath::Mount {
-            Some(syn::parse_str("mount").unwrap())
+        } else if *path == MacroPath::Delegate {
+            Some(syn::parse_str("delegate").unwrap())
         } else {
             None
         }
@@ -92,9 +92,9 @@ impl MacroPath {
 impl PartialEq<Path> for MacroPath {
     fn eq(&self, other: &Path) -> bool {
         other.get_ident().map_or(false, |ident| match self {
-            MacroPath::Action => ident == "action",
+            MacroPath::Delegate => ident == "delegate",
+            MacroPath::Endpoint => ident == "endpoint",
             MacroPath::Includes => ident == "includes",
-            MacroPath::Mount => ident == "mount",
         })
     }
 }

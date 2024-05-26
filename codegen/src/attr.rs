@@ -9,7 +9,7 @@ use syn::{
 };
 
 #[derive(Default)]
-pub struct Action {
+pub struct Endpoint {
     meta: TokenStream,
     path: Path,
     verb: Verb,
@@ -70,9 +70,9 @@ where
     }
 }
 
-impl Expand<ImplItemMethod> for Action {
+impl Expand<ImplItemMethod> for Endpoint {
     fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
-        let Action { path, verb, .. } = self;
+        let Endpoint { path, verb, .. } = self;
         let mut location = quote! { location };
         let mut service = quote! {};
         let arguments = expand_arguments(path, item.sig.inputs.iter());
@@ -89,7 +89,7 @@ impl Expand<ImplItemMethod> for Action {
 
         Ok(quote! {{
             #service
-            #location.expose(#verb, move |context: via::Context, next: via::Next| {
+            #location.handle(#verb, move |context: via::Context, next: via::Next| {
                 #service
                 async move {
                     via::Respond::respond(Self::#target(#arguments).await)
@@ -99,9 +99,9 @@ impl Expand<ImplItemMethod> for Action {
     }
 }
 
-impl Expand<ItemFn> for Action {
+impl Expand<ItemFn> for Endpoint {
     fn expand(&self, item: &mut ItemFn) -> Result<TokenStream, Error> {
-        let Action { meta, .. } = self;
+        let Endpoint { meta, .. } = self;
         let ident = &item.sig.ident;
         let vis = &item.vis;
 
@@ -112,15 +112,15 @@ impl Expand<ItemFn> for Action {
 
             #[via::service]
             impl #ident {
-                #[action(#meta)]
+                #[endpoint(#meta)]
                 #item
             }
         })
     }
 }
 
-impl Parse for Action {
-    fn parse(input: ParseStream) -> Result<Action, Error> {
+impl Parse for Endpoint {
+    fn parse(input: ParseStream) -> Result<Endpoint, Error> {
         if input.is_empty() {
             return Ok(Default::default());
         }
@@ -140,7 +140,7 @@ impl Parse for Action {
             path = input.parse()?;
         }
 
-        Ok(Action { meta, path, verb })
+        Ok(Endpoint { meta, path, verb })
     }
 }
 
@@ -163,7 +163,7 @@ impl Expand<ItemImpl> for Service {
             #item
 
             impl via::routing::Service for #ty {
-                fn mount(self: std::sync::Arc<Self>, location: &mut via::routing::Location) {
+                fn connect(self: std::sync::Arc<Self>, location: &mut via::routing::Location) {
                     #(let mut location = location.at(#path);)*
                     let service = self.clone();
 
@@ -193,14 +193,14 @@ impl Expand<ImplItemMacro> for Service {
 impl Expand<ImplItemMethod> for Service {
     fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
         let mut iter = item.attrs.iter();
-        let option = iter.position(|attr| attr.path == MacroPath::Action);
+        let option = iter.position(|attr| attr.path == MacroPath::Endpoint);
 
         if let Some(index) = option {
             let input = item.attrs.remove(index);
             let mut action = if input.tokens.is_empty() {
                 Default::default()
             } else {
-                input.parse_args::<Action>()?
+                input.parse_args::<Endpoint>()?
             };
 
             if let Some(path) = &self.path {

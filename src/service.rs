@@ -1,11 +1,7 @@
 use super::{Application, CallFuture, HttpRequest, HttpResponse};
 use futures::future::{ready, Ready};
 use hyper::service::Service as HyperService;
-use std::{
-    convert,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::{convert, sync::Arc};
 
 type Result<T = ()> = crate::Result<T, convert::Infallible>;
 
