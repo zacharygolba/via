@@ -22,13 +22,10 @@ pub use self::{
     middleware::{Context, Middleware, Next},
     response::Respond,
 };
-pub use codegen::{action, service};
-
+pub use codegen::{endpoint, service};
 pub use http;
-use tokio::net::TcpListener;
-pub use verbs;
+pub use router::Verb;
 
-use self::{response::Response, routing::*};
 use futures::future::{FutureExt, Map};
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
@@ -36,6 +33,9 @@ use std::{
     convert::Infallible,
     net::{SocketAddr, ToSocketAddrs},
 };
+use tokio::net::TcpListener;
+
+use self::{response::Response, routing::*};
 
 type CallFuture = Map<BoxFuture<Result>, fn(Result) -> Result<HttpResponse, Infallible>>;
 type HttpRequest = http::Request<hyper::body::Incoming>;
@@ -50,13 +50,13 @@ macro_rules! includes {
 }
 
 #[macro_export]
-macro_rules! mount {
+macro_rules! delegate {
     { $($service:expr),* $(,)* } => {};
 }
 
 #[macro_export]
 macro_rules! only([$($method:ident),*] => {
-    $crate::middleware::filter::only($($crate::verbs::Verb::$method)|*)
+    $crate::middleware::filter::only($($crate::Verb::$method)|*)
 });
 
 pub struct Application {
@@ -79,6 +79,11 @@ fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
 impl Application {
     pub fn at(&mut self, pattern: &'static str) -> Location {
         self.router.at(pattern)
+    }
+
+    pub fn include(&mut self, middleware: impl Middleware) -> &mut Self {
+        self.at("/").include(middleware);
+        self
     }
 
     pub async fn listen(self, address: impl ToSocketAddrs) -> Result<()> {
@@ -128,8 +133,8 @@ impl Application {
     }
 }
 
-impl Target for Application {
-    fn mount<T: Service>(&mut self, service: T) {
-        self.router.at("/").mount(service);
+impl Endpoint for Application {
+    fn delegate<T: Service>(&mut self, service: T) {
+        self.router.at("/").delegate(service);
     }
 }

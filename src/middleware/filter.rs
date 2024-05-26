@@ -1,5 +1,6 @@
+use router::Verb;
+
 use crate::{BoxFuture, Context, Middleware, Next, Result};
-use verbs::Verb;
 
 pub struct Only<T: Middleware> {
     middleware: T,

@@ -2,7 +2,7 @@
 name = "advanced-blog"
 version = "0.1.0"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,6 +11,7 @@ chrono = { features = ["serde"], version = "0.4.38" }
 diesel = { features = ["chrono", "postgres", "r2d2"], version = "1.4.3" }
 dotenv = "0.15.0"
 serde = { features = ["derive"], version = "1.0.202" }
+serde_json = "1.0.117"
 tokio = { features = ["full"], version = "1.37.0" }
 via = { path = "../../.." }
 lazy_static = "1.4.0"
