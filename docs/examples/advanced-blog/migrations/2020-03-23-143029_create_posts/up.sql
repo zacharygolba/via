@@ -11,3 +11,10 @@ CREATE TABLE posts (
 );
 
 SELECT diesel_manage_updated_at('posts');
+
+INSERT INTO posts (body, title, user_id, published_at) VALUES (
+  'Hello, world!',
+  'Hello, world!',
+  (SELECT id FROM users WHERE username = 'admin'),
+  CURRENT_TIMESTAMP
+);

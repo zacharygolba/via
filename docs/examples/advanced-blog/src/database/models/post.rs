@@ -1,7 +1,11 @@
-use crate::database::prelude::*;
-use diesel::dsl::{Eq, Filter, IsNotNull, Select};
+use diesel::dsl::{Eq, Filter, IsNotNull};
 use serde::{Deserialize, Serialize};
 use via::prelude::*;
+
+use crate::database::{
+    models::user::{users, User},
+    prelude::*,
+};
 
 pub use schema::posts;
 
@@ -27,6 +31,7 @@ pub struct NewPost {
 }
 
 #[derive(Associations, Clone, Debug, Identifiable, Queryable, Serialize)]
+#[belongs_to(User)]
 #[serde(rename_all = "camelCase")]
 pub struct Post {
     pub id: i32,
@@ -39,38 +44,61 @@ pub struct Post {
     pub published_at: Option<NaiveDateTime>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct PostWithAuthor {
+    #[serde(flatten)]
+    post: Post,
+    author: User,
+}
+
 fn published() -> IsNotNull<posts::published_at> {
     posts::published_at.is_not_null()
 }
 
 impl NewPost {
-    pub async fn insert(self, pool: &Pool) -> Result<Post> {
-        let insert = diesel::insert_into(posts::table);
-        Ok(insert.values(self).get_result_async(pool).await?)
+    pub async fn insert(self, pool: &Pool) -> Result<PostWithAuthor> {
+        let author = User::find(pool, self.user_id).await?;
+        let post = diesel::insert_into(posts::table)
+            .values(self)
+            .get_result(&mut pool.get().await?)
+            .await?;
+
+        Ok(PostWithAuthor { post, author })
     }
 }
 
 impl Post {
-    pub async fn by_user(pool: &Pool, id: i32) -> Result<Vec<Post>> {
+    pub async fn by_user(pool: &Pool, id: i32) -> Result<Vec<PostWithAuthor>> {
         Ok(posts::table
+            .inner_join(users::table)
             .filter(posts::user_id.eq(id))
             .filter(published())
-            .load_async(pool)
-            .await?)
+            .load(&mut pool.get().await?)
+            .await?
+            .into_iter()
+            .map(|(post, author)| PostWithAuthor { post, author })
+            .collect())
     }
 
-    pub async fn find(pool: &Pool, id: i32) -> Result<Post> {
-        Ok(posts::table
+    pub async fn find(pool: &Pool, id: i32) -> Result<PostWithAuthor> {
+        let (post, author) = posts::table
+            .inner_join(users::table)
             .filter(posts::id.eq(id))
             .filter(published())
-            .first_async(pool)
-            .await?)
+            .first(&mut pool.get().await?)
+            .await?;
+
+        Ok(PostWithAuthor { post, author })
     }
 
-    pub async fn public(pool: &Pool) -> Result<Vec<Post>> {
+    pub async fn public(pool: &Pool) -> Result<Vec<PostWithAuthor>> {
         Ok(posts::table
+            .inner_join(users::table)
             .filter(posts::published_at.is_not_null())
-            .load_async(pool)
-            .await?)
+            .load(&mut pool.get().await?)
+            .await?
+            .into_iter()
+            .map(|(post, author)| PostWithAuthor { post, author })
+            .collect())
     }
 }

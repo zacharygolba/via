@@ -9,3 +9,5 @@ CREATE TABLE users (
 
 SELECT diesel_manage_updated_at('users');
 CREATE UNIQUE INDEX users_username ON users (username);
+
+INSERT INTO users (username) VALUES ('admin');

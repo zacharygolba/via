@@ -5,16 +5,18 @@ pub mod prelude {
     pub use super::{models, schema, Pool};
     pub use chrono::NaiveDateTime;
     pub use diesel::prelude::*;
-    pub use tokio_diesel::{OptionalExtension, *};
+    pub use diesel_async::RunQueryDsl;
 }
 
-use diesel::{prelude::*, r2d2};
+use std::env;
+
+use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
 use via::prelude::*;
 
-type ConnectionManager = r2d2::ConnectionManager<PgConnection>;
-pub type Pool = r2d2::Pool<ConnectionManager>;
+type ConnectionManager = AsyncDieselConnectionManager<AsyncPgConnection>;
+pub type Pool = bb8::Pool<ConnectionManager>;
 
-pub fn pool() -> Result<Pool> {
-    let url = dotenv::var("DATABASE_URL")?;
-    Ok(Pool::new(ConnectionManager::new(url))?)
+pub async fn pool() -> Result<Pool> {
+    let config = ConnectionManager::new(env::var("DATABASE_URL")?);
+    Ok(Pool::builder().build(config).await?)
 }

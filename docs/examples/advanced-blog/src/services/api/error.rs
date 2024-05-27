@@ -1,5 +1,4 @@
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
-use tokio_diesel::AsyncError;
 use via::prelude::*;
 
 use super::Document;
@@ -13,11 +12,7 @@ pub async fn handler(context: Context, next: Next) -> Result {
 }
 
 fn as_diesel_error(error: &Error) -> Option<&DieselError> {
-    if let AsyncError::Error(value) = error.source().downcast_ref()? {
-        Some(value)
-    } else {
-        None
-    }
+    unimplemented!()
 }
 
 fn catch(error: Error) -> Result {
