@@ -128,7 +128,7 @@ impl<'a, 'b, T: Default> Iterator for Visit<'a, 'b, T> {
         }
 
         let Visit { node, path, .. } = self;
-        let (start, value) = path.next()?;
+        let (start, value) = path.next().unwrap_or((0, ""));
         let next = node.find(value)?;
 
         *node = next;
