@@ -5,7 +5,7 @@ use syn::{
     parse::{Error, Parse, ParseStream},
     punctuated::Punctuated,
     spanned::Spanned,
-    Expr, FnArg, ImplItem, ImplItemMacro, ImplItemMethod, ItemFn, ItemImpl, LitStr, PatType, Token,
+    Expr, FnArg, ImplItem, ImplItemFn, ImplItemMacro, ItemFn, ItemImpl, LitStr, PatType, Token,
 };
 
 #[derive(Default)]
@@ -70,8 +70,8 @@ where
     }
 }
 
-impl Expand<ImplItemMethod> for Endpoint {
-    fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
+impl Expand<ImplItemFn> for Endpoint {
+    fn expand(&self, item: &mut ImplItemFn) -> Result<TokenStream, Error> {
         let Endpoint { path, verb, .. } = self;
         let mut location = quote! { location };
         let mut service = quote! {};
@@ -154,7 +154,7 @@ impl Expand<ItemImpl> for Service {
         for item in &mut item.items {
             if let ImplItem::Macro(m) = item {
                 middleware.push(self.expand(m)?);
-            } else if let ImplItem::Method(m) = item {
+            } else if let ImplItem::Fn(m) = item {
                 routes.push(self.expand(m)?);
             }
         }
@@ -190,17 +190,16 @@ impl Expand<ImplItemMacro> for Service {
     }
 }
 
-impl Expand<ImplItemMethod> for Service {
-    fn expand(&self, item: &mut ImplItemMethod) -> Result<TokenStream, Error> {
+impl Expand<ImplItemFn> for Service {
+    fn expand(&self, item: &mut ImplItemFn) -> Result<TokenStream, Error> {
         let mut iter = item.attrs.iter();
-        let option = iter.position(|attr| attr.path == MacroPath::Endpoint);
+        let option = iter.position(|attr| *attr.path() == MacroPath::Endpoint);
 
         if let Some(index) = option {
             let input = item.attrs.remove(index);
-            let mut action = if input.tokens.is_empty() {
-                Default::default()
-            } else {
-                input.parse_args::<Endpoint>()?
+            let mut action = match input.meta.require_list() {
+                Ok(_) => input.parse_args::<Endpoint>()?,
+                Err(_) => Default::default(),
             };
 
             if let Some(path) = &self.path {

@@ -33,9 +33,9 @@ pub fn expand<T>(expander: &impl Expand<T>, item: &mut T) -> TokenStream {
     }
 }
 
-pub fn fatal<'a, F, T>(label: &'static str, parser: F) -> impl Fn(&'a str) -> IResult<'a, T>
+pub fn fatal<'a, F, T>(label: &'static str, mut parser: F) -> impl FnMut(&'a str) -> IResult<'a, T>
 where
-    F: Fn(&'a str) -> IResult<'a, T>,
+    F: FnMut(&'a str) -> IResult<'a, T>,
 {
     use nom::Err::*;
 

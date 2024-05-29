@@ -56,7 +56,7 @@ fn literal(input: &str) -> IResult<Part> {
 }
 
 fn param(input: &str) -> IResult<Part> {
-    let recognize = preceded(pair(char('/'), one_of("*:")), take_till(|item| item == '/'));
+    let mut recognize = preceded(pair(char('/'), one_of("*:")), take_till(|item| item == '/'));
     let (rest, input) = recognize(input)?;
     let parser = map(map_res(take(input.len()), syn::parse_str), Part::Param);
 
