@@ -38,4 +38,4 @@ features = ["full"]
 version = "1.37.0"
 
 [workspace]
-members = ["codegen", "contrib/*", "crates/*", "docs/examples/*"]
+members = ["codegen", "crates/*", "docs/examples/*"]
