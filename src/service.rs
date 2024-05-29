@@ -3,8 +3,6 @@ use futures::future::{ready, Ready};
 use hyper::service::Service as HyperService;
 use std::{convert, sync::Arc};
 
-type Result<T = ()> = crate::Result<T, convert::Infallible>;
-
 pub struct MakeService {
     service: Service,
 }
@@ -22,8 +20,8 @@ impl From<Application> for MakeService {
 }
 
 impl<T> HyperService<T> for MakeService {
-    type Error = convert::Infallible;
-    type Future = Ready<Result<Self::Response>>;
+    type Error = crate::Error;
+    type Future = Ready<crate::Result<Self::Response>>;
     type Response = Service;
 
     fn call(&self, _: T) -> Self::Future {
