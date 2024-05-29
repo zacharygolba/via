@@ -1,0 +1,9 @@
+[package]
+name = "via-serve-static"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mime_guess = "2.0.4"
+tokio = { version = "1.37.0", features = ["fs"] }
+via = { path = "../.." }

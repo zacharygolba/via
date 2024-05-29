@@ -1,22 +1,40 @@
 #[macro_use]
 mod format;
 
+use futures::{
+    stream::{self, BoxStream, Stream, StreamExt},
+    TryStreamExt,
+};
 use http::{
     header::{HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue},
     status::{InvalidStatusCode, StatusCode},
 };
-use http_body_util::Full;
-use hyper::body::Bytes;
-use std::{
-    convert::TryFrom,
-    ops::{Deref, DerefMut},
+use http_body_util::{Empty, Full, StreamBody};
+use hyper::{
+    body::{Body as HyperBody, Bytes},
+    Error as HyperError,
 };
+use std::{
+    convert::{Infallible, TryFrom},
+    io,
+    ops::{Deref, DerefMut},
+    pin::Pin,
+    task::{self, Poll},
+};
+use tokio::fs::File;
+use tokio_util::io::ReaderStream;
 
 use crate::{Error, Result};
 
 pub use self::format::*;
 
-pub type Body = Full<Bytes>;
+type Frame = hyper::body::Frame<Bytes>;
+
+pub enum Body {
+    Complete(Full<Bytes>),
+    Stream(StreamBody<BoxStream<'static, Result<Frame>>>),
+    Empty(Empty<Bytes>),
+}
 
 pub trait Respond: Sized {
     fn respond(self) -> Result<Response>;
@@ -52,6 +70,48 @@ pub struct WithStatusCode<T: Respond> {
     value: T,
 }
 
+impl Body {
+    fn stream<S, V, E>(stream: S) -> Self
+    where
+        S: Stream<Item = Result<V, E>> + Send + 'static,
+        Bytes: From<V>,
+        Error: From<E>,
+    {
+        unimplemented!()
+    }
+}
+
+impl Default for Body {
+    fn default() -> Self {
+        Body::Empty(Empty::default())
+    }
+}
+
+impl<T> From<T> for Body
+where
+    T: Into<Full<Bytes>>,
+{
+    fn from(value: T) -> Self {
+        Body::Complete(value.into())
+    }
+}
+
+impl HyperBody for Body {
+    type Data = Bytes;
+    type Error = Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+    ) -> Poll<Option<Result<Frame, Self::Error>>> {
+        match self.get_mut() {
+            Body::Complete(value) => Pin::new(value).poll_frame(cx).map_err(Error::from),
+            Body::Stream(value) => Pin::new(value).poll_frame(cx),
+            Body::Empty(value) => Pin::new(value).poll_frame(cx).map_err(Error::from),
+        }
+    }
+}
+
 impl Respond for &'static str {
     fn respond(self) -> Result<Response> {
         Ok(media!(self, "text/plain"))
@@ -61,6 +121,18 @@ impl Respond for &'static str {
 impl Respond for String {
     fn respond(self) -> Result<Response> {
         Ok(media!(self, "text/plain"))
+    }
+}
+
+impl Respond for File {
+    fn respond(self) -> Result<Response> {
+        let stream = StreamBody::new(
+            ReaderStream::new(self)
+                .map(|result| result.map(Frame::data).map_err(Error::from))
+                .boxed(),
+        );
+
+        Ok(Response::new(Body::Stream(stream)))
     }
 }
 

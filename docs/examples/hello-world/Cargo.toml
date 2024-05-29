@@ -9,3 +9,4 @@ edition = "2021"
 [dependencies]
 tokio = { features = ["full"], version = "1.37.0" }
 via = { path = "../../.." }
+via-serve-static = { path = "../../../crates/via-serve-static" }

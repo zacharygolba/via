@@ -1,4 +1,5 @@
 use via::prelude::*;
+use via_serve_static::ServeStatic;
 
 struct Routes;
 
@@ -23,7 +24,7 @@ impl Routes {
     }
 }
 
-async fn logger(context: Context, next: Next) -> Result<impl Respond> {
+async fn logger(context: Context, next: Next) -> Result {
     let path = context.uri().path().to_string();
     let method = context.method().clone();
 
@@ -43,7 +44,9 @@ async fn main() -> Result<()> {
     let mut app = via::new();
 
     app.include(logger);
+
     app.delegate(Routes);
+    app.delegate(ServeStatic::new("./public")?);
 
     app.listen(("0.0.0.0", 8080)).await
 }
