@@ -1,29 +1,6 @@
 use via::prelude::*;
 use via_serve_static::ServeStatic;
 
-struct Routes;
-
-#[service]
-impl Routes {
-    includes! {
-        |context: Context, next: Next| async {
-            let result = next.call(context).await;
-
-            println!("This will be called after the request is processed");
-            result
-        },
-        |context: Context, next: Next| async {
-            println!("This will be called before the request is processed");
-            next.call(context).await
-        },
-    }
-
-    #[endpoint(GET, "/hello/:name")]
-    async fn hello(name: String) -> Result<impl Respond> {
-        Ok(format!("Hello, {}", name))
-    }
-}
-
 async fn logger(context: Context, next: Next) -> Result {
     let path = context.uri().path().to_string();
     let method = context.method().clone();
@@ -44,9 +21,21 @@ async fn main() -> Result<()> {
     let mut app = via::new();
 
     app.include(logger);
+    ServeStatic::new(app.at("/*path")).serve("./public")?;
 
-    app.delegate(Routes);
-    app.delegate(ServeStatic::new("./public")?);
+    let mut hello = app.at("/hello/:name");
+
+    hello.include(|context: Context, next: Next| async move {
+        println!("Called before the request is handled");
+        let response = next.call(context).await?;
+        println!("Called after the request is handled");
+        Ok::<_, Error>(response)
+    });
+
+    hello.get(|context: Context, _: Next| async move {
+        let name: String = context.params().get("name")?;
+        Ok::<_, Error>(format!("Hello, {}", name))
+    });
 
     app.listen(("0.0.0.0", 8080)).await
 }

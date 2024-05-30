@@ -1,9 +1,7 @@
 #[macro_export]
 macro_rules! bail {
     ($($tokens:tt)+) => {
-        Err($crate::error::Bail {
-            message: format!($($tokens)+)
-        })?
+        Err($crate::error::Bail::new(format!($($tokens)+)))?
     };
 }
 

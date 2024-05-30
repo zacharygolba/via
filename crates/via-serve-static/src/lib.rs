@@ -1,45 +1,67 @@
 use std::path::{Component, Path, PathBuf};
 use tokio::fs::{self, File};
-use via::prelude::*;
+use via::{prelude::*, routing::Location};
 
-pub struct ServeStatic {
-    root: PathBuf,
+pub struct ServeStatic<'a> {
+    location: Location<'a>,
 }
 
-#[service]
-impl ServeStatic {
-    pub fn new<T>(path: T) -> Result<ServeStatic>
+struct StaticServer {
+    path_param: &'static str,
+    public_dir: PathBuf,
+}
+
+impl<'a> ServeStatic<'a> {
+    pub fn new(location: Location<'a>) -> Self {
+        ServeStatic { location }
+    }
+
+    pub fn serve<T>(mut self, public_dir: T) -> Result<()>
     where
         Error: From<T::Error>,
         T: TryInto<PathBuf>,
     {
-        let mut root = path.try_into()?;
-
-        if root.is_relative() {
-            root = normalize_path(&std::env::current_dir()?.join(root));
-        }
-
-        Ok(ServeStatic { root })
-    }
-
-    #[endpoint(GET, "/*path")]
-    async fn serve(&self, path: String, context: Context, next: Next) -> Result {
-        let absolute_path = self.root.join(path.trim_start_matches('/'));
-        let file_path = resolve_file_path(&absolute_path).await?;
-        let mut response = match try_open_file(&file_path).await? {
-            Some(file) => file.respond()?,
-            None => return next.call(context).await,
+        let mut public_dir = public_dir.try_into()?;
+        let path_param = match self.location.param() {
+            Some(param) => param,
+            None => via::bail!("location is missing path parameter"),
         };
 
-        response.headers_mut().insert(
-            "Content-Type",
-            mime_guess::from_path(&file_path)
-                .first_or_octet_stream()
-                .to_string()
-                .parse()?,
-        );
+        if public_dir.is_relative() {
+            let current_dir = std::env::current_dir()?;
+            public_dir = normalize_path(&current_dir.join(public_dir));
+        }
 
-        Ok(response)
+        self.location.include(StaticServer {
+            path_param,
+            public_dir,
+        });
+
+        Ok(())
+    }
+}
+
+impl Middleware for StaticServer {
+    fn call(&self, context: Context, next: Next) -> via::BoxFuture<Result> {
+        let path_param = self.path_param;
+        let public_dir = self.public_dir.clone();
+
+        Box::pin(async move {
+            let path_param_value = context.params().get::<String>(path_param)?;
+            let absolute_path = public_dir.join(path_param_value.trim_start_matches('/'));
+            let file_path = resolve_file_path(&absolute_path).await?;
+            let file = match try_open_file(&file_path).await? {
+                Some(file) => file,
+                None => return next.call(context).await,
+            };
+
+            file.respond()?.with_header(
+                "Content-Type",
+                mime_guess::from_path(&file_path)
+                    .first_or_octet_stream()
+                    .to_string(),
+            )
+        })
     }
 }
 

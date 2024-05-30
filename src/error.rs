@@ -48,6 +48,12 @@ fn respond(error: Error) -> Result<Response> {
     Ok(response)
 }
 
+impl Bail {
+    pub fn new(message: String) -> Bail {
+        Bail { message }
+    }
+}
+
 impl Debug for Bail {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Debug::fmt(&self.message, f)
