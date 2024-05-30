@@ -5,10 +5,13 @@ async fn main() -> Result<()> {
     let mut app = via::new();
 
     app.include(logger);
-    app.at("/hello/:name").get(|context: Context, _| async move {
-        let name = context.params().get::<String>("name")?;
-        Ok::<_, Error>(format!("Hello, {}", name))
-    });
+    app.at("/hello/:name")
+        .get(|context: Context, _| async move {
+            let name = context.params().get::<String>("name")?;
+            Ok::<_, Error>(format!("Hello, {}", name))
+        });
+
+    println!("PARAM: {:#?}", app.at("/*path").param());
 
     app.listen(("0.0.0.0", 8080)).await
 }

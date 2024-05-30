@@ -1,22 +1,15 @@
 #[macro_use]
 mod format;
 
-use futures::{
-    stream::{self, BoxStream, Stream, StreamExt},
-    TryStreamExt,
-};
+use futures::stream::{BoxStream, StreamExt};
 use http::{
     header::{HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue},
     status::{InvalidStatusCode, StatusCode},
 };
 use http_body_util::{Empty, Full, StreamBody};
-use hyper::{
-    body::{Body as HyperBody, Bytes},
-    Error as HyperError,
-};
+use hyper::body::{Body as HyperBody, Bytes};
 use std::{
-    convert::{Infallible, TryFrom},
-    io,
+    convert::TryFrom,
     ops::{Deref, DerefMut},
     pin::Pin,
     task::{self, Poll},
@@ -39,15 +32,15 @@ pub enum Body {
 pub trait Respond: Sized {
     fn respond(self) -> Result<Response>;
 
-    fn header<K, V>(self, name: K, value: V) -> WithHeader<Self>
+    fn with_header<K, V>(self, name: K, value: V) -> Result<Response>
     where
         HeaderName: TryFrom<K, Error = InvalidHeaderName>,
         HeaderValue: TryFrom<V, Error = InvalidHeaderValue>,
     {
-        WithHeader::new(self, (name, value))
+        WithHeader::new(self, (name, value)).respond()
     }
 
-    fn status<T>(self, status: T) -> WithStatusCode<Self>
+    fn with_status<T>(self, status: T) -> WithStatusCode<Self>
     where
         StatusCode: TryFrom<T, Error = InvalidStatusCode>,
     {
@@ -68,17 +61,6 @@ pub struct WithHeader<T: Respond> {
 pub struct WithStatusCode<T: Respond> {
     status: Result<StatusCode>,
     value: T,
-}
-
-impl Body {
-    fn stream<S, V, E>(stream: S) -> Self
-    where
-        S: Stream<Item = Result<V, E>> + Send + 'static,
-        Bytes: From<V>,
-        Error: From<E>,
-    {
-        unimplemented!()
-    }
 }
 
 impl Default for Body {

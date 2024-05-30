@@ -31,7 +31,7 @@ impl UserService {
 
     #[endpoint(PATCH, "/")]
     async fn update(&self, id: i32, mut context: Context) -> Result<impl Respond> {
-        let body: Document<ChangeSet> = context.read().json().await?;
+        let _body: Document<ChangeSet> = context.read().json().await?;
         Ok(format!("Update User: {}", id))
     }
 

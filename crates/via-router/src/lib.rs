@@ -21,6 +21,13 @@ impl<'a, T: Default> Location<'a, T> {
         let mut segments = Path::segments(path);
         Location(self.0.insert(&mut segments))
     }
+
+    pub fn param(&self) -> Option<&'static str> {
+        match self.0.pattern {
+            Pattern::CatchAll(param) | Pattern::Dynamic(param) => Some(param),
+            _ => None,
+        }
+    }
 }
 
 impl<'a, T: Default> Deref for Location<'a, T> {
