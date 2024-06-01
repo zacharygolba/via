@@ -128,6 +128,9 @@ impl<'a, 'b, T: Default> Iterator for Visit<'a, 'b, T> {
         }
 
         let Visit { node, path, .. } = self;
+        // Rather than returning early if there are no more path segments, we
+        // must provide a default value to support resolving immediate children
+        // of the root node.
         let (start, value) = path.next().unwrap_or((0, ""));
         let next = node.find(value)?;
 

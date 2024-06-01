@@ -118,8 +118,6 @@ impl Application {
                 }
             });
         }
-
-        // Ok(server.with_graceful_shutdown(ctrlc).await?)
     }
 
     fn call(&self, request: HttpRequest) -> CallFuture {
