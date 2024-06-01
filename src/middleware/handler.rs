@@ -35,7 +35,7 @@ impl Next {
         if let Some(middleware) = self.stack.pop_front() {
             middleware.call(context, self)
         } else {
-            Box::pin(async { "Not Found".status(404).respond() })
+            Box::pin(async { "Not Found".with_status(404).respond() })
         }
     }
 }

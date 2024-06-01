@@ -1,9 +1,9 @@
-use super::{Application, CallFuture, HttpRequest, HttpResponse};
 use futures::future::{ready, Ready};
 use hyper::service::Service as HyperService;
 use std::{convert, sync::Arc};
 
-type Result<T = ()> = crate::Result<T, convert::Infallible>;
+use super::{Application, CallFuture, HttpRequest, HttpResponse};
+use crate::{Error, Result};
 
 pub struct MakeService {
     service: Service,
@@ -22,7 +22,7 @@ impl From<Application> for MakeService {
 }
 
 impl<T> HyperService<T> for MakeService {
-    type Error = convert::Infallible;
+    type Error = Error;
     type Future = Ready<Result<Self::Response>>;
     type Response = Service;
 

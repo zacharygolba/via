@@ -21,7 +21,7 @@ fn catch(error: Error) -> Result {
             let status = u16::from(DatabaseErrorCode { kind });
             Err(error.status(status).json())
         }
-        Some(DieselError::NotFound) => Document::new(()).status(404).respond(),
+        Some(DieselError::NotFound) => Document::new(()).with_status(404).respond(),
         Some(_) | None => Err(error.json()),
     }
 }
