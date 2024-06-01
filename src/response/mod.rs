@@ -24,9 +24,9 @@ pub use self::format::*;
 type Frame = hyper::body::Frame<Bytes>;
 
 pub enum Body {
-    Complete(Full<Bytes>),
-    Stream(StreamBody<BoxStream<'static, Result<Frame>>>),
     Empty(Empty<Bytes>),
+    Full(Full<Bytes>),
+    Stream(StreamBody<BoxStream<'static, Result<Frame>>>),
 }
 
 pub trait Respond: Sized {
@@ -40,11 +40,11 @@ pub trait Respond: Sized {
         WithHeader::new(self, (name, value)).respond()
     }
 
-    fn with_status<T>(self, status: T) -> WithStatusCode<Self>
+    fn with_status<T>(self, status: T) -> Result<Response>
     where
         StatusCode: TryFrom<T, Error = InvalidStatusCode>,
     {
-        WithStatusCode::new(self, status)
+        WithStatusCode::new(self, status).respond()
     }
 }
 
@@ -74,7 +74,7 @@ where
     T: Into<Full<Bytes>>,
 {
     fn from(value: T) -> Self {
-        Body::Complete(value.into())
+        Body::Full(value.into())
     }
 }
 
@@ -87,9 +87,9 @@ impl HyperBody for Body {
         cx: &mut task::Context<'_>,
     ) -> Poll<Option<Result<Frame, Self::Error>>> {
         match self.get_mut() {
-            Body::Complete(value) => Pin::new(value).poll_frame(cx).map_err(Error::from),
-            Body::Stream(value) => Pin::new(value).poll_frame(cx),
             Body::Empty(value) => Pin::new(value).poll_frame(cx).map_err(Error::from),
+            Body::Full(value) => Pin::new(value).poll_frame(cx).map_err(Error::from),
+            Body::Stream(value) => Pin::new(value).poll_frame(cx),
         }
     }
 }
@@ -138,10 +138,14 @@ where
 }
 
 impl Response {
-    pub fn new(body: impl Into<Body>) -> Response {
+    pub fn new(body: impl Into<Body>) -> Self {
         Response {
             value: http::Response::new(body.into()),
         }
+    }
+
+    pub fn empty() -> Self {
+        Response::default()
     }
 
     pub fn status_code(&self) -> StatusCode {
