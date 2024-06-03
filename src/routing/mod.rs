@@ -1,5 +1,8 @@
 use router::{Router as GenericRouter, Verb};
-use std::sync::Arc;
+use std::{
+    fmt::{self, Debug},
+    sync::Arc,
+};
 
 use crate::{middleware::DynMiddleware, Context, Middleware, Next};
 
@@ -13,12 +16,13 @@ pub trait Endpoint {
     fn delegate<T: Service>(&mut self, service: T);
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Router(GenericRouter<Route>);
 
 #[derive(Default)]
 pub struct Route {
-    stack: Vec<DynMiddleware>,
+    middleware: Vec<DynMiddleware>,
+    responders: Vec<DynMiddleware>,
 }
 
 impl<'a> Endpoint for Location<'a> {
@@ -64,19 +68,27 @@ impl Route {
         self.handle(Verb::TRACE, middleware);
     }
 
-    pub fn handle(&mut self, verb: Verb, middleware: impl Middleware) {
-        self.include(move |context: Context, next: Next| {
+    pub fn handle(&mut self, verb: Verb, responder: impl Middleware) {
+        let responder = Arc::new(move |context: Context, next: Next| {
             if verb.intersects(context.method().into()) {
-                middleware.call(context, next)
+                responder.call(context, next)
             } else {
                 next.call(context)
             }
         });
+
+        self.responders.push(responder);
     }
 
     pub fn include(&mut self, middleware: impl Middleware) -> &mut Self {
-        self.stack.push(Arc::new(middleware));
+        self.middleware.push(Arc::new(middleware));
         self
+    }
+}
+
+impl Debug for Route {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Route")
     }
 }
 
@@ -88,15 +100,30 @@ impl Router {
     pub fn visit(&self, context: &mut Context) -> Next {
         let (parameters, _, path) = context.locate();
 
-        Next::new(self.0.visit(path).flat_map(|route| {
-            match route.param {
-                Some(("", _)) | Some((_, "")) | None => {}
-                Some((name, value)) => {
-                    parameters.insert(name, value.to_owned());
-                }
-            }
+        Next::new(
+            self.middleware()
+                .chain(self.0.visit(path).flat_map(|route| {
+                    println!(
+                        "NEXT(exact: {}): {:?} = {:?}",
+                        route.is_exact_match, route.pattern, route.param
+                    );
 
-            route.stack.iter()
-        }))
+                    if let Some((name, value)) = route.param {
+                        parameters.insert(name, value.to_owned());
+                    }
+
+                    route.middleware.iter().chain(if route.is_exact_match {
+                        &route.responders[..]
+                    } else {
+                        &[]
+                    })
+                })),
+        )
+    }
+}
+
+impl Router {
+    fn middleware(&self) -> impl Iterator<Item = &DynMiddleware> {
+        self.0.middleware.iter()
     }
 }
