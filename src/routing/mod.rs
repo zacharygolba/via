@@ -99,31 +99,18 @@ impl Router {
 
     pub fn visit(&self, context: &mut Context) -> Next {
         let (parameters, _, path) = context.locate();
+        let middleware = self.0.middleware.iter();
 
-        Next::new(
-            self.middleware()
-                .chain(self.0.visit(path).flat_map(|route| {
-                    println!(
-                        "NEXT(exact: {}): {:?} = {:?}",
-                        route.is_exact_match, route.pattern, route.param
-                    );
+        Next::new(middleware.chain(self.0.visit(path).flat_map(|matched| {
+            if let Some((name, value)) = matched.param {
+                parameters.insert(name, value.to_owned());
+            }
 
-                    if let Some((name, value)) = route.param {
-                        parameters.insert(name, value.to_owned());
-                    }
-
-                    route.middleware.iter().chain(if route.is_exact_match {
-                        &route.responders[..]
-                    } else {
-                        &[]
-                    })
-                })),
-        )
-    }
-}
-
-impl Router {
-    fn middleware(&self) -> impl Iterator<Item = &DynMiddleware> {
-        self.0.middleware.iter()
+            matched.route.middleware.iter().chain(if matched.is_exact {
+                &matched.route.responders[..]
+            } else {
+                &[]
+            })
+        })))
     }
 }

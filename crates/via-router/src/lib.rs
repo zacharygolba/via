@@ -4,9 +4,10 @@ mod verb;
 
 use std::ops::{Deref, DerefMut};
 
-use crate::{iter::*, node::*};
+use crate::iter::Segments;
+use crate::node::*;
 
-pub use iter::{Component, Visit};
+pub use iter::{Match, Visit};
 pub use node::Pattern;
 pub use verb::Verb;
 
@@ -18,7 +19,7 @@ pub struct Router<T>(Node<T>);
 
 impl<'a, T: Default> Location<'a, T> {
     pub fn at(&mut self, path: &'static str) -> Location<T> {
-        let mut segments = Path::segments(path);
+        let mut segments = Segments::new(path).patterns();
         Location(self.0.insert(&mut segments))
     }
 
@@ -50,7 +51,7 @@ impl<T: Default> Router<T> {
     }
 
     pub fn at(&mut self, path: &'static str) -> Location<T> {
-        let mut segments = Path::segments(path);
+        let mut segments = Segments::new(path).patterns();
         Location(self.0.insert(&mut segments))
     }
 
