@@ -1,33 +1,19 @@
-use router::{Location as GenericLocation, Router as GenericRouter};
+use router::{Endpoint as GenericEndpoint, Router as GenericRouter};
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::{middleware::DynMiddleware, Context, Middleware, Next};
-
-pub trait Service: Send + Sync + 'static {
-    fn connect(self: Arc<Self>, to: &mut Location);
-}
-
-pub trait Endpoint {
-    fn delegate<T: Service>(&mut self, service: T);
-}
 
 pub struct Router {
     value: GenericRouter<Route>,
 }
 
-pub struct Location<'a> {
-    value: GenericLocation<'a, Route>,
+pub struct Endpoint<'a> {
+    value: GenericEndpoint<'a, Route>,
 }
 
-pub struct Route {
+struct Route {
     middleware: Vec<DynMiddleware>,
     responders: Vec<DynMiddleware>,
-}
-
-impl<'a> Endpoint for Location<'a> {
-    fn delegate<T: Service>(&mut self, service: T) {
-        Service::connect(Arc::new(service), self);
-    }
 }
 
 impl Router {
@@ -37,8 +23,8 @@ impl Router {
         }
     }
 
-    pub fn at(&mut self, pattern: &'static str) -> Location {
-        Location {
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
+        Endpoint {
             value: self.value.at(pattern),
         }
     }
@@ -66,9 +52,9 @@ impl Router {
     }
 }
 
-impl<'a> Location<'a> {
+impl<'a> Endpoint<'a> {
     pub fn at(&'a mut self, pattern: &'static str) -> Self {
-        Location {
+        Endpoint {
             value: self.value.at(pattern),
         }
     }

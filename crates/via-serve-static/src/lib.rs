@@ -5,11 +5,11 @@ use std::{
     sync::Arc,
 };
 use tokio::fs::{self, File};
-use via::{http::Method, prelude::*, routing::Location, BoxFuture};
+use via::{http::Method, prelude::*, routing::Endpoint, BoxFuture};
 
 pub struct ServeStatic<'a> {
     fall_through: bool,
-    location: Location<'a>,
+    endpoint: Endpoint<'a>,
 }
 
 struct ServerConfig {
@@ -49,12 +49,12 @@ async fn try_read_metadata(path: &Path) -> Result<Option<Metadata>> {
 }
 
 impl<'a> ServeStatic<'a> {
-    /// Returns a builder struct used to configure the static server middleware. The location
-    /// provided must have a path parameter.
-    pub fn new(location: Location<'a>) -> Self {
+    /// Returns a builder struct used to configure the static server middleware.
+    /// The provided `endpoint` must have a path parameter.
+    pub fn new(endpoint: Endpoint<'a>) -> Self {
         ServeStatic {
             fall_through: true,
-            location,
+            endpoint,
         }
     }
 
@@ -77,7 +77,7 @@ impl<'a> ServeStatic<'a> {
     {
         let mut public_dir: PathBuf = public_dir.try_into()?;
         let fall_through = self.fall_through;
-        let path_param = match self.location.param() {
+        let path_param = match self.endpoint.param() {
             Some(param) => param,
             None => via::bail!("location is missing path parameter"),
         };
@@ -87,7 +87,7 @@ impl<'a> ServeStatic<'a> {
             public_dir = current_dir.join(public_dir).canonicalize()?;
         }
 
-        self.location.include(StaticServer {
+        self.endpoint.include(StaticServer {
             config: Arc::new(ServerConfig {
                 fall_through,
                 path_param,
