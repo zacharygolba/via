@@ -1,9 +1,7 @@
-use router::{Router as GenericRouter, Verb};
-use std::sync::Arc;
+use router::{Location as GenericLocation, Router as GenericRouter};
+use std::{collections::VecDeque, sync::Arc};
 
 use crate::{middleware::DynMiddleware, Context, Middleware, Next};
-
-pub type Location<'a> = router::Location<'a, Route>;
 
 pub trait Service: Send + Sync + 'static {
     fn connect(self: Arc<Self>, to: &mut Location);
@@ -13,10 +11,14 @@ pub trait Endpoint {
     fn delegate<T: Service>(&mut self, service: T);
 }
 
-#[derive(Default)]
-pub struct Router(GenericRouter<Route>);
+pub struct Router {
+    value: GenericRouter<Route>,
+}
 
-#[derive(Default)]
+pub struct Location<'a> {
+    value: GenericLocation<'a, Route>,
+}
+
 pub struct Route {
     middleware: Vec<DynMiddleware>,
     responders: Vec<DynMiddleware>,
@@ -28,82 +30,71 @@ impl<'a> Endpoint for Location<'a> {
     }
 }
 
-impl Route {
-    pub fn connect(&mut self, middleware: impl Middleware) {
-        self.handle(Verb::CONNECT, middleware);
-    }
-
-    pub fn delete(&mut self, middleware: impl Middleware) {
-        self.handle(Verb::DELETE, middleware);
-    }
-
-    pub fn get(&mut self, middleware: impl Middleware) {
-        self.handle(Verb::GET, middleware);
-    }
-
-    pub fn head(&mut self, middleware: impl Middleware) {
-        self.handle(Verb::HEAD, middleware);
-    }
-
-    pub fn options(&mut self, middleware: impl Middleware) {
-        self.handle(Verb::OPTIONS, middleware);
-    }
-
-    pub fn patch(&mut self, middleware: impl Middleware) {
-        self.handle(Verb::PATCH, middleware);
-    }
-
-    pub fn post(&mut self, middleware: impl Middleware) {
-        self.handle(Verb::POST, middleware);
-    }
-
-    pub fn put(&mut self, middleware: impl Middleware) {
-        self.handle(Verb::PUT, middleware);
-    }
-
-    pub fn trace(&mut self, middleware: impl Middleware) {
-        self.handle(Verb::TRACE, middleware);
-    }
-
-    pub fn handle(&mut self, verb: Verb, responder: impl Middleware) {
-        let responder = Arc::new(move |context: Context, next: Next| {
-            if verb.intersects(context.method().into()) {
-                responder.call(context, next)
-            } else {
-                next.call(context)
-            }
-        });
-
-        self.responders.push(responder);
-    }
-
-    pub fn include(&mut self, middleware: impl Middleware) -> &mut Self {
-        self.middleware.push(Arc::new(middleware));
-        self
-    }
-}
-
 impl Router {
+    pub fn new() -> Self {
+        Router {
+            value: router::Router::new(),
+        }
+    }
+
     pub fn at(&mut self, pattern: &'static str) -> Location {
-        self.0.at(pattern)
+        Location {
+            value: self.value.at(pattern),
+        }
     }
 
     pub fn visit(&self, context: &mut Context) -> Next {
         let (parameters, _, path) = context.locate();
-        let middleware = self.0.middleware.iter();
+        let mut stack = VecDeque::new();
 
-        Next::new(middleware.chain(self.0.visit(path).flat_map(|matched| {
-            let route = matched.route();
+        if let Some(root) = self.value.root() {
+            stack.extend(root.middleware.iter().cloned());
+        }
 
+        for matched in self.value.visit(path) {
             if let Some((name, value)) = matched.param() {
                 parameters.insert(name, value.to_owned());
             }
 
-            route.middleware.iter().chain(if matched.is_exact {
-                &route.responders[..]
-            } else {
-                &[]
-            })
-        })))
+            if let Some(route) = matched.route() {
+                stack.extend(route.middleware.iter().cloned());
+                stack.extend(route.responders.iter().cloned());
+            }
+        }
+
+        Next::new(stack)
+    }
+}
+
+impl<'a> Location<'a> {
+    pub fn at(&'a mut self, pattern: &'static str) -> Self {
+        Location {
+            value: self.value.at(pattern),
+        }
+    }
+
+    pub fn param(&self) -> Option<&'static str> {
+        self.value.param()
+    }
+
+    pub fn include(&mut self, middleware: impl Middleware) -> &mut Self {
+        let route = self.route_mut();
+
+        route.middleware.push(Arc::new(middleware));
+        self
+    }
+
+    pub fn respond(&mut self, responder: impl Middleware) -> &mut Self {
+        let route = self.route_mut();
+
+        route.responders.push(Arc::new(responder));
+        self
+    }
+
+    fn route_mut(&mut self) -> &mut Route {
+        self.value.route_mut().get_or_insert_with(|| Route {
+            middleware: Vec::new(),
+            responders: Vec::new(),
+        })
     }
 }

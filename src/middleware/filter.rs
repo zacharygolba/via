@@ -1,24 +1,22 @@
-use router::Verb;
+use http::Method;
 
 use crate::{BoxFuture, Context, Middleware, Next, Result};
 
-pub struct Only<T: Middleware> {
+pub struct MethodFilter<T: Middleware> {
     middleware: T,
-    predicate: Verb,
+    predicate: Method,
 }
 
-pub fn only<T: Middleware>(predicate: Verb) -> impl FnOnce(T) -> Only<T> {
-    move |middleware| Only {
+pub fn method<T: Middleware>(predicate: Method) -> impl FnOnce(T) -> MethodFilter<T> {
+    move |middleware| MethodFilter {
         middleware,
         predicate,
     }
 }
 
-impl<T: Middleware> Middleware for Only<T> {
+impl<T: Middleware> Middleware for MethodFilter<T> {
     fn call(&self, context: Context, next: Next) -> BoxFuture<Result> {
-        let method = context.method().into();
-
-        if self.predicate.intersects(method) {
+        if self.predicate == context.method() {
             self.middleware.call(context, next)
         } else {
             next.call(context)

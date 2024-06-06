@@ -31,22 +31,26 @@ async fn main() -> Result<()> {
         Ok::<_, Error>(response)
     });
 
-    hello.get(|context: Context, _: Next| async move {
+    hello.respond(via::get(|context: Context, _: Next| async move {
         let name: String = context.params().get("name")?;
         Ok::<_, Error>(format!("Hello, {}", name))
-    });
+    }));
 
-    app.at("/:id").get(|context: Context, next: Next| async move {
+    let mut id = app.at("/:id");
+
+    id.respond(via::get(|context: Context, next: Next| async move {
         match context.params().get::<usize>("id") {
             Ok(id) => format!("ID: {}", id).respond(),
             Err(_) => next.call(context).await,
         }
-    });
+    }));
 
-    app.at("/catch-all/*name").get(|context: Context, _: Next| async move {
+    let mut catch_all = app.at("/catch-all/*name");
+
+    catch_all.respond(via::get(|context: Context, _: Next| async move {
         let path: String = context.params().get("name")?;
         Ok::<_, Error>(format!("Catch-all: {}", path))
-    });
+    }));
 
     ServeStatic::new(app.at("/*path")).serve("./public")?;
 

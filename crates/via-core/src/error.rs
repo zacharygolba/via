@@ -1,5 +1,4 @@
-use crate::response::Response;
-use http::StatusCode;
+use crate::{http::StatusCode, response::Response};
 use serde::ser::{Serialize, Serializer};
 use std::{
     collections::HashSet,
@@ -7,7 +6,8 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
 };
 
-pub type Result<T = Response, E = Error> = std::result::Result<T, E>;
+pub type AnyError = Box<dyn StdError + Send + Sync + 'static>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub type Source = (dyn StdError + 'static);
 
 pub trait ResultExt<T> {
@@ -18,7 +18,7 @@ pub trait ResultExt<T> {
 #[derive(Debug)]
 pub struct Error {
     format: Option<Format>,
-    source: Box<dyn StdError + Send>,
+    source: AnyError,
     status: u16,
 }
 
@@ -37,15 +37,6 @@ enum Format {
     Json,
 }
 
-#[macro_export]
-macro_rules! bail {
-    ($($tokens:tt)+) => {
-        Err($crate::error::Bail {
-            message: format!($($tokens)+)
-        })?
-    };
-}
-
 fn respond(error: Error) -> Result<Response> {
     let Error { format, status, .. } = error;
     let mut response = Response::new(match format {
@@ -55,6 +46,12 @@ fn respond(error: Error) -> Result<Response> {
 
     *response.status_mut() = StatusCode::from_u16(status)?;
     Ok(response)
+}
+
+impl Bail {
+    pub fn new(message: String) -> Bail {
+        Bail { message }
+    }
 }
 
 impl Debug for Bail {
@@ -112,7 +109,7 @@ impl Display for Error {
 
 impl<T> From<T> for Error
 where
-    T: StdError + Send + 'static,
+    T: StdError + Send + Sync + 'static,
 {
     fn from(value: T) -> Self {
         Error {
@@ -120,6 +117,12 @@ where
             source: Box::new(value),
             status: 500,
         }
+    }
+}
+
+impl From<Error> for AnyError {
+    fn from(error: Error) -> Self {
+        error.source
     }
 }
 

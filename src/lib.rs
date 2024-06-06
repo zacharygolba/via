@@ -22,9 +22,9 @@ pub use self::{
 };
 pub use codegen::{endpoint, service};
 pub use http;
-pub use router::Verb;
 
 use futures::future::{FutureExt, Map};
+use http::Method;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::{
@@ -33,7 +33,9 @@ use std::{
 };
 use tokio::net::TcpListener;
 
-use self::{response::Response, routing::*};
+use middleware::filter::{self, MethodFilter};
+use response::Response;
+use routing::*;
 
 type CallFuture = Map<BoxFuture<Result>, fn(Result) -> Result<HttpResponse, Infallible>>;
 type HttpRequest = http::Request<hyper::body::Incoming>;
@@ -52,18 +54,13 @@ macro_rules! delegate {
     { $($service:expr),* $(,)* } => {};
 }
 
-#[macro_export]
-macro_rules! only([$($method:ident),*] => {
-    $crate::middleware::filter::only($($crate::Verb::$method)|*)
-});
-
 pub struct Application {
     router: Router,
 }
 
 pub fn new() -> Application {
     Application {
-        router: Default::default(),
+        router: Router::new(),
     }
 }
 
@@ -79,7 +76,7 @@ impl Application {
         self.router.at(pattern)
     }
 
-    pub fn include(&mut self, middleware: impl Middleware) -> &mut Self {
+    pub fn include(&mut self, middleware: impl Middleware + 'static) -> &mut Self {
         self.at("/").include(middleware);
         self
     }
@@ -133,4 +130,40 @@ impl Endpoint for Application {
     fn delegate<T: Service>(&mut self, service: T) {
         self.router.at("/").delegate(service);
     }
+}
+
+pub fn connect<T: Middleware>(middleware: T) -> MethodFilter<T> {
+    filter::method(Method::CONNECT)(middleware)
+}
+
+pub fn delete<T: Middleware>(middleware: T) -> MethodFilter<T> {
+    filter::method(Method::DELETE)(middleware)
+}
+
+pub fn get<T: Middleware>(middleware: T) -> MethodFilter<T> {
+    filter::method(Method::GET)(middleware)
+}
+
+pub fn head<T: Middleware>(middleware: T) -> MethodFilter<T> {
+    filter::method(Method::HEAD)(middleware)
+}
+
+pub fn options<T: Middleware>(middleware: T) -> MethodFilter<T> {
+    filter::method(Method::OPTIONS)(middleware)
+}
+
+pub fn patch<T: Middleware>(middleware: T) -> MethodFilter<T> {
+    filter::method(Method::PATCH)(middleware)
+}
+
+pub fn post<T: Middleware>(middleware: T) -> MethodFilter<T> {
+    filter::method(Method::POST)(middleware)
+}
+
+pub fn put<T: Middleware>(middleware: T) -> MethodFilter<T> {
+    filter::method(Method::PUT)(middleware)
+}
+
+pub fn trace<T: Middleware>(middleware: T) -> MethodFilter<T> {
+    filter::method(Method::TRACE)(middleware)
 }

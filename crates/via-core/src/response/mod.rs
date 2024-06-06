@@ -1,39 +1,50 @@
 #[macro_use]
 mod format;
 
+use futures::stream::{BoxStream, StreamExt};
 use http::{
     header::{HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue},
     status::{InvalidStatusCode, StatusCode},
 };
-use http_body_util::Full;
-use hyper::body::Bytes;
+use http_body_util::{Empty, Full, StreamBody};
+use hyper::body::{Body as HyperBody, Bytes};
 use std::{
     convert::TryFrom,
     ops::{Deref, DerefMut},
+    pin::Pin,
+    task::{self, Poll},
 };
+use tokio::fs::File;
+use tokio_util::io::ReaderStream;
 
 use crate::{Error, Result};
 
 pub use self::format::*;
 
-pub type Body = Full<Bytes>;
+type Frame = hyper::body::Frame<Bytes>;
+
+pub enum Body {
+    Empty(Empty<Bytes>),
+    Full(Full<Bytes>),
+    Stream(StreamBody<BoxStream<'static, Result<Frame>>>),
+}
 
 pub trait Respond: Sized {
     fn respond(self) -> Result<Response>;
 
-    fn header<K, V>(self, name: K, value: V) -> WithHeader<Self>
+    fn with_header<K, V>(self, name: K, value: V) -> Result<Response>
     where
         HeaderName: TryFrom<K, Error = InvalidHeaderName>,
         HeaderValue: TryFrom<V, Error = InvalidHeaderValue>,
     {
-        WithHeader::new(self, (name, value))
+        WithHeader::new(self, (name, value)).respond()
     }
 
-    fn status<T>(self, status: T) -> WithStatusCode<Self>
+    fn with_status<T>(self, status: T) -> Result<Response>
     where
         StatusCode: TryFrom<T, Error = InvalidStatusCode>,
     {
-        WithStatusCode::new(self, status)
+        WithStatusCode::new(self, status).respond()
     }
 }
 
@@ -52,6 +63,37 @@ pub struct WithStatusCode<T: Respond> {
     value: T,
 }
 
+impl Default for Body {
+    fn default() -> Self {
+        Body::Empty(Empty::default())
+    }
+}
+
+impl<T> From<T> for Body
+where
+    T: Into<Full<Bytes>>,
+{
+    fn from(value: T) -> Self {
+        Body::Full(value.into())
+    }
+}
+
+impl HyperBody for Body {
+    type Data = Bytes;
+    type Error = Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+    ) -> Poll<Option<Result<Frame, Self::Error>>> {
+        match self.get_mut() {
+            Body::Empty(value) => Pin::new(value).poll_frame(cx).map_err(Error::from),
+            Body::Full(value) => Pin::new(value).poll_frame(cx).map_err(Error::from),
+            Body::Stream(value) => Pin::new(value).poll_frame(cx),
+        }
+    }
+}
+
 impl Respond for &'static str {
     fn respond(self) -> Result<Response> {
         Ok(media!(self, "text/plain"))
@@ -61,6 +103,18 @@ impl Respond for &'static str {
 impl Respond for String {
     fn respond(self) -> Result<Response> {
         Ok(media!(self, "text/plain"))
+    }
+}
+
+impl Respond for File {
+    fn respond(self) -> Result<Response> {
+        let stream = StreamBody::new(
+            ReaderStream::new(self)
+                .map(|result| result.map(Frame::data).map_err(Error::from))
+                .boxed(),
+        );
+
+        Ok(Response::new(Body::Stream(stream)))
     }
 }
 
@@ -84,10 +138,18 @@ where
 }
 
 impl Response {
-    pub fn new(body: impl Into<Body>) -> Response {
+    pub fn new(body: impl Into<Body>) -> Self {
         Response {
             value: http::Response::new(body.into()),
         }
+    }
+
+    pub fn empty() -> Self {
+        Response::default()
+    }
+
+    pub fn status_code(&self) -> StatusCode {
+        self.value.status()
     }
 }
 
@@ -176,5 +238,11 @@ impl<T: Respond> Respond for WithStatusCode<T> {
 
         *response.status_mut() = self.status?;
         Ok(response)
+    }
+}
+
+impl Respond for serde_json::Value {
+    fn respond(self) -> Result<Response> {
+        json(&self).respond()
     }
 }

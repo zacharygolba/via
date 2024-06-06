@@ -89,7 +89,7 @@ impl Expand<ImplItemFn> for Endpoint {
 
         Ok(quote! {{
             #service
-            #location.handle(#verb, move |context: via::Context, next: via::Next| {
+            #location.respond(#verb, move |context: via::Context, next: via::Next| {
                 #service
                 async move {
                     via::Respond::respond(Self::#target(#arguments).await)

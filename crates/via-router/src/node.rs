@@ -2,7 +2,7 @@
 pub struct Node<T> {
     pub(crate) entries: Vec<Box<Self>>,
     pub(crate) pattern: Pattern,
-    pub(crate) route: T,
+    pub(crate) route: Option<T>,
 }
 
 #[non_exhaustive]
@@ -14,12 +14,12 @@ pub enum Pattern {
     Root,
 }
 
-impl<T: Default> Node<T> {
+impl<T> Node<T> {
     pub(crate) fn new(pattern: Pattern) -> Self {
         Node {
             pattern,
             entries: Vec::new(),
-            route: Default::default(),
+            route: None,
         }
     }
 
@@ -66,16 +66,6 @@ impl<T: Default> Node<T> {
 
             self.entries.push(Box::new(entry));
             self.entries[index].insert(segments)
-        }
-    }
-}
-
-impl<T: Default> Default for Node<T> {
-    fn default() -> Node<T> {
-        Node {
-            entries: Vec::new(),
-            pattern: Pattern::Root,
-            route: Default::default(),
         }
     }
 }
