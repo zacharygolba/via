@@ -25,10 +25,8 @@ where
 }
 
 impl Next {
-    pub(crate) fn new<'a>(stack: impl Iterator<Item = &'a DynMiddleware>) -> Self {
-        Next {
-            stack: stack.cloned().collect(),
-        }
+    pub(crate) fn new(stack: VecDeque<DynMiddleware>) -> Self {
+        Next { stack }
     }
 
     pub fn call(mut self, context: Context) -> BoxFuture<Result> {

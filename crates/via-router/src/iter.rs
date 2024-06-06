@@ -50,12 +50,12 @@ impl<'a, 'b, T> Match<'a, 'b, T> {
     }
 
     /// Returns a reference to the route that matches `self.value`.
-    pub fn route(&self) -> &'a T {
-        &self.node.route
+    pub fn route(&self) -> Option<&'a T> {
+        self.node.route.as_ref()
     }
 }
 
-impl<'a, 'b, T: Default> Visit<'a, 'b, T> {
+impl<'a, 'b, T> Visit<'a, 'b, T> {
     /// Returns a new visitor to begin our search at the root `node` that match
     /// the provided `path`.
     pub(crate) fn new(node: &'a Node<T>, path: &'b str) -> Self {
@@ -131,7 +131,7 @@ impl<'a, 'b, T: Default> Visit<'a, 'b, T> {
     }
 }
 
-impl<'a, 'b, T: Default> Iterator for Visit<'a, 'b, T> {
+impl<'a, 'b, T> Iterator for Visit<'a, 'b, T> {
     type Item = Match<'a, 'b, T>;
 
     fn next(&mut self) -> Option<Self::Item> {

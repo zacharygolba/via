@@ -4,7 +4,11 @@ use via::prelude::*;
 async fn main() -> Result<()> {
     let mut app = via::new();
 
-    app.at("/text").get(|_, _| async { "Hello, world!" });
-    app.at("/unit").get(|_, _| async {});
+    let mut text = app.at("/text");
+    text.respond(via::get(|_, _| async { "Hello, world!" }));
+
+    let mut unit = app.at("/unit");
+    unit.respond(via::get(|_, _| async {}));
+
     app.listen(("0.0.0.0", 8080)).await
 }

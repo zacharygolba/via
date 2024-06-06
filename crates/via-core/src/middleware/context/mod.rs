@@ -1,3 +1,5 @@
+// pub mod cookies;
+
 use crate::{Error, Result};
 use bytes::Buf;
 use http::header::{self, AsHeaderName, HeaderMap, HeaderName, HeaderValue};
@@ -18,6 +20,7 @@ type Request = http::Request<Body>;
 
 pub struct Body(BodyState);
 
+#[derive(Debug)]
 pub struct Context {
     pub(super) request: Request,
     pub(super) state: State,
@@ -33,7 +36,7 @@ pub struct Parameters {
     entries: IndexMap<&'static str, String>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(super) struct State {
     pub(super) params: Parameters,
 }
@@ -68,6 +71,10 @@ impl Body {
 }
 
 impl Body {
+    fn incoming(incoming: Incoming) -> Self {
+        Body(BodyState::Incoming(incoming))
+    }
+
     fn empty() -> Self {
         Body(BodyState::Empty(Empty::new()))
     }
@@ -161,6 +168,16 @@ impl From<Request> for Context {
     fn from(request: Request) -> Self {
         Context {
             request,
+            state: Default::default(),
+        }
+    }
+}
+
+#[doc(hidden)]
+impl From<crate::HttpRequest> for Context {
+    fn from(request: crate::HttpRequest) -> Self {
+        Context {
+            request: request.map(Body::incoming),
             state: Default::default(),
         }
     }
