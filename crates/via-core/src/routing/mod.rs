@@ -1,8 +1,5 @@
 use router::{Router as GenericRouter, Verb};
-use std::{
-    fmt::{self, Debug},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use crate::{middleware::DynMiddleware, Context, Middleware, Next};
 
@@ -16,7 +13,7 @@ pub trait Endpoint {
     fn delegate<T: Service>(&mut self, service: T);
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct Router(GenericRouter<Route>);
 
 #[derive(Default)]
@@ -86,12 +83,6 @@ impl Route {
     }
 }
 
-impl Debug for Route {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Route")
-    }
-}
-
 impl Router {
     pub fn at(&mut self, pattern: &'static str) -> Location {
         self.0.at(pattern)
@@ -102,12 +93,14 @@ impl Router {
         let middleware = self.0.middleware.iter();
 
         Next::new(middleware.chain(self.0.visit(path).flat_map(|matched| {
-            if let Some((name, value)) = matched.param {
+            let route = matched.route();
+
+            if let Some((name, value)) = matched.param() {
                 parameters.insert(name, value.to_owned());
             }
 
-            matched.route.middleware.iter().chain(if matched.is_exact {
-                &matched.route.responders[..]
+            route.middleware.iter().chain(if matched.is_exact {
+                &route.responders[..]
             } else {
                 &[]
             })
