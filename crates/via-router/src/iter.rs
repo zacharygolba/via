@@ -3,15 +3,25 @@ use std::{iter::Peekable, rc::Rc, str::CharIndices};
 
 use crate::node::{Node, Pattern};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// Represents either a partial or exact match for a given path segment.
+#[derive(Clone, Copy)]
 pub struct Match<'a, 'b, T> {
+    /// Indicates whether or not the match is considered an exact match.
+    /// If the match is exact, both the middleware and responders will be
+    /// called during a request. Otherwise, only the middleware will be
+    /// called.
     pub is_exact: bool,
-    pub pattern: Pattern,
-    pub param: Option<(&'static str, &'b str)>,
-    pub route: &'a T,
+
+    /// The value of the path segment that was matched against. If the
+    /// matched route has a CatchAll pattern, this will be the remainder
+    /// of the url path without the leading `/` character.
+    pub value: &'b str,
+
+    /// The node that matches `self.value`.
+    node: &'a Node<T>,
 }
 
-#[derive(Debug)]
+/// An iterator that yields all possible partial and exact matches for a url path.
 pub struct Visit<'a, 'b, T> {
     node: &'a Node<T>,
     depth: usize,
@@ -21,10 +31,163 @@ pub struct Visit<'a, 'b, T> {
     visitor_delegate: Option<Box<Self>>,
 }
 
+/// An iterator of each path segment in a url path.
 #[derive(Debug, Clone)]
 pub(crate) struct Segments<'a> {
     chars: Peekable<CharIndices<'a>>,
     value: &'a str,
+}
+
+impl<'a, 'b, T> Match<'a, 'b, T> {
+    /// Returns a key-value pair where key is the name of the dynamic segment
+    /// that was matched against and value is `self.value`. If the matched
+    /// route does not have any dynamic segments, `None` will be returned.
+    pub fn param(&self) -> Option<(&'static str, &'b str)> {
+        match self.node.pattern {
+            Pattern::CatchAll(name) | Pattern::Dynamic(name) => Some((name, self.value)),
+            _ => None,
+        }
+    }
+
+    /// Returns a reference to the route that matches `self.value`.
+    pub fn route(&self) -> &'a T {
+        &self.node.route
+    }
+}
+
+impl<'a, 'b, T: Default> Visit<'a, 'b, T> {
+    /// Returns a new visitor to begin our search at the root `node` that match
+    /// the provided `path`.
+    pub(crate) fn new(node: &'a Node<T>, path: &'b str) -> Self {
+        Visit {
+            node,
+            depth: 0,
+            index: 0,
+            path_value: path,
+            path_segments: Rc::new(Segments::new(path).collect()),
+            visitor_delegate: None,
+        }
+    }
+
+    /// Returns a new visitor to search for descendants of `node` that match
+    /// the next path segment in `self.path_segments`.
+    fn fork(&self, node: &'a Node<T>) -> Box<Self> {
+        Box::new(Visit {
+            node,
+            index: 0,
+            depth: self.depth + 1,
+            path_value: self.path_value,
+            path_segments: Rc::clone(&self.path_segments),
+            visitor_delegate: None,
+        })
+    }
+
+    /// Calls next on the visitor delegate and returns the next match if one
+    /// exists. If the visitor delegate is exhausted, it will be set to None
+    /// to prevent us from attempting to delegate to it again.
+    fn delegate_next_match(&mut self) -> Option<Match<'a, 'b, T>> {
+        self.visitor_delegate
+            .as_mut()
+            .and_then(|delegate| delegate.next())
+            .or_else(|| {
+                self.visitor_delegate = None;
+                None
+            })
+    }
+
+    /// Attempts to find the next immediate decedent that matches `predicate`
+    /// starting from the current index and then sets `self.index` to the
+    /// index of the next match in `self.node.entries`.
+    fn find_next_match<F>(&mut self, predicate: F) -> Option<&'a Node<T>>
+    where
+        F: FnMut(&'a Node<T>) -> bool,
+    {
+        match self.node.find(self.index, predicate) {
+            Some((index, next)) => {
+                self.index = index + 1;
+                Some(next)
+            }
+            None => {
+                self.index = self.node.entries.len();
+                None
+            }
+        }
+    }
+
+    /// Returns the value of the current path segment that we are attempting to
+    /// match if it exists. The returned value should only be `None` if we are
+    /// attempting to match a root url path (i.e `"/"`).
+    fn get_path_segment_value(&self) -> Option<&'b str> {
+        self.path_segments.get(self.depth).map(|(_, value)| *value)
+    }
+
+    // Returns a reference to remaining path starting from the current path
+    // segment without the leading `/` character.
+    fn get_remaining_path(&self) -> &'b str {
+        self.path_segments
+            .get(self.depth)
+            .map(|(start, _)| self.path_value[*start..].trim_start_matches('/'))
+            .unwrap_or("")
+    }
+}
+
+impl<'a, 'b, T: Default> Iterator for Visit<'a, 'b, T> {
+    type Item = Match<'a, 'b, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // First, we attempt to delegate to the next visitor to see if there
+        // are any matches from descendant nodes.
+        if let Some(component) = self.delegate_next_match() {
+            return Some(component);
+        }
+
+        // If we are unable to delegate to the next visitor, we attempt to find
+        // a node that matches the current path segment. We'll continue to match
+        // against the current path segment until all possible matches at the
+        // current depth are exhausted.
+        if let Some(path_segment) = self.get_path_segment_value() {
+            let mut is_exact = self.depth == self.path_segments.len() - 1;
+            let mut value = path_segment;
+            let matched = self.find_next_match(|entry| path_segment == entry.pattern)?;
+
+            if matches!(matched.pattern, Pattern::CatchAll(_)) {
+                // The next node has a `CatchAll` pattern and will be considered an exact
+                // match. This means that both the middleware and the responders will be
+                // called for `next` and we will attempt to match the next path segment
+                // with descendant nodes.
+                is_exact = true;
+                value = self.get_remaining_path();
+            } else {
+                // The next node may have descendant that the next path segment. Therefore,
+                // we'll fork the current visitor and attempt to delegate our search to
+                // the matching node in the next iteration.
+                //
+                // While it is tempting to change the else condition to `else if !is_exact`,
+                // we must consider the case where the next descendant has a `CatchAll`
+                // pattern.
+                self.visitor_delegate = Some(self.fork(matched));
+            }
+
+            return Some(Match {
+                is_exact,
+                value,
+                node: matched,
+            });
+        }
+
+        // If there is no path segment to match against, we attempt to find an
+        // immediate descendant node with a CatchAll pattern. This is required
+        // to support matching the "index" path of a descendant node with a
+        // CatchAll pattern.
+        let matched =
+            self.find_next_match(|entry| matches!(entry.pattern, Pattern::CatchAll(_)))?;
+
+        Some(Match {
+            is_exact: true,
+            value: self.get_remaining_path(),
+            node: matched,
+        })
+    }
 }
 
 impl<'a> Segments<'a> {
@@ -64,120 +227,5 @@ impl<'a> Iterator for Segments<'a> {
         }
 
         Some((start?, &self.value[(start? + 1)..end]))
-    }
-}
-
-impl<'a, 'b, T: Default> Visit<'a, 'b, T> {
-    pub(crate) fn root(node: &'a Node<T>, path: &'b str) -> Self {
-        let segments = Segments::new(path).collect();
-
-        Visit {
-            node,
-            depth: 0,
-            index: 0,
-            path_value: path,
-            path_segments: Rc::new(segments),
-            visitor_delegate: None,
-        }
-    }
-
-    fn fork(&self, node: &'a Node<T>) -> Box<Self> {
-        Box::new(Visit {
-            node,
-            index: 0,
-            depth: self.depth + 1,
-            path_value: self.path_value,
-            path_segments: Rc::clone(&self.path_segments),
-            visitor_delegate: None,
-        })
-    }
-
-    fn delegate_next_match(&mut self) -> Option<Match<'a, 'b, T>> {
-        self.visitor_delegate
-            .as_mut()
-            .and_then(|delegate| delegate.next())
-            .or_else(|| {
-                self.visitor_delegate = None;
-                None
-            })
-    }
-
-    fn find_next_match<F>(&mut self, mut predicate: F) -> Option<&'a Node<T>>
-    where
-        F: FnMut(&'a Node<T>) -> bool,
-    {
-        match self.node.find(self.index, &mut predicate) {
-            Some((index, next)) => {
-                self.index = index + 1;
-                Some(next)
-            }
-            None => {
-                self.index = self.node.entries.len();
-                None
-            }
-        }
-    }
-
-    fn get_path_segment_value(&self) -> Option<&'b str> {
-        self.path_segments.get(self.depth).map(|(_, value)| *value)
-    }
-
-    fn get_remaining_path(&self) -> Option<&'b str> {
-        self.path_segments
-            .get(self.depth)
-            .map(|(start, _)| self.path_value[*start..].trim_start_matches('/'))
-    }
-
-    fn get_param_for_pattern(
-        &self,
-        pattern: Pattern,
-        path_segment: &'b str,
-    ) -> Option<(&'static str, &'b str)> {
-        if let Pattern::CatchAll(key) = pattern {
-            Some((key, self.get_remaining_path().unwrap_or("")))
-        } else if let Pattern::Dynamic(key) = pattern {
-            Some((key, path_segment))
-        } else {
-            None
-        }
-    }
-}
-
-impl<'a, 'b, T: Default> Iterator for Visit<'a, 'b, T> {
-    type Item = Match<'a, 'b, T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // First, delegate to the next visitor to see if there are any matches
-        // from decedent nodes.
-        if let Some(component) = self.delegate_next_match() {
-            return Some(component);
-        }
-
-        if let Some(path_segment) = self.get_path_segment_value() {
-            let mut is_exact = self.depth == self.path_segments.len() - 1;
-            let next = self.find_next_match(|entry| path_segment == entry.pattern)?;
-
-            if matches!(next.pattern, Pattern::CatchAll(_)) {
-                is_exact = true;
-            } else {
-                self.visitor_delegate = Some(self.fork(next));
-            }
-
-            return Some(Match {
-                is_exact,
-                pattern: next.pattern,
-                param: self.get_param_for_pattern(next.pattern, path_segment),
-                route: &next.route,
-            });
-        }
-
-        let next = self.find_next_match(|entry| matches!(entry.pattern, Pattern::CatchAll(_)))?;
-
-        Some(Match {
-            is_exact: true,
-            pattern: next.pattern,
-            param: self.get_param_for_pattern(next.pattern, ""),
-            route: &next.route,
-        })
     }
 }

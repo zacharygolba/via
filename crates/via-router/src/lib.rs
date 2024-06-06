@@ -11,20 +11,59 @@ pub use iter::{Match, Visit};
 pub use node::Pattern;
 pub use verb::Verb;
 
-#[derive(Debug)]
-pub struct Location<'a, T>(&'a mut Node<T>);
-
 #[derive(Clone, Debug, Default)]
-pub struct Router<T>(Node<T>);
+pub struct Router<T> {
+    root: Node<T>,
+}
+
+#[derive(Debug)]
+pub struct Location<'a, T> {
+    node: &'a mut Node<T>,
+}
+
+impl<T: Default> Router<T> {
+    pub fn new() -> Router<T> {
+        Default::default()
+    }
+
+    pub fn at(&mut self, path: &'static str) -> Location<T> {
+        let mut segments = Segments::new(path).patterns();
+
+        Location {
+            node: self.root.insert(&mut segments),
+        }
+    }
+
+    pub fn visit<'a, 'b>(&'a self, path: &'b str) -> Visit<'a, 'b, T> {
+        Visit::new(&self.root, path)
+    }
+}
+
+impl<T: Default> Deref for Router<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.root.route
+    }
+}
+
+impl<T: Default> DerefMut for Router<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.root.route
+    }
+}
 
 impl<'a, T: Default> Location<'a, T> {
     pub fn at(&mut self, path: &'static str) -> Location<T> {
         let mut segments = Segments::new(path).patterns();
-        Location(self.0.insert(&mut segments))
+
+        Location {
+            node: self.node.insert(&mut segments),
+        }
     }
 
     pub fn param(&self) -> Option<&'static str> {
-        match self.0.pattern {
+        match self.node.pattern {
             Pattern::CatchAll(param) | Pattern::Dynamic(param) => Some(param),
             _ => None,
         }
@@ -35,42 +74,13 @@ impl<'a, T: Default> Deref for Location<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.0.route
+        &self.node.route
     }
 }
 
 impl<'a, T: Default> DerefMut for Location<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0.route
-    }
-}
-
-impl<T: Default> Router<T> {
-    pub fn new() -> Router<T> {
-        Default::default()
-    }
-
-    pub fn at(&mut self, path: &'static str) -> Location<T> {
-        let mut segments = Segments::new(path).patterns();
-        Location(self.0.insert(&mut segments))
-    }
-
-    pub fn visit<'a, 'b>(&'a self, path: &'b str) -> Visit<'a, 'b, T> {
-        Visit::root(&self.0, path)
-    }
-}
-
-impl<T: Default> Deref for Router<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0.route
-    }
-}
-
-impl<T: Default> DerefMut for Router<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0.route
+        &mut self.node.route
     }
 }
 
@@ -101,7 +111,7 @@ mod tests {
 
     macro_rules! visit {
         ($target:expr, $path:expr) => {
-            $target.visit($path).last().unwrap().route
+            $target.visit($path).last().unwrap().route()
         };
     }
 
