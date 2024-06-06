@@ -25,17 +25,15 @@ where
 }
 
 impl Next {
-    pub(crate) fn new<'a>(stack: impl Iterator<Item = &'a DynMiddleware>) -> Self {
-        Next {
-            stack: stack.cloned().collect(),
-        }
+    pub(crate) fn new(stack: VecDeque<DynMiddleware>) -> Self {
+        Next { stack }
     }
 
     pub fn call(mut self, context: Context) -> BoxFuture<Result> {
         if let Some(middleware) = self.stack.pop_front() {
             middleware.call(context, self)
         } else {
-            Box::pin(async { "Not Found".status(404).respond() })
+            Box::pin(async { "Not Found".with_status(404).respond() })
         }
     }
 }
