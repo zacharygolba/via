@@ -13,7 +13,7 @@ pub struct Router<T> {
 }
 
 #[derive(Debug)]
-pub struct Location<'a, T> {
+pub struct Endpoint<'a, T> {
     node: &'a mut Node<T>,
 }
 
@@ -24,10 +24,10 @@ impl<T> Router<T> {
         }
     }
 
-    pub fn at(&mut self, path: &'static str) -> Location<T> {
+    pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
         let mut segments = Segments::new(path).patterns();
 
-        Location {
+        Endpoint {
             node: self.root.insert(&mut segments),
         }
     }
@@ -45,11 +45,11 @@ impl<T> Router<T> {
     }
 }
 
-impl<'a, T> Location<'a, T> {
+impl<'a, T> Endpoint<'a, T> {
     pub fn at(&'a mut self, path: &'static str) -> Self {
         let mut segments = Segments::new(path).patterns();
 
-        Location {
+        Endpoint {
             node: self.node.insert(&mut segments),
         }
     }

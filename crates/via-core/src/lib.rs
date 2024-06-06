@@ -5,8 +5,6 @@ macro_rules! bail {
     };
 }
 
-mod service;
-
 pub mod error;
 pub mod middleware;
 pub mod prelude;
@@ -22,13 +20,13 @@ pub use self::{
 };
 pub use http;
 
-use futures::future::{FutureExt, Map};
 use http::Method;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::{
     convert::Infallible,
     net::{SocketAddr, ToSocketAddrs},
+    sync::Arc,
 };
 use tokio::net::TcpListener;
 
@@ -36,22 +34,11 @@ use middleware::filter::{self, MethodFilter};
 use response::Response;
 use routing::*;
 
-type CallFuture = Map<BoxFuture<Result>, fn(Result) -> Result<HttpResponse, Infallible>>;
 type HttpRequest = http::Request<hyper::body::Incoming>;
 type HttpResponse = http::Response<response::Body>;
 
 pub type BoxFuture<T> = futures::future::BoxFuture<'static, T>;
 pub type Result<T = response::Response, E = Error> = std::result::Result<T, E>;
-
-#[macro_export]
-macro_rules! includes {
-    { $($middleware:expr),* $(,)* } => {};
-}
-
-#[macro_export]
-macro_rules! delegate {
-    { $($service:expr),* $(,)* } => {};
-}
 
 pub struct Application {
     router: Router,
@@ -63,15 +50,8 @@ pub fn new() -> Application {
     }
 }
 
-fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
-    match sources.to_socket_addrs()?.next() {
-        Some(value) => Ok(value),
-        None => todo!(),
-    }
-}
-
 impl Application {
-    pub fn at(&mut self, pattern: &'static str) -> Location {
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
         self.router.at(pattern)
     }
 
@@ -81,11 +61,13 @@ impl Application {
     }
 
     pub async fn listen(self, address: impl ToSocketAddrs) -> Result<()> {
-        use crate::service::Service;
-
+        let app = Arc::new(self);
         let address = get_addr(address)?;
         let listener = TcpListener::bind(address).await?;
-        let service = Service::from(self);
+        let service_fn = hyper::service::service_fn(move |request| {
+            let app = Arc::clone(&app);
+            async move { app.call(request).await }
+        });
         // let ctrlc = async {
         //     let message = "failed to install CTRL+C signal handler";
         //     tokio::signal::ctrl_c().await.expect(message);
@@ -95,7 +77,7 @@ impl Application {
 
         loop {
             let (stream, _) = listener.accept().await?;
-            let instance = service.clone();
+            let instance = service_fn.clone();
 
             // Use an adapter to access something implementing `tokio::io` traits as if they implement
             // `hyper::rt` IO traits.
@@ -116,18 +98,20 @@ impl Application {
         }
     }
 
-    fn call(&self, request: HttpRequest) -> CallFuture {
+    async fn call(&self, request: HttpRequest) -> Result<HttpResponse, Infallible> {
         let mut context = Context::from(request);
         let next = self.router.visit(&mut context);
 
-        next.call(context)
-            .map(|result| Ok(result.unwrap_or_else(Response::from).into()))
+        match next.call(context).await {
+            Ok(response) => Ok(response.into()),
+            Err(error) => Ok(Response::from(error).into()),
+        }
     }
 }
 
-impl Endpoint for Application {
-    fn delegate<T: Service>(&mut self, service: T) {
-        self.router.at("/").delegate(service);
+pub fn app() -> Application {
+    Application {
+        router: Router::new(),
     }
 }
 
@@ -165,4 +149,11 @@ pub fn put<T: Middleware>(middleware: T) -> MethodFilter<T> {
 
 pub fn trace<T: Middleware>(middleware: T) -> MethodFilter<T> {
     filter::method(Method::TRACE)(middleware)
+}
+
+fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
+    match sources.to_socket_addrs()?.next() {
+        Some(value) => Ok(value),
+        None => todo!(),
+    }
 }
