@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
 
     id.respond(via::get(|context: Context, next: Next| async move {
         match context.params().get::<usize>("id") {
-            Ok(id) => format!("ID: {}", id).respond(),
+            Ok(id) => format!("ID: {}", id).into_response(),
             Err(_) => next.call(context).await,
         }
     }));

@@ -16,7 +16,7 @@ pub mod view;
 pub use self::{
     error::{Error, ResultExt},
     middleware::{Context, Middleware, Next},
-    response::Respond,
+    response::IntoResponse,
 };
 pub use http;
 

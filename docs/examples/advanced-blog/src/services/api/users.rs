@@ -23,20 +23,20 @@ impl UserService {
 #[service("/:id")]
 impl UserService {
     #[endpoint(GET, "/")]
-    async fn show(&self, id: i32) -> Result<impl Respond> {
+    async fn show(&self, id: i32) -> Result<impl IntoResponse> {
         Ok(Document {
             data: User::find(&self.pool, id).await?,
         })
     }
 
     #[endpoint(PATCH, "/")]
-    async fn update(&self, id: i32, mut context: Context) -> Result<impl Respond> {
+    async fn update(&self, id: i32, mut context: Context) -> Result<impl IntoResponse> {
         let _body: Document<ChangeSet> = context.read().json().await?;
         Ok(format!("Update User: {}", id))
     }
 
     #[endpoint(DELETE, "/")]
-    async fn destroy(&self, id: i32) -> Result<impl Respond> {
+    async fn destroy(&self, id: i32) -> Result<impl IntoResponse> {
         Ok(format!("Destroy User: {}", id))
     }
 }
@@ -54,14 +54,14 @@ impl UsersService {
     }
 
     #[endpoint(GET, "/")]
-    async fn index(&self) -> Result<impl Respond> {
+    async fn index(&self) -> Result<impl IntoResponse> {
         Ok(Document {
             data: User::all(&self.pool).await?,
         })
     }
 
     #[endpoint(POST, "/")]
-    async fn create(&self, mut context: Context) -> Result<impl Respond> {
+    async fn create(&self, mut context: Context) -> Result<impl IntoResponse> {
         let body: Document<NewUser> = context.read().json().await?;
 
         Ok(Document {
@@ -70,7 +70,7 @@ impl UsersService {
     }
 
     #[endpoint(GET, "/:id/posts")]
-    async fn posts(&self, id: i32) -> Result<impl Respond> {
+    async fn posts(&self, id: i32) -> Result<impl IntoResponse> {
         Ok(Document {
             data: Post::by_user(&self.pool, id).await?,
         })
