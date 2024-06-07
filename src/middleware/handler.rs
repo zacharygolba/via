@@ -1,5 +1,5 @@
 use super::context::Context;
-use crate::{BoxFuture, Respond, Result};
+use crate::{BoxFuture, IntoResponse, Result};
 use std::{collections::VecDeque, future::Future, sync::Arc};
 
 pub(crate) type DynMiddleware = Arc<dyn Middleware>;
@@ -14,13 +14,13 @@ pub struct Next {
 
 impl<F, T> Middleware for T
 where
-    F::Output: Respond,
+    F::Output: IntoResponse,
     F: Future + Send + 'static,
     T: Fn(Context, Next) -> F + Send + Sync + 'static,
 {
     fn call(&self, context: Context, next: Next) -> BoxFuture<Result> {
         let future = self(context, next);
-        Box::pin(async { future.await.respond() })
+        Box::pin(async { future.await.into_response() })
     }
 }
 
@@ -33,7 +33,7 @@ impl Next {
         if let Some(middleware) = self.stack.pop_front() {
             middleware.call(context, self)
         } else {
-            Box::pin(async { "Not Found".with_status(404).respond() })
+            Box::pin(async { "Not Found".with_status(404).into_response() })
         }
     }
 }

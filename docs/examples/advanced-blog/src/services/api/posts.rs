@@ -7,7 +7,7 @@ pub struct PostsService {
     pool: Pool,
 }
 
-async fn authenticate(context: Context, next: Next) -> Result<impl Respond> {
+async fn authenticate(context: Context, next: Next) -> Result<impl IntoResponse> {
     println!("authenticate");
     next.call(context).await
 }
@@ -25,14 +25,14 @@ impl PostsService {
     }
 
     #[endpoint(GET, "/")]
-    async fn index(&self) -> Result<impl Respond> {
+    async fn index(&self) -> Result<impl IntoResponse> {
         Ok(Document {
             data: Post::public(&self.pool).await?,
         })
     }
 
     #[endpoint(POST, "/")]
-    async fn create(&self, mut context: Context) -> Result<impl Respond> {
+    async fn create(&self, mut context: Context) -> Result<impl IntoResponse> {
         let body: Document<NewPost> = context.read().json().await?;
 
         Ok(Document {
@@ -41,19 +41,19 @@ impl PostsService {
     }
 
     #[endpoint(GET, "/:id")]
-    async fn show(&self, id: i32) -> Result<impl Respond> {
+    async fn show(&self, id: i32) -> Result<impl IntoResponse> {
         Ok(Document {
             data: Post::find(&self.pool, id).await?,
         })
     }
 
     #[endpoint(PATCH, "/:id")]
-    async fn update(&self, id: i32, context: Context) -> Result<impl Respond> {
+    async fn update(&self, id: i32, context: Context) -> Result<impl IntoResponse> {
         Ok(format!("Update Post: {}", id))
     }
 
     #[endpoint(DELETE, "/:id")]
-    async fn destroy(&self, id: i32) -> Result<impl Respond> {
+    async fn destroy(&self, id: i32) -> Result<impl IntoResponse> {
         Ok(format!("Destroy Post: {}", id))
     }
 }

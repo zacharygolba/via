@@ -29,10 +29,6 @@ pub struct Visit<'a, 'b, T> {
     depth: usize,
     index: usize,
     path_value: &'b str,
-    // TODO: refactor path_segments to be Option<_> and remove the Rc<_> wrapper.
-    // We can .take() the value of option and pass it to the next visitor_delegate
-    // until we exhaust all possible matches. Then we can .take() back the value
-    // from the option to continue matching against nodes at the current depth.
     path_segments: Rc<SmallVec<[(usize, &'b str); 6]>>,
     visitor_delegate: Option<Box<Self>>,
 }
