@@ -115,13 +115,13 @@ fn visit(b: &mut Bencher) {
         router.at(path).route_mut().insert(());
     }
 
-    b.iter(|| {
-        let path = "/api/v1/products/12358132134558/edit";
+    println!("{:#?}", std::mem::size_of_val(&router));
 
+    b.iter(|| {
         assert_eq!(
             router
-                .visit(path)
-                .find(|matched| matched.is_exact)
+                .visit("/api/v1/products/12358132134558/edit")
+                .find(|matched| matched.is_exact_match)
                 .unwrap()
                 .route(),
             Some(&()),

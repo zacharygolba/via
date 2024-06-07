@@ -1,6 +1,8 @@
+use crate::Store;
+
 #[derive(Clone, Debug)]
 pub struct Node<T> {
-    pub(crate) entries: Vec<Box<Self>>,
+    pub(crate) entries: Option<Vec<usize>>,
     pub(crate) pattern: Pattern,
     pub(crate) route: Option<T>,
 }
@@ -18,13 +20,14 @@ impl<T> Node<T> {
     pub(crate) fn new(pattern: Pattern) -> Self {
         Node {
             pattern,
-            entries: Vec::new(),
+            entries: None,
             route: None,
         }
     }
 
     pub(crate) fn find<'a, F>(
         &'a self,
+        store: &'a Store<T>,
         from_index: usize,
         mut predicate: F,
     ) -> Option<(usize, &'a Node<T>)>
@@ -32,41 +35,18 @@ impl<T> Node<T> {
         F: FnMut(&'a Node<T>) -> bool,
     {
         self.entries
+            .as_ref()?
             .iter()
             .skip(from_index)
             .enumerate()
-            .find_map(|(index, node)| {
+            .find_map(|(index, key)| {
+                let node = &store[*key];
                 if predicate(node) {
-                    Some((from_index + index, &**node))
+                    Some((from_index + index, node))
                 } else {
                     None
                 }
             })
-    }
-
-    pub(crate) fn insert<I>(&mut self, segments: &mut I) -> &mut Self
-    where
-        I: Iterator<Item = Pattern>,
-    {
-        if let Pattern::CatchAll(_) = self.pattern {
-            while let Some(_) = segments.next() {}
-            return self;
-        }
-
-        let pattern = match segments.next() {
-            Some(value) => value,
-            None => return self,
-        };
-
-        if let Some(index) = self.entries.iter().position(|node| pattern == node.pattern) {
-            self.entries[index].insert(segments)
-        } else {
-            let index = self.entries.len();
-            let entry = Node::new(pattern);
-
-            self.entries.push(Box::new(entry));
-            self.entries[index].insert(segments)
-        }
     }
 }
 
