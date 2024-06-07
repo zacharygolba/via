@@ -33,8 +33,8 @@ impl Router {
         let (parameters, _, path) = context.locate();
         let mut stack = VecDeque::new();
 
-        if let Some(root) = self.value.root() {
-            stack.extend(root.middleware.iter().cloned());
+        if let Some(route) = self.value.route() {
+            stack.extend(route.middleware.iter().cloned());
         }
 
         for matched in self.value.visit(path) {
@@ -44,7 +44,9 @@ impl Router {
 
             if let Some(route) = matched.route() {
                 stack.extend(route.middleware.iter().cloned());
-                stack.extend(route.responders.iter().cloned());
+                if matched.is_exact_match {
+                    stack.extend(route.responders.iter().cloned());
+                }
             }
         }
 
