@@ -41,8 +41,8 @@ impl<T> Document<T> {
     }
 }
 
-impl<T: Serialize> Respond for Document<T> {
-    fn respond(self) -> Result<Response> {
-        response::json(&self).respond()
+impl<T: Serialize> IntoResponse for Document<T> {
+    fn into_response(self) -> Result<Response> {
+        response::json(&self).into_response()
     }
 }
