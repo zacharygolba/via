@@ -27,7 +27,7 @@ pub struct Visit<'a, 'b, T> {
     depth: usize,
     index: usize,
     path_value: &'b str,
-    path_segments: Rc<SmallVec<[(usize, &'b str); 4]>>,
+    path_segments: Rc<SmallVec<[(usize, &'b str); 6]>>,
     visitor_delegate: Option<Box<Self>>,
 }
 
