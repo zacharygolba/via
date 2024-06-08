@@ -34,12 +34,21 @@ pub async fn show(context: Context, _: Next) -> Result<impl IntoResponse> {
     })
 }
 
-pub async fn update(context: Context, _: Next) -> Result<impl IntoResponse> {
+pub async fn update(mut context: Context, _: Next) -> Result<impl IntoResponse> {
+    let body: Document<ChangeSet> = context.read().json().await?;
+    let pool = context.get::<Pool>()?;
     let id = context.params().get::<i32>("id")?;
-    Ok(format!("Update Post: {}", id))
+
+    Ok(Document {
+        data: body.data.apply(pool, id).await?,
+    })
 }
 
 pub async fn destroy(context: Context, _: Next) -> Result<impl IntoResponse> {
+    let pool = context.get::<Pool>()?;
     let id = context.params().get::<i32>("id")?;
-    Ok(format!("Destroy Post: {}", id))
+
+    Ok(Document {
+        data: Post::delete(pool, id).await?,
+    })
 }
