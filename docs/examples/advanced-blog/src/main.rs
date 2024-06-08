@@ -39,8 +39,8 @@ async fn main() -> Result<()> {
 
     let mut api = app.at("/api");
 
-    // Acquire a new connection from the pool for each request nested within
-    // the /api namespace.
+    // Include a reference to the database pool in `context` for each request
+    // nested within the /api namespace.
     api.include(move |mut context: Context, next: Next| {
         context.insert(pool.clone());
         next.call(context)
