@@ -1,4 +1,4 @@
-use crate::{http::StatusCode, response::Response};
+use crate::{http::StatusCode, response::Response, IntoResponse};
 use serde::ser::{Serialize, Serializer};
 use std::{
     collections::HashSet,
@@ -43,6 +43,12 @@ fn respond(error: Error) -> Result<Response> {
         Some(Format::Json) => serde_json::to_vec(&error)?,
         None => error.to_string().into_bytes(),
     });
+
+    if let Some(Format::Json) = format {
+        response
+            .headers_mut()
+            .insert("Content-Type", "application/json".parse()?);
+    }
 
     *response.status_mut() = StatusCode::from_u16(status)?;
     Ok(response)
@@ -104,6 +110,12 @@ impl Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(&self.source, f)
+    }
+}
+
+impl IntoResponse for Error {
+    fn into_response(self) -> crate::Result<Response> {
+        respond(self)
     }
 }
 
