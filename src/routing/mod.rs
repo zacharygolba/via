@@ -55,10 +55,15 @@ impl Router {
 }
 
 impl<'a> Endpoint<'a> {
-    pub fn at(&'a mut self, pattern: &'static str) -> Self {
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
         Endpoint {
             value: self.value.at(pattern),
         }
+    }
+
+    pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) -> &mut Self {
+        scope(self);
+        self
     }
 
     pub fn param(&self) -> Option<&'static str> {
