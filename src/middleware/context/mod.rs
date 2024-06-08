@@ -1,19 +1,16 @@
-// pub mod cookies;
-
 use crate::{Error, Result};
 use bytes::Buf;
 use http::header::{self, AsHeaderName, HeaderMap, HeaderName, HeaderValue};
 use http::{Method, Uri, Version};
 use http_body_util::{BodyExt, Empty};
 use hyper::body::{Bytes, Incoming};
-use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
-use std::io::Read;
 use std::{
+    collections::HashMap,
     fmt::{self, Debug, Formatter},
+    io::Read,
     mem::replace,
     str::FromStr,
-    // task::{self, Poll},
 };
 
 type Request = http::Request<Body>;
@@ -33,7 +30,7 @@ pub struct Headers<'a> {
 
 #[derive(Default, Clone)]
 pub struct Parameters {
-    entries: IndexMap<&'static str, String>,
+    entries: HashMap<&'static str, String>,
 }
 
 #[derive(Debug, Default)]
