@@ -8,8 +8,9 @@ pub use schema::users;
 pub type ById = Eq<users::id, i32>;
 pub type Find = Filter<users::table, ById>;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, AsChangeset)]
 #[serde(rename_all = "camelCase")]
+#[table_name = "users"]
 pub struct ChangeSet {
     pub username: Option<String>,
 }
@@ -31,8 +32,14 @@ pub struct User {
 }
 
 impl ChangeSet {
-    pub async fn apply(self, id: i32) -> Result<User> {
-        unimplemented!()
+    pub async fn apply(self, pool: &Pool, id: i32) -> Result<User> {
+        let post = diesel::update(users::table.filter(users::id.eq(id)))
+            .set(self)
+            .returning(users::all_columns)
+            .get_result(&mut pool.get().await?)
+            .await?;
+
+        Ok(post)
     }
 }
 
@@ -52,6 +59,14 @@ impl User {
             .select(users::all_columns)
             .load(&mut pool.get().await?)
             .await?)
+    }
+
+    pub async fn delete(pool: &Pool, id: i32) -> Result<()> {
+        diesel::delete(users::table.filter(users::id.eq(id)))
+            .execute(&mut pool.get().await?)
+            .await?;
+
+        Ok(())
     }
 
     pub async fn find(pool: &Pool, id: i32) -> Result<User> {

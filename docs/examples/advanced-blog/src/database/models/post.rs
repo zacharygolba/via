@@ -13,8 +13,9 @@ pub use schema::posts;
 pub type Find = Filter<Public, Eq<posts::id, i32>>;
 pub type Public = Filter<posts::table, IsNotNull<posts::published_at>>;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, AsChangeset)]
 #[serde(rename_all = "camelCase")]
+#[table_name = "posts"]
 pub struct ChangeSet {
     pub body: Option<String>,
     pub title: Option<String>,
@@ -55,6 +56,18 @@ fn published() -> IsNotNull<posts::published_at> {
     posts::published_at.is_not_null()
 }
 
+impl ChangeSet {
+    pub async fn apply(self, pool: &Pool, id: i32) -> Result<Post> {
+        let post = diesel::update(posts::table.filter(posts::id.eq(id)))
+            .set(self)
+            .returning(posts::all_columns)
+            .get_result(&mut pool.get().await?)
+            .await?;
+
+        Ok(post)
+    }
+}
+
 impl NewPost {
     pub async fn insert(self, pool: &Pool) -> Result<PostWithAuthor> {
         let author = User::find(pool, self.user_id).await?;
@@ -68,6 +81,14 @@ impl NewPost {
 }
 
 impl Post {
+    pub async fn delete(pool: &Pool, id: i32) -> Result<()> {
+        diesel::delete(posts::table.filter(posts::id.eq(id)))
+            .execute(&mut pool.get().await?)
+            .await?;
+
+        Ok(())
+    }
+
     pub async fn by_user(pool: &Pool, id: i32) -> Result<Vec<PostWithAuthor>> {
         Ok(posts::table
             .inner_join(users::table)
