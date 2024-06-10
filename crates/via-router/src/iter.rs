@@ -25,6 +25,12 @@ pub struct Match<'a, T> {
 }
 
 /// An iterator that yields all possible partial and exact matches for a url path.
+//
+// TODO:
+// Refactor the Visit struct to accumulate all matches into a VecDeque to avoid
+// recursively calling `Iterator::next` on `visitor_delegate`. In a simple test
+// implementation I was able to reduce the time to match an exact route in the
+// `benches` crate by 60 nanoseconds (from 240ns to ~180ns).
 pub struct Visit<'a, 'b, T> {
     node: &'a Node<T>,
     store: &'a RouteStore<T>,
