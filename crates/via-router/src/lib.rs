@@ -97,7 +97,7 @@ where
 
     // Check if the pattern already exists in the node at `current_key`. If it does,
     // we can continue to the next segment.
-    for next_key in &route_store[current_key] {
+    for next_key in route_store[current_key].iter() {
         if pattern == route_store[*next_key].pattern {
             return insert(*next_key, route_store, segments);
         }

@@ -44,7 +44,7 @@ impl<T> Node<T> {
     where
         F: FnMut(&'a Node<T>) -> bool,
     {
-        self.into_iter()
+        self.iter()
             .skip(from_index)
             .enumerate()
             .find_map(|(index, key)| {
@@ -57,23 +57,18 @@ impl<T> Node<T> {
             })
     }
 
-    pub(crate) fn push(&mut self, key: usize) {
-        self.entries
-            .get_or_insert_with(|| Vec::with_capacity(4))
-            .push(key);
-    }
-}
-
-impl<'a, T> IntoIterator for &'a Node<T> {
-    type IntoIter = slice::Iter<'a, usize>;
-    type Item = &'a usize;
-
-    fn into_iter(self) -> Self::IntoIter {
+    pub(crate) fn iter(&self) -> slice::Iter<usize> {
         if let Some(entries) = self.entries.as_ref() {
             entries.iter()
         } else {
             [].iter()
         }
+    }
+
+    pub(crate) fn push(&mut self, key: usize) {
+        self.entries
+            .get_or_insert_with(|| Vec::with_capacity(4))
+            .push(key);
     }
 }
 
