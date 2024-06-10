@@ -1,9 +1,9 @@
-use super::{Body, Respond, Response};
+use super::{Body, IntoResponse, Response};
 use crate::Result;
 
 struct Json(Result<Body>);
 
-pub fn json(body: &impl serde::Serialize) -> impl Respond {
+pub fn json(body: &impl serde::Serialize) -> impl IntoResponse {
     Json(match serde_json::to_vec(body) {
         Ok(bytes) => Ok(bytes.into()),
         Err(error) => Err(error.into()),
@@ -20,8 +20,8 @@ macro_rules! media(($body:expr, $type:expr) => {{
     response
 }});
 
-impl Respond for Json {
-    fn respond(self) -> Result<Response> {
+impl IntoResponse for Json {
+    fn into_response(self) -> Result<Response> {
         Ok(media!(self.0?, "application/json"))
     }
 }

@@ -106,11 +106,6 @@ impl StaticServer {
         self.config.public_dir.join(path.trim_start_matches('/'))
     }
 
-    /// Extracts the value of the path parameter from the context.
-    fn extract_path_param(&self, context: &Context) -> Result<String> {
-        Ok(context.params().get(self.config.path_param)?)
-    }
-
     /// Either falls through to the next middleware or returns a 404 response
     /// depending on the value of the `fall_through` field in the configuration.
     async fn handle_not_found(&self, context: Context, next: Next) -> Result {
@@ -125,7 +120,7 @@ impl StaticServer {
     /// If the path parameter is a directory, it will attempt to locate an index
     /// file.
     async fn locate_file(&self, context: &Context) -> Result<(Mime, PathBuf)> {
-        let path_param_value = self.extract_path_param(&context)?;
+        let path_param_value = context.param(&self.config.path_param).required()?;
         let mut file_path = self.expand_path(&path_param_value);
 
         if file_path.is_dir() {

@@ -32,14 +32,14 @@ async fn main() -> Result<()> {
     });
 
     hello.respond(via::get(|context: Context, _: Next| async move {
-        let name: String = context.params().get("name")?;
+        let name = context.param("name").required()?;
         Ok::<_, Error>(format!("Hello, {}", name))
     }));
 
     let mut id = app.at("/:id");
 
     id.respond(via::get(|context: Context, next: Next| async move {
-        match context.params().get::<usize>("id") {
+        match context.param("id").parse::<i32>() {
             Ok(id) => format!("ID: {}", id).into_response(),
             Err(_) => next.call(context).await,
         }
@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     let mut catch_all = app.at("/catch-all/*name");
 
     catch_all.respond(via::get(|context: Context, _: Next| async move {
-        let path: String = context.params().get("name")?;
+        let path = context.param("name").required()?;
         Ok::<_, Error>(format!("Catch-all: {}", path))
     }));
 
