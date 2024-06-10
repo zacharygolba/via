@@ -12,7 +12,7 @@ pub async fn index(context: Context, _: Next) -> Result<impl IntoResponse> {
 }
 
 pub async fn create(mut context: Context, _: Next) -> Result<impl IntoResponse> {
-    let body: Document<NewUser> = context.read().json().await?;
+    let body: Document<NewUser> = context.body_mut().read_json().await?;
     let pool = context.get::<Pool>()?;
 
     Ok(Document {
@@ -22,7 +22,7 @@ pub async fn create(mut context: Context, _: Next) -> Result<impl IntoResponse> 
 
 pub async fn show(context: Context, _: Next) -> Result<impl IntoResponse> {
     let pool = context.get::<Pool>()?;
-    let id = context.params().get::<i32>("id")?;
+    let id = context.param("id").parse::<i32>()?;
 
     Ok(Document {
         data: User::find(pool, id).await?,
@@ -30,9 +30,9 @@ pub async fn show(context: Context, _: Next) -> Result<impl IntoResponse> {
 }
 
 pub async fn update(mut context: Context, _: Next) -> Result<impl IntoResponse> {
-    let body: Document<ChangeSet> = context.read().json().await?;
+    let body: Document<ChangeSet> = context.body_mut().read_json().await?;
     let pool = context.get::<Pool>()?;
-    let id = context.params().get::<i32>("id")?;
+    let id = context.param("id").parse::<i32>()?;
 
     Ok(Document {
         data: body.data.apply(pool, id).await?,
@@ -41,7 +41,7 @@ pub async fn update(mut context: Context, _: Next) -> Result<impl IntoResponse> 
 
 pub async fn destroy(context: Context, _: Next) -> Result<impl IntoResponse> {
     let pool = context.get::<Pool>()?;
-    let id = context.params().get::<i32>("id")?;
+    let id = context.param("id").parse::<i32>()?;
 
     Ok(Document {
         data: User::delete(pool, id).await?,

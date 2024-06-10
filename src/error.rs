@@ -86,6 +86,14 @@ impl<'a> Iterator for Chain<'a> {
 }
 
 impl Error {
+    pub fn new(message: String, status: u16) -> Self {
+        Error {
+            format: None,
+            source: Box::new(Bail::new(message)),
+            status,
+        }
+    }
+
     pub fn chain(&self) -> impl Iterator<Item = &Source> {
         Chain {
             source: Some(&*self.source),

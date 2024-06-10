@@ -1,7 +1,10 @@
 use router::{Endpoint as GenericEndpoint, Router as GenericRouter};
 use std::{collections::VecDeque, sync::Arc};
 
-use crate::{middleware::DynMiddleware, Context, Middleware, Next};
+use crate::{
+    middleware::{context::PathParams, DynMiddleware},
+    HttpRequest, Middleware, Next,
+};
 
 pub struct Router {
     value: GenericRouter<Route>,
@@ -29,18 +32,16 @@ impl Router {
         }
     }
 
-    pub fn visit(&self, context: &mut Context) -> Next {
-        let (parameters, _, path) = context.locate();
+    pub fn visit(&self, request: &HttpRequest, params: &mut PathParams) -> Next {
         let mut stack = VecDeque::new();
 
         if let Some(route) = self.value.route() {
             stack.extend(route.middleware.iter().cloned());
         }
 
-        for matched in self.value.visit(path) {
-            if let Some((name, (start, end))) = matched.param() {
-                let value = path[start..end].to_owned();
-                parameters.insert(name, value);
+        for matched in self.value.visit(request.uri().path()) {
+            if let Some((name, value)) = matched.param() {
+                params.insert(name, value);
             }
 
             if let Some(route) = matched.route() {
@@ -56,10 +57,15 @@ impl Router {
 }
 
 impl<'a> Endpoint<'a> {
-    pub fn at(&'a mut self, pattern: &'static str) -> Self {
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
         Endpoint {
             value: self.value.at(pattern),
         }
+    }
+
+    pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) -> &mut Self {
+        scope(self);
+        self
     }
 
     pub fn param(&self) -> Option<&'static str> {
