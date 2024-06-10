@@ -31,10 +31,7 @@ use std::{
 };
 use tokio::net::TcpListener;
 
-use middleware::{
-    context::PathParams,
-    filter::{self, MethodFilter},
-};
+use middleware::{context::PathParams, filter::MethodFilter};
 use response::Response;
 use routing::*;
 
@@ -59,39 +56,39 @@ pub fn app() -> App {
 }
 
 pub fn connect<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    filter::method(Method::CONNECT)(middleware)
+    MethodFilter::new(Method::CONNECT, middleware)
 }
 
 pub fn delete<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    filter::method(Method::DELETE)(middleware)
+    MethodFilter::new(Method::DELETE, middleware)
 }
 
 pub fn get<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    filter::method(Method::GET)(middleware)
+    MethodFilter::new(Method::GET, middleware)
 }
 
 pub fn head<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    filter::method(Method::HEAD)(middleware)
+    MethodFilter::new(Method::HEAD, middleware)
 }
 
 pub fn options<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    filter::method(Method::OPTIONS)(middleware)
+    MethodFilter::new(Method::OPTIONS, middleware)
 }
 
 pub fn patch<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    filter::method(Method::PATCH)(middleware)
+    MethodFilter::new(Method::PATCH, middleware)
 }
 
 pub fn post<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    filter::method(Method::POST)(middleware)
+    MethodFilter::new(Method::POST, middleware)
 }
 
 pub fn put<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    filter::method(Method::PUT)(middleware)
+    MethodFilter::new(Method::PUT, middleware)
 }
 
 pub fn trace<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    filter::method(Method::TRACE)(middleware)
+    MethodFilter::new(Method::TRACE, middleware)
 }
 
 fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
