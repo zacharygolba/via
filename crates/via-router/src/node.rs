@@ -1,4 +1,6 @@
-use crate::Store;
+use std::{iter::IntoIterator, slice};
+
+use crate::routes::RouteStore;
 
 #[derive(Clone, Debug)]
 pub struct Node<T> {
@@ -17,6 +19,14 @@ pub enum Pattern {
 }
 
 impl<T> Node<T> {
+    pub fn route(&self) -> Option<&T> {
+        self.route.as_ref()
+    }
+
+    pub fn route_mut(&mut self) -> &mut Option<T> {
+        &mut self.route
+    }
+
     pub(crate) fn new(pattern: Pattern) -> Self {
         Node {
             pattern,
@@ -27,16 +37,14 @@ impl<T> Node<T> {
 
     pub(crate) fn find<'a, F>(
         &'a self,
-        store: &'a Store<T>,
+        store: &'a RouteStore<T>,
         from_index: usize,
         mut predicate: F,
     ) -> Option<(usize, &'a Node<T>)>
     where
         F: FnMut(&'a Node<T>) -> bool,
     {
-        self.entries
-            .as_ref()?
-            .iter()
+        self.into_iter()
             .skip(from_index)
             .enumerate()
             .find_map(|(index, key)| {
@@ -47,6 +55,25 @@ impl<T> Node<T> {
                     None
                 }
             })
+    }
+
+    pub(crate) fn push(&mut self, key: usize) {
+        self.entries
+            .get_or_insert_with(|| Vec::with_capacity(4))
+            .push(key);
+    }
+}
+
+impl<'a, T> IntoIterator for &'a Node<T> {
+    type IntoIter = slice::Iter<'a, usize>;
+    type Item = &'a usize;
+
+    fn into_iter(self) -> Self::IntoIter {
+        if let Some(entries) = self.entries.as_ref() {
+            entries.iter()
+        } else {
+            [].iter()
+        }
     }
 }
 
