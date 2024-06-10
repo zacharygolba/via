@@ -18,10 +18,11 @@ pub use self::{
     middleware::{Context, Middleware, Next},
     response::IntoResponse,
 };
+use futures::{future::Map, FutureExt};
 pub use http;
 
 use http::Method;
-use hyper::server::conn::http1;
+use hyper::{server::conn::http1, service::Service};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::{
     convert::Infallible,
@@ -40,77 +41,16 @@ type HttpResponse = http::Response<response::Body>;
 pub type BoxFuture<T> = futures::future::BoxFuture<'static, T>;
 pub type Result<T = response::Response, E = Error> = std::result::Result<T, E>;
 
-pub struct Application {
+pub struct App {
     router: Router,
 }
 
-pub fn new() -> Application {
-    Application {
-        router: Router::new(),
-    }
+struct AppServer {
+    app: Arc<App>,
 }
 
-impl Application {
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
-        self.router.at(pattern)
-    }
-
-    pub fn include(&mut self, middleware: impl Middleware + 'static) -> &mut Self {
-        self.at("/").include(middleware);
-        self
-    }
-
-    pub async fn listen(self, address: impl ToSocketAddrs) -> Result<()> {
-        let app = Arc::new(self);
-        let address = get_addr(address)?;
-        let listener = TcpListener::bind(address).await?;
-        let service_fn = hyper::service::service_fn(move |request| {
-            let app = Arc::clone(&app);
-            async move { app.call(request).await }
-        });
-        // let ctrlc = async {
-        //     let message = "failed to install CTRL+C signal handler";
-        //     tokio::signal::ctrl_c().await.expect(message);
-        // };
-
-        println!("Server listening at http://{}", address);
-
-        loop {
-            let (stream, _) = listener.accept().await?;
-            let instance = service_fn.clone();
-
-            // Use an adapter to access something implementing `tokio::io` traits as if they implement
-            // `hyper::rt` IO traits.
-            let io = TokioIo::new(stream);
-
-            // Spawn a tokio task to serve multiple connections concurrently
-            tokio::task::spawn(async move {
-                // Finally, we bind the incoming connection to our `hello` service
-                if let Err(err) = http1::Builder::new()
-                    .timer(TokioTimer::new())
-                    // `service_fn` converts our function in a `Service`
-                    .serve_connection(io, instance)
-                    .await
-                {
-                    eprintln!("Error serving connection: {:?}", err);
-                }
-            });
-        }
-    }
-
-    async fn call(&self, request: HttpRequest) -> Result<HttpResponse, Infallible> {
-        let mut context = Context::from(request);
-        let next = self.router.visit(&mut context);
-
-        match next.call(context).await {
-            Ok(response) => Ok(response.into()),
-            Err(error) => Ok(Response::from(error).into()),
-        }
-    }
-}
-
-pub fn app() -> Application {
-    Application {
+pub fn app() -> App {
+    App {
         router: Router::new(),
     }
 }
@@ -155,5 +95,66 @@ fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
     match sources.to_socket_addrs()?.next() {
         Some(value) => Ok(value),
         None => todo!(),
+    }
+}
+
+impl App {
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
+        self.router.at(pattern)
+    }
+
+    pub fn include(&mut self, middleware: impl Middleware + 'static) -> &mut Self {
+        self.at("/").include(middleware);
+        self
+    }
+
+    pub async fn listen(self, address: impl ToSocketAddrs) -> Result<()> {
+        let address = get_addr(address)?;
+        let listener = TcpListener::bind(address).await?;
+        let app_server = AppServer {
+            app: Arc::new(self),
+        };
+
+        println!("Server listening at http://{}", address);
+
+        loop {
+            let (stream, _) = listener.accept().await?;
+            let app_server = AppServer {
+                app: Arc::clone(&app_server.app),
+            };
+
+            // Use an adapter to access something implementing `tokio::io` traits as if they implement
+            // `hyper::rt` IO traits.
+            let io = TokioIo::new(stream);
+
+            // Spawn a tokio task to serve multiple connections concurrently
+            tokio::task::spawn(async {
+                // Finally, we bind the incoming connection to our `hello` service
+                if let Err(err) = http1::Builder::new()
+                    .timer(TokioTimer::new())
+                    // `service_fn` converts our function in a `Service`
+                    .serve_connection(io, app_server)
+                    .await
+                {
+                    eprintln!("Error serving connection: {:?}", err);
+                }
+            });
+        }
+    }
+}
+
+impl Service<HttpRequest> for AppServer {
+    type Error = Infallible;
+    type Future = Map<BoxFuture<Result>, fn(Result) -> Result<HttpResponse, Infallible>>;
+    type Response = HttpResponse;
+
+    fn call(&self, request: HttpRequest) -> Self::Future {
+        let mut context = Context::from(request);
+        let next = self.app.router.visit(&mut context);
+
+        next.call(context).map(|result| match result {
+            Ok(response) => Ok(response.into()),
+            Err(error) => Ok(Response::from(error).into()),
+        })
     }
 }
