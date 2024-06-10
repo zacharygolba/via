@@ -38,13 +38,16 @@ impl Router {
         }
 
         for matched in self.value.visit(path) {
-            if let Some((name, value)) = matched.param() {
-                parameters.insert(name, value.to_owned());
+            if let Some((name, (start, end))) = matched.param() {
+                let value = path[start..end].to_owned();
+                parameters.insert(name, value);
             }
 
             if let Some(route) = matched.route() {
                 stack.extend(route.middleware.iter().cloned());
-                stack.extend(route.responders.iter().cloned());
+                if matched.is_exact_match {
+                    stack.extend(route.responders.iter().cloned());
+                }
             }
         }
 
