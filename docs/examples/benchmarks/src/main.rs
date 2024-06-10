@@ -2,7 +2,7 @@ use via::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut app = via::new();
+    let mut app = via::app();
 
     let mut text = app.at("/text");
     text.respond(via::get(|_, _| async { "Hello, world!" }));
