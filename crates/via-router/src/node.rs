@@ -1,4 +1,4 @@
-use std::{iter::IntoIterator, slice};
+use std::slice;
 
 use crate::routes::RouteStore;
 
