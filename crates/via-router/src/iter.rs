@@ -8,7 +8,7 @@ use crate::{
 
 /// Represents either a partial or exact match for a given path segment.
 #[derive(Clone, Copy)]
-pub struct Match<'a, 'b, T> {
+pub struct Match<'a, T> {
     /// Indicates whether or not the match is considered an exact match.
     /// If the match is exact, both the middleware and responders will be
     /// called during a request. Otherwise, only the middleware will be
@@ -18,7 +18,7 @@ pub struct Match<'a, 'b, T> {
     /// The value of the path segment that matches self.pattern(). If the
     /// matched route has a CatchAll pattern, this will be the remainder
     /// of the url path without the leading `/` character.
-    pub path_segment: &'b str,
+    pub path_segment_range: (usize, usize),
 
     /// The node that matches `self.value`.
     node: &'a Node<T>,
@@ -31,7 +31,7 @@ pub struct Visit<'a, 'b, T> {
     depth: usize,
     index: usize,
     path_value: &'b str,
-    path_segments: Rc<SmallVec<[(usize, &'b str); 6]>>,
+    path_segments: Rc<SmallVec<[(usize, usize); 6]>>,
     visitor_delegate: Option<Box<Self>>,
 }
 
@@ -42,13 +42,14 @@ pub(crate) struct Segments<'a> {
     value: &'a str,
 }
 
-impl<'a, 'b, T> Match<'a, 'b, T> {
+impl<'a, T> Match<'a, T> {
     /// Returns a key-value pair where key is the name of the dynamic segment
-    /// that was matched against and value is `self.value`. If the matched
+    /// that was matched against and value is a key-value pair containing the
+    /// start and end offset of the path segment in the url path. If the matched
     /// route does not have any dynamic segments, `None` will be returned.
-    pub fn param(&self) -> Option<(&'static str, &'b str)> {
+    pub fn param(&self) -> Option<(&'static str, (usize, usize))> {
         if let Pattern::CatchAll(name) | Pattern::Dynamic(name) = self.pattern() {
-            Some((name, self.path_segment))
+            Some((name, self.path_segment_range))
         } else {
             None
         }
@@ -96,7 +97,7 @@ impl<'a, 'b, T> Visit<'a, 'b, T> {
     /// Calls next on the visitor delegate and returns the next match if one
     /// exists. If the visitor delegate is exhausted, it will be set to None
     /// to prevent us from attempting to delegate to it again.
-    fn delegate_next_match(&mut self) -> Option<Match<'a, 'b, T>> {
+    fn delegate_next_match(&mut self) -> Option<Match<'a, T>> {
         self.visitor_delegate
             .as_mut()
             .and_then(|delegate| delegate.next())
@@ -133,21 +134,24 @@ impl<'a, 'b, T> Visit<'a, 'b, T> {
     /// match if it exists. The returned value should only be `None` if we are
     /// attempting to match a root url path (i.e `"/"`).
     fn get_path_segment_value(&self) -> Option<&'b str> {
-        self.path_segments.get(self.depth).map(|(_, value)| *value)
+        self.path_segments
+            .get(self.depth)
+            .map(|(start, end)| &self.path_value[*start..*end])
     }
 
     // Returns a reference to remaining path starting from the current path
     // segment without the leading `/` character.
-    fn get_remaining_path(&self) -> &'b str {
+    fn get_remaining_path(&self) -> (usize, usize) {
         self.path_segments
             .get(self.depth)
-            .map(|(start, _)| self.path_value[*start..].trim_start_matches('/'))
-            .unwrap_or("")
+            .map(|(start, _)| *start)
+            .zip(self.path_segments.last().map(|(_, end)| *end))
+            .unwrap_or((0, 0))
     }
 }
 
 impl<'a, 'b, T> Iterator for Visit<'a, 'b, T> {
-    type Item = Match<'a, 'b, T>;
+    type Item = Match<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // First, we attempt to delegate to the next visitor to see if there
@@ -156,14 +160,15 @@ impl<'a, 'b, T> Iterator for Visit<'a, 'b, T> {
             return Some(component);
         }
 
+        let path_segment_range: (usize, usize);
+
         // If we are unable to delegate to the next visitor, we attempt to find
         // a node that matches the current path segment. We'll continue to match
         // against the current path segment until all possible matches at the
         // current depth are exhausted.
-        if let Some(path_segment) = self.get_path_segment_value() {
+        if let Some(path_segment_value) = self.get_path_segment_value() {
             let mut is_exact_match = self.depth == self.path_segments.len() - 1;
-            let mut path_segment = path_segment;
-            let node = self.find_next_match(|entry| path_segment == entry.pattern)?;
+            let node = self.find_next_match(|entry| path_segment_value == entry.pattern)?;
 
             if matches!(node.pattern, Pattern::CatchAll(_)) {
                 // The next node has a `CatchAll` pattern and will be considered an exact
@@ -171,7 +176,7 @@ impl<'a, 'b, T> Iterator for Visit<'a, 'b, T> {
                 // called for `next` and we will attempt to match the next path segment
                 // with descendant nodes.
                 is_exact_match = true;
-                path_segment = self.get_remaining_path();
+                path_segment_range = self.get_remaining_path();
             } else {
                 // The next node may have descendant that the next path segment. Therefore,
                 // we'll fork the current visitor and attempt to delegate our search to
@@ -181,12 +186,13 @@ impl<'a, 'b, T> Iterator for Visit<'a, 'b, T> {
                 // we must consider the case where the next descendant has a `CatchAll`
                 // pattern.
                 self.visitor_delegate = Some(self.fork(node));
+                path_segment_range = self.path_segments[self.depth];
             }
 
             return Some(Match {
-                is_exact_match,
-                path_segment,
                 node,
+                is_exact_match,
+                path_segment_range,
             });
         }
 
@@ -195,11 +201,12 @@ impl<'a, 'b, T> Iterator for Visit<'a, 'b, T> {
         // to support matching the "index" path of a descendant node with a
         // CatchAll pattern.
         let node = self.find_next_match(|entry| matches!(entry.pattern, Pattern::CatchAll(_)))?;
+        path_segment_range = self.get_remaining_path();
 
         Some(Match {
-            is_exact_match: true,
-            path_segment: self.get_remaining_path(),
             node,
+            path_segment_range,
+            is_exact_match: true,
         })
     }
 }
@@ -215,19 +222,20 @@ impl<'a> Segments<'a> {
 
 impl Segments<'static> {
     pub(crate) fn patterns(self) -> impl Iterator<Item = Pattern> {
-        self.map(|(_, value)| Pattern::from(value))
+        let value = self.value;
+        self.map(|(start, end)| Pattern::from(&value[start..end]))
     }
 }
 
 impl<'a> Iterator for Segments<'a> {
-    type Item = (usize, &'a str);
+    type Item = (usize, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut start = None;
         let mut end = self.value.len();
 
         while let (index, '/') = *self.chars.peek()? {
-            start = Some(index);
+            start = Some(index + 1);
             self.chars.next();
         }
 
@@ -240,6 +248,6 @@ impl<'a> Iterator for Segments<'a> {
             self.chars.next();
         }
 
-        Some((start?, &self.value[(start? + 1)..end]))
+        Some((start?, end))
     }
 }

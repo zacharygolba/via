@@ -38,8 +38,9 @@ impl Router {
         }
 
         for matched in self.value.visit(path) {
-            if let Some((name, value)) = matched.param() {
-                parameters.insert(name, value.to_owned());
+            if let Some((name, (start, end))) = matched.param() {
+                let value = path[start..end].to_owned();
+                parameters.insert(name, value);
             }
 
             if let Some(route) = matched.route() {
@@ -55,15 +56,10 @@ impl Router {
 }
 
 impl<'a> Endpoint<'a> {
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
+    pub fn at(&'a mut self, pattern: &'static str) -> Self {
         Endpoint {
             value: self.value.at(pattern),
         }
-    }
-
-    pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) -> &mut Self {
-        scope(self);
-        self
     }
 
     pub fn param(&self) -> Option<&'static str> {
