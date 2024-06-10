@@ -29,22 +29,22 @@ pub enum Body {
     Stream(StreamBody<BoxStream<'static, Result<Frame>>>),
 }
 
-pub trait Respond: Sized {
-    fn respond(self) -> Result<Response>;
+pub trait IntoResponse: Sized {
+    fn into_response(self) -> Result<Response>;
 
     fn with_header<K, V>(self, name: K, value: V) -> Result<Response>
     where
         HeaderName: TryFrom<K, Error = InvalidHeaderName>,
         HeaderValue: TryFrom<V, Error = InvalidHeaderValue>,
     {
-        WithHeader::new(self, (name, value)).respond()
+        WithHeader::new(self, (name, value)).into_response()
     }
 
     fn with_status<T>(self, status: T) -> Result<Response>
     where
         StatusCode: TryFrom<T, Error = InvalidStatusCode>,
     {
-        WithStatusCode::new(self, status).respond()
+        WithStatusCode::new(self, status).into_response()
     }
 }
 
@@ -53,12 +53,12 @@ pub struct Response {
     value: http::Response<Body>,
 }
 
-pub struct WithHeader<T: Respond> {
+pub struct WithHeader<T: IntoResponse> {
     header: Result<(HeaderName, HeaderValue)>,
     value: T,
 }
 
-pub struct WithStatusCode<T: Respond> {
+pub struct WithStatusCode<T: IntoResponse> {
     status: Result<StatusCode>,
     value: T,
 }
@@ -94,20 +94,20 @@ impl HyperBody for Body {
     }
 }
 
-impl Respond for &'static str {
-    fn respond(self) -> Result<Response> {
+impl IntoResponse for &'static str {
+    fn into_response(self) -> Result<Response> {
         Ok(media!(self, "text/plain"))
     }
 }
 
-impl Respond for String {
-    fn respond(self) -> Result<Response> {
+impl IntoResponse for String {
+    fn into_response(self) -> Result<Response> {
         Ok(media!(self, "text/plain"))
     }
 }
 
-impl Respond for File {
-    fn respond(self) -> Result<Response> {
+impl IntoResponse for File {
+    fn into_response(self) -> Result<Response> {
         let stream = StreamBody::new(
             ReaderStream::new(self)
                 .map(|result| result.map(Frame::data).map_err(Error::from))
@@ -118,8 +118,8 @@ impl Respond for File {
     }
 }
 
-impl Respond for () {
-    fn respond(self) -> Result<Response> {
+impl IntoResponse for () {
+    fn into_response(self) -> Result<Response> {
         let mut response = Response::default();
 
         *response.status_mut() = StatusCode::NO_CONTENT;
@@ -127,13 +127,13 @@ impl Respond for () {
     }
 }
 
-impl<T, E> Respond for Result<T, E>
+impl<T, E> IntoResponse for Result<T, E>
 where
     Error: From<E>,
-    T: Respond,
+    T: IntoResponse,
 {
-    fn respond(self) -> Result<Response> {
-        self?.respond()
+    fn into_response(self) -> Result<Response> {
+        self?.into_response()
     }
 }
 
@@ -153,8 +153,8 @@ impl Response {
     }
 }
 
-impl Respond for Response {
-    fn respond(self) -> Result<Response> {
+impl IntoResponse for Response {
+    fn into_response(self) -> Result<Response> {
         Ok(self)
     }
 }
@@ -179,7 +179,7 @@ impl DerefMut for Response {
     }
 }
 
-impl<T: Respond> WithHeader<T> {
+impl<T: IntoResponse> WithHeader<T> {
     fn convert<K, V>(header: (K, V)) -> Result<(HeaderName, HeaderValue)>
     where
         HeaderName: TryFrom<K, Error = InvalidHeaderName>,
@@ -203,9 +203,9 @@ impl<T: Respond> WithHeader<T> {
     }
 }
 
-impl<T: Respond> Respond for WithHeader<T> {
-    fn respond(self) -> Result<Response> {
-        let mut response = self.value.respond()?;
+impl<T: IntoResponse> IntoResponse for WithHeader<T> {
+    fn into_response(self) -> Result<Response> {
+        let mut response = self.value.into_response()?;
         let (name, value) = self.header?;
 
         response.headers_mut().append(name, value);
@@ -213,7 +213,7 @@ impl<T: Respond> Respond for WithHeader<T> {
     }
 }
 
-impl<T: Respond> WithStatusCode<T> {
+impl<T: IntoResponse> WithStatusCode<T> {
     fn convert<S>(status: S) -> Result<StatusCode>
     where
         StatusCode: TryFrom<S, Error = InvalidStatusCode>,
@@ -232,17 +232,17 @@ impl<T: Respond> WithStatusCode<T> {
     }
 }
 
-impl<T: Respond> Respond for WithStatusCode<T> {
-    fn respond(self) -> Result<Response> {
-        let mut response = self.value.respond()?;
+impl<T: IntoResponse> IntoResponse for WithStatusCode<T> {
+    fn into_response(self) -> Result<Response> {
+        let mut response = self.value.into_response()?;
 
         *response.status_mut() = self.status?;
         Ok(response)
     }
 }
 
-impl Respond for serde_json::Value {
-    fn respond(self) -> Result<Response> {
-        json(&self).respond()
+impl IntoResponse for serde_json::Value {
+    fn into_response(self) -> Result<Response> {
+        json(&self).into_response()
     }
 }

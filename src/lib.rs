@@ -31,7 +31,10 @@ use std::{
 };
 use tokio::net::TcpListener;
 
-use middleware::filter::{self, MethodFilter};
+use middleware::{
+    context::PathParams,
+    filter::{self, MethodFilter},
+};
 use response::Response;
 use routing::*;
 
@@ -149,12 +152,13 @@ impl Service<HttpRequest> for AppServer {
     type Response = HttpResponse;
 
     fn call(&self, request: HttpRequest) -> Self::Future {
-        let mut context = Context::from(request);
-        let next = self.app.router.visit(&mut context);
+        let mut params = PathParams::new();
+        let next = self.app.router.visit(&request, &mut params);
 
-        next.call(context).map(|result| match result {
-            Ok(response) => Ok(response.into()),
-            Err(error) => Ok(Response::from(error).into()),
-        })
+        next.call(Context::new(request, params))
+            .map(|result| match result {
+                Ok(response) => Ok(response.into()),
+                Err(error) => Ok(Response::from(error).into()),
+            })
     }
 }
