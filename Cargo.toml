@@ -7,7 +7,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-auth = { package = "via-auth", path = "crates/via-auth" }
 bytes = "1.6.0"
 futures = "0.3.30"
 http = "1.1.0"
