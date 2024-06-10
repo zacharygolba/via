@@ -7,10 +7,12 @@ pub struct MethodFilter<T: Middleware> {
     predicate: Method,
 }
 
-pub fn method<T: Middleware>(predicate: Method) -> impl FnOnce(T) -> MethodFilter<T> {
-    move |middleware| MethodFilter {
-        middleware,
-        predicate,
+impl<T: Middleware> MethodFilter<T> {
+    pub(crate) fn new(predicate: Method, middleware: T) -> Self {
+        MethodFilter {
+            middleware,
+            predicate,
+        }
     }
 }
 

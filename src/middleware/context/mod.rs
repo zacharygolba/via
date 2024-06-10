@@ -1,11 +1,11 @@
 use bytes::Buf;
 use http::{uri::PathAndQuery, HeaderMap, Method, Uri, Version};
 use http_body_util::{BodyExt, Empty};
-use hyper::body::{Bytes, Incoming};
+use hyper::body::Incoming;
 use serde::de::DeserializeOwned;
 use std::{collections::HashMap, io::Read, str::FromStr};
 
-use crate::{error::Bail, Error, HttpRequest, Result};
+use crate::{Error, HttpRequest, Result};
 
 type Request = http::Request<Body>;
 
