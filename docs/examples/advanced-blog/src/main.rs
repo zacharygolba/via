@@ -10,7 +10,7 @@ use via::prelude::*;
 async fn main() -> Result<()> {
     dotenvy::dotenv()?;
 
-    let mut app = via::new();
+    let mut app = via::app();
     let pool = database::pool().await?;
 
     // Setup a simple logger middleware that logs the method, path, and response

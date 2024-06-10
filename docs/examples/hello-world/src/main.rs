@@ -18,7 +18,7 @@ async fn logger(context: Context, next: Next) -> Result {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut app = via::new();
+    let mut app = via::app();
 
     app.include(logger);
 
