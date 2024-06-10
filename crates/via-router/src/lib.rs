@@ -1,31 +1,29 @@
 mod iter;
 mod node;
+mod routes;
 
-use slab::Slab;
+use crate::{iter::Segments, node::Node, routes::RouteStore};
 
-use crate::iter::Segments;
-use crate::node::*;
-
-pub use iter::{Match, Visit};
-pub use node::Pattern;
-
-pub(crate) type Store<T> = Slab<Node<T>>;
+pub use crate::{
+    iter::{Match, Visit},
+    node::Pattern,
+};
 
 #[derive(Clone, Debug)]
 pub struct Router<T> {
     root: usize,
-    store: Store<T>,
+    store: RouteStore<T>,
 }
 
 #[derive(Debug)]
 pub struct Endpoint<'a, T> {
     key: usize,
-    store: &'a mut Store<T>,
+    store: &'a mut RouteStore<T>,
 }
 
 impl<T> Router<T> {
     pub fn new() -> Self {
-        let mut store = Slab::with_capacity(512);
+        let mut store = RouteStore::new();
         let root = store.insert(Node::new(Pattern::Root));
 
         Router { root, store }
@@ -41,15 +39,16 @@ impl<T> Router<T> {
     }
 
     pub fn route(&self) -> Option<&T> {
-        self.store[self.root].route.as_ref()
+        self.store[self.root].route()
     }
 
     pub fn route_mut(&mut self) -> &mut Option<T> {
-        &mut self.store[self.root].route
+        self.store[self.root].route_mut()
     }
 
     pub fn visit<'a, 'b>(&'a self, path: &'b str) -> Visit<'a, 'b, T> {
-        Visit::new(&self.store, &self.store[self.root], path)
+        let node = &self.store[self.root];
+        Visit::new(&self.store, node, path)
     }
 }
 
@@ -58,7 +57,7 @@ impl<'a, T> Endpoint<'a, T> {
         let mut segments = Segments::new(path).patterns();
 
         Endpoint {
-            key: insert(self.key, &mut self.store, &mut segments),
+            key: insert(self.key, self.store, &mut segments),
             store: self.store,
         }
     }
@@ -77,36 +76,41 @@ impl<'a, T> Endpoint<'a, T> {
     }
 }
 
-fn insert<T, I>(key: usize, store: &mut Store<T>, segments: &mut I) -> usize
+fn insert<T, I>(current_key: usize, route_store: &mut RouteStore<T>, segments: &mut I) -> usize
 where
     I: Iterator<Item = Pattern>,
 {
-    if let Pattern::CatchAll(_) = store[key].pattern {
+    // If the current node is a catch-all, we can skip the rest of the segments.
+    // In the future we may want to panic if the caller tries to insert a node
+    // into a catch-all node rather than silently ignoring the rest of the
+    // segments.
+    if let Pattern::CatchAll(_) = route_store[current_key].pattern {
         while let Some(_) = segments.next() {}
-        return key;
+        return current_key;
     }
 
+    // If there are no more segments, we can return the current key.
     let pattern = match segments.next() {
         Some(value) => value,
-        None => return key,
+        None => return current_key,
     };
 
-    if let Some(entries) = store[key].entries.as_ref() {
-        for key in entries {
-            if pattern == store[*key].pattern {
-                return insert(*key, store, segments);
-            }
+    // Check if the pattern already exists in the node at `current_key`. If it does,
+    // we can continue to the next segment.
+    for next_key in &route_store[current_key] {
+        if pattern == route_store[*next_key].pattern {
+            return insert(*next_key, route_store, segments);
         }
     }
 
-    let next_key = store.insert(Node::new(pattern));
-
-    store[key]
-        .entries
-        .get_or_insert_with(|| Vec::with_capacity(4))
-        .push(next_key);
-
-    insert(next_key, store, segments)
+    // If the pattern does not exist in the node at `current_key`, we need to create
+    // a new node as a descendant of the node at `current_key` and then insert it
+    // into the store.
+    insert(
+        route_store.entry(current_key).insert(Node::new(pattern)),
+        route_store,
+        segments,
+    )
 }
 
 #[cfg(test)]

@@ -1,8 +1,10 @@
 use smallvec::SmallVec;
 use std::{iter::Peekable, rc::Rc, str::CharIndices};
 
-use crate::node::{Node, Pattern};
-use crate::Store;
+use crate::{
+    node::{Node, Pattern},
+    routes::RouteStore,
+};
 
 /// Represents either a partial or exact match for a given path segment.
 #[derive(Clone, Copy)]
@@ -25,7 +27,7 @@ pub struct Match<'a, 'b, T> {
 /// An iterator that yields all possible partial and exact matches for a url path.
 pub struct Visit<'a, 'b, T> {
     node: &'a Node<T>,
-    store: &'a Store<T>,
+    store: &'a RouteStore<T>,
     depth: usize,
     index: usize,
     path_value: &'b str,
@@ -65,7 +67,7 @@ impl<'a, 'b, T> Match<'a, 'b, T> {
 impl<'a, 'b, T> Visit<'a, 'b, T> {
     /// Returns a new visitor to begin our search at the root `node` that match
     /// the provided `path`.
-    pub(crate) fn new(store: &'a Store<T>, node: &'a Node<T>, path: &'b str) -> Self {
+    pub(crate) fn new(store: &'a RouteStore<T>, node: &'a Node<T>, path: &'b str) -> Self {
         Visit {
             node,
             store,

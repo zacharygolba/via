@@ -115,8 +115,6 @@ fn visit(b: &mut Bencher) {
         router.at(path).route_mut().insert(());
     }
 
-    println!("{:#?}", std::mem::size_of_val(&router));
-
     b.iter(|| {
         assert_eq!(
             router
