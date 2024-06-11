@@ -1,8 +1,9 @@
 mod iter;
 mod node;
+mod path;
 mod routes;
 
-use crate::{iter::Segments, node::Node, routes::RouteStore};
+use crate::{node::Node, path::SplitPath, routes::RouteStore};
 
 pub use crate::{
     iter::{Match, Visit},
@@ -30,7 +31,7 @@ impl<T> Router<T> {
     }
 
     pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
-        let mut segments = Segments::new(path).patterns();
+        let mut segments = SplitPath::new(path).into_patterns();
 
         Endpoint {
             key: insert(self.root, &mut self.store, &mut segments),
@@ -46,7 +47,7 @@ impl<T> Router<T> {
         self.store[self.root].route_mut()
     }
 
-    pub fn visit<'a, 'b>(&'a self, path: &'b str) -> Visit<'a, 'b, T> {
+    pub fn visit(&self, path: &str) -> Visit<T> {
         let node = &self.store[self.root];
         Visit::new(&self.store, node, path)
     }
@@ -54,7 +55,7 @@ impl<T> Router<T> {
 
 impl<'a, T> Endpoint<'a, T> {
     pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
-        let mut segments = Segments::new(path).patterns();
+        let mut segments = SplitPath::new(path).into_patterns();
 
         Endpoint {
             key: insert(self.key, self.store, &mut segments),
@@ -97,7 +98,7 @@ where
 
     // Check if the pattern already exists in the node at `current_key`. If it does,
     // we can continue to the next segment.
-    for next_key in route_store[current_key].iter() {
+    for next_key in route_store[current_key].entries() {
         if pattern == route_store[*next_key].pattern {
             return insert(*next_key, route_store, segments);
         }

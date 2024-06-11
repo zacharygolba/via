@@ -1,7 +1,5 @@
 use std::slice;
 
-use crate::routes::RouteStore;
-
 #[derive(Clone, Debug)]
 pub struct Node<T> {
     pub(crate) entries: Option<Vec<usize>>,
@@ -35,29 +33,7 @@ impl<T> Node<T> {
         }
     }
 
-    pub(crate) fn find<'a, F>(
-        &'a self,
-        store: &'a RouteStore<T>,
-        from_index: usize,
-        mut predicate: F,
-    ) -> Option<(usize, &'a Node<T>)>
-    where
-        F: FnMut(&'a Node<T>) -> bool,
-    {
-        self.iter()
-            .skip(from_index)
-            .enumerate()
-            .find_map(|(index, key)| {
-                let node = &store[*key];
-                if predicate(node) {
-                    Some((from_index + index, node))
-                } else {
-                    None
-                }
-            })
-    }
-
-    pub(crate) fn iter(&self) -> slice::Iter<usize> {
+    pub(crate) fn entries(&self) -> slice::Iter<usize> {
         if let Some(entries) = self.entries.as_ref() {
             entries.iter()
         } else {
