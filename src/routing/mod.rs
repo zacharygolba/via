@@ -35,10 +35,6 @@ impl Router {
     pub fn visit(&self, request: &HttpRequest, params: &mut PathParams) -> Next {
         let mut stack = VecDeque::new();
 
-        if let Some(route) = self.value.route() {
-            stack.extend(route.middleware.iter().cloned());
-        }
-
         for matched in self.value.visit(request.uri().path()) {
             if let Some((name, value)) = matched.param() {
                 params.insert(name, value);

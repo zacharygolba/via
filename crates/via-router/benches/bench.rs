@@ -104,11 +104,11 @@ static ROUTES: [&str; 100] = [
     "/report/user/:user_id",
     "/report/post/:post_id",
     "/report/comment/:comment_id",
-    "invite",
+    "/invite",
 ];
 
 #[bench]
-fn visit(b: &mut Bencher) {
+fn find_first_exact_match(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
@@ -116,13 +116,24 @@ fn visit(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        assert_eq!(
-            router
-                .visit("/api/v1/products/12358132134558/edit")
-                .find(|matched| matched.is_exact_match)
-                .unwrap()
-                .route(),
-            Some(&()),
-        );
+        router
+            .visit("/api/v1/products/12358132134558/edit")
+            .find(|matched| matched.is_exact_match)
+            .unwrap();
     });
+}
+
+#[bench]
+fn find_all_matches(b: &mut Bencher) {
+    let mut router: Router<()> = Router::new();
+
+    for path in ROUTES {
+        router.at(path).route_mut().insert(());
+    }
+
+    b.iter(
+        || {
+            for _ in router.visit("/api/v1/products/12358132134558/edit") {}
+        },
+    );
 }
