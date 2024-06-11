@@ -17,10 +17,6 @@ mime = "0.3.17"
 hyper-util = { features = ["tokio"], version = "0.1.3" }
 tokio-util = { features = ["io"], version = "0.7.11" }
 
-[dependencies.codegen]
-package = "via-codegen"
-path = "codegen"
-
 [dependencies.hyper]
 features = ["http1", "server"]
 version = "1.3.1"
@@ -34,4 +30,4 @@ features = ["full"]
 version = "1.37.0"
 
 [workspace]
-members = ["codegen", "crates/*", "docs/examples/*"]
+members = ["crates/*", "docs/examples/*"]
