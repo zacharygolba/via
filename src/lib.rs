@@ -10,7 +10,6 @@ pub mod middleware;
 pub mod prelude;
 pub mod response;
 pub mod routing;
-pub mod view;
 
 #[doc(inline)]
 pub use self::{
