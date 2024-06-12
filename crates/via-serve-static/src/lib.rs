@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 use tokio::fs::{self, File};
-use via::{http::Method, prelude::*, routing::Endpoint, BoxFuture};
+use via::{http::Method, middleware::BoxFuture, prelude::*, Endpoint};
 
 pub struct ServeStatic<'a> {
     fall_through: bool,
@@ -120,7 +120,7 @@ impl StaticServer {
     /// If the path parameter is a directory, it will attempt to locate an index
     /// file.
     async fn locate_file(&self, context: &Context) -> Result<(Mime, PathBuf)> {
-        let path_param_value = context.param(&self.config.path_param).required()?;
+        let path_param_value = context.param(&self.config.path_param).require()?;
         let mut file_path = self.expand_path(&path_param_value);
 
         if file_path.is_dir() {

@@ -22,6 +22,7 @@ use crate::{Error, Result};
 pub use self::format::*;
 
 type Frame = hyper::body::Frame<Bytes>;
+pub(crate) type HyperResponse = http::Response<Body>;
 
 pub enum Body {
     Empty(Empty<Bytes>),
@@ -238,11 +239,5 @@ impl<T: IntoResponse> IntoResponse for WithStatusCode<T> {
 
         *response.status_mut() = self.status?;
         Ok(response)
-    }
-}
-
-impl IntoResponse for serde_json::Value {
-    fn into_response(self) -> Result<Response> {
-        json(&self).into_response()
     }
 }

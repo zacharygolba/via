@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     });
 
     hello.respond(via::get(|context: Context, _: Next| async move {
-        let name = context.param("name").required()?;
+        let name = context.param("name").require()?;
         Ok::<_, Error>(format!("Hello, {}", name))
     }));
 
@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     let mut catch_all = app.at("/catch-all/*name");
 
     catch_all.respond(via::get(|context: Context, _: Next| async move {
-        let path = context.param("name").required()?;
+        let path = context.param("name").require()?;
         Ok::<_, Error>(format!("Catch-all: {}", path))
     }));
 
