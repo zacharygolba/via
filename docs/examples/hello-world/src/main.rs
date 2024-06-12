@@ -22,18 +22,18 @@ async fn main() -> Result<()> {
 
     app.include(logger);
 
-    let mut hello = app.at("/hello/:name");
+    let mut hey = app.at("/hey/:name");
 
-    hello.include(|context: Context, next: Next| async move {
+    hey.include(|context: Context, next: Next| async move {
         println!("Called before the request is handled");
         let response = next.call(context).await?;
         println!("Called after the request is handled");
         Ok::<_, Error>(response)
     });
 
-    hello.respond(via::get(|context: Context, _: Next| async move {
+    hey.respond(via::get(|context: Context, _: Next| async move {
         let name = context.param("name").require()?;
-        Ok::<_, Error>(format!("Hello, {}", name))
+        Ok::<_, Error>(format!("Hey, {}! 👋", name))
     }));
 
     let mut id = app.at("/:id");

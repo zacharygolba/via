@@ -115,7 +115,7 @@ impl IntoResponse for &'static str {
 
         response.headers_mut().insert(
             http::header::CONTENT_TYPE,
-            HeaderValue::from_static("text/plain"),
+            HeaderValue::from_static("text/plain; charset=utf-8"),
         );
 
         Ok(response)
@@ -128,7 +128,7 @@ impl IntoResponse for String {
 
         response.headers_mut().insert(
             http::header::CONTENT_TYPE,
-            HeaderValue::from_static("text/plain"),
+            HeaderValue::from_static("text/plain; charset=utf-8"),
         );
 
         Ok(response)
