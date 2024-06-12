@@ -2,8 +2,10 @@ use http::header::{HeaderValue, CONTENT_TYPE};
 use serde::Serialize;
 use serde_json::Value;
 
-use super::{Body, IntoResponse, Response};
-use crate::Result;
+use crate::{
+    response::{Body, IntoResponse, Response},
+    Result,
+};
 
 pub struct Json(Result<Body>);
 

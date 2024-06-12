@@ -3,7 +3,7 @@ use http_body_util::{BodyExt, Empty};
 use hyper::body::Incoming;
 use std::io::Read;
 
-use crate::{Error, Result};
+use crate::Result;
 
 #[derive(Debug)]
 pub struct Body {
@@ -33,6 +33,8 @@ impl Body {
     where
         T: serde::de::DeserializeOwned,
     {
+        use crate::Error;
+
         let reader = self.aggregate().await?.reader();
 
         match serde_json::from_reader(reader) {
