@@ -4,11 +4,11 @@ pub mod filter;
 #[doc(inline)]
 pub use self::context::Context;
 
-use std::{collections::VecDeque, future::Future, sync::Arc};
+use std::{collections::VecDeque, future::Future, pin::Pin, sync::Arc};
 
 use crate::{BoxFuture, IntoResponse, Result};
 
-pub(crate) type DynMiddleware = Arc<dyn Middleware>;
+pub(crate) type DynMiddleware = Pin<Arc<dyn Middleware>>;
 
 pub trait Middleware: Send + Sync + 'static {
     fn call(&self, context: Context, next: Next) -> BoxFuture<Result>;
