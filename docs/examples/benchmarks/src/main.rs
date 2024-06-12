@@ -10,5 +10,5 @@ async fn main() -> Result<()> {
     let mut unit = app.at("/unit");
     unit.respond(via::get(|_, _| async {}));
 
-    app.listen(("0.0.0.0", 8080)).await
+    app.listen(("127.0.0.1", 8080)).await
 }
