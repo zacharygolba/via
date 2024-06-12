@@ -1,13 +1,10 @@
-pub mod context;
-pub mod filter;
-
-#[doc(inline)]
-pub use self::context::Context;
+pub mod allow_method;
 
 use std::{collections::VecDeque, future::Future, pin::Pin, sync::Arc};
 
-use crate::{BoxFuture, IntoResponse, Result};
+use crate::{Context, IntoResponse, Result};
 
+pub type BoxFuture<T> = futures::future::BoxFuture<'static, T>;
 pub(crate) type DynMiddleware = Pin<Arc<dyn Middleware>>;
 
 pub trait Middleware: Send + Sync + 'static {
@@ -39,7 +36,7 @@ impl Next {
         if let Some(middleware) = self.stack.pop_front() {
             middleware.call(context, self)
         } else {
-            Box::pin(async { "Not Found".with_status(404).into_response() })
+            Box::pin(async { "Not Found".with_status(404) })
         }
     }
 }
