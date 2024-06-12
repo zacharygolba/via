@@ -5,22 +5,29 @@ macro_rules! bail {
     };
 }
 
+mod router;
+
 pub mod error;
 pub mod middleware;
 pub mod prelude;
+pub mod request;
 pub mod response;
-pub mod routing;
 
-#[doc(inline)]
-pub use self::{
-    error::{Error, ResultExt},
-    middleware::{Context, Middleware, Next},
-    response::IntoResponse,
-};
-use futures::{future::Map, FutureExt};
 pub use http;
 
-use http::Method;
+#[doc(inline)]
+pub use crate::{
+    error::{Error, ResultExt},
+    middleware::{
+        allow_method::{connect, delete, get, head, options, patch, post, put, trace},
+        Middleware, Next,
+    },
+    request::Context,
+    response::IntoResponse,
+    router::Endpoint,
+};
+
+use futures::future::{FutureExt, Map};
 use hyper::{server::conn::http1, service::Service};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::{
@@ -30,14 +37,13 @@ use std::{
 };
 use tokio::net::TcpListener;
 
-use middleware::{context::PathParams, filter::MethodFilter};
-use response::Response;
-use routing::*;
+use crate::{
+    middleware::BoxFuture,
+    request::{HyperRequest, PathParams},
+    response::{HyperResponse, Response},
+    router::Router,
+};
 
-type HttpRequest = http::Request<hyper::body::Incoming>;
-type HttpResponse = http::Response<response::Body>;
-
-pub type BoxFuture<T> = futures::future::BoxFuture<'static, T>;
 pub type Result<T = response::Response, E = Error> = std::result::Result<T, E>;
 
 pub struct App {
@@ -52,42 +58,6 @@ pub fn app() -> App {
     App {
         router: Router::new(),
     }
-}
-
-pub fn connect<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    MethodFilter::new(Method::CONNECT, middleware)
-}
-
-pub fn delete<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    MethodFilter::new(Method::DELETE, middleware)
-}
-
-pub fn get<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    MethodFilter::new(Method::GET, middleware)
-}
-
-pub fn head<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    MethodFilter::new(Method::HEAD, middleware)
-}
-
-pub fn options<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    MethodFilter::new(Method::OPTIONS, middleware)
-}
-
-pub fn patch<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    MethodFilter::new(Method::PATCH, middleware)
-}
-
-pub fn post<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    MethodFilter::new(Method::POST, middleware)
-}
-
-pub fn put<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    MethodFilter::new(Method::PUT, middleware)
-}
-
-pub fn trace<T: Middleware>(middleware: T) -> MethodFilter<T> {
-    MethodFilter::new(Method::TRACE, middleware)
 }
 
 fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
@@ -142,12 +112,12 @@ impl App {
     }
 }
 
-impl Service<HttpRequest> for AppServer {
+impl Service<HyperRequest> for AppServer {
     type Error = Infallible;
-    type Future = Map<BoxFuture<Result>, fn(Result) -> Result<HttpResponse, Infallible>>;
-    type Response = HttpResponse;
+    type Future = Map<BoxFuture<Result>, fn(Result) -> Result<HyperResponse, Infallible>>;
+    type Response = HyperResponse;
 
-    fn call(&self, request: HttpRequest) -> Self::Future {
+    fn call(&self, request: HyperRequest) -> Self::Future {
         let mut params = PathParams::new();
         let next = self.app.router.visit(&request, &mut params);
 

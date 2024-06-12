@@ -1,17 +1,17 @@
-use router::{Endpoint as GenericEndpoint, Router as GenericRouter};
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
-    middleware::{context::PathParams, DynMiddleware},
-    HttpRequest, Middleware, Next,
+    middleware::DynMiddleware,
+    request::{HyperRequest, PathParams},
+    Middleware, Next,
 };
 
 pub struct Router {
-    value: GenericRouter<Route>,
+    value: via_router::Router<Route>,
 }
 
 pub struct Endpoint<'a> {
-    value: GenericEndpoint<'a, Route>,
+    value: via_router::Endpoint<'a, Route>,
 }
 
 struct Route {
@@ -22,7 +22,7 @@ struct Route {
 impl Router {
     pub fn new() -> Self {
         Router {
-            value: router::Router::new(),
+            value: via_router::Router::new(),
         }
     }
 
@@ -32,7 +32,7 @@ impl Router {
         }
     }
 
-    pub fn visit(&self, request: &HttpRequest, params: &mut PathParams) -> Next {
+    pub fn visit(&self, request: &HyperRequest, params: &mut PathParams) -> Next {
         let mut stack = VecDeque::new();
 
         for matched in self.value.visit(request.uri().path()) {

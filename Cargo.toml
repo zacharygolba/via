@@ -5,15 +5,15 @@ authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = []
+serde = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
 bytes = "1.6.0"
 futures = "0.3.30"
 http = "1.1.0"
 http-body-util = "0.1.1"
-serde = "1.0.202"
-serde_json = "1.0.117"
-mime = "0.3.17"
 hyper-util = { features = ["tokio"], version = "0.1.3" }
 tokio-util = { features = ["io"], version = "0.7.11" }
 
@@ -21,9 +21,17 @@ tokio-util = { features = ["io"], version = "0.7.11" }
 features = ["http1", "server"]
 version = "1.3.1"
 
-[dependencies.router]
+[dependencies.via-router]
 package = "via-router"
 path = "crates/via-router"
+
+[dependencies.serde]
+optional = true
+version = "1.0.202"
+
+[dependencies.serde_json]
+optional = true
+version = "1.0.117"
 
 [dependencies.tokio]
 features = ["full"]

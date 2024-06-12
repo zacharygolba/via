@@ -1,7 +1,7 @@
 use crate::{http::StatusCode, response::Response, IntoResponse};
+#[cfg(feature = "serde")]
 use serde::ser::{Serialize, Serializer};
 use std::{
-    collections::HashSet,
     error::Error as StdError,
     fmt::{self, Debug, Display, Formatter},
 };
@@ -11,6 +11,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub type Source = (dyn StdError + 'static);
 
 pub trait ResultExt<T> {
+    #[cfg(feature = "serde")]
     fn json(self) -> Result<T>;
     fn status(self, code: u16) -> Result<T>;
 }
@@ -39,10 +40,13 @@ enum Format {
 
 fn respond(error: Error) -> Result<Response> {
     let Error { format, status, .. } = error;
+    #[cfg(feature = "serde")]
     let mut response = Response::new(match format {
         Some(Format::Json) => serde_json::to_vec(&error)?,
         None => error.to_string().into_bytes(),
     });
+    #[cfg(not(feature = "serde"))]
+    let mut response = Response::new(error.to_string().into_bytes());
 
     if let Some(Format::Json) = format {
         response
@@ -146,12 +150,14 @@ impl From<Error> for AnyError {
     }
 }
 
+#[cfg(feature = "serde")]
 impl Serialize for Error {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         use serde::ser::SerializeStruct;
+        use std::collections::HashSet;
 
         #[derive(Eq, PartialEq, Hash)]
         struct SerializedError {
@@ -208,6 +214,7 @@ impl<T, E> ResultExt<T> for Result<T, E>
 where
     Error: From<E>,
 {
+    #[cfg(feature = "serde")]
     fn json(self) -> Result<T, Error> {
         self.map_err(|e| Error::from(e).json())
     }
