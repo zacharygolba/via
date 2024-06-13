@@ -8,8 +8,8 @@ async fn logger(context: Context, next: Next) -> Result {
     next.call(context)
         .await
         .inspect(move |response| {
-            let status_code = response.status_code();
-            println!("{} {} => {}", method, path, status_code);
+            let status = response.status();
+            println!("{} {} => {}", method, path, status);
         })
         .inspect_err(|error| {
             eprintln!("{}", error);
@@ -33,15 +33,16 @@ async fn main() -> Result<()> {
 
     hey.respond(via::get(|context: Context, _: Next| async move {
         let name = context.param("name").require()?;
-        Ok::<_, Error>(format!("Hey, {}! 👋", name))
+        Response::text(format!("Hey, {}! 👋", name)).end()
     }));
 
     let mut id = app.at("/:id");
 
     id.respond(via::get(|context: Context, next: Next| async move {
-        match context.param("id").parse::<i32>() {
-            Ok(id) => format!("ID: {}", id).into_response(),
-            Err(_) => next.call(context).await,
+        if let Ok(id) = context.param("id").parse::<i32>() {
+            Response::text(format!("ID: {}", id)).end()
+        } else {
+            next.call(context).await
         }
     }));
 
@@ -49,7 +50,7 @@ async fn main() -> Result<()> {
 
     catch_all.respond(via::get(|context: Context, _: Next| async move {
         let path = context.param("name").require()?;
-        Ok::<_, Error>(format!("Catch-all: {}", path))
+        Response::text(format!("Catch-all: {}", path)).end()
     }));
 
     ServeStatic::new(app.at("/*path")).serve("./public")?;
