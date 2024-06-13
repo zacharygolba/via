@@ -2,7 +2,7 @@ pub mod allow_method;
 
 use std::{collections::VecDeque, future::Future, pin::Pin, sync::Arc};
 
-use crate::{Context, IntoResponse, Result};
+use crate::{Context, IntoResponse, Response, Result};
 
 pub type BoxFuture<T> = futures::future::BoxFuture<'static, T>;
 pub(crate) type DynMiddleware = Pin<Arc<dyn Middleware>>;
@@ -36,7 +36,7 @@ impl Next {
         if let Some(middleware) = self.stack.pop_front() {
             middleware.call(context, self)
         } else {
-            Box::pin(async { "Not Found".with_status(404) })
+            Box::pin(async { Response::text("Not Found").status(404).end() })
         }
     }
 }

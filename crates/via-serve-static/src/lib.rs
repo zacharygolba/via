@@ -5,7 +5,12 @@ use std::{
     sync::Arc,
 };
 use tokio::fs::{self, File};
-use via::{http::Method, middleware::BoxFuture, prelude::*, Endpoint};
+use via::{
+    http::{header, Method},
+    middleware::BoxFuture,
+    prelude::*,
+    Endpoint,
+};
 
 pub struct ServeStatic<'a> {
     fall_through: bool,
@@ -112,7 +117,7 @@ impl StaticServer {
         if self.config.fall_through {
             next.call(context).await
         } else {
-            "Not Found".with_status(404)
+            Response::text("Not Found").status(404).end()
         }
     }
 
@@ -145,7 +150,10 @@ impl StaticServer {
             None => return self.handle_not_found(context, next).await,
         };
 
-        file.with_header("Content-Type", mime_type.to_string())
+        Response::new()
+            .header(header::CONTENT_TYPE, mime_type.to_string())
+            .body(file)
+            .end()
     }
 
     async fn respond_to_head_request(&self, context: Context, next: Next) -> Result {
@@ -155,9 +163,10 @@ impl StaticServer {
             None => return self.handle_not_found(context, next).await,
         };
 
-        Response::empty()
-            .with_header("Content-Type", mime_type.to_string())
-            .with_header("Content-Length", metadata.len().to_string())
+        Response::new()
+            .header(header::CONTENT_TYPE, mime_type.to_string())
+            .header(header::CONTENT_LENGTH, metadata.len().to_string())
+            .end()
     }
 }
 
@@ -183,7 +192,7 @@ impl Middleware for StaticServer {
             } else if middleware.config.fall_through {
                 next.call(context).await
             } else {
-                "Method Not Allowed".with_status(405)
+                Response::text("Method Not Allowed").status(405).end()
             }
         })
     }

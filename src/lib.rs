@@ -44,7 +44,7 @@ use crate::{
     router::Router,
 };
 
-pub type Result<T = response::Response, E = Error> = std::result::Result<T, E>;
+pub type Result<T = Response, E = Error> = std::result::Result<T, E>;
 
 pub struct App {
     router: Router,
@@ -123,8 +123,8 @@ impl Service<HyperRequest> for AppServer {
 
         next.call(Context::new(request, params))
             .map(|result| match result {
-                Ok(response) => Ok(response.into()),
-                Err(error) => Ok(Response::from(error).into()),
+                Ok(response) => Ok(response.into_hyper_response()),
+                Err(error) => Ok(error.into_response().unwrap().into_hyper_response()),
             })
     }
 }
