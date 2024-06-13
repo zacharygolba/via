@@ -1,6 +1,4 @@
-use crate::{http::StatusCode, response::Response, IntoResponse};
-#[cfg(feature = "serde")]
-use serde::ser::{Serialize, Serializer};
+use crate::{response::Response, IntoResponse};
 use std::{
     error::Error as StdError,
     fmt::{self, Debug, Display, Formatter},
@@ -35,27 +33,8 @@ struct Chain<'a> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Format {
-    Json,
-}
-
-fn respond(error: Error) -> Result<Response> {
-    let Error { format, status, .. } = error;
     #[cfg(feature = "serde")]
-    let mut response = Response::new(match format {
-        Some(Format::Json) => serde_json::to_vec(&error)?,
-        None => error.to_string().into_bytes(),
-    });
-    #[cfg(not(feature = "serde"))]
-    let mut response = Response::new(error.to_string().into_bytes());
-
-    if let Some(Format::Json) = format {
-        response
-            .headers_mut()
-            .insert("Content-Type", "application/json".parse()?);
-    }
-
-    *response.status_mut() = StatusCode::from_u16(status)?;
-    Ok(response)
+    Json,
 }
 
 impl Bail {
@@ -104,17 +83,18 @@ impl Error {
         }
     }
 
-    pub fn json(mut self) -> Self {
-        self.format = Some(Format::Json);
-        self
-    }
-
     pub fn source(&self) -> &Source {
         &*self.source
     }
 
     pub fn status(mut self, code: u16) -> Self {
         self.status = code;
+        self
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn json(mut self) -> Self {
+        self.format = Some(Format::Json);
         self
     }
 }
@@ -127,7 +107,13 @@ impl Display for Error {
 
 impl IntoResponse for Error {
     fn into_response(self) -> crate::Result<Response> {
-        respond(self)
+        let response = match self.format {
+            #[cfg(feature = "serde")]
+            Some(Format::Json) => Response::json(&self),
+            _ => Response::text(self.to_string()),
+        };
+
+        response.status(self.status).end()
     }
 }
 
@@ -151,10 +137,10 @@ impl From<Error> for AnyError {
 }
 
 #[cfg(feature = "serde")]
-impl Serialize for Error {
+impl serde::Serialize for Error {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
         use std::collections::HashSet;
@@ -172,10 +158,10 @@ impl Serialize for Error {
             }
         }
 
-        impl Serialize for SerializedError {
+        impl serde::Serialize for SerializedError {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
-                S: Serializer,
+                S: serde::Serializer,
             {
                 let mut state = serializer.serialize_struct("Error", 1)?;
 
@@ -195,18 +181,6 @@ impl Serialize for Error {
 impl From<Error> for Box<dyn StdError + Send> {
     fn from(error: Error) -> Self {
         error.source
-    }
-}
-
-impl From<Error> for Response {
-    fn from(error: Error) -> Response {
-        respond(error).unwrap_or_else(|e| {
-            let mut response = Response::new("Internal Server Error");
-
-            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            eprintln!("{}", e);
-            response
-        })
     }
 }
 
