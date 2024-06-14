@@ -1,4 +1,4 @@
-use via::prelude::*;
+use via::{Context, Error, Next, Response, Result};
 use via_serve_static::ServeStatic;
 
 async fn logger(context: Context, next: Next) -> Result {

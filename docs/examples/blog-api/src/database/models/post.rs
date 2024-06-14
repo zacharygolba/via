@@ -1,6 +1,6 @@
 use diesel::dsl::{Eq, Filter, IsNotNull};
 use serde::{Deserialize, Serialize};
-use via::prelude::*;
+use via::Result;
 
 use crate::database::{
     models::user::{users, User},
