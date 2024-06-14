@@ -112,7 +112,7 @@ fn find_first_exact_match(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
-        router.at(path).route_mut().insert(());
+        let _ = router.at(path).route_mut().insert(());
     }
 
     b.iter(|| {
@@ -128,7 +128,7 @@ fn find_all_matches(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
-        router.at(path).route_mut().insert(());
+        let _ = router.at(path).route_mut().insert(());
     }
 
     b.iter(

@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{iter::FusedIterator, vec::IntoIter};
 
 use crate::{
     node::{Node, Pattern},
@@ -25,12 +25,12 @@ pub struct Match<'a, T> {
 
 /// An iterator that yields all possible partial and exact matches for a url path.
 pub struct Visit<'a, T> {
-    matches: VecDeque<Match<'a, T>>,
+    matches: IntoIter<Match<'a, T>>,
 }
 
 struct Visitor<'a, 'b, T> {
     path: PathSegments<'b>,
-    matches: &'b mut VecDeque<Match<'a, T>>,
+    matches: &'b mut Vec<Match<'a, T>>,
     route_store: &'a RouteStore<T>,
 }
 
@@ -61,7 +61,7 @@ impl<'a, T> Visit<'a, T> {
     /// Returns a new visitor to begin our search at the root `node` that match
     /// the provided `path`.
     pub(crate) fn new(store: &'a RouteStore<T>, node: &'a Node<T>, path: &str) -> Self {
-        let mut matches = VecDeque::with_capacity(32);
+        let mut matches = Vec::with_capacity(32);
 
         Visitor::visit(
             Visitor {
@@ -72,7 +72,9 @@ impl<'a, T> Visit<'a, T> {
             node,
         );
 
-        Visit { matches }
+        Visit {
+            matches: matches.into_iter(),
+        }
     }
 }
 
@@ -80,14 +82,22 @@ impl<'a, T> Iterator for Visit<'a, T> {
     type Item = Match<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.matches.pop_front()
+        self.matches.next()
     }
 }
+
+impl<'a, T> ExactSizeIterator for Visit<'a, T> {
+    fn len(&self) -> usize {
+        self.matches.len()
+    }
+}
+
+impl<'a, T> FusedIterator for Visit<'a, T> {}
 
 impl<'a, 'b, T> Visitor<'a, 'b, T> {
     fn visit(mut self, root: &'a Node<T>) {
         // The root node is a special case that we always consider a match.
-        self.matches.push_back(Match {
+        self.matches.push(Match {
             is_exact_match: self.path.value == "/",
             path_segment: (0, 0),
             node: root,
@@ -100,7 +110,8 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
 
     fn match_at_depth(&mut self, depth: usize, node: &'a Node<T>) {
         if let Some(path_segment_range) = self.path.get(depth) {
-            return self.match_segment_at_depth(path_segment_range, depth, node);
+            self.match_segment_at_depth(path_segment_range, depth, node);
+            return;
         }
 
         // If there is no path segment to match against, we attempt to find an
@@ -113,15 +124,13 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
             // If the next node does not have a CatchAll pattern, we can skip
             // this node and continue to search for adjacent nodes with a
             // CatchAll pattern.
-            if !matches!(next.pattern, Pattern::CatchAll(_)) {
-                continue;
+            if let Pattern::CatchAll(_) = next.pattern {
+                self.matches.push(Match {
+                    is_exact_match: true,
+                    path_segment: self.path.slice_from(depth),
+                    node: next,
+                });
             }
-
-            self.matches.push_back(Match {
-                is_exact_match: true,
-                path_segment: self.path.slice_from(depth),
-                node: next,
-            });
         }
     }
 
@@ -145,12 +154,12 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                 continue;
             }
 
-            if matches!(next.pattern, Pattern::CatchAll(_)) {
+            if let Pattern::CatchAll(_) = next.pattern {
                 // The next node has a `CatchAll` pattern and will be considered
                 // an exact match. Due to the nature of `CatchAll` patterns, we
                 // do not have to continue searching for descendants of this
                 // node that match the remaining path segments.
-                self.matches.push_back(Match {
+                self.matches.push(Match {
                     is_exact_match: true,
                     // The end offset of `path_segment` should be the end offset
                     // of the last path segment in the url path.
@@ -158,7 +167,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     node: next,
                 });
             } else {
-                self.matches.push_back(Match {
+                self.matches.push(Match {
                     is_exact_match: self.path.is_last_segment(depth),
                     path_segment: (start, end),
                     node: next,
