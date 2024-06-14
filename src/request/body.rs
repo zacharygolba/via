@@ -33,14 +33,15 @@ impl Body {
     where
         T: serde::de::DeserializeOwned,
     {
-        use crate::Error;
+        use crate::{http::StatusCode, Error};
 
         let reader = self.aggregate().await?.reader();
 
-        match serde_json::from_reader(reader) {
-            Ok(json) => Ok(json),
-            Err(e) => Err(Error::from(e).status(400)),
-        }
+        serde_json::from_reader(reader).map_err(|source| {
+            let mut error = Error::from(source);
+            *error.status_mut() = StatusCode::BAD_REQUEST;
+            error
+        })
     }
 
     async fn aggregate(&mut self) -> Result<impl Buf> {

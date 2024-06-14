@@ -1,7 +1,7 @@
 use http::{HeaderMap, Method, Uri, Version};
 
 use super::{Body, HyperRequest, PathParam, PathParams};
-use crate::Result;
+use crate::{Error, Result};
 
 #[derive(Debug)]
 pub struct Context {
@@ -31,9 +31,10 @@ impl Context {
     where
         T: Send + Sync + 'static,
     {
-        match self.request.extensions().get() {
-            Some(value) => Ok(value),
-            None => crate::bail!("unknown type"),
+        if let Some(value) = self.request.extensions().get() {
+            Ok(value)
+        } else {
+            Err(Error::new("unknown type".to_owned()))
         }
     }
 

@@ -1,13 +1,6 @@
-#[macro_export]
-macro_rules! bail {
-    ($($tokens:tt)+) => {
-        Err($crate::error::Bail::new(format!($($tokens)+)))?
-    };
-}
-
+mod error;
 mod router;
 
-pub mod error;
 pub mod middleware;
 pub mod prelude;
 pub mod request;
@@ -15,19 +8,16 @@ pub mod response;
 
 pub use http;
 
-#[doc(inline)]
 pub use crate::{
-    error::{Error, ResultExt},
-    middleware::{
-        allow_method::{connect, delete, get, head, options, patch, post, put, trace},
-        Middleware, Next,
-    },
+    error::{Error, Result},
+    middleware::{Middleware, Next},
     request::Context,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     router::Endpoint,
 };
 
 use futures::future::{FutureExt, Map};
+use http::Method;
 use hyper::{server::conn::http1, service::Service};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::{
@@ -38,26 +28,60 @@ use std::{
 use tokio::net::TcpListener;
 
 use crate::{
-    middleware::BoxFuture,
+    middleware::{AllowMethod, BoxFuture},
     request::{HyperRequest, PathParams},
-    response::{HyperResponse, Response},
+    response::HyperResponse,
     router::Router,
 };
 
-pub type Result<T = Response, E = Error> = std::result::Result<T, E>;
-
-pub struct App {
+pub struct Application {
     router: Router,
 }
 
-struct AppServer {
-    app: Arc<App>,
+struct ApplicationServer {
+    app: Arc<Application>,
 }
 
-pub fn app() -> App {
-    App {
+pub fn app() -> Application {
+    Application {
         router: Router::new(),
     }
+}
+
+pub fn connect<T: Middleware>(middleware: T) -> AllowMethod<T> {
+    AllowMethod::new(Method::CONNECT, middleware)
+}
+
+pub fn delete<T: Middleware>(middleware: T) -> AllowMethod<T> {
+    AllowMethod::new(Method::DELETE, middleware)
+}
+
+pub fn get<T: Middleware>(middleware: T) -> AllowMethod<T> {
+    AllowMethod::new(Method::GET, middleware)
+}
+
+pub fn head<T: Middleware>(middleware: T) -> AllowMethod<T> {
+    AllowMethod::new(Method::HEAD, middleware)
+}
+
+pub fn options<T: Middleware>(middleware: T) -> AllowMethod<T> {
+    AllowMethod::new(Method::OPTIONS, middleware)
+}
+
+pub fn patch<T: Middleware>(middleware: T) -> AllowMethod<T> {
+    AllowMethod::new(Method::PATCH, middleware)
+}
+
+pub fn post<T: Middleware>(middleware: T) -> AllowMethod<T> {
+    AllowMethod::new(Method::POST, middleware)
+}
+
+pub fn put<T: Middleware>(middleware: T) -> AllowMethod<T> {
+    AllowMethod::new(Method::PUT, middleware)
+}
+
+pub fn trace<T: Middleware>(middleware: T) -> AllowMethod<T> {
+    AllowMethod::new(Method::TRACE, middleware)
 }
 
 fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
@@ -67,20 +91,26 @@ fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
     }
 }
 
-impl App {
+impl Application {
     pub fn at(&mut self, pattern: &'static str) -> Endpoint {
         self.router.at(pattern)
     }
 
-    pub fn include(&mut self, middleware: impl Middleware + 'static) -> &mut Self {
+    pub fn include<T>(&mut self, middleware: T) -> &mut Self
+    where
+        T: Middleware,
+    {
         self.at("/").include(middleware);
         self
     }
 
-    pub async fn listen(self, address: impl ToSocketAddrs) -> Result<()> {
+    pub async fn listen<T>(self, address: T) -> Result<()>
+    where
+        T: ToSocketAddrs,
+    {
         let address = get_addr(address)?;
         let listener = TcpListener::bind(address).await?;
-        let app_server = AppServer {
+        let app_server = ApplicationServer {
             app: Arc::new(self),
         };
 
@@ -88,7 +118,7 @@ impl App {
 
         loop {
             let (stream, _) = listener.accept().await?;
-            let app_server = AppServer {
+            let app_server = ApplicationServer {
                 app: Arc::clone(&app_server.app),
             };
 
@@ -112,7 +142,7 @@ impl App {
     }
 }
 
-impl Service<HyperRequest> for AppServer {
+impl Service<HyperRequest> for ApplicationServer {
     type Error = Infallible;
     type Future = Map<BoxFuture<Result>, fn(Result) -> Result<HyperResponse, Infallible>>;
     type Response = HyperResponse;

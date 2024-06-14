@@ -1,3 +1,4 @@
+use http::StatusCode;
 use std::{collections::HashMap, str::FromStr};
 
 use crate::{Error, Result};
@@ -27,16 +28,23 @@ impl<'a> PathParam<'a> {
     }
 
     pub fn expect(&self, message: &str) -> Result<&'a str> {
-        self.value
-            .ok_or_else(|| Error::new(message.to_owned(), 400))
+        self.value.ok_or_else(|| {
+            let mut error = Error::new(message.to_owned());
+
+            *error.status_mut() = StatusCode::BAD_REQUEST;
+            error
+        })
     }
 
     pub fn require(&self) -> Result<&'a str> {
         self.value.ok_or_else(|| {
-            Error::new(
-                format!("missing required path parameter: \"{}\"", self.name),
-                400,
-            )
+            let mut error = Error::new(format!(
+                "missing required path parameter: \"{}\"",
+                self.name
+            ));
+
+            *error.status_mut() = StatusCode::BAD_REQUEST;
+            error
         })
     }
 }
