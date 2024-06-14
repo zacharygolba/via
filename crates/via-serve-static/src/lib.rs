@@ -111,16 +111,6 @@ impl StaticServer {
         self.config.public_dir.join(path.trim_start_matches('/'))
     }
 
-    /// Either falls through to the next middleware or returns a 404 response
-    /// depending on the value of the `fall_through` field in the configuration.
-    async fn handle_not_found(&self, context: Context, next: Next) -> Result {
-        if self.config.fall_through {
-            next.call(context).await
-        } else {
-            Response::text("Not Found").status(404).end()
-        }
-    }
-
     /// Locates the file based on the path parameter extracted from the context.
     /// If the path parameter is a directory, it will attempt to locate an index
     /// file.
@@ -145,35 +135,36 @@ impl StaticServer {
 
     async fn respond_to_get_request(&self, context: Context, next: Next) -> Result {
         let (mime_type, file_path) = self.locate_file(&context).await?;
-        let file = match try_open_file(&file_path).await? {
-            Some(file) => file,
-            None => return self.handle_not_found(context, next).await,
-        };
 
-        Response::new()
-            .header(header::CONTENT_TYPE, mime_type.to_string())
-            .body(file)
-            .end()
+        if let Some(file) = try_open_file(&file_path).await? {
+            return Response::new()
+                .header(header::CONTENT_TYPE, mime_type.to_string())
+                .header(header::TRANSFER_ENCODING, "chunked")
+                .body(file)
+                .end();
+        }
+
+        if self.config.fall_through {
+            next.call(context).await
+        } else {
+            Response::text("Not Found").status(404).end()
+        }
     }
 
     async fn respond_to_head_request(&self, context: Context, next: Next) -> Result {
         let (mime_type, file_path) = self.locate_file(&context).await?;
-        let metadata = match try_read_metadata(&file_path).await? {
-            Some(metadata) => metadata,
-            None => return self.handle_not_found(context, next).await,
-        };
 
-        Response::new()
-            .header(header::CONTENT_TYPE, mime_type.to_string())
-            .header(header::CONTENT_LENGTH, metadata.len().to_string())
-            .end()
-    }
-}
+        if let Some(metadata) = try_read_metadata(&file_path).await? {
+            return Response::new()
+                .header(header::CONTENT_TYPE, mime_type.to_string())
+                .header(header::CONTENT_LENGTH, metadata.len())
+                .end();
+        }
 
-impl Clone for StaticServer {
-    fn clone(&self) -> Self {
-        StaticServer {
-            config: Arc::clone(&self.config),
+        if self.config.fall_through {
+            next.call(context).await
+        } else {
+            Response::text("Not Found").status(404).end()
         }
     }
 }
