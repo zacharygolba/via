@@ -2,7 +2,7 @@ pub mod models;
 pub mod schema;
 
 pub mod prelude {
-    pub use super::{models, schema, Pool};
+    pub use super::{schema, Pool};
     pub use chrono::NaiveDateTime;
     pub use diesel::prelude::*;
     pub use diesel_async::RunQueryDsl;
@@ -11,7 +11,7 @@ pub mod prelude {
 use std::env;
 
 use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
-use via::prelude::*;
+use via::Result;
 
 type ConnectionManager = AsyncDieselConnectionManager<AsyncPgConnection>;
 pub type Pool = bb8::Pool<ConnectionManager>;

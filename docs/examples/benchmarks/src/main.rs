@@ -1,4 +1,4 @@
-use via::prelude::*;
+use via::{Response, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {

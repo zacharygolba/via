@@ -7,9 +7,8 @@ use std::{
 use tokio::fs::{self, File};
 use via::{
     http::{header, Method, StatusCode},
-    middleware::BoxFuture,
-    prelude::*,
-    Endpoint,
+    middleware::{BoxFuture, Middleware},
+    Context, Endpoint, Error, Next, Response, Result,
 };
 
 pub struct ServeStatic<'a> {

@@ -2,7 +2,6 @@ mod error;
 mod router;
 
 pub mod middleware;
-pub mod prelude;
 pub mod request;
 pub mod response;
 

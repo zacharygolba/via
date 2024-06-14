@@ -1,4 +1,4 @@
-use via::prelude::*;
+use via::{Context, IntoResponse, Next, Response, Result};
 
 use super::Document;
 use crate::database::{models::post::*, Pool};
