@@ -46,7 +46,8 @@ impl Response {
     where
         T: AsRef<str>,
     {
-        Response::with_body(Ok(body.as_ref().to_owned().into())).header(
+        let body_string = body.as_ref().to_owned();
+        Response::with_body(Ok(body_string.into())).header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("text/plain; charset=utf-8"),
         )
@@ -57,12 +58,11 @@ impl Response {
     where
         T: serde::Serialize,
     {
-        Response::with_body(
-            serde_json::to_vec(body)
-                .map(Body::from)
-                .map_err(Error::from),
-        )
-        .header(
+        let body_bytes = serde_json::to_vec(body)
+            .map(Body::from)
+            .map_err(Error::from);
+
+        Response::with_body(body_bytes).header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("application/json; charset=utf-8"),
         )

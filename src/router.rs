@@ -68,14 +68,20 @@ impl<'a> Endpoint<'a> {
         self.value.param()
     }
 
-    pub fn include<T: Middleware>(&mut self, middleware: T) -> &mut Self {
+    pub fn include<T>(&mut self, middleware: T) -> &mut Self
+    where
+        T: Middleware,
+    {
         let route = self.route_mut();
 
         route.middleware.push(Arc::pin(middleware));
         self
     }
 
-    pub fn respond<T: Middleware>(&mut self, responder: T) -> &mut Self {
+    pub fn respond<T>(&mut self, responder: T) -> &mut Self
+    where
+        T: Middleware,
+    {
         let route = self.route_mut();
 
         route.responders.push(Arc::pin(responder));

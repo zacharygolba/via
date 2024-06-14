@@ -1,4 +1,6 @@
-pub mod allow_method;
+mod allow_method;
+
+pub use self::allow_method::AllowMethod;
 
 use std::{collections::VecDeque, future::Future, pin::Pin, sync::Arc};
 

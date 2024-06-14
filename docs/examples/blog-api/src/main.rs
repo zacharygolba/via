@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate diesel;
-
 mod api;
 mod database;
 
@@ -22,13 +19,12 @@ async fn main() -> Result<()> {
         async move {
             let (response, status) = match next.call(context).await {
                 Ok(response) => {
-                    let status = response.status().as_u16();
+                    let status = response.status();
                     (response, status)
                 }
                 Err(error) => {
-                    let response = error.into_response()?;
-                    let status = response.status().as_u16();
-                    (response, status)
+                    let status = error.status();
+                    (error.into_response().unwrap(), status)
                 }
             };
 
@@ -49,30 +45,37 @@ async fn main() -> Result<()> {
     // Errors that occur in middleware or responders nested within the /api
     // namespace will have there responses converted to JSON.
     api.include(|context: Context, next: Next| async move {
-        next.call(context).await.map_err(|error| error.json())
+        match next.call(context).await {
+            result @ Ok(_) => result,
+            Err(error) => Err(error.json()),
+        }
     });
 
-    api.at("/posts").scope(|posts| {
-        posts.include(api::posts::authenticate);
+    api.at("/posts").scope(|resource| {
+        use api::posts;
 
-        posts.respond(via::get(api::posts::index));
-        posts.respond(via::post(api::posts::create));
+        resource.include(posts::authenticate);
 
-        posts.at("/:id").scope(|post| {
-            post.respond(via::get(api::posts::show));
-            post.respond(via::patch(api::posts::update));
-            post.respond(via::delete(api::posts::destroy));
+        resource.respond(via::get(posts::index));
+        resource.respond(via::post(posts::create));
+
+        resource.at("/:id").scope(|member| {
+            member.respond(via::get(posts::show));
+            member.respond(via::patch(posts::update));
+            member.respond(via::delete(posts::destroy));
         });
     });
 
-    api.at("/users").scope(|users| {
-        users.respond(via::get(api::users::index));
-        users.respond(via::post(api::users::create));
+    api.at("/users").scope(|resource| {
+        use api::users;
 
-        users.at("/:id").scope(|user| {
-            user.respond(via::get(api::users::show));
-            user.respond(via::patch(api::users::update));
-            user.respond(via::delete(api::users::destroy));
+        resource.respond(via::get(users::index));
+        resource.respond(via::post(users::create));
+
+        resource.at("/:id").scope(|member| {
+            member.respond(via::get(users::show));
+            member.respond(via::patch(users::update));
+            member.respond(via::delete(users::destroy));
         });
     });
 
