@@ -7,7 +7,7 @@ async fn logger(context: Context, next: Next) -> Result {
 
     next.call(context)
         .await
-        .inspect(move |response| {
+        .inspect(|response| {
             let status = response.status();
             println!("{} {} => {}", method, path, status);
         })

@@ -1,29 +1,25 @@
-use crate::{response::Response, IntoResponse};
+use http::StatusCode;
 use std::{
     error::Error as StdError,
     fmt::{self, Debug, Display, Formatter},
 };
 
-pub type AnyError = Box<dyn StdError + Send + Sync + 'static>;
-pub type Result<T, E = Error> = std::result::Result<T, E>;
-pub type Source = (dyn StdError + 'static);
+use crate::{response::Response, IntoResponse};
 
-pub trait ResultExt<T> {
-    #[cfg(feature = "serde")]
-    fn json(self) -> Result<T>;
-    fn status(self, code: u16) -> Result<T>;
-}
+type AnyError = Box<dyn StdError + Send + Sync + 'static>;
+
+pub type Result<T = Response, E = Error> = std::result::Result<T, E>;
+pub type Source = (dyn StdError + 'static);
 
 #[derive(Debug)]
 pub struct Error {
     format: Option<Format>,
     source: AnyError,
-    status: u16,
+    status: StatusCode,
 }
 
-#[doc(hidden)]
-pub struct Bail {
-    pub(crate) message: String,
+struct Bail {
+    message: String,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -69,11 +65,11 @@ impl<'a> Iterator for Chain<'a> {
 }
 
 impl Error {
-    pub fn new(message: String, status: u16) -> Self {
+    pub fn new(message: String) -> Self {
         Error {
             format: None,
             source: Box::new(Bail::new(message)),
-            status,
+            status: StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -87,9 +83,12 @@ impl Error {
         &*self.source
     }
 
-    pub fn status(mut self, code: u16) -> Self {
-        self.status = code;
-        self
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    pub fn status_mut(&mut self) -> &mut StatusCode {
+        &mut self.status
     }
 
     #[cfg(feature = "serde")]
@@ -125,7 +124,7 @@ where
         Error {
             format: None,
             source: Box::new(value),
-            status: 500,
+            status: StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -181,19 +180,5 @@ impl serde::Serialize for Error {
 impl From<Error> for Box<dyn StdError + Send> {
     fn from(error: Error) -> Self {
         error.source
-    }
-}
-
-impl<T, E> ResultExt<T> for Result<T, E>
-where
-    Error: From<E>,
-{
-    #[cfg(feature = "serde")]
-    fn json(self) -> Result<T, Error> {
-        self.map_err(|e| Error::from(e).json())
-    }
-
-    fn status(self, code: u16) -> Result<T, Error> {
-        self.map_err(|e| Error::from(e).status(code))
     }
 }

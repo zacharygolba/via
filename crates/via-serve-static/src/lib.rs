@@ -6,7 +6,7 @@ use std::{
 };
 use tokio::fs::{self, File};
 use via::{
-    http::{header, Method},
+    http::{header, Method, StatusCode},
     middleware::BoxFuture,
     prelude::*,
     Endpoint,
@@ -33,7 +33,12 @@ async fn try_open_file(path: &Path) -> Result<Option<File>> {
     match File::open(&path).await {
         Ok(file) => Ok(Some(file)),
         Err(error) => match error.kind() {
-            ErrorKind::PermissionDenied => Err(Error::from(error).status(403)),
+            ErrorKind::PermissionDenied => {
+                let mut error = Error::from(error);
+
+                *error.status_mut() = StatusCode::FORBIDDEN;
+                Err(error)
+            }
             ErrorKind::NotFound => Ok(None),
             _ => Err(error.into()),
         },
@@ -46,7 +51,12 @@ async fn try_read_metadata(path: &Path) -> Result<Option<Metadata>> {
     match fs::metadata(path).await {
         Ok(file) => Ok(Some(file)),
         Err(error) => match error.kind() {
-            ErrorKind::PermissionDenied => Err(Error::from(error).status(403)),
+            ErrorKind::PermissionDenied => {
+                let mut error = Error::from(error);
+
+                *error.status_mut() = StatusCode::FORBIDDEN;
+                Err(error)
+            }
             ErrorKind::NotFound => Ok(None),
             _ => Err(error.into()),
         },
@@ -84,7 +94,11 @@ impl<'a> ServeStatic<'a> {
         let fall_through = self.fall_through;
         let path_param = match self.endpoint.param() {
             Some(param) => param,
-            None => via::bail!("location is missing path parameter"),
+            None => {
+                return Err(Error::new(
+                    "The provided endpoint does not have a path parameter.".to_owned(),
+                ))
+            }
         };
 
         if public_dir.is_relative() {
