@@ -5,7 +5,7 @@ async fn main() -> Result<()> {
     let mut app = via::app();
 
     app.at("/text").respond(via::get(|_, _| async {
-        Response::text("Hello, world!".to_owned()).end()
+        Response::text("Hello, world!").end()
     }));
 
     let mut unit = app.at("/unit");

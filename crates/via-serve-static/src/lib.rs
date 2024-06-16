@@ -2,6 +2,7 @@ use mime_guess::Mime;
 use std::{
     fs::Metadata,
     path::{Path, PathBuf},
+    pin::Pin,
     sync::Arc,
 };
 use tokio::fs::{self, File};
@@ -160,7 +161,7 @@ impl StaticServer {
         if self.config.fall_through {
             next.call(context).await
         } else {
-            Response::text("Not Found".to_owned()).status(404).end()
+            Response::text("Not Found").status(404).end()
         }
     }
 
@@ -177,13 +178,13 @@ impl StaticServer {
         if self.config.fall_through {
             next.call(context).await
         } else {
-            Response::text("Not Found".to_owned()).status(404).end()
+            Response::text("Not Found").status(404).end()
         }
     }
 }
 
 impl Middleware for StaticServer {
-    fn call(&self, context: Context, next: Next) -> BoxFuture<Result> {
+    fn call(self: Pin<&Self>, context: Context, next: Next) -> BoxFuture<Result> {
         let middleware = StaticServer {
             config: Arc::clone(&self.config),
         };
@@ -196,9 +197,7 @@ impl Middleware for StaticServer {
             } else if middleware.config.fall_through {
                 next.call(context).await
             } else {
-                Response::text("Method Not Allowed".to_owned())
-                    .status(405)
-                    .end()
+                Response::text("Method Not Allowed").status(405).end()
             }
         })
     }

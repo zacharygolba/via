@@ -10,7 +10,7 @@ pub type BoxFuture<T> = futures::future::BoxFuture<'static, T>;
 pub(crate) type DynMiddleware = Pin<Arc<dyn Middleware>>;
 
 pub trait Middleware: Send + Sync + 'static {
-    fn call(&self, context: Context, next: Next) -> BoxFuture<Result>;
+    fn call(self: Pin<&Self>, context: Context, next: Next) -> BoxFuture<Result>;
 }
 
 pub struct Next {
@@ -23,7 +23,7 @@ where
     F: Future + Send + 'static,
     T: Fn(Context, Next) -> F + Send + Sync + 'static,
 {
-    fn call(&self, context: Context, next: Next) -> BoxFuture<Result> {
+    fn call(self: Pin<&Self>, context: Context, next: Next) -> BoxFuture<Result> {
         let future = self(context, next);
         Box::pin(async { future.await.into_response() })
     }
@@ -34,11 +34,11 @@ impl Next {
         Next { stack }
     }
 
-    pub fn call(mut self, context: Context) -> BoxFuture<Result> {
+    pub async fn call(mut self, context: Context) -> Result {
         if let Some(middleware) = self.stack.pop_front() {
-            middleware.call(context, self)
+            middleware.as_ref().call(context, self).await
         } else {
-            Box::pin(async { Response::text("Not Found".to_owned()).status(404).end() })
+            Response::text("Not Found").status(404).end()
         }
     }
 }

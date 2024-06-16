@@ -142,6 +142,11 @@ impl Application {
 
         match next.call(context).await {
             Ok(response) => response.into_hyper_response(),
+            // TODO:
+            // Add a function that can safely convert an error into a response.
+            // For example, if an error has a format of Format::Json, serialization
+            // may fail. In this case, we'll want to log the serialization error and
+            // then return the original error as a plain text response.
             Err(error) => error.into_response().unwrap().into_hyper_response(),
         }
     }
