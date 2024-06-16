@@ -7,6 +7,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { features = ["full"], version = "1.37.0" }
 via = { path = "../../.." }
 via-serve-static = { path = "../../../crates/via-serve-static" }
+
+[dependencies.tokio]
+features = ["macros", "rt-multi-thread"]
+version = "1.38.0"

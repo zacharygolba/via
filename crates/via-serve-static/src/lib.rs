@@ -160,7 +160,7 @@ impl StaticServer {
         if self.config.fall_through {
             next.call(context).await
         } else {
-            Response::text("Not Found").status(404).end()
+            Response::text("Not Found".to_owned()).status(404).end()
         }
     }
 
@@ -177,7 +177,7 @@ impl StaticServer {
         if self.config.fall_through {
             next.call(context).await
         } else {
-            Response::text("Not Found").status(404).end()
+            Response::text("Not Found".to_owned()).status(404).end()
         }
     }
 }
@@ -196,7 +196,9 @@ impl Middleware for StaticServer {
             } else if middleware.config.fall_through {
                 next.call(context).await
             } else {
-                Response::text("Method Not Allowed").status(405).end()
+                Response::text("Method Not Allowed".to_owned())
+                    .status(405)
+                    .end()
             }
         })
     }
