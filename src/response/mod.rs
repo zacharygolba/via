@@ -32,14 +32,20 @@ impl Response {
         }
     }
 
-    pub fn html(body: String) -> Builder {
+    pub fn html<T>(body: T) -> Builder
+    where
+        Body: From<T>,
+    {
         Response::with_body(Ok(body.into())).header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("text/html; charset=utf-8"),
         )
     }
 
-    pub fn text(body: String) -> Builder {
+    pub fn text<T>(body: T) -> Builder
+    where
+        Body: From<T>,
+    {
         Response::with_body(Ok(body.into())).header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("text/plain; charset=utf-8"),
