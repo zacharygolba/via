@@ -8,4 +8,4 @@ pub use path_param::PathParam;
 
 pub(crate) use path_param::PathParams;
 
-pub(crate) type HyperRequest = http::Request<hyper::body::Incoming>;
+pub(crate) type IncomingRequest = http::Request<hyper::body::Incoming>;

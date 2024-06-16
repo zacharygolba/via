@@ -1,12 +1,9 @@
-use futures::stream::StreamExt;
 use http_body_util::{Full, StreamBody};
 use hyper::body::{Body as HyperBody, Bytes};
 use std::{
     pin::Pin,
     task::{self, Poll},
 };
-use tokio::fs::File;
-use tokio_util::io::ReaderStream;
 
 use crate::{Error, Result};
 
@@ -19,6 +16,7 @@ pub struct Body {
 
 enum BodyKind {
     Full(Full<Bytes>),
+    #[cfg_attr(not(feature = "file-system"), allow(dead_code))]
     Stream(StreamBody<BoxStream>),
 }
 
@@ -33,6 +31,7 @@ impl Body {
         }
     }
 
+    #[cfg_attr(not(feature = "file-system"), allow(dead_code))]
     pub(super) fn stream(body: StreamBody<BoxStream>) -> Self {
         Body {
             kind: BodyKind::Stream(body),
@@ -64,8 +63,12 @@ impl From<&'static [u8]> for Body {
     }
 }
 
-impl From<File> for Body {
-    fn from(file: File) -> Self {
+#[cfg(feature = "file-system")]
+impl From<tokio::fs::File> for Body {
+    fn from(file: tokio::fs::File) -> Self {
+        use futures::stream::StreamExt;
+        use tokio_util::io::ReaderStream;
+
         Body::stream(StreamBody::new(
             ReaderStream::new(file)
                 .map(|result| result.map(Frame::data).map_err(Error::from))

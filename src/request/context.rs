@@ -1,6 +1,6 @@
 use http::{HeaderMap, Method, Uri, Version};
 
-use super::{Body, HyperRequest, PathParam, PathParams};
+use super::{Body, IncomingRequest, PathParam, PathParams};
 use crate::{Error, Result};
 
 #[derive(Debug)]
@@ -10,7 +10,7 @@ pub struct Context {
 }
 
 impl Context {
-    pub(crate) fn new(request: HyperRequest, params: PathParams) -> Self {
+    pub(crate) fn new(request: IncomingRequest, params: PathParams) -> Self {
         Context {
             request: request.map(Body::new),
             params,

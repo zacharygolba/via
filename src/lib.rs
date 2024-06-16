@@ -15,9 +15,8 @@ pub use crate::{
     router::Endpoint,
 };
 
-use futures::future::{FutureExt, Map};
 use http::Method;
-use hyper::{server::conn::http1, service::Service};
+use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::{
     convert::Infallible,
@@ -28,17 +27,13 @@ use tokio::net::TcpListener;
 
 use crate::{
     middleware::{AllowMethod, BoxFuture},
-    request::{HyperRequest, PathParams},
-    response::HyperResponse,
+    request::{IncomingRequest, PathParams},
+    response::OutgoingResponse,
     router::Router,
 };
 
 pub struct Application {
     router: Router,
-}
-
-struct ApplicationServer {
-    app: Arc<Application>,
 }
 
 pub fn app() -> Application {
@@ -107,19 +102,19 @@ impl Application {
     where
         T: ToSocketAddrs,
     {
+        let app = Arc::new(self);
         let address = get_addr(address)?;
         let listener = TcpListener::bind(address).await?;
-        let app_server = ApplicationServer {
-            app: Arc::new(self),
-        };
+        let service_fn = hyper::service::service_fn(move |request| {
+            let app = Arc::clone(&app);
+            async move { Ok::<_, Infallible>(app.call(request).await) }
+        });
 
         println!("Server listening at http://{}", address);
 
         loop {
             let (stream, _) = listener.accept().await?;
-            let app_server = ApplicationServer {
-                app: Arc::clone(&app_server.app),
-            };
+            let service_fn = service_fn.clone();
 
             // Use an adapter to access something implementing `tokio::io` traits as if they implement
             // `hyper::rt` IO traits.
@@ -131,7 +126,7 @@ impl Application {
                 if let Err(err) = http1::Builder::new()
                     .timer(TokioTimer::new())
                     // `service_fn` converts our function in a `Service`
-                    .serve_connection(io, app_server)
+                    .serve_connection(io, service_fn)
                     .await
                 {
                     eprintln!("Error serving connection: {:?}", err);
@@ -139,21 +134,15 @@ impl Application {
             });
         }
     }
-}
 
-impl Service<HyperRequest> for ApplicationServer {
-    type Error = Infallible;
-    type Future = Map<BoxFuture<Result>, fn(Result) -> Result<HyperResponse, Infallible>>;
-    type Response = HyperResponse;
-
-    fn call(&self, request: HyperRequest) -> Self::Future {
+    async fn call(&self, request: IncomingRequest) -> OutgoingResponse {
         let mut params = PathParams::new();
-        let next = self.app.router.visit(&request, &mut params);
+        let next = self.router.visit(&request, &mut params);
+        let context = Context::new(request, params);
 
-        next.call(Context::new(request, params))
-            .map(|result| match result {
-                Ok(response) => Ok(response.into_hyper_response()),
-                Err(error) => Ok(error.into_response().unwrap().into_hyper_response()),
-            })
+        match next.call(context).await {
+            Ok(response) => response.into_hyper_response(),
+            Err(error) => error.into_response().unwrap().into_hyper_response(),
+        }
     }
 }
