@@ -16,7 +16,7 @@ pub use crate::{
 };
 
 use http::Method;
-use hyper::server::conn::http1;
+use hyper::{server::conn::http1, service::service_fn};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::{
     convert::Infallible,
@@ -105,28 +105,19 @@ impl Application {
         let app = Arc::new(self);
         let address = get_addr(address)?;
         let listener = TcpListener::bind(address).await?;
-        let service_fn = hyper::service::service_fn(move |request| {
-            let app = Arc::clone(&app);
-            async move { Ok::<_, Infallible>(app.call(request).await) }
-        });
 
         println!("Server listening at http://{}", address);
 
         loop {
             let (stream, _) = listener.accept().await?;
-            let service_fn = service_fn.clone();
-
-            // Use an adapter to access something implementing `tokio::io` traits as if they implement
-            // `hyper::rt` IO traits.
+            let app = Arc::clone(&app);
             let io = TokioIo::new(stream);
 
             // Spawn a tokio task to serve multiple connections concurrently
-            tokio::task::spawn(async {
-                // Finally, we bind the incoming connection to our `hello` service
+            tokio::spawn(async move {
                 if let Err(err) = http1::Builder::new()
                     .timer(TokioTimer::new())
-                    // `service_fn` converts our function in a `Service`
-                    .serve_connection(io, service_fn)
+                    .serve_connection(io, service_fn(|request| app.call(request)))
                     .await
                 {
                     eprintln!("Error serving connection: {:?}", err);
@@ -135,19 +126,19 @@ impl Application {
         }
     }
 
-    async fn call(&self, request: IncomingRequest) -> OutgoingResponse {
+    async fn call(&self, request: IncomingRequest) -> Result<OutgoingResponse, Infallible> {
         let mut params = PathParams::new();
         let next = self.router.visit(&request, &mut params);
         let context = Context::new(request, params);
 
         match next.call(context).await {
-            Ok(response) => response.into_hyper_response(),
+            Ok(response) => Ok(response.into_hyper_response()),
             // TODO:
             // Add a function that can safely convert an error into a response.
             // For example, if an error has a format of Format::Json, serialization
             // may fail. In this case, we'll want to log the serialization error and
             // then return the original error as a plain text response.
-            Err(error) => error.into_response().unwrap().into_hyper_response(),
+            Err(error) => Ok(error.into_response().unwrap().into_hyper_response()),
         }
     }
 }
