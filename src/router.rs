@@ -2,7 +2,7 @@ use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
     middleware::DynMiddleware,
-    request::{HyperRequest, PathParams},
+    request::{IncomingRequest, PathParams},
     Middleware, Next,
 };
 
@@ -32,7 +32,7 @@ impl Router {
         }
     }
 
-    pub fn visit(&self, request: &HyperRequest, params: &mut PathParams) -> Next {
+    pub fn visit(&self, request: &IncomingRequest, params: &mut PathParams) -> Next {
         let mut stack = VecDeque::new();
 
         for matched in self.value.visit(request.uri().path()) {

@@ -8,14 +8,14 @@ use http::{
 use self::body::Body;
 use crate::{Error, Result};
 
-pub(crate) type HyperResponse = http::Response<Body>;
+pub(crate) type OutgoingResponse = http::Response<Body>;
 
 pub trait IntoResponse: Sized {
     fn into_response(self) -> Result<Response>;
 }
 
 pub struct Response {
-    inner: HyperResponse,
+    inner: OutgoingResponse,
 }
 
 #[derive(Default)]
@@ -32,22 +32,15 @@ impl Response {
         }
     }
 
-    pub fn html<T>(body: T) -> Builder
-    where
-        Body: From<T>,
-    {
+    pub fn html(body: String) -> Builder {
         Response::with_body(Ok(body.into())).header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("text/html; charset=utf-8"),
         )
     }
 
-    pub fn text<T>(body: T) -> Builder
-    where
-        T: AsRef<str>,
-    {
-        let body_string = body.as_ref().to_owned();
-        Response::with_body(Ok(body_string.into())).header(
+    pub fn text(body: String) -> Builder {
+        Response::with_body(Ok(body.into())).header(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("text/plain; charset=utf-8"),
         )
@@ -95,7 +88,7 @@ impl Response {
         }
     }
 
-    pub(crate) fn into_hyper_response(self) -> HyperResponse {
+    pub(crate) fn into_hyper_response(self) -> OutgoingResponse {
         self.inner
     }
 }

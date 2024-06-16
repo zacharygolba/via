@@ -6,5 +6,10 @@ license = "MIT"
 
 [dependencies]
 mime_guess = "2.0.4"
-tokio = { version = "1.37.0", features = ["fs"] }
-via = { path = "../.." }
+
+[dependencies.tokio]
+version = "1.38.0"
+
+[dependencies.via]
+features = ["file-system"]
+path = "../.."
