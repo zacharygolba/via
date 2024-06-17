@@ -1,4 +1,3 @@
-use slab::Slab;
 use std::{
     fmt::{self, Debug},
     ops::{Index, IndexMut},
@@ -8,7 +7,7 @@ use crate::node::Node;
 
 #[derive(Clone)]
 pub(crate) struct RouteStore<T> {
-    entries: Slab<Node<T>>,
+    entries: Vec<Node<T>>,
 }
 
 #[derive(Debug)]
@@ -20,7 +19,7 @@ pub(crate) struct RouteEntry<'a, T> {
 impl<T> RouteStore<T> {
     pub(crate) fn new() -> Self {
         Self {
-            entries: Slab::with_capacity(256),
+            entries: Vec::with_capacity(256),
         }
     }
 
@@ -29,7 +28,10 @@ impl<T> RouteStore<T> {
     }
 
     pub(crate) fn insert(&mut self, node: Node<T>) -> usize {
-        self.entries.insert(node)
+        let next_key = self.entries.len();
+
+        self.entries.push(node);
+        next_key
     }
 }
 
