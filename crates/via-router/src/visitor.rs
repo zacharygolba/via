@@ -11,9 +11,9 @@ pub struct Match<'a, T> {
     /// called.
     pub is_exact_match: bool,
 
-    /// A key-value pair containing the start and end offset of the path
-    /// segment that matches `self.pattern()`.
-    pub path_segment: (usize, usize),
+    /// A tuple that contains the start and end offset of the path segment that
+    /// matches `self.route()`.
+    pub path_segment_range: (usize, usize),
 
     /// The node that matches the value in the url path at `self.path_segment`.
     node: &'a Node<T>,
@@ -32,7 +32,7 @@ impl<'a, T> Match<'a, T> {
     /// route does not have any dynamic segments, `None` will be returned.
     pub fn param(&self) -> Option<(&'static str, (usize, usize))> {
         if let Pattern::CatchAll(name) | Pattern::Dynamic(name) = self.node.pattern {
-            Some((name, self.path_segment))
+            Some((name, self.path_segment_range))
         } else {
             None
         }
@@ -57,7 +57,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         // The root node is a special case that we always consider a match.
         self.matches.push(Match {
             is_exact_match: self.path.value == "/",
-            path_segment: (0, 0),
+            path_segment_range: (0, 0),
             node: root,
         });
 
@@ -86,7 +86,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
             if let Pattern::CatchAll(_) = next.pattern {
                 self.matches.push(Match {
                     is_exact_match: true,
-                    path_segment: self.path.slice_from(depth),
+                    path_segment_range: self.path.slice_from(depth),
                     node: next,
                 });
             }
@@ -98,10 +98,11 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
     /// the path segment at the next depth against the patterns at the matching node.
     fn match_segment_at_depth(
         &mut self,
-        (start, end): (usize, usize),
+        path_segment_range: (usize, usize),
         depth: usize,
         node: &'a Node<T>,
     ) {
+        let (start, end) = path_segment_range;
         let path_segment_value = &self.path.value[start..end];
 
         for index in node.entries() {
@@ -114,21 +115,23 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
             }
 
             if let Pattern::CatchAll(_) = next.pattern {
+                // The end offset of `path_segment` should be the end offset
+                // of the last path segment in the url path.
+                let path_segment_range = self.path.slice_from(depth);
+
                 // The next node has a `CatchAll` pattern and will be considered
                 // an exact match. Due to the nature of `CatchAll` patterns, we
                 // do not have to continue searching for descendants of this
                 // node that match the remaining path segments.
                 self.matches.push(Match {
+                    path_segment_range,
                     is_exact_match: true,
-                    // The end offset of `path_segment` should be the end offset
-                    // of the last path segment in the url path.
-                    path_segment: self.path.slice_from(depth),
                     node: next,
                 });
             } else {
                 self.matches.push(Match {
+                    path_segment_range,
                     is_exact_match: self.path.is_last_segment(depth),
-                    path_segment: (start, end),
                     node: next,
                 });
                 // Continue to match descendants of `next` against the path

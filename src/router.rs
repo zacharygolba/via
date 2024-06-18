@@ -37,8 +37,8 @@ impl Router {
         let path = request.uri().path();
 
         for matched in self.value.visit(path) {
-            if let Some((name, value)) = matched.param() {
-                params.insert(name, value);
+            if let Some((name, range)) = matched.param() {
+                params.insert(name, range);
             }
 
             if let Some(route) = matched.route() {
