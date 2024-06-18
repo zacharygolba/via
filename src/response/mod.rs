@@ -93,7 +93,7 @@ impl Response {
         }
     }
 
-    pub(crate) fn into_hyper_response(self) -> OutgoingResponse {
+    pub(crate) fn into_inner(self) -> OutgoingResponse {
         self.inner
     }
 }

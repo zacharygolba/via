@@ -132,13 +132,13 @@ impl Application {
         let context = Context::new(request, params);
 
         match next.call(context).await {
-            Ok(response) => Ok(response.into_hyper_response()),
+            Ok(response) => Ok(response.into_inner()),
             // TODO:
             // Add a function that can safely convert an error into a response.
             // For example, if an error has a format of Format::Json, serialization
             // may fail. In this case, we'll want to log the serialization error and
             // then return the original error as a plain text response.
-            Err(error) => Ok(error.into_response().unwrap().into_hyper_response()),
+            Err(error) => Ok(error.into_response().unwrap().into_inner()),
         }
     }
 }
