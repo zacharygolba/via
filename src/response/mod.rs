@@ -18,21 +18,20 @@ pub struct Response {
     inner: OutgoingResponse,
 }
 
-#[derive(Default)]
-pub struct Builder {
+pub struct ResponseBuilder {
     body: Option<Result<Body>>,
     inner: http::response::Builder,
 }
 
 impl Response {
-    pub fn new() -> Builder {
-        Builder {
+    pub fn new() -> ResponseBuilder {
+        ResponseBuilder {
             body: None,
             inner: http::response::Builder::new(),
         }
     }
 
-    pub fn html<T>(body: T) -> Builder
+    pub fn html<T>(body: T) -> ResponseBuilder
     where
         Body: From<T>,
     {
@@ -42,7 +41,7 @@ impl Response {
         )
     }
 
-    pub fn text<T>(body: T) -> Builder
+    pub fn text<T>(body: T) -> ResponseBuilder
     where
         Body: From<T>,
     {
@@ -53,7 +52,7 @@ impl Response {
     }
 
     #[cfg(feature = "serde")]
-    pub fn json<T>(body: &T) -> Builder
+    pub fn json<T>(body: &T) -> ResponseBuilder
     where
         T: serde::Serialize,
     {
@@ -87,8 +86,8 @@ impl Response {
         self.inner.version()
     }
 
-    pub(crate) fn with_body(body: Result<Body>) -> Builder {
-        Builder {
+    pub(crate) fn with_body(body: Result<Body>) -> ResponseBuilder {
+        ResponseBuilder {
             body: Some(body),
             inner: http::response::Builder::new(),
         }
@@ -105,13 +104,13 @@ impl IntoResponse for Response {
     }
 }
 
-impl Builder {
+impl ResponseBuilder {
     pub fn body<T>(self, body: T) -> Self
     where
         Body: TryFrom<T>,
         <Body as TryFrom<T>>::Error: Into<Error>,
     {
-        Builder {
+        Self {
             body: Some(Body::try_from(body).map_err(Into::into)),
             inner: self.inner,
         }
@@ -133,7 +132,7 @@ impl Builder {
         HeaderValue: TryFrom<V>,
         <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
     {
-        Builder {
+        Self {
             body: self.body,
             inner: self.inner.header(key, value),
         }
@@ -144,21 +143,21 @@ impl Builder {
         StatusCode: TryFrom<T>,
         <StatusCode as TryFrom<T>>::Error: Into<http::Error>,
     {
-        Builder {
+        Self {
             body: self.body,
             inner: self.inner.status(status),
         }
     }
 
     pub fn version(self, version: Version) -> Self {
-        Builder {
+        Self {
             body: self.body,
             inner: self.inner.version(version),
         }
     }
 }
 
-impl IntoResponse for Builder {
+impl IntoResponse for ResponseBuilder {
     fn into_response(self) -> Result<Response> {
         self.end()
     }
