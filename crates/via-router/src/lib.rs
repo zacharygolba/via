@@ -1,70 +1,63 @@
-mod iter;
-mod node;
 mod path;
 mod routes;
+mod visitor;
 
-use crate::{node::Node, path::SplitPath, routes::RouteStore};
-
-pub use crate::{
-    iter::{Match, Visit},
-    node::Pattern,
+use crate::{
+    path::{Pattern, SplitPath},
+    routes::{Node, RouteStore},
+    visitor::Visitor,
 };
 
-#[derive(Clone, Debug)]
+pub use crate::visitor::Match;
+
+#[derive(Debug)]
 pub struct Router<T> {
-    root: usize,
-    store: RouteStore<T>,
+    routes: RouteStore<T>,
 }
 
 #[derive(Debug)]
 pub struct Endpoint<'a, T> {
-    key: usize,
-    store: &'a mut RouteStore<T>,
+    index: usize,
+    routes: &'a mut RouteStore<T>,
 }
 
 impl<T> Router<T> {
     pub fn new() -> Self {
-        let mut store = RouteStore::new();
-        let root = store.insert(Node::new(Pattern::Root));
+        let mut routes = RouteStore::new();
 
-        Router { root, store }
+        routes.insert(Node::new(Pattern::Root));
+        Self { routes }
     }
 
-    pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
+    pub fn at<'a>(&'a mut self, path: &'static str) -> Endpoint<'a, T> {
         let mut segments = SplitPath::new(path).into_patterns();
 
         Endpoint {
-            key: insert(self.root, &mut self.store, &mut segments),
-            store: &mut self.store,
+            index: insert(&mut self.routes, &mut segments, 0),
+            routes: &mut self.routes,
         }
     }
 
-    pub fn route(&self) -> Option<&T> {
-        self.store[self.root].route()
-    }
+    pub fn visit<'a>(&'a self, path: &str) -> Vec<Match<'a, T>> {
+        let visitor = Visitor::new(&self.routes, path);
+        let root = &self.routes[0];
 
-    pub fn route_mut(&mut self) -> &mut Option<T> {
-        self.store[self.root].route_mut()
-    }
-
-    pub fn visit(&self, path: &str) -> Visit<T> {
-        let node = &self.store[self.root];
-        Visit::new(&self.store, node, path)
+        visitor.visit(root)
     }
 }
 
 impl<'a, T> Endpoint<'a, T> {
-    pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
+    pub fn at(&'a mut self, path: &'static str) -> Self {
         let mut segments = SplitPath::new(path).into_patterns();
 
-        Endpoint {
-            key: insert(self.key, self.store, &mut segments),
-            store: self.store,
+        Self {
+            index: insert(self.routes, &mut segments, self.index),
+            routes: self.routes,
         }
     }
 
-    pub fn param(&'a self) -> Option<&'static str> {
-        let node = &self.store[self.key];
+    pub fn param(&self) -> Option<&'static str> {
+        let node = &self.routes[self.index];
 
         match node.pattern {
             Pattern::CatchAll(param) | Pattern::Dynamic(param) => Some(param),
@@ -73,11 +66,11 @@ impl<'a, T> Endpoint<'a, T> {
     }
 
     pub fn route_mut(&mut self) -> &mut Option<T> {
-        &mut self.store[self.key].route
+        &mut self.routes[self.index].route
     }
 }
 
-fn insert<T, I>(current_key: usize, route_store: &mut RouteStore<T>, segments: &mut I) -> usize
+fn insert<T, I>(routes: &mut RouteStore<T>, segments: &mut I, into_index: usize) -> usize
 where
     I: Iterator<Item = Pattern>,
 {
@@ -85,33 +78,31 @@ where
     // In the future we may want to panic if the caller tries to insert a node
     // into a catch-all node rather than silently ignoring the rest of the
     // segments.
-    if let Pattern::CatchAll(_) = route_store[current_key].pattern {
+    if let Pattern::CatchAll(_) = routes[into_index].pattern {
         while let Some(_) = segments.next() {}
-        return current_key;
+        return into_index;
     }
 
     // If there are no more segments, we can return the current key.
     let pattern = match segments.next() {
         Some(value) => value,
-        None => return current_key,
+        None => return into_index,
     };
 
     // Check if the pattern already exists in the node at `current_key`. If it does,
     // we can continue to the next segment.
-    for next_key in route_store[current_key].entries() {
-        if pattern == route_store[*next_key].pattern {
-            return insert(*next_key, route_store, segments);
+    for next_index in routes[into_index].entries() {
+        if pattern == routes[*next_index].pattern {
+            return insert(routes, segments, *next_index);
         }
     }
+
+    let next_index = routes.entry(into_index).insert(Node::new(pattern));
 
     // If the pattern does not exist in the node at `current_key`, we need to create
     // a new node as a descendant of the node at `current_key` and then insert it
     // into the store.
-    insert(
-        route_store.entry(current_key).insert(Node::new(pattern)),
-        route_store,
-        segments,
-    )
+    insert(routes, segments, next_index)
 }
 
 #[cfg(test)]

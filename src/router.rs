@@ -21,12 +21,12 @@ struct Route {
 
 impl Router {
     pub fn new() -> Self {
-        Router {
+        Self {
             value: via_router::Router::new(),
         }
     }
 
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
+    pub fn at<'a>(&'a mut self, pattern: &'static str) -> Endpoint<'a> {
         Endpoint {
             value: self.value.at(pattern),
         }
@@ -34,8 +34,9 @@ impl Router {
 
     pub fn visit(&self, request: &IncomingRequest, params: &mut PathParams) -> Next {
         let mut stack = VecDeque::new();
+        let path = request.uri().path();
 
-        for matched in self.value.visit(request.uri().path()) {
+        for matched in self.value.visit(path) {
             if let Some((name, value)) = matched.param() {
                 params.insert(name, value);
             }
@@ -53,13 +54,16 @@ impl Router {
 }
 
 impl<'a> Endpoint<'a> {
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
-        Endpoint {
+    pub fn at(&'a mut self, pattern: &'static str) -> Self {
+        Self {
             value: self.value.at(pattern),
         }
     }
 
-    pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) -> &mut Self {
+    pub fn scope<T>(&mut self, scope: T) -> &mut Self
+    where
+        T: FnOnce(&mut Self),
+    {
         scope(self);
         self
     }
