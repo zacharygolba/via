@@ -1,13 +1,9 @@
-use std::{iter::FusedIterator, vec::IntoIter};
-
 use crate::{
-    node::{Node, Pattern},
-    path::PathSegments,
-    routes::RouteStore,
+    path::{PathSegments, Pattern},
+    routes::{Node, RouteStore},
 };
 
 /// Represents either a partial or exact match for a given path segment.
-#[derive(Clone, Copy)]
 pub struct Match<'a, T> {
     /// Indicates whether or not the match is considered an exact match.
     /// If the match is exact, both the middleware and responders will be
@@ -23,15 +19,10 @@ pub struct Match<'a, T> {
     node: &'a Node<T>,
 }
 
-/// An iterator that yields all possible partial and exact matches for a url path.
-pub struct Visit<'a, T> {
-    matches: IntoIter<Match<'a, T>>,
-}
-
-struct Visitor<'a, 'b, T> {
+pub(crate) struct Visitor<'a, 'b, T> {
     path: PathSegments<'b>,
-    matches: &'b mut Vec<Match<'a, T>>,
-    route_store: &'a RouteStore<T>,
+    matches: Vec<Match<'a, T>>,
+    routes: &'a RouteStore<T>,
 }
 
 impl<'a, T> Match<'a, T> {
@@ -40,15 +31,11 @@ impl<'a, T> Match<'a, T> {
     /// start and end offset of the path segment in the url path. If the matched
     /// route does not have any dynamic segments, `None` will be returned.
     pub fn param(&self) -> Option<(&'static str, (usize, usize))> {
-        if let Pattern::CatchAll(name) | Pattern::Dynamic(name) = self.pattern() {
+        if let Pattern::CatchAll(name) | Pattern::Dynamic(name) = self.node.pattern {
             Some((name, self.path_segment))
         } else {
             None
         }
-    }
-
-    pub fn pattern(&self) -> Pattern {
-        self.node.pattern
     }
 
     /// Returns a reference to the route that matches `self.value`.
@@ -57,45 +44,16 @@ impl<'a, T> Match<'a, T> {
     }
 }
 
-impl<'a, T> Visit<'a, T> {
-    /// Returns a new visitor to begin our search at the root `node` that match
-    /// the provided `path`.
-    pub(crate) fn new(store: &'a RouteStore<T>, node: &'a Node<T>, path: &str) -> Self {
-        let mut matches = Vec::with_capacity(32);
-
-        Visitor::visit(
-            Visitor {
-                path: PathSegments::new(path),
-                matches: &mut matches,
-                route_store: store,
-            },
-            node,
-        );
-
-        Visit {
-            matches: matches.into_iter(),
+impl<'a, 'b, T> Visitor<'a, 'b, T> {
+    pub(crate) fn new(routes: &'a RouteStore<T>, path: &'b str) -> Self {
+        Visitor {
+            routes,
+            path: PathSegments::new(path),
+            matches: Vec::with_capacity(32),
         }
     }
-}
 
-impl<'a, T> Iterator for Visit<'a, T> {
-    type Item = Match<'a, T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.matches.next()
-    }
-}
-
-impl<'a, T> ExactSizeIterator for Visit<'a, T> {
-    fn len(&self) -> usize {
-        self.matches.len()
-    }
-}
-
-impl<'a, T> FusedIterator for Visit<'a, T> {}
-
-impl<'a, 'b, T> Visitor<'a, 'b, T> {
-    fn visit(mut self, root: &'a Node<T>) {
+    pub(crate) fn visit(mut self, root: &'a Node<T>) -> Vec<Match<'a, T>> {
         // The root node is a special case that we always consider a match.
         self.matches.push(Match {
             is_exact_match: self.path.value == "/",
@@ -106,11 +64,12 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         // Begin the search for matches recursively starting with descendants of
         // the root node.
         self.match_at_depth(0, root);
+        self.matches
     }
 
     fn match_at_depth(&mut self, depth: usize, node: &'a Node<T>) {
         if let Some(path_segment_range) = self.path.get(depth) {
-            self.match_segment_at_depth(path_segment_range, depth, node);
+            self.match_segment_at_depth(*path_segment_range, depth, node);
             return;
         }
 
@@ -118,8 +77,8 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         // immediate descendant node with a CatchAll pattern. This is required
         // to support matching the "index" path of a descendant node with a
         // CatchAll pattern.
-        for key in node.entries() {
-            let next = &self.route_store[*key];
+        for index in node.entries() {
+            let next = &self.routes[*index];
 
             // If the next node does not have a CatchAll pattern, we can skip
             // this node and continue to search for adjacent nodes with a
@@ -145,8 +104,8 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
     ) {
         let path_segment_value = &self.path.value[start..end];
 
-        for key in node.entries() {
-            let next = &self.route_store[*key];
+        for index in node.entries() {
+            let next = &self.routes[*index];
 
             if path_segment_value != next.pattern {
                 // The path segment does not match the pattern of the next node.

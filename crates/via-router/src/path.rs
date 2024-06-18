@@ -1,7 +1,13 @@
 use smallvec::SmallVec;
 use std::{iter::Peekable, str::CharIndices};
 
-use crate::node::Pattern;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Pattern {
+    CatchAll(&'static str),
+    Dynamic(&'static str),
+    Static(&'static str),
+    Root,
+}
 
 /// Represents a url path with start and indices of each segment in the url
 /// path separated by `/`.
@@ -18,6 +24,32 @@ pub(crate) struct SplitPath<'a> {
     value: &'a str,
 }
 
+impl From<&'static str> for Pattern {
+    fn from(value: &'static str) -> Pattern {
+        match value.chars().next() {
+            Some('*') => Pattern::CatchAll(&value[1..]),
+            Some(':') => Pattern::Dynamic(&value[1..]),
+            _ => Pattern::Static(value),
+        }
+    }
+}
+
+impl PartialEq<&str> for Pattern {
+    fn eq(&self, other: &&str) -> bool {
+        if let Pattern::Static(value) = *self {
+            value == *other
+        } else {
+            true
+        }
+    }
+}
+
+impl PartialEq<Pattern> for &str {
+    fn eq(&self, other: &Pattern) -> bool {
+        other == self
+    }
+}
+
 impl<'a> PathSegments<'a> {
     pub(crate) fn new(value: &'a str) -> Self {
         PathSegments {
@@ -29,8 +61,8 @@ impl<'a> PathSegments<'a> {
     /// Returns the value of the current path segment that we are attempting to
     /// match if it exists. The returned value should only be `None` if we are
     /// attempting to match a root url path (i.e `"/"`).
-    pub(crate) fn get(&self, index: usize) -> Option<(usize, usize)> {
-        self.segments.get(index).copied()
+    pub(crate) fn get(&self, index: usize) -> Option<&(usize, usize)> {
+        self.segments.get(index)
     }
 
     /// Return `true` if the segment located at `index` is the last segment in
@@ -46,9 +78,8 @@ impl<'a> PathSegments<'a> {
     pub(crate) fn slice_from(&self, index: usize) -> (usize, usize) {
         self.segments
             .get(index)
-            .map(|(start, _)| *start)
-            .zip(self.segments.last().map(|(_, end)| *end))
-            .unwrap_or((0, 0))
+            .zip(self.segments.last())
+            .map_or((0, 0), |((start, _), (_, end))| (*start, *end))
     }
 }
 

@@ -108,22 +108,6 @@ static ROUTES: [&str; 100] = [
 ];
 
 #[bench]
-fn find_first_exact_match(b: &mut Bencher) {
-    let mut router: Router<()> = Router::new();
-
-    for path in ROUTES {
-        let _ = router.at(path).route_mut().insert(());
-    }
-
-    b.iter(|| {
-        router
-            .visit("/api/v1/products/12358132134558/edit")
-            .find(|matched| matched.is_exact_match)
-            .unwrap();
-    });
-}
-
-#[bench]
 fn find_all_matches(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
@@ -131,9 +115,7 @@ fn find_all_matches(b: &mut Bencher) {
         let _ = router.at(path).route_mut().insert(());
     }
 
-    b.iter(
-        || {
-            for _ in router.visit("/api/v1/products/12358132134558/edit") {}
-        },
-    );
+    b.iter(|| {
+        router.visit("/api/v1/products/12358132134558/edit");
+    });
 }
