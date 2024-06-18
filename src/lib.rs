@@ -32,12 +32,12 @@ use crate::{
     router::Router,
 };
 
-pub struct Application {
+pub struct App {
     router: Router,
 }
 
-pub fn app() -> Application {
-    Application {
+pub fn app() -> App {
+    App {
         router: Router::new(),
     }
 }
@@ -85,7 +85,7 @@ fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
     }
 }
 
-impl Application {
+impl App {
     pub fn at(&mut self, pattern: &'static str) -> Endpoint {
         self.router.at(pattern)
     }
