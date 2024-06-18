@@ -1,6 +1,5 @@
-use bytes::Buf;
 use http_body_util::{BodyExt, Empty};
-use hyper::body::Incoming;
+use hyper::body::{Buf, Incoming};
 use std::io::Read;
 
 use crate::Result;
