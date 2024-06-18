@@ -27,7 +27,7 @@ impl Router {
         }
     }
 
-    pub fn at<'a>(&'a mut self, pattern: &'static str) -> Endpoint<'a> {
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
         Endpoint {
             inner: self.inner.at(pattern),
         }
@@ -55,8 +55,8 @@ impl Router {
 }
 
 impl<'a> Endpoint<'a> {
-    pub fn at(&'a mut self, pattern: &'static str) -> Self {
-        Self {
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
+        Endpoint {
             inner: self.inner.at(pattern),
         }
     }
