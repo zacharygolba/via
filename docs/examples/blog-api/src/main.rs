@@ -51,31 +51,31 @@ async fn main() -> Result<()> {
         }
     });
 
-    api.at("/posts").scope(|resource| {
+    api.at("/posts").scope(|posts| {
         use api::posts;
 
-        resource.include(posts::authenticate);
+        posts.include(posts::authenticate);
 
-        resource.respond(via::get(posts::index));
-        resource.respond(via::post(posts::create));
+        posts.respond(via::get(posts::index));
+        posts.respond(via::post(posts::create));
 
-        resource.at("/:id").scope(|member| {
-            member.respond(via::get(posts::show));
-            member.respond(via::patch(posts::update));
-            member.respond(via::delete(posts::destroy));
+        posts.at("/:id").scope(|post| {
+            post.respond(via::get(posts::show));
+            post.respond(via::patch(posts::update));
+            post.respond(via::delete(posts::destroy));
         });
     });
 
-    api.at("/users").scope(|resource| {
+    api.at("/users").scope(|users| {
         use api::users;
 
-        resource.respond(via::get(users::index));
-        resource.respond(via::post(users::create));
+        users.respond(via::get(users::index));
+        users.respond(via::post(users::create));
 
-        resource.at("/:id").scope(|member| {
-            member.respond(via::get(users::show));
-            member.respond(via::patch(users::update));
-            member.respond(via::delete(users::destroy));
+        users.at("/:id").scope(|user| {
+            user.respond(via::get(users::show));
+            user.respond(via::patch(users::update));
+            user.respond(via::delete(users::destroy));
         });
     });
 
