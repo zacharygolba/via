@@ -29,7 +29,7 @@ impl<T> Router<T> {
         Self { routes }
     }
 
-    pub fn at<'a>(&'a mut self, path: &'static str) -> Endpoint<'a, T> {
+    pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
         let mut segments = SplitPath::new(path).into_patterns();
 
         Endpoint {
@@ -38,7 +38,7 @@ impl<T> Router<T> {
         }
     }
 
-    pub fn visit<'a>(&'a self, path: &str) -> Vec<Match<'a, T>> {
+    pub fn visit(&self, path: &str) -> Vec<Match<T>> {
         let visitor = Visitor::new(&self.routes, path);
         let root = &self.routes[0];
 
@@ -47,10 +47,10 @@ impl<T> Router<T> {
 }
 
 impl<'a, T> Endpoint<'a, T> {
-    pub fn at(&'a mut self, path: &'static str) -> Self {
+    pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
         let mut segments = SplitPath::new(path).into_patterns();
 
-        Self {
+        Endpoint {
             index: insert(self.routes, &mut segments, self.index),
             routes: self.routes,
         }
