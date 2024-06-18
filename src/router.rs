@@ -1,4 +1,5 @@
 use std::{collections::VecDeque, sync::Arc};
+use via_router::{Endpoint as GenericEndpoint, Router as GenericRouter};
 
 use crate::{
     middleware::DynMiddleware,
@@ -7,11 +8,11 @@ use crate::{
 };
 
 pub struct Router {
-    value: via_router::Router<Route>,
+    inner: GenericRouter<Route>,
 }
 
 pub struct Endpoint<'a> {
-    value: via_router::Endpoint<'a, Route>,
+    inner: GenericEndpoint<'a, Route>,
 }
 
 struct Route {
@@ -22,13 +23,13 @@ struct Route {
 impl Router {
     pub fn new() -> Self {
         Self {
-            value: via_router::Router::new(),
+            inner: via_router::Router::new(),
         }
     }
 
     pub fn at<'a>(&'a mut self, pattern: &'static str) -> Endpoint<'a> {
         Endpoint {
-            value: self.value.at(pattern),
+            inner: self.inner.at(pattern),
         }
     }
 
@@ -36,7 +37,7 @@ impl Router {
         let mut stack = VecDeque::new();
         let path = request.uri().path();
 
-        for matched in self.value.visit(path) {
+        for matched in self.inner.visit(path) {
             if let Some((name, range)) = matched.param() {
                 params.insert(name, range);
             }
@@ -56,7 +57,7 @@ impl Router {
 impl<'a> Endpoint<'a> {
     pub fn at(&'a mut self, pattern: &'static str) -> Self {
         Self {
-            value: self.value.at(pattern),
+            inner: self.inner.at(pattern),
         }
     }
 
@@ -69,7 +70,7 @@ impl<'a> Endpoint<'a> {
     }
 
     pub fn param(&self) -> Option<&'static str> {
-        self.value.param()
+        self.inner.param()
     }
 
     pub fn include<T>(&mut self, middleware: T) -> &mut Self
@@ -93,7 +94,7 @@ impl<'a> Endpoint<'a> {
     }
 
     fn route_mut(&mut self) -> &mut Route {
-        self.value.route_mut().get_or_insert_with(|| Route {
+        self.inner.route_mut().get_or_insert_with(|| Route {
             middleware: Vec::new(),
             responders: Vec::new(),
         })
