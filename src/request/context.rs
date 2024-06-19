@@ -1,19 +1,30 @@
 use http::{HeaderMap, Method, Uri, Version};
 
-use super::{Body, IncomingRequest, PathParam, PathParams};
+use super::{
+    query_parser::{ParsedQueryParams, QueryParams},
+    Body, IncomingRequest, PathParam, PathParams,
+};
 use crate::{Error, Result};
 
 #[derive(Debug)]
 pub struct Context {
     request: http::Request<Body>,
-    params: PathParams,
+    path_params: PathParams,
+    query_params: ParsedQueryParams,
 }
 
 impl Context {
-    pub(crate) fn new(request: IncomingRequest, params: PathParams) -> Self {
+    pub(crate) fn new(request: IncomingRequest, path_params: PathParams) -> Self {
+        let query_params = if let Some(query) = request.uri().query() {
+            super::query_parser::parse(query)
+        } else {
+            ParsedQueryParams::default()
+        };
+
         Context {
             request: request.map(Body::new),
-            params,
+            path_params,
+            query_params,
         }
     }
 
@@ -58,12 +69,16 @@ impl Context {
 
     pub fn param<'a>(&'a self, name: &'a str) -> PathParam<'a> {
         let value = self
-            .params
+            .path_params
             .get(name)
             .copied()
             .map(|(start, end)| &self.uri().path()[start..end]);
 
         PathParam::new(name, value)
+    }
+
+    pub fn query(&self) -> QueryParams {
+        QueryParams::new(&self.query_params, self.uri().query().unwrap_or(""))
     }
 
     /// Returns a reference to the uri associated with the request.
