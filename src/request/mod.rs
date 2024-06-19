@@ -1,6 +1,7 @@
 mod body;
 mod context;
 mod path_param;
+mod query_parser;
 
 pub use body::Body;
 pub use context::Context;
