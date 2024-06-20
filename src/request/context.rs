@@ -1,9 +1,10 @@
 use http::{HeaderMap, Method, Request, Uri, Version};
 
 use super::{
+    path_param::PathParams,
     query_param::QueryParamValues,
     query_parser::{parse_query_params, QueryParams},
-    Body, IncomingRequest, PathParam, PathParams,
+    Body, IncomingRequest, PathParam,
 };
 use crate::{Error, Result};
 
