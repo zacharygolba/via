@@ -7,9 +7,9 @@ use crate::{Error, Result};
 
 type ValuesVec = SmallVec<[(usize, usize); 4]>;
 
-pub struct QueryParamValue<'a, 'b> {
+pub struct QueryParamValue<'a, 'b, 'c> {
     name: &'b str,
-    range: Option<(usize, usize)>,
+    range: Option<&'c (usize, usize)>,
     query: &'a str,
 }
 
@@ -24,7 +24,7 @@ pub struct QueryParamValuesIter<'a> {
     query: &'a str,
 }
 
-impl<'a, 'b> QueryParamValue<'a, 'b> {
+impl<'a, 'b, 'c> QueryParamValue<'a, 'b, 'c> {
     pub fn parse<T>(self) -> Result<T>
     where
         Error: From<<T as FromStr>::Err>,
@@ -39,7 +39,7 @@ impl<'a, 'b> QueryParamValue<'a, 'b> {
 
     pub fn require(self) -> Result<Cow<'a, str>> {
         if let Some((start, end)) = self.range {
-            let raw_value = &self.query[start..end];
+            let raw_value = &self.query[*start..*end];
             let decoder = percent_decode_str(raw_value);
 
             return Ok(decoder.decode_utf8_lossy());
@@ -64,16 +64,16 @@ impl<'a, 'b> QueryParamValues<'a, 'b> {
         }
     }
 
-    pub fn get(&self, index: usize) -> QueryParamValue<'a, 'b> {
-        self.value_at(self.values.get(index).copied())
+    pub fn get(&self, index: usize) -> QueryParamValue<'a, 'b, '_> {
+        self.value_at(self.values.get(index))
     }
 
-    pub fn first(&self) -> QueryParamValue<'a, 'b> {
-        self.value_at(self.values.first().copied())
+    pub fn first(&self) -> QueryParamValue<'a, 'b, '_> {
+        self.value_at(self.values.first())
     }
 
-    pub fn last(&self) -> QueryParamValue<'a, 'b> {
-        self.value_at(self.values.last().copied())
+    pub fn last(&self) -> QueryParamValue<'a, 'b, '_> {
+        self.value_at(self.values.last())
     }
 
     pub fn iter(&self) -> QueryParamValuesIter {
@@ -83,7 +83,7 @@ impl<'a, 'b> QueryParamValues<'a, 'b> {
         }
     }
 
-    fn value_at(&self, range: Option<(usize, usize)>) -> QueryParamValue<'a, 'b> {
+    fn value_at<'c>(&self, range: Option<&'c (usize, usize)>) -> QueryParamValue<'a, 'b, 'c> {
         QueryParamValue {
             range,
             name: self.name,
