@@ -5,7 +5,7 @@ use std::{borrow::Cow, slice::Iter, str::FromStr};
 
 use crate::{Error, Result};
 
-type ValuesVec = SmallVec<[(usize, usize); 6]>;
+type ValuesVec = SmallVec<[(usize, usize); 4]>;
 
 pub struct QueryParamValue<'a, 'b> {
     name: &'b str,
