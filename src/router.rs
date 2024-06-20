@@ -33,13 +33,13 @@ impl Router {
         }
     }
 
-    pub fn visit(&self, request: &IncomingRequest, params: &mut PathParams) -> Next {
+    pub fn visit(&self, path_params: &mut PathParams, request: &IncomingRequest) -> Next {
         let mut stack = VecDeque::new();
         let path = request.uri().path();
 
         for matched in self.inner.visit(path) {
             if let Some((name, range)) = matched.param() {
-                params.insert(name, range);
+                path_params.insert(name, range);
             }
 
             if let Some(route) = matched.route() {
