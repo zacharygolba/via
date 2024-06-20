@@ -1,30 +1,25 @@
-use http::{HeaderMap, Method, Uri, Version};
+use http::{HeaderMap, Method, Request, Uri, Version};
 
 use super::{
-    query_parser::{ParsedQueryParams, QueryParams},
+    query_param::QueryParamValues,
+    query_parser::{parse_query_params, QueryParams},
     Body, IncomingRequest, PathParam, PathParams,
 };
 use crate::{Error, Result};
 
 #[derive(Debug)]
 pub struct Context {
-    request: http::Request<Body>,
+    request: Request<Body>,
     path_params: PathParams,
-    query_params: ParsedQueryParams,
+    query_params: Option<QueryParams>,
 }
 
 impl Context {
     pub(crate) fn new(request: IncomingRequest, path_params: PathParams) -> Self {
-        let query_params = if let Some(query) = request.uri().query() {
-            super::query_parser::parse(query)
-        } else {
-            ParsedQueryParams::default()
-        };
-
         Context {
-            request: request.map(Body::new),
+            request: request.map(|body| Body { inner: Some(body) }),
+            query_params: None,
             path_params,
-            query_params,
         }
     }
 
@@ -77,8 +72,16 @@ impl Context {
         PathParam::new(name, value)
     }
 
-    pub fn query(&self) -> QueryParams {
-        QueryParams::new(&self.query_params, self.uri().query().unwrap_or(""))
+    pub fn query<'a, 'b>(&'a mut self, name: &'b str) -> QueryParamValues<'a, 'b> {
+        let query = self.request.uri().query().unwrap_or_default();
+        let values = self
+            .query_params
+            .get_or_insert_with(|| parse_query_params(query))
+            .iter()
+            .filter_map(|(param, range)| if name == param { Some(*range) } else { None })
+            .collect();
+
+        QueryParamValues::new(name, query, values)
     }
 
     /// Returns a reference to the uri associated with the request.

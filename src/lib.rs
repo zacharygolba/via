@@ -127,9 +127,9 @@ impl App {
     }
 
     async fn call(&self, request: IncomingRequest) -> Result<OutgoingResponse, Infallible> {
-        let mut params = PathParams::new();
-        let next = self.router.visit(&request, &mut params);
-        let context = Context::new(request, params);
+        let mut path_params = PathParams::new();
+        let next = self.router.visit(&mut path_params, &request);
+        let context = Context::new(request, path_params);
 
         match next.call(context).await {
             Ok(response) => Ok(response.into_inner()),

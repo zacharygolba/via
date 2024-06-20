@@ -1,57 +1,33 @@
-use core::slice;
-use http::StatusCode;
 use percent_encoding::percent_decode_str;
-use smallvec::SmallVec;
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    iter::Peekable,
-    str::{CharIndices, FromStr},
-};
+use std::{iter::Peekable, str::CharIndices};
 
-use crate::{Error, Result};
+pub(crate) type QueryParams<T = String> = Vec<(T, (usize, usize))>;
 
-pub(super) type ParsedQueryParams = HashMap<String, SmallVec<[(usize, usize); 4]>>;
+pub fn parse_query_params(input: &str) -> QueryParams {
+    let mut query_params = Vec::with_capacity(16);
+    let mut input = QueryParserInput::new(input);
 
-pub struct QueryParamValues<'a, 'b> {
-    name: &'b str,
-    iter: Option<slice::Iter<'a, (usize, usize)>>,
-    query: &'a str,
-}
-
-pub struct QueryParamValue<'a, 'b> {
-    name: &'b str,
-    range: Option<(usize, usize)>,
-    query: &'a str,
-}
-
-pub struct QueryParams<'a> {
-    params: &'a ParsedQueryParams,
-    query: &'a str,
-}
-
-struct ParserInput<'a> {
-    chars: Peekable<CharIndices<'a>>,
-    value: &'a str,
-}
-
-pub fn parse(input: &str) -> ParsedQueryParams {
-    let mut query = ParsedQueryParams::new();
-    let mut input = ParserInput::new(input);
-
-    while let Some((key, value)) = parse_key_value_pair(&mut input) {
-        query.entry(key).or_default().push(value);
+    while let Some((name, value)) = parse_entry(&mut input) {
+        query_params.push((name, value));
     }
 
-    query
+    query_params
 }
 
-fn parse_key(input: &mut ParserInput) -> Option<String> {
-    let (start, _) = *input.peek()?;
-    let end = input
-        .take_until(|char| char == '=')
-        .unwrap_or_else(|| input.len());
+fn parse_name(input: &mut QueryParserInput) -> Option<String> {
+    // Get the start index of the name by taking the next index from input.
+    let start = input.take()?;
+    // Continue consuming the input until we reach the terminating equal sign.
+    let end = input.take_until('=')?;
 
+    // Move past and ignore any additional occurences of the equal sign.
+    input.take_while('=');
+
+    // Eagerly decode the percent-encoded characters in the name and return
+    // an owned string.
+    //
+    // While returning an owned string can be more expensive, it simplifies the
+    // API for the caller and allows us to cache the decoded result for fast lookups.
     Some(
         percent_decode_str(&input.value[start..end])
             .decode_utf8_lossy()
@@ -59,159 +35,72 @@ fn parse_key(input: &mut ParserInput) -> Option<String> {
     )
 }
 
-fn parse_value(input: &mut ParserInput) -> Option<(usize, usize)> {
-    let (start, _) = *input.peek()?;
-    let end = input
-        .take_until(|char| char == '&')
-        .unwrap_or_else(|| input.len());
+fn parse_value(input: &mut QueryParserInput) -> Option<(usize, usize)> {
+    // Get the start index of the name by taking the next index from input.
+    let start = input.take()?;
+    // Continue consuming the input until we reach the terminating ampersand.
+    let end = input.take_until('&')?;
 
-    input.take_until(|char| char != '&');
+    // Move past and ignore any additional occurences of the ampersand character.
+    input.take_while('&');
+
+    // Return the start and end index of the query param value. The raw value
+    // will be conditionally decoded by either the `QueryParamValuesIter` or
+    // `QueryParamValue` type if the value is used.
     Some((start, end))
 }
 
-fn parse_key_value_pair(input: &mut ParserInput) -> Option<(String, (usize, usize))> {
-    parse_key(input).zip(parse_value(input))
+fn parse_entry(input: &mut QueryParserInput) -> Option<(String, (usize, usize))> {
+    parse_name(input).zip(parse_value(input))
 }
 
-impl<'a> QueryParams<'a> {
-    pub(super) fn new(params: &'a ParsedQueryParams, query: &'a str) -> Self {
-        QueryParams { params, query }
-    }
-
-    pub fn first<'b>(&self, key: &'b str) -> QueryParamValue<'a, 'b> {
-        let range = self
-            .params
-            .get(key)
-            .and_then(|values| values.first().copied());
-
-        QueryParamValue {
-            range,
-            name: key,
-            query: self.query,
-        }
-    }
-
-    pub fn get<'b>(&self, key: &'b str) -> QueryParamValues<'a, 'b> {
-        QueryParamValues {
-            name: key,
-            iter: self.params.get(key).map(|values| values.iter()),
-            query: self.query,
-        }
-    }
+struct QueryParserInput<'a> {
+    chars: Peekable<CharIndices<'a>>,
+    value: &'a str,
 }
 
-impl<'a, 'b> QueryParamValue<'a, 'b> {
-    pub fn parse<T>(&self) -> Result<T>
-    where
-        Error: From<<T as FromStr>::Err>,
-        T: FromStr,
-    {
-        self.require()?.parse().map_err(|error| {
-            let mut error = Error::from(error);
-
-            *error.status_mut() = StatusCode::BAD_REQUEST;
-            error
-        })
-    }
-
-    pub fn expect(&self, message: &str) -> Result<Cow<'a, str>> {
-        let (start, end) = match self.range {
-            Some(range) => range,
-            None => {
-                let mut error = Error::new(message.to_owned());
-
-                *error.status_mut() = StatusCode::BAD_REQUEST;
-                return Err(error);
-            }
-        };
-
-        Ok(percent_decode_str(&self.query[start..end]).decode_utf8()?)
-    }
-
-    pub fn require(&self) -> Result<Cow<'a, str>> {
-        let (start, end) = match self.range {
-            Some(range) => range,
-            None => {
-                let mut error = Error::new(format!(
-                    "missing required query parameter: \"{}\"",
-                    self.name
-                ));
-
-                *error.status_mut() = StatusCode::BAD_REQUEST;
-                return Err(error);
-            }
-        };
-
-        Ok(percent_decode_str(&self.query[start..end]).decode_utf8()?)
-    }
-}
-
-impl<'a> ParserInput<'a> {
+impl<'a> QueryParserInput<'a> {
     fn new(value: &'a str) -> Self {
-        ParserInput {
+        Self {
             chars: value.char_indices().peekable(),
             value,
         }
     }
 
-    fn len(&self) -> usize {
-        self.value.len()
+    fn take(&mut self) -> Option<usize> {
+        self.chars.next().map(|(index, _)| index)
     }
 
-    fn peek(&mut self) -> Option<&(usize, char)> {
-        self.chars.peek()
-    }
-
-    fn take_while(&mut self, predicate: impl Fn(char) -> bool) -> Option<usize> {
-        while let Some((index, char)) = self.peek() {
-            if !predicate(*char) {
+    fn take_while(&mut self, predicate: char) -> Option<usize> {
+        while let Some((index, next)) = self.chars.peek() {
+            if predicate != *next {
                 return Some(*index);
             }
 
-            self.next();
+            self.chars.next();
         }
 
-        Some(self.len())
+        Some(self.value.len())
     }
 
-    fn take_until(&mut self, predicate: impl Fn(char) -> bool) -> Option<usize> {
-        while let Some((index, char)) = self.peek() {
-            if predicate(*char) {
+    fn take_until(&mut self, predicate: char) -> Option<usize> {
+        while let Some((index, next)) = self.chars.peek() {
+            if predicate == *next {
                 return Some(*index);
             }
 
-            self.next();
+            self.chars.next();
         }
 
-        Some(self.len())
-    }
-}
-
-impl<'a, 'b> Iterator for QueryParamValues<'a, 'b> {
-    type Item = QueryParamValue<'a, 'b>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(QueryParamValue {
-            name: self.name,
-            range: self.iter.as_mut()?.next().copied(),
-            query: self.query,
-        })
-    }
-}
-
-impl<'a> Iterator for ParserInput<'a> {
-    type Item = (usize, char);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.chars.next()
+        Some(self.value.len())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::request::query_parser::QueryParams;
+    use super::{parse_query_params, QueryParams};
 
-    static URL_QUERY_STRINGS: [&str; 21] = [
+    static QUERY_STRINGS: [&str; 21] = [
         "query=books&category=fiction&sort=asc",
         "query=hello%20world&category=%E2%9C%93",
         "category=books&category=electronics&category=clothing",
@@ -238,15 +127,56 @@ mod tests {
         "query%C3%28=books&category=%C3%28", // Invalid UTF-8 sequence in key
     ];
 
+    fn get_expected_results() -> [QueryParams<&'static str>; 21] {
+        [
+            vec![
+                ("query", (6, 11)),
+                ("category", (21, 28)),
+                ("sort", (34, 37)),
+            ],
+            vec![("query", (6, 19)), ("category", (29, 38))],
+            vec![
+                ("category", (9, 14)),
+                ("category", (24, 35)),
+                ("category", (45, 53)),
+            ],
+            vec![("query", (6, 11))],
+            vec![("query", (6, 22)), ("category", (32, 36))],
+            vec![("query", (6, 11)), ("filter", (19, 45))],
+            vec![
+                ("items[]", (8, 12)),
+                ("items[]", (21, 24)),
+                ("items[]", (33, 41)),
+            ],
+            vec![],
+            vec![("data", (5, 47))],
+            vec![("query", (6, 11)), ("category", (21, 37))],
+            vec![("query", (6, 11)), ("category", (22, 29))],
+            vec![("query", (7, 12)), ("category", (22, 29))],
+            vec![("query", (6, 11))],
+            vec![("query", (6, 11))],
+            vec![("query", (6, 11)), ("category", (21, 28))],
+            vec![("query", (8, 13)), ("category", (25, 32))],
+            vec![("query", (8, 13)), ("category", (25, 32))],
+            vec![("query", (6, 11)), ("category", (23, 32))],
+            vec![("query", (6, 11)), ("category", (21, 30))],
+            vec![("query", (6, 11)), ("category", (21, 27))],
+            vec![("query�(", (12, 17)), ("category", (27, 33))],
+        ]
+    }
+
     #[test]
-    fn parse() {
-        for query_string in URL_QUERY_STRINGS.iter() {
-            let params = super::parse(query_string);
-            let qp = QueryParams::new(&params, query_string);
+    fn parse_query_params_test() {
+        let expected_results = get_expected_results();
 
-            qp.first("query").require().unwrap();
+        for (expected_result_index, query_string) in QUERY_STRINGS.iter().enumerate() {
+            let expected_result = &expected_results[expected_result_index];
+            let actual_result = parse_query_params(query_string);
 
-            println!("{:?}", super::parse(query_string));
+            for (entry_index, entry_value) in actual_result.into_iter().enumerate() {
+                assert_eq!(entry_value.0, expected_result[entry_index].0);
+                assert_eq!(entry_value.1, expected_result[entry_index].1);
+            }
         }
     }
 }

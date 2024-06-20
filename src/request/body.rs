@@ -6,14 +6,10 @@ use crate::Result;
 
 #[derive(Debug)]
 pub struct Body {
-    value: Option<Incoming>,
+    pub(super) inner: Option<Incoming>,
 }
 
 impl Body {
-    pub(super) fn new(value: Incoming) -> Self {
-        Body { value: Some(value) }
-    }
-
     pub async fn read_bytes(&mut self) -> Result<Vec<u8>> {
         let buf = self.aggregate().await?;
         let mut bytes = Vec::with_capacity(buf.remaining());
@@ -44,7 +40,7 @@ impl Body {
     }
 
     async fn aggregate(&mut self) -> Result<impl Buf> {
-        if let Some(value) = self.value.take() {
+        if let Some(value) = self.inner.take() {
             Ok(value.collect().await?.aggregate())
         } else {
             Ok(Empty::new().collect().await?.aggregate())
