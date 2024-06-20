@@ -6,7 +6,7 @@ use std::{collections::VecDeque, future::Future, pin::Pin, sync::Arc};
 
 use crate::{Context, IntoResponse, Response, Result};
 
-pub type BoxFuture<T> = futures::future::BoxFuture<'static, T>;
+pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 pub(crate) type DynMiddleware = Pin<Arc<dyn Middleware>>;
 
 pub trait Middleware: Send + Sync + 'static {
