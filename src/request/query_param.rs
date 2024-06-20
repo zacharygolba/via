@@ -25,7 +25,7 @@ pub struct QueryParamValuesIter<'a> {
 }
 
 impl<'a, 'b> QueryParamValue<'a, 'b> {
-    pub fn parse<T>(&self) -> Result<T>
+    pub fn parse<T>(self) -> Result<T>
     where
         Error: From<<T as FromStr>::Err>,
         T: FromStr,
@@ -37,7 +37,7 @@ impl<'a, 'b> QueryParamValue<'a, 'b> {
         })
     }
 
-    pub fn require(&self) -> Result<Cow<'a, str>> {
+    pub fn require(self) -> Result<Cow<'a, str>> {
         if let Some((start, end)) = self.range {
             let raw_value = &self.query[start..end];
             let decoder = percent_decode_str(raw_value);
