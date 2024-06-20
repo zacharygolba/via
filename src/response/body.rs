@@ -1,3 +1,4 @@
+use futures::Stream;
 use http_body_util::{Full, StreamBody};
 use hyper::body::{Body as HyperBody, Bytes};
 use std::{
@@ -7,7 +8,7 @@ use std::{
 
 use crate::{Error, Result};
 
-pub(super) type BoxStream = futures::stream::BoxStream<'static, Result<Frame>>;
+pub(super) type BoxStream = Pin<Box<dyn Stream<Item = Result<Frame>> + Send + 'static>>;
 pub(super) type Frame = hyper::body::Frame<Bytes>;
 
 pub struct Body {
