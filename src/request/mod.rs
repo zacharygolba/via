@@ -1,14 +1,16 @@
-pub mod query_param;
-
 mod body;
 mod context;
 mod path_param;
+mod query_param;
 mod query_parser;
 
-pub use body::Body;
-pub use context::Context;
-pub use path_param::PathParam;
+pub use self::{
+    body::Body,
+    context::Context,
+    path_param::PathParam,
+    query_param::{QueryParamValue, QueryParamValues, QueryParamValuesIter},
+};
 
-pub(crate) use path_param::PathParams;
+pub(crate) use self::path_param::PathParams;
 
 pub(crate) type IncomingRequest = http::Request<hyper::body::Incoming>;
