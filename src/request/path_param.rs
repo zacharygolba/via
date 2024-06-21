@@ -1,50 +1,45 @@
 use http::StatusCode;
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
 use crate::{Error, Result};
 
-pub type PathParams = HashMap<&'static str, (usize, usize)>;
+pub(crate) type PathParams = Vec<(&'static str, (usize, usize))>;
 
-#[derive(Clone, Copy, Debug)]
-pub struct PathParam<'a> {
-    name: &'a str,
-    value: Option<&'a str>,
+pub struct PathParam<'a, 'b> {
+    name: &'b str,
+    path: &'a str,
+    range: Option<&'a (usize, usize)>,
 }
 
-// TODO:
-// Explore alternative ways to handle request parameters or take inspiration
-// from the API of `std::option::Option` or `std::result::Result`.
-impl<'a> PathParam<'a> {
-    pub(super) fn new(name: &'a str, value: Option<&'a str>) -> Self {
-        PathParam { name, value }
+impl<'a, 'b> PathParam<'a, 'b> {
+    pub(super) fn new(name: &'b str, path: &'a str, range: Option<&'a (usize, usize)>) -> Self {
+        PathParam { name, path, range }
     }
 
-    pub fn parse<T>(&self) -> Result<T>
+    pub fn parse<T>(self) -> Result<T>
     where
         Error: From<<T as FromStr>::Err>,
         T: FromStr,
     {
-        Ok(self.require()?.parse()?)
-    }
-
-    pub fn expect(&self, message: &str) -> Result<&'a str> {
-        self.value.ok_or_else(|| {
-            let mut error = Error::new(message.to_owned());
-
+        self.required()?.parse().map_err(|error| {
+            let mut error = Error::from(error);
             *error.status_mut() = StatusCode::BAD_REQUEST;
             error
         })
     }
 
-    pub fn require(&self) -> Result<&'a str> {
-        self.value.ok_or_else(|| {
-            let mut error = Error::new(format!(
-                "missing required path parameter: \"{}\"",
-                self.name
-            ));
+    pub fn optional(self) -> Option<&'a str> {
+        self.range.map(|(start, end)| &self.path[*start..*end])
+    }
 
-            *error.status_mut() = StatusCode::BAD_REQUEST;
-            error
+    pub fn required(self) -> Result<&'a str> {
+        let name = self.name;
+
+        self.optional().ok_or_else(|| {
+            Error::with_status(
+                format!("missing required path parameter: \"{}\"", name),
+                StatusCode::BAD_REQUEST,
+            )
         })
     }
 }
