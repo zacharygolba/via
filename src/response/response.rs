@@ -53,6 +53,14 @@ impl Response {
         )
     }
 
+    pub fn body(&self) -> &Body {
+        self.inner.body()
+    }
+
+    pub fn body_mut(&mut self) -> &mut Body {
+        self.inner.body_mut()
+    }
+
     pub fn headers(&self) -> &HeaderMap {
         self.inner.headers()
     }
@@ -75,6 +83,12 @@ impl Response {
 }
 
 impl Response {
+    pub(crate) fn new() -> Self {
+        Response {
+            inner: http::Response::new(Body::empty()),
+        }
+    }
+
     pub(crate) fn from_inner(inner: OutgoingResponse) -> Self {
         Response { inner }
     }

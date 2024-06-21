@@ -131,15 +131,12 @@ impl App {
 
         let next = self.router.visit(&mut path_params, &request);
         let request = Request::new(request, path_params);
+        let response = next
+            .call(request)
+            .await
+            .unwrap_or_else(Error::into_infallible_response)
+            .into_inner();
 
-        match next.call(request).await {
-            Ok(response) => Ok(response.into_inner()),
-            // TODO:
-            // Add a function that can safely convert an error into a response.
-            // For example, if an error has a format of Format::Json, serialization
-            // may fail. In this case, we'll want to log the serialization error and
-            // then return the original error as a plain text response.
-            Err(error) => Ok(error.into_response().unwrap().into_inner()),
-        }
+        Ok(response)
     }
 }
