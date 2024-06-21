@@ -8,7 +8,7 @@ use crate::{response::Response, IntoResponse};
 
 type AnyError = Box<dyn StdError + Send + Sync + 'static>;
 
-pub type Result<T = Response, E = Error> = std::result::Result<T, E>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub type Source = (dyn StdError + 'static);
 
 #[derive(Debug)]

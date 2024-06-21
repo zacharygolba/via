@@ -147,7 +147,7 @@ impl StaticServer {
         ))
     }
 
-    async fn respond_to_get_request(&self, context: Context, next: Next) -> Result {
+    async fn respond_to_get_request(&self, context: Context, next: Next) -> Result<Response> {
         let (mime_type, file_path) = self.locate_file(&context).await?;
 
         if let Some(file) = try_open_file(&file_path).await? {
@@ -165,7 +165,7 @@ impl StaticServer {
         }
     }
 
-    async fn respond_to_head_request(&self, context: Context, next: Next) -> Result {
+    async fn respond_to_head_request(&self, context: Context, next: Next) -> Result<Response> {
         let (mime_type, file_path) = self.locate_file(&context).await?;
 
         if let Some(metadata) = try_read_metadata(&file_path).await? {
@@ -184,7 +184,7 @@ impl StaticServer {
 }
 
 impl Middleware for StaticServer {
-    fn call(self: Pin<&Self>, context: Context, next: Next) -> BoxFuture<Result> {
+    fn call(self: Pin<&Self>, context: Context, next: Next) -> BoxFuture<Result<Response>> {
         let middleware = StaticServer {
             config: Arc::clone(&self.config),
         };

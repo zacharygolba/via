@@ -1,8 +1,7 @@
+use http::Method;
 use std::pin::Pin;
 
-use http::Method;
-
-use crate::{BoxFuture, Context, Middleware, Next, Result};
+use crate::{BoxFuture, Context, Middleware, Next, Response, Result};
 
 pub struct AllowMethod<T: Middleware> {
     middleware: Pin<Box<T>>,
@@ -19,7 +18,7 @@ impl<T: Middleware> AllowMethod<T> {
 }
 
 impl<T: Middleware> Middleware for AllowMethod<T> {
-    fn call(self: Pin<&Self>, context: Context, next: Next) -> BoxFuture<Result> {
+    fn call(self: Pin<&Self>, context: Context, next: Next) -> BoxFuture<Result<Response>> {
         if self.predicate == context.method() {
             self.middleware.as_ref().call(context, next)
         } else {
