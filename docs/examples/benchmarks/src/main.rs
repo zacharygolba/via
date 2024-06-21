@@ -9,7 +9,9 @@ async fn main() -> Result<()> {
     }));
 
     let mut unit = app.at("/unit");
-    unit.respond(via::get(|_, _| async { Response::new().status(204).end() }));
+    unit.respond(via::get(|_, _| async {
+        Response::build().status(204).end()
+    }));
 
     app.listen(("127.0.0.1", 8080)).await
 }

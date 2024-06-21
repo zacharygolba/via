@@ -151,7 +151,7 @@ impl StaticServer {
         let (mime_type, file_path) = self.locate_file(&context).await?;
 
         if let Some(file) = try_open_file(&file_path).await? {
-            return Response::new()
+            return Response::build()
                 .header(header::CONTENT_TYPE, mime_type.to_string())
                 .header(header::TRANSFER_ENCODING, "chunked")
                 .body(file)
@@ -169,7 +169,7 @@ impl StaticServer {
         let (mime_type, file_path) = self.locate_file(&context).await?;
 
         if let Some(metadata) = try_read_metadata(&file_path).await? {
-            return Response::new()
+            return Response::build()
                 .header(header::CONTENT_TYPE, mime_type.to_string())
                 .header(header::CONTENT_LENGTH, metadata.len())
                 .end();

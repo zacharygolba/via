@@ -8,8 +8,8 @@ use std::{
 
 use crate::{Error, Result};
 
-pub(super) type BoxStream = Pin<Box<dyn Stream<Item = Result<Frame>> + Send + 'static>>;
-pub(super) type Frame = hyper::body::Frame<Bytes>;
+type BoxStream = Pin<Box<dyn Stream<Item = Result<Frame>> + Send + 'static>>;
+type Frame = hyper::body::Frame<Bytes>;
 
 pub struct Body {
     kind: BodyKind,
