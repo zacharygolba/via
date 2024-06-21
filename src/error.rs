@@ -98,6 +98,16 @@ impl Error {
     }
 }
 
+impl Error {
+    pub(crate) fn with_status(message: String, status: StatusCode) -> Self {
+        Error {
+            format: None,
+            source: Box::new(Bail::new(message)),
+            status,
+        }
+    }
+}
+
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(&self.source, f)

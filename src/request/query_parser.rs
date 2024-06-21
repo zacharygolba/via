@@ -1,7 +1,7 @@
 use percent_encoding::percent_decode_str;
 use std::{iter::Peekable, str::CharIndices};
 
-pub(crate) type QueryParams<T = String> = Vec<(T, (usize, usize))>;
+use super::query_param::QueryParams;
 
 pub fn parse_query_params(input: &str) -> QueryParams {
     let mut query_params = Vec::with_capacity(16);

@@ -1,14 +1,16 @@
 use http::{HeaderMap, Method, Request, Uri, Version};
+use hyper::body::Incoming;
+use smallvec::SmallVec;
 
 use super::{
     path_param::PathParams,
-    query_param::QueryParamValues,
-    query_parser::{parse_query_params, QueryParams},
+    query_param::{QueryParamValues, QueryParams},
+    query_parser::parse_query_params,
     Body, PathParam,
 };
 use crate::{Error, Result};
 
-pub(crate) type IncomingRequest = Request<hyper::body::Incoming>;
+pub(crate) type IncomingRequest = Request<Incoming>;
 
 #[derive(Debug)]
 pub struct Context {
@@ -65,24 +67,31 @@ impl Context {
         self.request.method()
     }
 
-    pub fn param<'a>(&'a self, name: &'a str) -> PathParam<'a> {
-        let value = self
-            .path_params
-            .get(name)
-            .copied()
-            .map(|(start, end)| &self.uri().path()[start..end]);
+    pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
+        let path = self.request.uri().path();
 
-        PathParam::new(name, value)
+        for (param, range) in &self.path_params {
+            if name == *param {
+                return PathParam::new(name, path, Some(range));
+            }
+        }
+
+        PathParam::new(name, path, None)
     }
 
-    pub fn query<'a, 'b>(&'a mut self, name: &'b str) -> QueryParamValues<'a, 'b> {
-        let query = self.request.uri().query().unwrap_or_default();
-        let values = self
+    pub fn query<'a>(&mut self, name: &'a str) -> QueryParamValues<'_, 'a> {
+        let mut values = SmallVec::new();
+
+        let query = self.request.uri().query().unwrap_or("");
+        let params = self
             .query_params
-            .get_or_insert_with(|| parse_query_params(query))
-            .iter()
-            .filter_map(|(param, range)| if name == param { Some(*range) } else { None })
-            .collect();
+            .get_or_insert_with(|| parse_query_params(query));
+
+        for (param, range) in params.iter() {
+            if name == param {
+                values.push(range);
+            }
+        }
 
         QueryParamValues::new(name, query, values)
     }
