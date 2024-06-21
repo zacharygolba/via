@@ -4,9 +4,11 @@ use super::{
     path_param::PathParams,
     query_param::QueryParamValues,
     query_parser::{parse_query_params, QueryParams},
-    Body, IncomingRequest, PathParam,
+    Body, PathParam,
 };
 use crate::{Error, Result};
+
+pub(crate) type IncomingRequest = Request<hyper::body::Incoming>;
 
 #[derive(Debug)]
 pub struct Context {
