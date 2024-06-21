@@ -1,7 +1,7 @@
 use via::{Context, Error, Next, Response, Result};
 use via_serve_static::ServeStatic;
 
-async fn logger(context: Context, next: Next) -> Result {
+async fn logger(context: Context, next: Next) -> Result<Response> {
     let path = context.uri().path().to_string();
     let method = context.method().clone();
 
@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     });
 
     hey.respond(via::get(|context: Context, _: Next| async move {
-        let name = context.param("name").require()?;
+        let name = context.param("name").required()?;
         Response::text(format!("Hey, {}! 👋", name)).end()
     }));
 
@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
     let mut catch_all = app.at("/catch-all/*name");
 
     catch_all.respond(via::get(|context: Context, _: Next| async move {
-        let path = context.param("name").require()?;
+        let path = context.param("name").required()?;
         Response::text(format!("Catch-all: {}", path)).end()
     }));
 
