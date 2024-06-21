@@ -1,13 +1,12 @@
 use http::StatusCode;
 use percent_encoding::percent_decode_str;
-use smallvec::SmallVec;
 use std::{borrow::Cow, slice::Iter, str::FromStr};
 
 use crate::{Error, Result};
 
 pub(crate) type QueryParams<T = String> = Vec<(T, (usize, usize))>;
 
-type ValuesVec<'a> = SmallVec<[&'a (usize, usize); 4]>;
+type ValuesVec<'a> = Vec<&'a (usize, usize)>;
 
 pub struct QueryParamValue<'a, 'b, 'c> {
     name: &'b str,
