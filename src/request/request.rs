@@ -1,6 +1,5 @@
 use http::{HeaderMap, Method, Uri, Version};
 use hyper::body::Incoming;
-use smallvec::SmallVec;
 
 use super::{
     path_param::PathParams,
@@ -80,7 +79,7 @@ impl Request {
     }
 
     pub fn query<'a>(&mut self, name: &'a str) -> QueryParamValues<'_, 'a> {
-        let mut values = SmallVec::new();
+        let mut values = Vec::new();
 
         let query = self.inner.uri().query().unwrap_or("");
         let params = self
