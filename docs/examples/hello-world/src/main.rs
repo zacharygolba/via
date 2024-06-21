@@ -1,19 +1,14 @@
-use via::{Error, Next, Request, Response, Result};
+use via::{middleware::ErrorBoundary, Error, Next, Request, Response, Result};
 use via_serve_static::ServeStatic;
 
 async fn logger(request: Request, next: Next) -> Result<Response> {
     let path = request.uri().path().to_string();
     let method = request.method().clone();
 
-    next.call(request)
-        .await
-        .inspect(|response| {
-            let status = response.status();
-            println!("{} {} => {}", method, path, status);
-        })
-        .inspect_err(|error| {
-            eprintln!("{}", error);
-        })
+    next.call(request).await.inspect(|response| {
+        let status = response.status();
+        println!("{} {} => {}", method, path, status);
+    })
 }
 
 #[tokio::main]
@@ -21,6 +16,10 @@ async fn main() -> Result<()> {
     let mut app = via::app();
 
     app.include(logger);
+
+    app.include(ErrorBoundary::inspect(|error| {
+        eprintln!("ERROR: {}", error);
+    }));
 
     let mut hey = app.at("/hey/:name");
 
