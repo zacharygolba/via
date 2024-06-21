@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use super::DynMiddleware;
-use crate::{Context, Response, Result};
+use crate::{Request, Response, Result};
 
 pub struct Next {
     stack: VecDeque<DynMiddleware>,
@@ -12,9 +12,9 @@ impl Next {
         Next { stack }
     }
 
-    pub async fn call(mut self, context: Context) -> Result<Response> {
+    pub async fn call(mut self, request: Request) -> Result<Response> {
         if let Some(middleware) = self.stack.pop_front() {
-            middleware.as_ref().call(context, self).await
+            middleware.as_ref().call(request, self).await
         } else {
             Response::text("Not Found").status(404).end()
         }
