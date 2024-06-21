@@ -1,4 +1,5 @@
-mod body;
+pub mod body;
+
 mod builder;
 mod convert;
 mod response;

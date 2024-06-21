@@ -1,7 +1,7 @@
 mod api;
 mod database;
 
-use via::{Error, IntoResponse, Next, Request, Result};
+use via::{middleware::ErrorBoundary, Next, Request, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,38 +17,27 @@ async fn main() -> Result<()> {
         let path = request.uri().path().to_owned();
 
         async move {
-            let (response, status) = match next.call(request).await {
-                Ok(response) => {
-                    let status = response.status();
-                    (response, status)
-                }
-                Err(error) => {
-                    let status = error.status();
-                    (error.into_response().unwrap(), status)
-                }
-            };
-
-            println!("{} {} => {}", method, path, status);
-            Ok::<_, Error>(response)
+            next.call(request).await.inspect(|response| {
+                println!("{} {} => {}", method, path, response.status());
+            })
         }
     });
 
+    app.include(ErrorBoundary::inspect(|error| {
+        eprintln!("ERROR: {}", error);
+    }));
+
     let mut api = app.at("/api");
+
+    // Errors that occur in middleware or responders nested within the /api
+    // namespace will have there responses converted to JSON.
+    api.include(ErrorBoundary::map(|error| error.json()));
 
     // Include a reference to the database pool in `request` for middleware
     // nested within the /api namespace.
     api.include(move |mut request: Request, next: Next| {
         request.insert(pool.clone());
         next.call(request)
-    });
-
-    // Errors that occur in middleware or responders nested within the /api
-    // namespace will have there responses converted to JSON.
-    api.include(|request: Request, next: Next| async move {
-        match next.call(request).await {
-            result @ Ok(_) => result,
-            Err(error) => Err(error.json()),
-        }
     });
 
     api.at("/posts").scope(|posts| {

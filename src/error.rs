@@ -99,6 +99,40 @@ impl Error {
 }
 
 impl Error {
+    pub(crate) fn into_infallible_response(self) -> Response {
+        use http::header::HeaderValue;
+
+        let status_code = self.status;
+        let message = self.to_string();
+
+        match self.into_response() {
+            Ok(response) => response,
+            Err(error) => {
+                let mut response = Response::new();
+
+                response.headers_mut().insert(
+                    http::header::CONTENT_TYPE,
+                    HeaderValue::from_static("text/plain; charset=utf-8"),
+                );
+
+                if let Some(length) = HeaderValue::from_str(&message.len().to_string()).ok() {
+                    response
+                        .headers_mut()
+                        .insert(http::header::CONTENT_LENGTH, length);
+                }
+
+                *response.status_mut() = status_code;
+                *response.body_mut() = message.into();
+
+                eprintln!("Failed to convert error into response: {}", error);
+
+                response
+            }
+        }
+    }
+}
+
+impl Error {
     pub(crate) fn with_status(message: String, status: StatusCode) -> Self {
         Error {
             format: None,
