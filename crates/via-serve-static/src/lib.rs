@@ -9,7 +9,7 @@ use tokio::fs::{self, File};
 use via::{
     http::{header, Method, StatusCode},
     middleware::{BoxFuture, Middleware},
-    Context, Endpoint, Error, Next, Response, Result,
+    Endpoint, Error, Next, Request, Response, Result,
 };
 
 pub struct ServeStatic<'a> {
@@ -125,11 +125,11 @@ impl StaticServer {
         self.config.public_dir.join(path.trim_start_matches('/'))
     }
 
-    /// Locates the file based on the path parameter extracted from the context.
+    /// Locates the file based on the path parameter extracted from the request.
     /// If the path parameter is a directory, it will attempt to locate an index
     /// file.
-    async fn locate_file(&self, context: &Context) -> Result<(Mime, PathBuf)> {
-        let path_param_value = context.param(&self.config.path_param).required()?;
+    async fn locate_file(&self, request: &Request) -> Result<(Mime, PathBuf)> {
+        let path_param_value = request.param(&self.config.path_param).required()?;
         let mut file_path = self.expand_path(&path_param_value);
 
         if file_path.is_dir() {
@@ -147,8 +147,8 @@ impl StaticServer {
         ))
     }
 
-    async fn respond_to_get_request(&self, context: Context, next: Next) -> Result<Response> {
-        let (mime_type, file_path) = self.locate_file(&context).await?;
+    async fn respond_to_get_request(&self, request: Request, next: Next) -> Result<Response> {
+        let (mime_type, file_path) = self.locate_file(&request).await?;
 
         if let Some(file) = try_open_file(&file_path).await? {
             return Response::build()
@@ -159,14 +159,14 @@ impl StaticServer {
         }
 
         if self.config.fall_through {
-            next.call(context).await
+            next.call(request).await
         } else {
             Response::text("Not Found").status(404).end()
         }
     }
 
-    async fn respond_to_head_request(&self, context: Context, next: Next) -> Result<Response> {
-        let (mime_type, file_path) = self.locate_file(&context).await?;
+    async fn respond_to_head_request(&self, request: Request, next: Next) -> Result<Response> {
+        let (mime_type, file_path) = self.locate_file(&request).await?;
 
         if let Some(metadata) = try_read_metadata(&file_path).await? {
             return Response::build()
@@ -176,7 +176,7 @@ impl StaticServer {
         }
 
         if self.config.fall_through {
-            next.call(context).await
+            next.call(request).await
         } else {
             Response::text("Not Found").status(404).end()
         }
@@ -184,18 +184,18 @@ impl StaticServer {
 }
 
 impl Middleware for StaticServer {
-    fn call(self: Pin<&Self>, context: Context, next: Next) -> BoxFuture<Result<Response>> {
+    fn call(self: Pin<&Self>, request: Request, next: Next) -> BoxFuture<Result<Response>> {
         let middleware = StaticServer {
             config: Arc::clone(&self.config),
         };
 
         Box::pin(async move {
-            if context.method() == Method::GET {
-                middleware.respond_to_get_request(context, next).await
-            } else if context.method() == Method::HEAD {
-                middleware.respond_to_head_request(context, next).await
+            if request.method() == Method::GET {
+                middleware.respond_to_get_request(request, next).await
+            } else if request.method() == Method::HEAD {
+                middleware.respond_to_head_request(request, next).await
             } else if middleware.config.fall_through {
-                next.call(context).await
+                next.call(request).await
             } else {
                 Response::text("Method Not Allowed").status(405).end()
             }

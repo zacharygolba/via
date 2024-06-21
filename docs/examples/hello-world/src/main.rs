@@ -1,11 +1,11 @@
-use via::{Context, Error, Next, Response, Result};
+use via::{Error, Next, Request, Response, Result};
 use via_serve_static::ServeStatic;
 
-async fn logger(context: Context, next: Next) -> Result<Response> {
-    let path = context.uri().path().to_string();
-    let method = context.method().clone();
+async fn logger(request: Request, next: Next) -> Result<Response> {
+    let path = request.uri().path().to_string();
+    let method = request.method().clone();
 
-    next.call(context)
+    next.call(request)
         .await
         .inspect(|response| {
             let status = response.status();
@@ -24,32 +24,32 @@ async fn main() -> Result<()> {
 
     let mut hey = app.at("/hey/:name");
 
-    hey.include(|context: Context, next: Next| async move {
+    hey.include(|request: Request, next: Next| async move {
         println!("Called before the request is handled");
-        let response = next.call(context).await?;
+        let response = next.call(request).await?;
         println!("Called after the request is handled");
         Ok::<_, Error>(response)
     });
 
-    hey.respond(via::get(|context: Context, _: Next| async move {
-        let name = context.param("name").required()?;
+    hey.respond(via::get(|request: Request, _: Next| async move {
+        let name = request.param("name").required()?;
         Response::text(format!("Hey, {}! 👋", name)).end()
     }));
 
     let mut id = app.at("/:id");
 
-    id.respond(via::get(|context: Context, next: Next| async move {
-        if let Ok(id) = context.param("id").parse::<i32>() {
+    id.respond(via::get(|request: Request, next: Next| async move {
+        if let Ok(id) = request.param("id").parse::<i32>() {
             Response::text(format!("ID: {}", id)).end()
         } else {
-            next.call(context).await
+            next.call(request).await
         }
     }));
 
     let mut catch_all = app.at("/catch-all/*name");
 
-    catch_all.respond(via::get(|context: Context, _: Next| async move {
-        let path = context.param("name").required()?;
+    catch_all.respond(via::get(|request: Request, _: Next| async move {
+        let path = request.param("name").required()?;
         Response::text(format!("Catch-all: {}", path)).end()
     }));
 
