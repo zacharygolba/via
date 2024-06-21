@@ -1,4 +1,4 @@
-use http::{HeaderMap, Method, Request, Uri, Version};
+use http::{HeaderMap, Method, Uri, Version};
 use hyper::body::Incoming;
 use smallvec::SmallVec;
 
@@ -10,19 +10,19 @@ use super::{
 };
 use crate::{Error, Result};
 
-pub(crate) type IncomingRequest = Request<Incoming>;
+pub(crate) type IncomingRequest = http::Request<Incoming>;
 
 #[derive(Debug)]
-pub struct Context {
-    request: Request<Body>,
+pub struct Request {
+    inner: http::Request<Body>,
     path_params: PathParams,
     query_params: Option<QueryParams>,
 }
 
-impl Context {
-    pub(crate) fn new(request: IncomingRequest, path_params: PathParams) -> Self {
-        Context {
-            request: request.map(|body| Body { inner: Some(body) }),
+impl Request {
+    pub(crate) fn new(inner: IncomingRequest, path_params: PathParams) -> Self {
+        Request {
+            inner: inner.map(|body| Body { inner: Some(body) }),
             query_params: None,
             path_params,
         }
@@ -30,19 +30,19 @@ impl Context {
 
     /// Returns a reference to the body associated with the request.
     pub fn body(&self) -> &Body {
-        self.request.body()
+        self.inner.body()
     }
 
     /// Returns a mutable reference to the body associated with the request.
     pub fn body_mut(&mut self) -> &mut Body {
-        self.request.body_mut()
+        self.inner.body_mut()
     }
 
     pub fn get<T>(&self) -> Result<&T>
     where
         T: Send + Sync + 'static,
     {
-        if let Some(value) = self.request.extensions().get() {
+        if let Some(value) = self.inner.extensions().get() {
             Ok(value)
         } else {
             Err(Error::new("unknown type".to_owned()))
@@ -52,23 +52,23 @@ impl Context {
     /// Returns a reference to a map that contains the headers associated with
     /// the request.
     pub fn headers(&self) -> &HeaderMap {
-        self.request.headers()
+        self.inner.headers()
     }
 
     pub fn insert<T>(&mut self, value: T)
     where
         T: Clone + Send + Sync + 'static,
     {
-        self.request.extensions_mut().insert(value);
+        self.inner.extensions_mut().insert(value);
     }
 
     /// Returns a reference to the HTTP method associated with the request.
     pub fn method(&self) -> &Method {
-        self.request.method()
+        self.inner.method()
     }
 
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
-        let path = self.request.uri().path();
+        let path = self.inner.uri().path();
 
         for (param, range) in &self.path_params {
             if name == *param {
@@ -82,7 +82,7 @@ impl Context {
     pub fn query<'a>(&mut self, name: &'a str) -> QueryParamValues<'_, 'a> {
         let mut values = SmallVec::new();
 
-        let query = self.request.uri().query().unwrap_or("");
+        let query = self.inner.uri().query().unwrap_or("");
         let params = self
             .query_params
             .get_or_insert_with(|| parse_query_params(query));
@@ -98,11 +98,11 @@ impl Context {
 
     /// Returns a reference to the uri associated with the request.
     pub fn uri(&self) -> &Uri {
-        self.request.uri()
+        self.inner.uri()
     }
 
     /// Returns the HTTP version associated with the request.
     pub fn version(&self) -> Version {
-        self.request.version()
+        self.inner.version()
     }
 }

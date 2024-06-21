@@ -10,7 +10,7 @@ pub use http;
 pub use crate::{
     error::{Error, Result},
     middleware::{Middleware, Next},
-    request::Context,
+    request::Request,
     response::{IntoResponse, Response},
     router::Endpoint,
 };
@@ -130,9 +130,9 @@ impl App {
         let mut path_params = PathParams::new();
 
         let next = self.router.visit(&mut path_params, &request);
-        let context = Context::new(request, path_params);
+        let request = Request::new(request, path_params);
 
-        match next.call(context).await {
+        match next.call(request).await {
             Ok(response) => Ok(response.into_inner()),
             // TODO:
             // Add a function that can safely convert an error into a response.
