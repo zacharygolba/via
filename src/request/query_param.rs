@@ -38,21 +38,19 @@ impl<'a, 'b, 'c> QueryParamValue<'a, 'b, 'c> {
         })
     }
 
-    pub fn required(self) -> Result<Cow<'a, str>> {
-        if let Some((start, end)) = self.range {
-            let raw_value = &self.query[*start..*end];
-            let decoder = percent_decode_str(raw_value);
+    pub fn optional(self) -> Option<&'a str> {
+        self.range.map(|(start, end)| &self.query[*start..*end])
+    }
 
-            return Ok(decoder.decode_utf8_lossy());
-        }
+    pub fn required(self) -> Result<&'a str> {
+        let name = self.name;
 
-        let mut error = Error::new(format!(
-            "missing required query parameter: \"{}\"",
-            self.name
-        ));
-
-        *error.status_mut() = StatusCode::BAD_REQUEST;
-        Err(error)
+        self.optional().ok_or_else(|| {
+            Error::with_status(
+                format!("missing required query parameter: \"{}\"", name),
+                StatusCode::BAD_REQUEST,
+            )
+        })
     }
 }
 
