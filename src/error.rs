@@ -2,6 +2,7 @@ use http::StatusCode;
 use std::{
     error::Error as StdError,
     fmt::{self, Debug, Display, Formatter},
+    io::{Error as IoError, ErrorKind as IoErrorKind},
 };
 
 use crate::{response::Response, IntoResponse};
@@ -70,6 +71,20 @@ impl Error {
             format: None,
             source: Box::new(Bail::new(message)),
             status: StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    pub fn from_io_error(error: IoError) -> Self {
+        let status = match error.kind() {
+            IoErrorKind::NotFound => StatusCode::NOT_FOUND,
+            IoErrorKind::PermissionDenied => StatusCode::FORBIDDEN,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+
+        Error {
+            format: None,
+            source: Box::new(error),
+            status,
         }
     }
 
