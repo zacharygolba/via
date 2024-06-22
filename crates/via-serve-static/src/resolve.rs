@@ -1,0 +1,84 @@
+use mime_guess::Mime;
+use std::{
+    fs::{self, File, Metadata},
+    io::{Read, Result as IoResult},
+    path::PathBuf,
+};
+use tokio::task;
+
+const CHUNK_SIZE: usize = 1024 * 1024 * 10;
+
+pub(crate) struct ResolvedFile {
+    pub data: Option<Vec<u8>>,
+    pub path: PathBuf,
+    pub metadata: Metadata,
+    pub mime_type: Mime,
+}
+
+/// Resolves a file path to a `ResolvedFile` and conditionally loads the file
+/// data into memory if the file size is less than `CHUNK_SIZE` constant.
+pub async fn resolve_file(path: PathBuf) -> IoResult<ResolvedFile> {
+    task::spawn_blocking(|| resolve_file_blocking(path)).await?
+}
+
+/// Resolves a file path to a `ResolvedFile` without loading the file data into memory.
+pub async fn resolve_metadata(path: PathBuf) -> IoResult<ResolvedFile> {
+    task::spawn_blocking(|| resolve_metadata_blocking(path)).await?
+}
+
+fn resolve_file_blocking(path: PathBuf) -> IoResult<ResolvedFile> {
+    let mut resolved_file = resolve_metadata_blocking(path)?;
+    let content_length = resolved_file.metadata.len();
+
+    if content_length < CHUNK_SIZE as u64 {
+        let mut buffer = Vec::new();
+        let mut file = File::open(&resolved_file.path)?;
+
+        file.read_to_end(&mut buffer)?;
+        resolved_file.data = Some(buffer);
+    }
+
+    IoResult::Ok(resolved_file)
+}
+
+fn resolve_metadata_blocking(path: PathBuf) -> IoResult<ResolvedFile> {
+    let path = resolve_path_blocking(path);
+    let metadata = fs::metadata(&path)?;
+    let mime_type = mime_guess::from_path(&path).first_or_octet_stream();
+
+    IoResult::Ok(ResolvedFile {
+        path,
+        metadata,
+        mime_type,
+        data: None,
+    })
+}
+
+/// Resolves a path to a file on the filesystem. If the path is a directory, it will
+/// attempt to resolve an index.html or index.htm file. If the path is missing an
+/// extension, it will attempt to resolve it as an HTML file.
+fn resolve_path_blocking(path: PathBuf) -> PathBuf {
+    let mut path = path;
+
+    if path.is_dir() {
+        // The path is a directory. Check and see if there's an index.html file.
+        path = path.join("index.html");
+
+        if !path.exists() {
+            // There wasn't an index.html at the root of the directory.
+            // We'll fallback to index.htm if it exists.
+            path = path.join("index.htm");
+        }
+    } else if !path.exists() && path.extension().is_none() {
+        // The file doesn't exist and there isn't an extension in `path`. Try to
+        // resolve it as an HTML file.
+        path = path.with_extension("html");
+
+        if !path.exists() {
+            // The file doesn't exist with an `.html` extension. Try `.htm`.
+            path = path.with_extension("htm");
+        }
+    }
+
+    path
+}
