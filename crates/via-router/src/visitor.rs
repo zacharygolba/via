@@ -134,6 +134,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     is_exact_match: self.path.is_last_segment(depth),
                     node: next,
                 });
+
                 // Continue to match descendants of `next` against the path
                 // segment at the next depth.
                 self.match_at_depth(depth + 1, next);
