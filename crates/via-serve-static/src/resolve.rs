@@ -1,7 +1,7 @@
 use mime_guess::Mime;
 use std::{
     fs::{self, File, Metadata},
-    io::{Read, Result as IoResult},
+    io::{self, Read},
     path::PathBuf,
 };
 use tokio::task;
@@ -17,16 +17,16 @@ pub(crate) struct ResolvedFile {
 
 /// Resolves a file path to a `ResolvedFile` and conditionally loads the file
 /// data into memory if the file size is less than `CHUNK_SIZE` constant.
-pub async fn resolve_file(path: PathBuf) -> IoResult<ResolvedFile> {
+pub async fn resolve_file(path: PathBuf) -> io::Result<ResolvedFile> {
     task::spawn_blocking(|| resolve_file_blocking(path)).await?
 }
 
 /// Resolves a file path to a `ResolvedFile` without loading the file data into memory.
-pub async fn resolve_metadata(path: PathBuf) -> IoResult<ResolvedFile> {
+pub async fn resolve_metadata(path: PathBuf) -> io::Result<ResolvedFile> {
     task::spawn_blocking(|| resolve_metadata_blocking(path)).await?
 }
 
-fn resolve_file_blocking(path: PathBuf) -> IoResult<ResolvedFile> {
+fn resolve_file_blocking(path: PathBuf) -> io::Result<ResolvedFile> {
     let mut resolved_file = resolve_metadata_blocking(path)?;
     let content_length = resolved_file.metadata.len();
 
@@ -38,15 +38,15 @@ fn resolve_file_blocking(path: PathBuf) -> IoResult<ResolvedFile> {
         resolved_file.data = Some(buffer);
     }
 
-    IoResult::Ok(resolved_file)
+    Ok(resolved_file)
 }
 
-fn resolve_metadata_blocking(path: PathBuf) -> IoResult<ResolvedFile> {
+fn resolve_metadata_blocking(path: PathBuf) -> io::Result<ResolvedFile> {
     let path = resolve_path_blocking(path);
     let metadata = fs::metadata(&path)?;
     let mime_type = mime_guess::from_path(&path).first_or_octet_stream();
 
-    IoResult::Ok(ResolvedFile {
+    Ok(ResolvedFile {
         path,
         metadata,
         mime_type,
