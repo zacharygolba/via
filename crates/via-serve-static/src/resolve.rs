@@ -6,7 +6,12 @@ use std::{
 };
 use tokio::task;
 
-const CHUNK_SIZE: usize = 1024 * 1024 * 10;
+/// The maximum file size that will be eagerly read into memory. As a performance
+/// optimization, small files will be read into memory immediately to avoid the
+/// overhead of calling `tokio::task::spawn_blocking` multiple times.
+///
+/// The current value is set to `10MB`.
+const EAGER_READ_THRESHOLD: u64 = 1024 * 1024 * 10;
 
 pub(crate) struct ResolvedFile {
     pub data: Option<Vec<u8>>,
@@ -15,8 +20,8 @@ pub(crate) struct ResolvedFile {
     pub mime_type: Mime,
 }
 
-/// Resolves a file path to a `ResolvedFile` and conditionally loads the file
-/// data into memory if the file size is less than `CHUNK_SIZE` constant.
+/// Resolves a file path to a `ResolvedFile` and conditionally loads the file a
+/// data into memory if the file size is less than `EAGER_READ_THRESHOLD` constant.
 pub async fn resolve_file(path: PathBuf) -> io::Result<ResolvedFile> {
     task::spawn_blocking(|| resolve_file_blocking(path)).await?
 }
@@ -30,7 +35,7 @@ fn resolve_file_blocking(path: PathBuf) -> io::Result<ResolvedFile> {
     let mut resolved_file = resolve_metadata_blocking(path)?;
     let content_length = resolved_file.metadata.len();
 
-    if content_length < CHUNK_SIZE as u64 {
+    if content_length < EAGER_READ_THRESHOLD {
         let mut buffer = Vec::new();
         let mut file = File::open(&resolved_file.path)?;
 
@@ -54,8 +59,8 @@ fn resolve_metadata_blocking(path: PathBuf) -> io::Result<ResolvedFile> {
     })
 }
 
-/// Resolves a path to a file on the filesystem. If the path is a directory, it will
-/// attempt to resolve an index.html or index.htm file. If the path is missing an
+/// Resolves a path to a file on the file system. If the path is a directory, it will
+/// attempt to resolve an `index.html` or `index.htm` file. If the path is missing an
 /// extension, it will attempt to resolve it as an HTML file.
 fn resolve_path_blocking(path: PathBuf) -> PathBuf {
     let mut path = path;

@@ -36,7 +36,7 @@ impl<'a> ServeStatic<'a> {
         self
     }
 
-    /// Attempts to add the static server middleware at the provided `location`. If
+    /// Attempts to add the static server middleware at the provided `endpoint`. If
     /// the provided `public_dir` is a relative path, it will be resolved relative to
     /// the current working directory. If the `public_dir` is not a directory or the
     /// `location` does not have a path parameter, an error will be returned.
@@ -88,6 +88,8 @@ impl<'a> ServeStatic<'a> {
 }
 
 impl ServerConfig {
+    /// Extracts the relative file path from the request using the configured
+    /// path parameter name and joins it with the public directory.
     pub(crate) fn extract_path(&self, request: &Request) -> Result<PathBuf> {
         let relative_path = request.param(&self.path_param).required()?;
         Ok(self.public_dir.join(relative_path.trim_matches('/')))
