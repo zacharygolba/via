@@ -131,7 +131,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
             } else {
                 self.matches.push(Match {
                     path_segment_range,
-                    is_exact_match: self.path.is_last_segment(depth),
+                    is_exact_match: self.path.get(depth + 1).is_none(),
                     node: next,
                 });
 
