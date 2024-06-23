@@ -1,4 +1,3 @@
-use smallvec::SmallVec;
 use std::{iter::Peekable, str::CharIndices};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -13,7 +12,7 @@ pub(crate) enum Pattern {
 /// path separated by `/`.
 pub(crate) struct PathSegments<'a> {
     pub(crate) value: &'a str,
-    segments: SmallVec<[(usize, usize); 6]>,
+    segments: Vec<(usize, usize)>,
 }
 
 /// An iterator that splits the path into segments and yields a key-value pair
@@ -52,10 +51,15 @@ impl PartialEq<Pattern> for &str {
 
 impl<'a> PathSegments<'a> {
     pub(crate) fn new(value: &'a str) -> Self {
-        PathSegments {
-            value,
-            segments: SplitPath::new(value).collect(),
+        let mut segments = Vec::new();
+
+        segments.reserve_exact(10);
+
+        for segment in SplitPath::new(value) {
+            segments.push(segment);
         }
+
+        PathSegments { value, segments }
     }
 
     /// Returns the value of the current path segment that we are attempting to
@@ -63,12 +67,6 @@ impl<'a> PathSegments<'a> {
     /// attempting to match a root url path (i.e `"/"`).
     pub(crate) fn get(&self, index: usize) -> Option<&(usize, usize)> {
         self.segments.get(index)
-    }
-
-    /// Return `true` if the segment located at `index` is the last segment in
-    /// the url path.
-    pub(crate) fn is_last_segment(&self, index: usize) -> bool {
-        index == self.segments.len() - 1
     }
 
     /// Returns a key value pair containing the start offset of the path segment
