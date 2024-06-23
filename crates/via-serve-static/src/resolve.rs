@@ -36,11 +36,11 @@ fn resolve_file_blocking(path: PathBuf) -> io::Result<ResolvedFile> {
     let content_length = resolved_file.metadata.len();
 
     if content_length < EAGER_READ_THRESHOLD {
-        let mut buffer = Vec::new();
+        let mut buf = Vec::with_capacity(content_length as usize);
         let mut file = File::open(&resolved_file.path)?;
 
-        file.read_to_end(&mut buffer)?;
-        resolved_file.data = Some(buffer);
+        file.read_to_end(&mut buf)?;
+        resolved_file.data = Some(buf);
     }
 
     Ok(resolved_file)
