@@ -7,8 +7,8 @@ pub fn parse_query_params(input: &str) -> QueryParams {
     let mut query_params = Vec::with_capacity(16);
     let mut input = QueryParserInput::new(input);
 
-    while let Some((name, value)) = parse_entry(&mut input) {
-        query_params.push((name, value));
+    while let Some(query_param) = parse_query_param(&mut input) {
+        query_params.push(query_param);
     }
 
     query_params
@@ -50,7 +50,7 @@ fn parse_value(input: &mut QueryParserInput) -> Option<(usize, usize)> {
     Some((start, end))
 }
 
-fn parse_entry(input: &mut QueryParserInput) -> Option<(String, (usize, usize))> {
+fn parse_query_param(input: &mut QueryParserInput) -> Option<(String, (usize, usize))> {
     parse_name(input).zip(parse_value(input))
 }
 
