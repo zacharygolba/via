@@ -1,5 +1,5 @@
 use via::{middleware::ErrorBoundary, Error, Next, Request, Response, Result};
-use via_serve_static::ServeStatic;
+use via_serve_static::serve_static;
 
 async fn logger(request: Request, next: Next) -> Result<Response> {
     let path = request.uri().path().to_string();
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
         Response::text(format!("Catch-all: {}", path)).end()
     }));
 
-    ServeStatic::new(app.at("/*path")).serve("./public")?;
+    serve_static(app.at("/*path")).serve("./public")?;
 
     app.listen(("127.0.0.1", 8080)).await
 }
