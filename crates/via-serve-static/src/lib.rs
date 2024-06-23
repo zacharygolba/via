@@ -18,16 +18,16 @@ pub(crate) struct ServerConfig {
     public_dir: PathBuf,
 }
 
-impl<'a> ServeStatic<'a> {
-    /// Returns a builder struct used to configure the static server middleware.
-    /// The provided `endpoint` must have a path parameter.
-    pub fn new(endpoint: Endpoint<'a>) -> Self {
-        ServeStatic {
-            fall_through: true,
-            endpoint,
-        }
+/// Returns a builder struct used to configure the static server middleware.
+/// The provided `endpoint` must have a path parameter.
+pub fn serve_static(endpoint: Endpoint) -> ServeStatic {
+    ServeStatic {
+        fall_through: true,
+        endpoint,
     }
+}
 
+impl<'a> ServeStatic<'a> {
     /// Configures whether or not to fall through to the next middleware if a file
     /// is not found or if the request is made with unsupported HTTP method. The
     /// default value is `true`.
