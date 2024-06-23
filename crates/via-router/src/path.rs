@@ -1,6 +1,6 @@
-use std::{iter::Peekable, str::CharIndices};
+use std::str::CharIndices;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Pattern {
     CatchAll(&'static str),
     Dynamic(&'static str),
@@ -17,10 +17,11 @@ pub(crate) struct PathSegments<'a> {
 
 /// An iterator that splits the path into segments and yields a key-value pair
 /// containing the start and end offset of the substring separated by `/`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct SplitPath<'a> {
-    chars: Peekable<CharIndices<'a>>,
-    value: &'a str,
+    len: usize,
+    iter: CharIndices<'a>,
+    offset: usize,
 }
 
 impl From<&'static str> for Pattern {
@@ -84,15 +85,16 @@ impl<'a> PathSegments<'a> {
 impl<'a> SplitPath<'a> {
     pub(crate) fn new(value: &'a str) -> Self {
         SplitPath {
-            chars: value.char_indices().peekable(),
-            value,
+            len: value.len(),
+            iter: value.char_indices(),
+            offset: 0,
         }
     }
 }
 
 impl SplitPath<'static> {
     pub(crate) fn into_patterns(self) -> impl Iterator<Item = Pattern> {
-        let value = self.value;
+        let value = self.iter.as_str();
         self.map(|(start, end)| Pattern::from(&value[start..end]))
     }
 }
@@ -101,23 +103,76 @@ impl<'a> Iterator for SplitPath<'a> {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut start = None;
-        let mut end = self.value.len();
+        let mut start = self.offset;
+        let mut end = self.len;
 
-        while let (index, '/') = *self.chars.peek()? {
-            start = Some(index + 1);
-            self.chars.next();
+        while let (index, '/') = self.iter.next()? {
+            start = index + 1;
         }
 
-        while let Some((index, value)) = self.chars.peek() {
-            if *value == '/' {
-                end = *index;
+        for (index, char) in &mut self.iter {
+            if char == '/' {
+                end = index;
                 break;
             }
-
-            self.chars.next();
         }
 
-        Some((start?, end))
+        self.offset = end + 1;
+
+        Some((start, end))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SplitPath;
+
+    const PATHS: [&str; 15] = [
+        "/home/about",
+        "/products/item/123",
+        "/blog/posts/2024/june",
+        "/user/profile/settings",
+        "/services/contact",
+        "/search/results?q=books",
+        "/news/latest",
+        "/portfolio/designs",
+        "/faq",
+        "/support/tickets",
+        "//home//about",
+        "/products//item/123",
+        "/blog/posts/2024//june",
+        "/user//profile/settings",
+        "/services/contact//us",
+    ];
+
+    fn get_expected_results() -> [Vec<(usize, usize)>; 15] {
+        [
+            vec![(1, 5), (6, 11)],
+            vec![(1, 9), (10, 14), (15, 18)],
+            vec![(1, 5), (6, 11), (12, 16), (17, 21)],
+            vec![(1, 5), (6, 13), (14, 22)],
+            vec![(1, 9), (10, 17)],
+            vec![(1, 7), (8, 23)],
+            vec![(1, 5), (6, 12)],
+            vec![(1, 10), (11, 18)],
+            vec![(1, 4)],
+            vec![(1, 8), (9, 16)],
+            vec![(2, 6), (8, 13)],
+            vec![(1, 9), (11, 15), (16, 19)],
+            vec![(1, 5), (6, 11), (12, 16), (18, 22)],
+            vec![(1, 5), (7, 14), (15, 23)],
+            vec![(1, 9), (10, 17), (19, 21)],
+        ]
+    }
+
+    #[test]
+    fn test_split_path() {
+        let expected_results = get_expected_results();
+
+        for (path_index, path_value) in PATHS.iter().enumerate() {
+            for (segment_index, segment_value) in SplitPath::new(path_value).enumerate() {
+                assert_eq!(segment_value, expected_results[path_index][segment_index]);
+            }
+        }
     }
 }
