@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 mod path;
 mod routes;
 mod visitor;
