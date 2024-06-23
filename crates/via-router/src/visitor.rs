@@ -46,17 +46,21 @@ impl<'a, T> Match<'a, T> {
 
 impl<'a, 'b, T> Visitor<'a, 'b, T> {
     pub(crate) fn new(routes: &'a RouteStore<T>, path: &'b str) -> Self {
+        let mut matches = Vec::new();
+
+        matches.reserve_exact(32);
+
         Visitor {
             routes,
+            matches,
             path: PathSegments::new(path),
-            matches: Vec::with_capacity(32),
         }
     }
 
     pub(crate) fn visit(mut self, root: &'a Node<T>) -> Vec<Match<'a, T>> {
         // The root node is a special case that we always consider a match.
         self.matches.push(Match {
-            is_exact_match: self.path.value == "/",
+            is_exact_match: self.path.get(0).is_none(),
             path_segment_range: (0, 0),
             node: root,
         });
@@ -103,41 +107,52 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         node: &'a Node<T>,
     ) {
         let (start, end) = path_segment_range;
+        let is_exact_match = self.path.get(depth + 1).is_none();
         let path_segment_value = &self.path.value[start..end];
 
         for index in node.entries() {
             let next = &self.routes[*index];
 
-            if path_segment_value != next.pattern {
-                // The path segment does not match the pattern of the next node.
-                // We can skip this node and continue to search for a match.
-                continue;
-            }
+            match next.pattern {
+                Pattern::CatchAll(_) => {
+                    // The next node has a `CatchAll` pattern and will be considered
+                    // an exact match. Due to the nature of `CatchAll` patterns, we
+                    // do not have to continue searching for descendants of this
+                    // node that match the remaining path segments.
+                    self.matches.push(Match {
+                        // The end offset of `path_segment` should be the end offset
+                        // of the last path segment in the url path.
+                        path_segment_range: self.path.slice_from(depth),
+                        is_exact_match: true,
+                        node: next,
+                    });
+                }
+                Pattern::Dynamic(_) => {
+                    self.matches.push(Match {
+                        path_segment_range,
+                        is_exact_match,
+                        node: next,
+                    });
 
-            if let Pattern::CatchAll(_) = next.pattern {
-                // The end offset of `path_segment` should be the end offset
-                // of the last path segment in the url path.
-                let path_segment_range = self.path.slice_from(depth);
+                    // Continue to match descendants of `next` against the path
+                    // segment at the next depth.
+                    self.match_at_depth(depth + 1, next);
+                }
+                Pattern::Static(value) if value == path_segment_value => {
+                    self.matches.push(Match {
+                        path_segment_range,
+                        is_exact_match,
+                        node: next,
+                    });
 
-                // The next node has a `CatchAll` pattern and will be considered
-                // an exact match. Due to the nature of `CatchAll` patterns, we
-                // do not have to continue searching for descendants of this
-                // node that match the remaining path segments.
-                self.matches.push(Match {
-                    path_segment_range,
-                    is_exact_match: true,
-                    node: next,
-                });
-            } else {
-                self.matches.push(Match {
-                    path_segment_range,
-                    is_exact_match: self.path.get(depth + 1).is_none(),
-                    node: next,
-                });
-
-                // Continue to match descendants of `next` against the path
-                // segment at the next depth.
-                self.match_at_depth(depth + 1, next);
+                    // Continue to match descendants of `next` against the path
+                    // segment at the next depth.
+                    self.match_at_depth(depth + 1, next);
+                }
+                _ => {
+                    // We don't have to check and see if the pattern is `Pattern::Root`
+                    // since we already added our root node to the matches vector.
+                }
             }
         }
     }
