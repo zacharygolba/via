@@ -1,17 +1,16 @@
 mod api;
 mod database;
 
-use via::{middleware::ErrorBoundary, Next, Request, Result};
+use via::{ErrorBoundary, Event, Next, Request, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv()?;
 
     let mut app = via::app();
-    let pool = database::pool().await?;
 
-    // Setup a simple logger middleware that logs the method, path, and response
-    // of each request.
+    // Setup a simple logger middleware that logs the method, path, and
+    // response of each request.
     app.include(|request: Request, next: Next| {
         let method = request.method().clone();
         let path = request.uri().path().to_owned();
@@ -23,6 +22,9 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Catch any errors that occur in downstream middleware, convert them
+    // into a response and log the error message. Upstream middleware will
+    // continue to execute as normal.
     app.include(ErrorBoundary::inspect(|error| {
         eprintln!("ERROR: {}", error);
     }));
@@ -35,9 +37,12 @@ async fn main() -> Result<()> {
 
     // Include a reference to the database pool in `request` for middleware
     // nested within the /api namespace.
-    api.include(move |mut request: Request, next: Next| {
-        request.insert(pool.clone());
-        next.call(request)
+    api.include({
+        let pool = database::pool().await?;
+        move |mut request: Request, next: Next| {
+            request.insert(pool.clone());
+            next.call(request)
+        }
     });
 
     api.at("/posts").scope(|posts| {
@@ -68,5 +73,14 @@ async fn main() -> Result<()> {
         });
     });
 
-    app.listen(("127.0.0.1", 8080)).await
+    app.listen(("127.0.0.1", 8080), |event| match event {
+        Event::ConnectionError(error) | Event::UncaughtError(error) => {
+            eprintln!("Error: {}", error);
+        }
+        Event::ServerReady(address) => {
+            println!("Server listening at http://{}", address);
+        }
+        _ => {}
+    })
+    .await
 }
