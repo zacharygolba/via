@@ -1,4 +1,5 @@
 mod error;
+mod event;
 mod router;
 
 pub mod middleware;
@@ -9,7 +10,8 @@ pub use http;
 
 pub use crate::{
     error::{Error, Result},
-    middleware::{Middleware, Next},
+    event::Event,
+    middleware::{ErrorBoundary, Middleware, Next},
     request::Request,
     response::{IntoResponse, Response},
     router::Endpoint,
@@ -26,6 +28,7 @@ use std::{
 use tokio::net::TcpListener;
 
 use crate::{
+    event::EventListener,
     middleware::{AllowMethod, BoxFuture},
     request::{IncomingRequest, PathParams},
     response::OutgoingResponse,
@@ -98,45 +101,91 @@ impl App {
         self
     }
 
-    pub async fn listen<T>(self, address: T) -> Result<()>
+    pub async fn listen<T, F>(self, address: T, event_listener: F) -> Result<()>
     where
         T: ToSocketAddrs,
+        F: Fn(Event) + Send + Sync + 'static,
     {
         let app = Arc::new(self);
         let address = get_addr(address)?;
-        let listener = TcpListener::bind(address).await?;
+        let tcp_listener = TcpListener::bind(address).await?;
+        let event_listener = EventListener::new(event_listener);
 
-        println!("Server listening at http://{}", address);
+        // Notify the event listener that the server is ready to accept incoming
+        // connections at the given address.
+        event_listener.call(Event::ServerReady(&address));
 
         loop {
-            let (stream, _) = listener.accept().await?;
-            let app = Arc::clone(&app);
+            // Accept a new connection and pass the returned stream to the
+            // `TokioIo` wrapper to convert the stream into a tokio-compatible
+            // I/O stream.
+            let (stream, _) = tcp_listener.accept().await?;
             let io = TokioIo::new(stream);
 
-            // Spawn a tokio task to serve multiple connections concurrently
+            // Clone the `EventListener` and `App` instances by incrementing
+            // the reference counts of the `Arc`.
+            let event_listener = event_listener.clone();
+            let app = Arc::clone(&app);
+
+            // Spawn a tokio task to serve multiple connections concurrently.
             tokio::spawn(async move {
-                if let Err(err) = http1::Builder::new()
+                let service = service_fn(|mut request| {
+                    // Include `EventListener` in the request extensions to
+                    // propagate errors that occur inside an error boundary.
+                    //
+                    // This is necessary because the error boundary middleware
+                    // may fail to convert an error into a response.
+                    //
+                    // For example, if an error should be serialized as JSON,
+                    // but an additional error occurs during the serialization
+                    // process, the error boundary will fall back to a plain
+                    // text response with the error message as the response body.
+                    // This behavior is intended to prevent infinite loops from
+                    // occurring inside an error boundary.
+                    //
+                    // However, we still want to know that an error occurred
+                    // inside the error boundary. So, we propagate the error
+                    // to the event listener so it can be handled at the
+                    // application level.
+                    request.extensions_mut().insert(event_listener.clone());
+
+                    // Delegate the request to the application to route the
+                    // request to the appropriate middleware stack.
+                    app.call(request, &event_listener)
+                });
+
+                if let Err(error) = http1::Builder::new()
                     .timer(TokioTimer::new())
-                    .serve_connection(io, service_fn(|request| app.call(request)))
+                    .serve_connection(io, service)
                     .await
                 {
-                    eprintln!("Error serving connection: {:?}", err);
+                    // A connection error occured while serving the connection.
+                    // Propagate the error to the event listener so it can be
+                    // handled at the application level.
+                    event_listener.call(Event::ConnectionError(&error.into()));
                 }
             });
         }
     }
 
-    async fn call(&self, request: IncomingRequest) -> Result<OutgoingResponse, Infallible> {
+    async fn call(
+        &self,
+        request: IncomingRequest,
+        event_listener: &EventListener,
+    ) -> Result<OutgoingResponse, Infallible> {
         let mut path_params = PathParams::new();
 
         let next = self.router.visit(&mut path_params, &request);
         let request = Request::new(request, path_params);
-        let response = next
-            .call(request)
-            .await
-            .unwrap_or_else(Error::into_infallible_response)
-            .into_inner();
+        let response = next.call(request).await.unwrap_or_else(|error| {
+            error.into_infallible_response(|error| {
+                // Propagate any errors that occur inside an error boundary to
+                // the event listener so they can be handled at the application
+                // level.
+                event_listener.call(Event::UncaughtError(&error));
+            })
+        });
 
-        Ok(response)
+        Ok(response.into_inner())
     }
 }

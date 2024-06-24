@@ -1,22 +1,26 @@
-use via::{middleware::ErrorBoundary, Error, Next, Request, Response, Result};
+use via::{Error, ErrorBoundary, Event, Next, Request, Response, Result};
 use via_serve_static::serve_static;
-
-async fn logger(request: Request, next: Next) -> Result<Response> {
-    let path = request.uri().path().to_string();
-    let method = request.method().clone();
-
-    next.call(request).await.inspect(|response| {
-        let status = response.status();
-        println!("{} {} => {}", method, path, status);
-    })
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut app = via::app();
 
-    app.include(logger);
+    // Setup a simple logger middleware that logs the method, path, and
+    // response of each request.
+    app.include(|request: Request, next: Next| {
+        let method = request.method().clone();
+        let path = request.uri().path().to_owned();
 
+        async move {
+            next.call(request).await.inspect(|response| {
+                println!("{} {} => {}", method, path, response.status());
+            })
+        }
+    });
+
+    // Catch any errors that occur in downstream middleware, convert them
+    // into a response and log the error message. Upstream middleware will
+    // continue to execute as normal.
     app.include(ErrorBoundary::inspect(|error| {
         eprintln!("ERROR: {}", error);
     }));
@@ -54,5 +58,14 @@ async fn main() -> Result<()> {
 
     serve_static(app.at("/*path")).serve("./public")?;
 
-    app.listen(("127.0.0.1", 8080)).await
+    app.listen(("127.0.0.1", 8080), |event| match event {
+        Event::ConnectionError(error) | Event::UncaughtError(error) => {
+            eprintln!("Error: {}", error);
+        }
+        Event::ServerReady(address) => {
+            println!("Server listening at http://{}", address);
+        }
+        _ => {}
+    })
+    .await
 }

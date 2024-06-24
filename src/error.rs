@@ -114,7 +114,10 @@ impl Error {
 }
 
 impl Error {
-    pub(crate) fn into_infallible_response(self) -> Response {
+    pub(crate) fn into_infallible_response<F>(self, error_callback: F) -> Response
+    where
+        F: FnOnce(&Error),
+    {
         use http::header::HeaderValue;
 
         let status_code = self.status;
@@ -139,7 +142,7 @@ impl Error {
                 *response.status_mut() = status_code;
                 *response.body_mut() = message.into();
 
-                eprintln!("Failed to convert error into response: {}", error);
+                error_callback(&error);
 
                 response
             }
