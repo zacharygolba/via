@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     let mut api = app.at("/api");
 
     // Errors that occur in middleware or responders nested within the /api
-    // namespace will have there responses converted to JSON.
+    // namespace will have their responses converted to JSON.
     api.include(ErrorBoundary::map(|error| error.json()));
 
     // Include a reference to the database pool in `request` for middleware
