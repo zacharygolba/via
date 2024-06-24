@@ -1,4 +1,4 @@
-use via::{Response, Result};
+use via::{Event, Response, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -8,10 +8,18 @@ async fn main() -> Result<()> {
         Response::text("Hello, world!").end()
     }));
 
-    let mut unit = app.at("/unit");
-    unit.respond(via::get(|_, _| async {
+    app.at("/unit").respond(via::get(|_, _| async {
         Response::build().status(204).end()
     }));
 
-    app.listen(("127.0.0.1", 8080)).await
+    app.listen(("127.0.0.1", 8080), |event| match event {
+        Event::ConnectionError(error) | Event::UncaughtError(error) => {
+            eprintln!("Error: {}", error);
+        }
+        Event::ServerReady(address) => {
+            println!("Server listening at http://{}", address);
+        }
+        _ => {}
+    })
+    .await
 }
