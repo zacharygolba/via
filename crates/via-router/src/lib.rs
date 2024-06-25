@@ -343,7 +343,7 @@ mod tests {
 
             {
                 // /articles/100/comments
-                //           ^^^ as Pattern::Static("comments")
+                //               ^^^^^^^^ as Pattern::Static("comments")
                 let matched = &matches[4];
                 let (start, end) = matched.path_segment_range;
 
