@@ -12,12 +12,10 @@ use crate::{
 
 pub use crate::visitor::Match;
 
-#[derive(Debug)]
 pub struct Router<T> {
     routes: RouteStore<T>,
 }
 
-#[derive(Debug)]
 pub struct Endpoint<'a, T> {
     index: usize,
     routes: &'a mut RouteStore<T>,
