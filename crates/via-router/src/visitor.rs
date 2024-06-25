@@ -3,7 +3,32 @@ use crate::{
     routes::{Node, RouteStore},
 };
 
+/// Inserts a match into the `Vec` of matches for a `Visitor` and then
+/// continues to match descendants of `$node` that matched the path segment.
+///
+/// This macro is used to prevent duplication between match branches of nodes
+/// that have a `Pattern::Dynamic` or `Pattern::Static` pattern.
+macro_rules! insert_match_and_continue {
+    (
+        // Should be a `Visitor`.
+        $self:ident,
+        // The next depth to match against. Arithmetic operations should be
+        // done by the caller.
+        $depth:expr,
+        // The match that should be inserted into the `Vec` of matches.
+        $matched:expr,
+    ) => {
+        // Add the matching node to our `Vec` of matches.
+        $self.matches.push($matched);
+
+        // Continue to match descendants of `$node` against the path segment at
+        // the next depth. This function is called in recursive context.
+        $self.match_at_depth($depth, $matched.node);
+    };
+}
+
 /// Represents either a partial or exact match for a given path segment.
+#[derive(Debug)]
 pub struct Match<'a, T> {
     /// Indicates whether or not the match is considered an exact match.
     /// If the match is exact, both the middleware and responders will be
@@ -128,26 +153,26 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     });
                 }
                 Pattern::Dynamic(_) => {
-                    self.matches.push(Match {
-                        path_segment_range,
-                        is_exact_match,
-                        node: next,
-                    });
-
-                    // Continue to match descendants of `next` against the path
-                    // segment at the next depth.
-                    self.match_at_depth(depth + 1, next);
+                    insert_match_and_continue!(
+                        self,
+                        depth + 1,
+                        Match {
+                            node: next,
+                            is_exact_match,
+                            path_segment_range,
+                        },
+                    );
                 }
                 Pattern::Static(value) if value == path_segment_value => {
-                    self.matches.push(Match {
-                        path_segment_range,
-                        is_exact_match,
-                        node: next,
-                    });
-
-                    // Continue to match descendants of `next` against the path
-                    // segment at the next depth.
-                    self.match_at_depth(depth + 1, next);
+                    insert_match_and_continue!(
+                        self,
+                        depth + 1,
+                        Match {
+                            node: next,
+                            is_exact_match,
+                            path_segment_range,
+                        },
+                    );
                 }
                 _ => {
                     // We don't have to check and see if the pattern is `Pattern::Root`
