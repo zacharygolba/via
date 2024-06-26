@@ -1,6 +1,6 @@
 use futures::Stream;
 use http_body_util::{Full, StreamBody};
-use hyper::body::{Body as HyperBody, Bytes};
+use hyper::body::{Body as HyperBody, Bytes, SizeHint};
 use std::{
     pin::Pin,
     task::{self, Poll},
@@ -16,6 +16,7 @@ pub struct Body {
 }
 
 enum BodyKind {
+    Empty,
     Full(Full<Bytes>),
     #[cfg_attr(not(feature = "file-system"), allow(dead_code))]
     Stream(StreamBody<BoxStream>),
@@ -23,7 +24,9 @@ enum BodyKind {
 
 impl Body {
     pub(super) fn empty() -> Self {
-        Bytes::new().into()
+        Body {
+            kind: BodyKind::Empty,
+        }
     }
 
     pub(super) fn full(body: Full<Bytes>) -> Self {
@@ -99,8 +102,25 @@ impl HyperBody for Body {
         context: &mut task::Context<'_>,
     ) -> Poll<Option<Result<Frame, Self::Error>>> {
         match self.get_mut().kind {
+            BodyKind::Empty => Poll::Ready(None),
             BodyKind::Full(ref mut full) => Pin::new(full).poll_frame(context).map_err(Error::from),
             BodyKind::Stream(ref mut stream) => Pin::new(stream).poll_frame(context),
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        match &self.kind {
+            BodyKind::Empty => true,
+            BodyKind::Full(full) => HyperBody::is_end_stream(full),
+            BodyKind::Stream(stream) => HyperBody::is_end_stream(stream),
+        }
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        match &self.kind {
+            BodyKind::Empty => SizeHint::with_exact(0),
+            BodyKind::Full(full) => HyperBody::size_hint(full),
+            BodyKind::Stream(stream) => HyperBody::size_hint(stream),
         }
     }
 }
