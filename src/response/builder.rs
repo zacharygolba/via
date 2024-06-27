@@ -25,12 +25,11 @@ impl ResponseBuilder {
     }
 
     pub fn end(mut self) -> Result<Response> {
-        let body = match self.body.take() {
-            Some(body) => body?,
-            None => Body::empty(),
-        };
+        let body = self.body.take().unwrap_or_else(|| Ok(Body::empty()))?;
 
-        Ok(Response::from_inner(self.inner.body(body)?))
+        Ok(Response {
+            inner: self.inner.body(body)?,
+        })
     }
 
     pub fn header<K, V>(self, key: K, value: V) -> Self

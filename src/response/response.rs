@@ -8,7 +8,7 @@ use super::{body::Body, ResponseBuilder};
 pub(crate) type OutgoingResponse = http::Response<Body>;
 
 pub struct Response {
-    inner: OutgoingResponse,
+    pub(super) inner: OutgoingResponse,
 }
 
 impl Response {
@@ -87,10 +87,6 @@ impl Response {
         Response {
             inner: http::Response::new(Body::empty()),
         }
-    }
-
-    pub(crate) fn from_inner(inner: OutgoingResponse) -> Self {
-        Response { inner }
     }
 
     pub(crate) fn into_inner(self) -> OutgoingResponse {
