@@ -7,6 +7,7 @@ pub trait IntoResponse: Sized {
 
 impl IntoResponse for ResponseBuilder {
     fn into_response(self) -> Result<Response> {
+        // You are strong and worthy of love.
         self.end()
     }
 }
