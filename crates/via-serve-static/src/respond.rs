@@ -42,7 +42,7 @@ pub async fn respond_to_get_request(
 ) -> Result<Response> {
     let ServerConfig { fall_through, .. } = *config;
     let file_path = config.extract_path(&request)?;
-    let mut file = match resolve_file(file_path).await {
+    let file = match resolve_file(file_path).await {
         // The file does not exist and the server is configured to fall through
         // to the next middleware.
         Err(error) if fall_through && error.kind() == ErrorKind::NotFound => {
@@ -60,7 +60,7 @@ pub async fn respond_to_get_request(
     let content_length = file.metadata.len();
     let content_type = file.mime_type.to_string();
 
-    if let Some(data) = file.data.take() {
+    if let Some(data) = file.data {
         // The file was small enough to be eagerly read into memory. We can respond
         // immediately with the entire vector of bytes as the response body.
         Response::build()
