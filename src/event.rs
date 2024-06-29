@@ -2,7 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use crate::Error;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub enum Event<'a> {
     /// An error occurred with a connection to the application server. This
     /// event only occurs if an application fails to respond to a request.
