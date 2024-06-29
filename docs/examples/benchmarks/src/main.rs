@@ -19,7 +19,6 @@ async fn main() -> Result<()> {
         Event::ServerReady(address) => {
             println!("Server listening at http://{}", address);
         }
-        _ => {}
     })
     .await
 }
