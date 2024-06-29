@@ -44,6 +44,7 @@ impl Router {
 
             if let Some(route) = matched.route() {
                 stack.extend(route.middleware.iter().cloned());
+
                 if matched.is_exact_match {
                     stack.extend(route.responders.iter().cloned());
                 }
@@ -79,7 +80,7 @@ impl<'a> Endpoint<'a> {
     {
         let route = self.route_mut();
 
-        route.middleware.push(Arc::pin(middleware));
+        route.middleware.push(Arc::new(middleware));
         self
     }
 
@@ -89,7 +90,7 @@ impl<'a> Endpoint<'a> {
     {
         let route = self.route_mut();
 
-        route.responders.push(Arc::pin(responder));
+        route.responders.push(Arc::new(responder));
         self
     }
 

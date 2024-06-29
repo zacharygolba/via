@@ -1,4 +1,4 @@
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     event::{Event, EventListener},
@@ -43,7 +43,7 @@ impl ErrorBoundary {
 }
 
 impl Middleware for ErrorBoundary {
-    fn call(self: Pin<&Self>, request: Request, next: Next) -> BoxFuture<Result<Response>> {
+    fn call(&self, request: Request, next: Next) -> BoxFuture<Result<Response>> {
         Box::pin(async {
             let event_listener = request.get::<EventListener>().cloned()?;
 
@@ -60,7 +60,7 @@ impl<F> Middleware for MapErrorBoundary<F>
 where
     F: Fn(Error) -> Error + Send + Sync + 'static,
 {
-    fn call(self: Pin<&Self>, request: Request, next: Next) -> BoxFuture<Result<Response>> {
+    fn call(&self, request: Request, next: Next) -> BoxFuture<Result<Response>> {
         let map = Arc::clone(&self.map);
 
         Box::pin(async move {
@@ -79,7 +79,7 @@ impl<F> Middleware for InspectErrorBoundary<F>
 where
     F: Fn(&Error) + Send + Sync + 'static,
 {
-    fn call(self: Pin<&Self>, request: Request, next: Next) -> BoxFuture<Result<Response>> {
+    fn call(&self, request: Request, next: Next) -> BoxFuture<Result<Response>> {
         let inspect = Arc::clone(&self.inspect);
 
         Box::pin(async move {
