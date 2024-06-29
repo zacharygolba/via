@@ -3,21 +3,21 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use super::Next;
 use crate::{IntoResponse, Request, Response, Result};
 
-pub(crate) type DynMiddleware = Arc<dyn Middleware>;
+pub(crate) type DynMiddleware<State> = Arc<dyn Middleware<State>>;
 
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
-pub trait Middleware: Send + Sync + 'static {
-    fn call(&self, request: Request, next: Next) -> BoxFuture<Result<Response>>;
+pub trait Middleware<State>: Send + Sync + 'static {
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>>;
 }
 
-impl<T, F> Middleware for T
+impl<State, T, F> Middleware<State> for T
 where
-    T: Fn(Request, Next) -> F + Send + Sync + 'static,
+    T: Fn(Request<State>, Next<State>) -> F + Send + Sync + 'static,
     F: Future + Send + 'static,
     F::Output: IntoResponse,
 {
-    fn call(&self, request: Request, next: Next) -> BoxFuture<Result<Response>> {
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
         let future = self(request, next);
         Box::pin(async { future.await.into_response() })
     }

@@ -1,9 +1,12 @@
-use via::{Error, ErrorBoundary, Event, Next, Request, Response, Result};
+use via::{Error, ErrorBoundary, Event, Response, Result};
 use via_serve_static::serve_static;
+
+pub type Request = via::Request<()>;
+pub type Next = via::Next<()>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut app = via::app();
+    let mut app = via::app(());
 
     // Setup a simple logger middleware that logs the method, path, and
     // response of each request.

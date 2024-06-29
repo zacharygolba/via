@@ -6,9 +6,9 @@ use via::{Endpoint, Error, Request, Result};
 
 use crate::respond::{respond_to_get_request, respond_to_head_request};
 
-pub struct ServeStatic<'a> {
+pub struct ServeStatic<'a, State> {
     fall_through: bool,
-    endpoint: Endpoint<'a>,
+    endpoint: Endpoint<'a, State>,
 }
 
 #[derive(Clone)]
@@ -20,14 +20,17 @@ pub(crate) struct ServerConfig {
 
 /// Returns a builder struct used to configure the static server middleware.
 /// The provided `endpoint` must have a path parameter.
-pub fn serve_static(endpoint: Endpoint) -> ServeStatic {
+pub fn serve_static<State>(endpoint: Endpoint<State>) -> ServeStatic<State> {
     ServeStatic {
         fall_through: true,
         endpoint,
     }
 }
 
-impl<'a> ServeStatic<'a> {
+impl<'a, State> ServeStatic<'a, State>
+where
+    State: Send + Sync + 'static,
+{
     /// Configures whether or not to fall through to the next middleware if a file
     /// is not found or if the request is made with unsupported HTTP method. The
     /// default value is `true`.
@@ -90,7 +93,7 @@ impl<'a> ServeStatic<'a> {
 impl ServerConfig {
     /// Extracts the relative file path from the request using the configured
     /// path parameter name and joins it with the public directory.
-    pub(crate) fn extract_path(&self, request: &Request) -> Result<PathBuf> {
+    pub(crate) fn extract_path<T>(&self, request: &Request<T>) -> Result<PathBuf> {
         let relative_path = request.param(&self.path_param).required()?;
         Ok(self.public_dir.join(relative_path.trim_matches('/')))
     }

@@ -3,16 +3,19 @@ use std::collections::VecDeque;
 use super::DynMiddleware;
 use crate::{BoxFuture, Request, Response, Result};
 
-pub struct Next {
-    stack: VecDeque<DynMiddleware>,
+pub struct Next<State> {
+    stack: VecDeque<DynMiddleware<State>>,
 }
 
-impl Next {
-    pub(crate) fn new(stack: VecDeque<DynMiddleware>) -> Self {
+impl<State> Next<State>
+where
+    State: Send + Sync + 'static,
+{
+    pub(crate) fn new(stack: VecDeque<DynMiddleware<State>>) -> Self {
         Next { stack }
     }
 
-    pub fn call(mut self, request: Request) -> BoxFuture<Result<Response>> {
+    pub fn call(mut self, request: Request<State>) -> BoxFuture<Result<Response>> {
         if let Some(middleware) = self.stack.pop_front() {
             middleware.call(request, self)
         } else {

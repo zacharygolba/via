@@ -2,7 +2,7 @@ use via::{Event, Response, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut app = via::app();
+    let mut app = via::app(());
 
     app.at("/text").respond(via::get(|_, _| async {
         Response::text("Hello, world!").end()
