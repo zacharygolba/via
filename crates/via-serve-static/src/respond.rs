@@ -7,11 +7,14 @@ use crate::{
     ServerConfig,
 };
 
-pub async fn respond_to_head_request(
+pub async fn respond_to_head_request<State>(
     config: Arc<ServerConfig>,
-    request: Request,
-    next: Next,
-) -> Result<Response> {
+    request: Request<State>,
+    next: Next<State>,
+) -> Result<Response>
+where
+    State: Send + Sync + 'static,
+{
     let ServerConfig { fall_through, .. } = *config;
     let file_path = config.extract_path(&request)?;
     let file = match resolve_metadata(file_path).await {
@@ -35,11 +38,14 @@ pub async fn respond_to_head_request(
         .end()
 }
 
-pub async fn respond_to_get_request(
+pub async fn respond_to_get_request<State>(
     config: Arc<ServerConfig>,
-    request: Request,
-    next: Next,
-) -> Result<Response> {
+    request: Request<State>,
+    next: Next<State>,
+) -> Result<Response>
+where
+    State: Send + Sync + 'static,
+{
     let ServerConfig { fall_through, .. } = *config;
     let file_path = config.extract_path(&request)?;
     let file = match resolve_file(file_path).await {

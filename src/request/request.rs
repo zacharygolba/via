@@ -1,5 +1,11 @@
 use http::{HeaderMap, Method, Uri, Version};
 use hyper::body::Incoming;
+use std::{
+    fmt::{self, Debug},
+    sync::Arc,
+};
+
+use crate::event::EventListener;
 
 use super::{
     path_param::PathParams,
@@ -7,23 +13,33 @@ use super::{
     query_parser::parse_query_params,
     Body, PathParam,
 };
-use crate::{Error, Result};
 
 pub(crate) type IncomingRequest = http::Request<Incoming>;
 
-#[derive(Debug)]
-pub struct Request {
+pub struct Request<State> {
     inner: http::Request<Body>,
+    app_state: Arc<State>,
     path_params: PathParams,
     query_params: Option<QueryParams>,
+    event_listener: EventListener,
 }
 
-impl Request {
-    pub(crate) fn new(inner: IncomingRequest, path_params: PathParams) -> Self {
+impl<State> Request<State> {
+    pub(crate) fn new(
+        inner: IncomingRequest,
+        app_state: Arc<State>,
+        path_params: PathParams,
+        event_listener: EventListener,
+    ) -> Self {
+        let inner = inner.map(|body| Body { inner: Some(body) });
+        let query_params = None;
+
         Request {
-            inner: inner.map(|body| Body { inner: Some(body) }),
-            query_params: None,
+            inner,
+            app_state,
             path_params,
+            query_params,
+            event_listener,
         }
     }
 
@@ -37,28 +53,10 @@ impl Request {
         self.inner.body_mut()
     }
 
-    pub fn get<T>(&self) -> Result<&T>
-    where
-        T: Send + Sync + 'static,
-    {
-        if let Some(value) = self.inner.extensions().get() {
-            Ok(value)
-        } else {
-            Err(Error::new("unknown type".to_owned()))
-        }
-    }
-
     /// Returns a reference to a map that contains the headers associated with
     /// the request.
     pub fn headers(&self) -> &HeaderMap {
         self.inner.headers()
-    }
-
-    pub fn insert<T>(&mut self, value: T)
-    where
-        T: Clone + Send + Sync + 'static,
-    {
-        self.inner.extensions_mut().insert(value);
     }
 
     /// Returns a reference to the HTTP method associated with the request.
@@ -95,6 +93,10 @@ impl Request {
         QueryParamValues::new(name, query, values)
     }
 
+    pub fn state(&self) -> &State {
+        &self.app_state
+    }
+
     /// Returns a reference to the uri associated with the request.
     pub fn uri(&self) -> &Uri {
         self.inner.uri()
@@ -103,5 +105,25 @@ impl Request {
     /// Returns the HTTP version associated with the request.
     pub fn version(&self) -> Version {
         self.inner.version()
+    }
+}
+
+impl<State> Request<State> {
+    pub(crate) fn event_listener(&self) -> &EventListener {
+        &self.event_listener
+    }
+}
+
+impl<State> Debug for Request<State> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Request")
+            .field("method", self.method())
+            .field("uri", self.uri())
+            .field("params", &self.path_params)
+            .field("query", &self.query_params)
+            .field("version", &self.version())
+            .field("headers", self.headers())
+            .field("body", self.body())
+            .finish()
     }
 }
