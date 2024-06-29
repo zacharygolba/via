@@ -14,7 +14,7 @@ impl Next {
 
     pub fn call(mut self, request: Request) -> BoxFuture<Result<Response>> {
         if let Some(middleware) = self.stack.pop_front() {
-            middleware.as_ref().call(request, self)
+            middleware.call(request, self)
         } else {
             Box::pin(async { Response::text("Not Found").status(404).end() })
         }
