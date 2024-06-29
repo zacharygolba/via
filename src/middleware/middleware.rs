@@ -11,11 +11,11 @@ pub trait Middleware: Send + Sync + 'static {
     fn call(self: Pin<&Self>, request: Request, next: Next) -> BoxFuture<Result<Response>>;
 }
 
-impl<F, T> Middleware for T
+impl<T, F> Middleware for T
 where
-    F::Output: IntoResponse,
-    F: Future + Send + 'static,
     T: Fn(Request, Next) -> F + Send + Sync + 'static,
+    F: Future + Send + 'static,
+    F::Output: IntoResponse,
 {
     fn call(self: Pin<&Self>, request: Request, next: Next) -> BoxFuture<Result<Response>> {
         let future = self(request, next);

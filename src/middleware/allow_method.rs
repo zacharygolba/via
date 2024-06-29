@@ -22,7 +22,7 @@ impl<T: Middleware> Middleware for AllowMethod<T> {
         if self.predicate == request.method() {
             self.middleware.as_ref().call(request, next)
         } else {
-            Box::pin(next.call(request))
+            next.call(request)
         }
     }
 }
