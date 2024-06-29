@@ -1,13 +1,24 @@
 mod api;
 mod database;
 
-use via::{ErrorBoundary, Event, Next, Request, Result};
+use via::{ErrorBoundary, Event, Result};
+
+use database::Pool;
+
+pub type Request = via::Request<State>;
+pub type Next = via::Next<State>;
+
+pub struct State {
+    pub pool: Pool,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv()?;
 
-    let mut app = via::app();
+    let mut app = via::app(State {
+        pool: database::pool().await?,
+    });
 
     // Setup a simple logger middleware that logs the method, path, and
     // response of each request.
@@ -34,16 +45,6 @@ async fn main() -> Result<()> {
     // Errors that occur in middleware or responders nested within the /api
     // namespace will have their responses converted to JSON.
     api.include(ErrorBoundary::map(|error| error.json()));
-
-    // Include a reference to the database pool in `request` for middleware
-    // nested within the /api namespace.
-    api.include({
-        let pool = database::pool().await?;
-        move |mut request: Request, next: Next| {
-            request.insert(pool.clone());
-            next.call(request)
-        }
-    });
 
     api.at("/posts").scope(|posts| {
         use api::posts;

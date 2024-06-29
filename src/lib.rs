@@ -35,49 +35,81 @@ use crate::{
     router::Router,
 };
 
-pub struct App {
-    router: Router,
+pub struct App<State> {
+    router: Router<State>,
+    state: Arc<State>,
 }
 
-pub fn app() -> App {
+pub fn app<State>(state: State) -> App<State>
+where
+    State: Send + Sync + 'static,
+{
     App {
         router: Router::new(),
+        state: Arc::new(state),
     }
 }
 
-pub fn connect<T: Middleware>(middleware: T) -> AllowMethod<T> {
+pub fn connect<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
     AllowMethod::new(Method::CONNECT, middleware)
 }
 
-pub fn delete<T: Middleware>(middleware: T) -> AllowMethod<T> {
+pub fn delete<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
     AllowMethod::new(Method::DELETE, middleware)
 }
 
-pub fn get<T: Middleware>(middleware: T) -> AllowMethod<T> {
+pub fn get<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
     AllowMethod::new(Method::GET, middleware)
 }
 
-pub fn head<T: Middleware>(middleware: T) -> AllowMethod<T> {
+pub fn head<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
     AllowMethod::new(Method::HEAD, middleware)
 }
 
-pub fn options<T: Middleware>(middleware: T) -> AllowMethod<T> {
+pub fn options<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
     AllowMethod::new(Method::OPTIONS, middleware)
 }
 
-pub fn patch<T: Middleware>(middleware: T) -> AllowMethod<T> {
+pub fn patch<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
     AllowMethod::new(Method::PATCH, middleware)
 }
 
-pub fn post<T: Middleware>(middleware: T) -> AllowMethod<T> {
+pub fn post<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
     AllowMethod::new(Method::POST, middleware)
 }
 
-pub fn put<T: Middleware>(middleware: T) -> AllowMethod<T> {
+pub fn put<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
     AllowMethod::new(Method::PUT, middleware)
 }
 
-pub fn trace<T: Middleware>(middleware: T) -> AllowMethod<T> {
+pub fn trace<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
     AllowMethod::new(Method::TRACE, middleware)
 }
 
@@ -88,14 +120,17 @@ fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
     }
 }
 
-impl App {
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
+impl<State> App<State>
+where
+    State: Send + Sync + 'static,
+{
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint<State> {
         self.router.at(pattern)
     }
 
     pub fn include<T>(&mut self, middleware: T) -> &mut Self
     where
-        T: Middleware,
+        T: Middleware<State>,
     {
         self.at("/").include(middleware);
         self
@@ -129,26 +164,7 @@ impl App {
 
             // Spawn a tokio task to serve multiple connections concurrently.
             tokio::spawn(async move {
-                let service = service_fn(|mut request| {
-                    // Include `EventListener` in the request extensions to
-                    // propagate errors that occur inside an error boundary.
-                    //
-                    // This is necessary because the error boundary middleware
-                    // may fail to convert an error into a response.
-                    //
-                    // For example, if an error should be serialized as JSON,
-                    // but an additional error occurs during the serialization
-                    // process, the error boundary will fall back to a plain
-                    // text response with the error message as the response body.
-                    // This behavior is intended to prevent infinite loops from
-                    // occurring inside an error boundary.
-                    //
-                    // However, we still want to know that an error occurred
-                    // inside the error boundary. So, we propagate the error
-                    // to the event listener so it can be handled at the
-                    // application level.
-                    request.extensions_mut().insert(event_listener.clone());
-
+                let service = service_fn(|request| {
                     // Delegate the request to the application to route the
                     // request to the appropriate middleware stack.
                     app.call(request, &event_listener)
@@ -176,7 +192,8 @@ impl App {
         let mut path_params = PathParams::new();
 
         let next = self.router.visit(&mut path_params, &request);
-        let request = Request::new(request, path_params);
+        let state = Arc::clone(&self.state);
+        let request = Request::new(request, state, path_params, event_listener.clone());
         let response = next.call(request).await.unwrap_or_else(|error| {
             error.into_infallible_response(|error| {
                 // If the error was not able to be converted into a response,

@@ -7,33 +7,36 @@ use crate::{
     Middleware, Next,
 };
 
-pub struct Router {
-    inner: GenericRouter<Route>,
+pub struct Router<State> {
+    inner: GenericRouter<Route<State>>,
 }
 
-pub struct Endpoint<'a> {
-    inner: GenericEndpoint<'a, Route>,
+pub struct Endpoint<'a, State> {
+    inner: GenericEndpoint<'a, Route<State>>,
 }
 
-struct Route {
-    middleware: Vec<DynMiddleware>,
-    responders: Vec<DynMiddleware>,
+struct Route<State> {
+    middleware: Vec<DynMiddleware<State>>,
+    responders: Vec<DynMiddleware<State>>,
 }
 
-impl Router {
+impl<State> Router<State>
+where
+    State: Send + Sync + 'static,
+{
     pub fn new() -> Self {
         Self {
             inner: via_router::Router::new(),
         }
     }
 
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint<State> {
         Endpoint {
             inner: self.inner.at(pattern),
         }
     }
 
-    pub fn visit(&self, path_params: &mut PathParams, request: &IncomingRequest) -> Next {
+    pub fn visit(&self, path_params: &mut PathParams, request: &IncomingRequest) -> Next<State> {
         let mut stack = VecDeque::new();
         let path = request.uri().path();
 
@@ -55,8 +58,8 @@ impl Router {
     }
 }
 
-impl<'a> Endpoint<'a> {
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint {
+impl<'a, State> Endpoint<'a, State> {
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint<State> {
         Endpoint {
             inner: self.inner.at(pattern),
         }
@@ -76,7 +79,7 @@ impl<'a> Endpoint<'a> {
 
     pub fn include<T>(&mut self, middleware: T) -> &mut Self
     where
-        T: Middleware,
+        T: Middleware<State>,
     {
         let route = self.route_mut();
 
@@ -86,7 +89,7 @@ impl<'a> Endpoint<'a> {
 
     pub fn respond<T>(&mut self, responder: T) -> &mut Self
     where
-        T: Middleware,
+        T: Middleware<State>,
     {
         let route = self.route_mut();
 
@@ -94,7 +97,7 @@ impl<'a> Endpoint<'a> {
         self
     }
 
-    fn route_mut(&mut self) -> &mut Route {
+    fn route_mut(&mut self) -> &mut Route<State> {
         self.inner.route_mut().get_or_insert_with(|| Route {
             middleware: Vec::new(),
             responders: Vec::new(),

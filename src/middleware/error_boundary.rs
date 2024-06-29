@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use crate::{
-    event::{Event, EventListener},
-    BoxFuture, Error, Middleware, Next, Request, Response, Result,
-};
+use crate::{event::Event, BoxFuture, Error, Middleware, Next, Request, Response, Result};
 
 /// Middleware that catches errors that occur in downstream middleware and
 /// converts the error into a response. Upstream middleware added to an app
@@ -42,10 +39,13 @@ impl ErrorBoundary {
     }
 }
 
-impl Middleware for ErrorBoundary {
-    fn call(&self, request: Request, next: Next) -> BoxFuture<Result<Response>> {
+impl<State> Middleware<State> for ErrorBoundary
+where
+    State: Send + Sync + 'static,
+{
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
         Box::pin(async {
-            let event_listener = request.get::<EventListener>().cloned()?;
+            let event_listener = request.event_listener().clone();
 
             next.call(request).await.or_else(|error| {
                 Ok(error.into_infallible_response(|error| {
@@ -56,15 +56,16 @@ impl Middleware for ErrorBoundary {
     }
 }
 
-impl<F> Middleware for MapErrorBoundary<F>
+impl<State, F> Middleware<State> for MapErrorBoundary<F>
 where
     F: Fn(Error) -> Error + Send + Sync + 'static,
+    State: Send + Sync + 'static,
 {
-    fn call(&self, request: Request, next: Next) -> BoxFuture<Result<Response>> {
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
         let map = Arc::clone(&self.map);
 
         Box::pin(async move {
-            let event_listener = request.get::<EventListener>().cloned()?;
+            let event_listener = request.event_listener().clone();
 
             next.call(request).await.or_else(|error| {
                 Ok(map(error).into_infallible_response(|error| {
@@ -75,15 +76,16 @@ where
     }
 }
 
-impl<F> Middleware for InspectErrorBoundary<F>
+impl<State, F> Middleware<State> for InspectErrorBoundary<F>
 where
     F: Fn(&Error) + Send + Sync + 'static,
+    State: Send + Sync + 'static,
 {
-    fn call(&self, request: Request, next: Next) -> BoxFuture<Result<Response>> {
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
         let inspect = Arc::clone(&self.inspect);
 
         Box::pin(async move {
-            let event_listener = request.get::<EventListener>().cloned()?;
+            let event_listener = request.event_listener().clone();
 
             next.call(request).await.or_else(|error| {
                 inspect(&error);
