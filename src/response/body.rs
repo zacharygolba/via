@@ -1,44 +1,50 @@
-use futures::Stream;
-use http_body_util::{Full, StreamBody};
-use hyper::body::{Body as HyperBody, Bytes, SizeHint};
+use bytes::Bytes;
+use futures_util::Stream;
+use http_body::{Body as HttpBody, SizeHint};
+use http_body_util::{BodyExt, Empty, Full, StreamBody};
 use std::{
     pin::Pin,
-    task::{self, Poll},
+    task::{Context, Poll},
 };
 
 use crate::{Error, Result};
 
+pub type Frame = http_body::Frame<Bytes>;
+
 type BoxStream = Pin<Box<dyn Stream<Item = Result<Frame>> + Send + 'static>>;
-type Frame = hyper::body::Frame<Bytes>;
 
 pub struct Body {
-    kind: BodyKind,
+    data: Pin<Box<dyn HttpBody<Data = Bytes, Error = Error> + Send + 'static>>,
+    len: Option<usize>,
 }
 
-enum BodyKind {
-    Empty,
-    Full(Full<Bytes>),
-    #[cfg_attr(not(feature = "file-system"), allow(dead_code))]
-    Stream(StreamBody<BoxStream>),
+impl Body {
+    pub fn len(&self) -> Option<usize> {
+        self.len
+    }
 }
 
 impl Body {
     pub(super) fn empty() -> Self {
-        Body {
-            kind: BodyKind::Empty,
+        Self {
+            data: Box::pin(Empty::new().map_err(Error::from)),
+            len: Some(0),
         }
     }
 
-    pub(super) fn full(body: Full<Bytes>) -> Self {
-        Body {
-            kind: BodyKind::Full(body),
+    pub(super) fn full(body: Bytes) -> Self {
+        let len = body.len();
+
+        Self {
+            data: Box::pin(Full::new(body).map_err(Error::from)),
+            len: Some(len),
         }
     }
 
-    #[cfg_attr(not(feature = "file-system"), allow(dead_code))]
-    pub(super) fn stream(body: StreamBody<BoxStream>) -> Self {
-        Body {
-            kind: BodyKind::Stream(body),
+    pub(super) fn stream(body: BoxStream) -> Self {
+        Self {
+            data: Box::pin(StreamBody::new(body)),
+            len: None,
         }
     }
 }
@@ -51,76 +57,62 @@ impl From<()> for Body {
 
 impl From<Bytes> for Body {
     fn from(bytes: Bytes) -> Self {
-        Body::full(bytes.into())
+        Body::full(bytes)
     }
 }
 
 impl From<Vec<u8>> for Body {
     fn from(vec: Vec<u8>) -> Self {
-        Body::full(vec.into())
+        Body::full(Bytes::from(vec))
     }
 }
 
 impl From<&'static [u8]> for Body {
     fn from(slice: &'static [u8]) -> Self {
-        Body::full(slice.into())
+        Body::full(Bytes::from_static(slice))
+    }
+}
+
+impl From<String> for Body {
+    fn from(string: String) -> Self {
+        Body::full(Bytes::from(string))
+    }
+}
+
+impl From<&'static str> for Body {
+    fn from(slice: &'static str) -> Self {
+        Body::full(Bytes::from_static(slice.as_bytes()))
     }
 }
 
 #[cfg(feature = "file-system")]
 impl From<tokio::fs::File> for Body {
     fn from(file: tokio::fs::File) -> Self {
-        use futures::stream::StreamExt;
+        use futures_util::stream::StreamExt;
         use tokio_util::io::ReaderStream;
 
-        Body::stream(StreamBody::new(
-            ReaderStream::new(file)
-                .map(|result| result.map(Frame::data).map_err(Error::from))
-                .boxed(),
+        Body::stream(Box::pin(
+            ReaderStream::new(file).map(|result| result.map(Frame::data).map_err(Error::from)),
         ))
     }
 }
 
-impl From<String> for Body {
-    fn from(string: String) -> Self {
-        Body::full(string.into())
-    }
-}
-
-impl From<&'static str> for Body {
-    fn from(slice: &'static str) -> Self {
-        Body::full(slice.into())
-    }
-}
-
-impl HyperBody for Body {
+impl HttpBody for Body {
     type Data = Bytes;
     type Error = Error;
 
     fn poll_frame(
-        self: Pin<&mut Self>,
-        context: &mut task::Context<'_>,
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame, Self::Error>>> {
-        match self.get_mut().kind {
-            BodyKind::Empty => Poll::Ready(None),
-            BodyKind::Full(ref mut full) => Pin::new(full).poll_frame(context).map_err(Error::from),
-            BodyKind::Stream(ref mut stream) => Pin::new(stream).poll_frame(context),
-        }
+        self.data.as_mut().poll_frame(context)
     }
 
     fn is_end_stream(&self) -> bool {
-        match &self.kind {
-            BodyKind::Empty => true,
-            BodyKind::Full(full) => HyperBody::is_end_stream(full),
-            BodyKind::Stream(stream) => HyperBody::is_end_stream(stream),
-        }
+        self.data.is_end_stream()
     }
 
     fn size_hint(&self) -> SizeHint {
-        match &self.kind {
-            BodyKind::Empty => SizeHint::with_exact(0),
-            BodyKind::Full(full) => HyperBody::size_hint(full),
-            BodyKind::Stream(stream) => HyperBody::size_hint(stream),
-        }
+        self.data.size_hint()
     }
 }
