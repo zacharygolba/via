@@ -5,11 +5,12 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
+futures-util = { version = "0.3.30", default-features = false }
+mime = "0.3.17"
 mime_guess = "2.0.4"
 
 [dependencies.tokio]
 version = "1.38.0"
 
 [dependencies.via]
-features = ["file-system"]
 path = "../.."

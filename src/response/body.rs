@@ -85,27 +85,16 @@ impl From<&'static str> for Body {
     }
 }
 
-#[cfg(feature = "file-system")]
-impl From<tokio::fs::File> for Body {
-    fn from(file: tokio::fs::File) -> Self {
-        use futures_util::stream::StreamExt;
-        use tokio_util::io::ReaderStream;
-
-        Body::stream(Box::pin(
-            ReaderStream::new(file).map(|result| result.map(Frame::data).map_err(Error::from)),
-        ))
-    }
-}
-
 impl HttpBody for Body {
     type Data = Bytes;
     type Error = Error;
 
     fn poll_frame(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame, Self::Error>>> {
-        self.data.as_mut().poll_frame(context)
+        let this = self.get_mut();
+        this.data.as_mut().poll_frame(context)
     }
 
     fn is_end_stream(&self) -> bool {
