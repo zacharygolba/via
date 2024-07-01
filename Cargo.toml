@@ -8,7 +8,6 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 default = []
-file-system = ["tokio/fs", "dep:tokio-util"]
 serde = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
@@ -36,11 +35,6 @@ version = "1.0.202"
 [dependencies.serde_json]
 optional = true
 version = "1.0.117"
-
-[dependencies.tokio-util]
-features = ["io"]
-optional = true
-version = "0.7.11"
 
 [workspace]
 members = ["crates/*", "docs/examples/*"]

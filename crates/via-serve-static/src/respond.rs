@@ -1,9 +1,13 @@
-use std::{io::ErrorKind, sync::Arc};
-use tokio::fs::File;
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use via::{http::header, Error, Next, Request, Response, Result};
 
 use crate::{
     resolve::{resolve_file, resolve_metadata},
+    stream_file::StreamFile,
     ServerConfig,
 };
 
@@ -15,12 +19,11 @@ pub async fn respond_to_head_request<State>(
 where
     State: Send + Sync + 'static,
 {
-    let ServerConfig { fall_through, .. } = *config;
-    let file_path = config.extract_path(&request)?;
-    let file = match resolve_metadata(file_path).await {
+    let path = build_path_from_request(&request, &config.public_dir, config.path_param)?;
+    let file = match resolve_metadata(path).await {
         // The file does not exist and the server is configured to fall through
         // to the next middleware.
-        Err(error) if fall_through && error.kind() == ErrorKind::NotFound => {
+        Err(error) if config.fall_through && error.kind() == ErrorKind::NotFound => {
             return next.call(request).await;
         }
         // An error occurred while attempting to resolve the file metadata. Return
@@ -46,12 +49,11 @@ pub async fn respond_to_get_request<State>(
 where
     State: Send + Sync + 'static,
 {
-    let ServerConfig { fall_through, .. } = *config;
-    let file_path = config.extract_path(&request)?;
-    let file = match resolve_file(file_path).await {
+    let path = build_path_from_request(&request, &config.public_dir, config.path_param)?;
+    let file = match resolve_file(path, config.eager_read_threshold).await {
         // The file does not exist and the server is configured to fall through
         // to the next middleware.
-        Err(error) if fall_through && error.kind() == ErrorKind::NotFound => {
+        Err(error) if config.fall_through && error.kind() == ErrorKind::NotFound => {
             return next.call(request).await;
         }
         // An error occurred while attempting to resolve the file. Return an
@@ -77,10 +79,17 @@ where
     } else {
         // The file is too large to be eagerly read into memory. We will stream the
         // file data from disk to the response body.
-        Response::build()
+        Response::stream(StreamFile::new(file.path))
             .header(header::CONTENT_TYPE, content_type)
-            .header(header::TRANSFER_ENCODING, "chunked")
-            .body(File::open(&file.path).await?)
             .end()
     }
+}
+
+fn build_path_from_request<State>(
+    request: &Request<State>,
+    public_dir: &Path,
+    path_param_name: &str,
+) -> Result<PathBuf> {
+    let path_param = request.param(path_param_name).required()?;
+    Ok(public_dir.join(path_param.trim_end_matches('/')))
 }

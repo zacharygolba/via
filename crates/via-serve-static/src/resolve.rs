@@ -6,13 +6,6 @@ use std::{
 };
 use tokio::task;
 
-/// The maximum file size that will be eagerly read into memory. As a performance
-/// optimization, small files will be read into memory immediately to avoid the
-/// overhead of calling `tokio::task::spawn_blocking` multiple times.
-///
-/// The current value is set to `10MB`.
-const EAGER_READ_THRESHOLD: u64 = 1024 * 1024 * 10;
-
 pub(crate) struct ResolvedFile {
     pub data: Option<Vec<u8>>,
     pub path: PathBuf,
@@ -21,9 +14,9 @@ pub(crate) struct ResolvedFile {
 }
 
 /// Resolves a file path to a `ResolvedFile` and conditionally loads the file a
-/// data into memory if the file size is less than `EAGER_READ_THRESHOLD` constant.
-pub async fn resolve_file(path: PathBuf) -> io::Result<ResolvedFile> {
-    task::spawn_blocking(|| resolve_file_blocking(path)).await?
+/// data into memory if the file size is less than `eager_read_threshold` constant.
+pub async fn resolve_file(path: PathBuf, eager_read_threshold: u64) -> io::Result<ResolvedFile> {
+    task::spawn_blocking(move || resolve_file_blocking(path, eager_read_threshold)).await?
 }
 
 /// Resolves a file path to a `ResolvedFile` without loading the file data into memory.
@@ -31,11 +24,11 @@ pub async fn resolve_metadata(path: PathBuf) -> io::Result<ResolvedFile> {
     task::spawn_blocking(|| resolve_metadata_blocking(path)).await?
 }
 
-fn resolve_file_blocking(path: PathBuf) -> io::Result<ResolvedFile> {
+fn resolve_file_blocking(path: PathBuf, eager_read_threshold: u64) -> io::Result<ResolvedFile> {
     let mut resolved_file = resolve_metadata_blocking(path)?;
     let content_length = resolved_file.metadata.len();
 
-    if content_length < EAGER_READ_THRESHOLD {
+    if content_length < eager_read_threshold {
         let mut buf = Vec::with_capacity(content_length as usize);
         let mut file = File::open(&resolved_file.path)?;
 
