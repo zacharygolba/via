@@ -1,49 +1,73 @@
-use via::prelude::*;
+use via::{Error, ErrorBoundary, Event, Response, Result};
+use via_serve_static::serve_static;
 
-struct Routes;
-
-#[service]
-impl Routes {
-    includes! {
-        |context: Context, next: Next| async {
-            let result = next.call(context).await;
-
-            println!("This will be called after the request is processed");
-            result
-        },
-        |context: Context, next: Next| async {
-            println!("This will be called before the request is processed");
-            next.call(context).await
-        },
-    }
-
-    #[endpoint(GET, "/hello/:name")]
-    async fn hello(name: String) -> Result<impl Respond> {
-        Ok(format!("Hello, {}", name))
-    }
-}
-
-async fn logger(context: Context, next: Next) -> Result<impl Respond> {
-    let path = context.uri().path().to_string();
-    let method = context.method().clone();
-
-    next.call(context)
-        .await
-        .inspect(move |response| {
-            let status_code = response.status_code();
-            println!("{} {} => {}", method, path, status_code);
-        })
-        .inspect_err(|error| {
-            eprintln!("{}", error);
-        })
-}
+pub type Request = via::Request<()>;
+pub type Next = via::Next<()>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut app = via::new();
+    let mut app = via::app(());
 
-    app.include(logger);
-    app.delegate(Routes);
+    // Setup a simple logger middleware that logs the method, path, and
+    // response of each request.
+    app.include(|request: Request, next: Next| {
+        let method = request.method().clone();
+        let path = request.uri().path().to_owned();
 
-    app.listen(("0.0.0.0", 8080)).await
+        async move {
+            next.call(request).await.inspect(|response| {
+                println!("{} {} => {}", method, path, response.status());
+            })
+        }
+    });
+
+    // Catch any errors that occur in downstream middleware, convert them
+    // into a response and log the error message. Upstream middleware will
+    // continue to execute as normal.
+    app.include(ErrorBoundary::inspect(|error| {
+        eprintln!("ERROR: {}", error);
+    }));
+
+    let mut hey = app.at("/hey/:name");
+
+    hey.include(|request: Request, next: Next| async move {
+        println!("Called before the request is handled");
+        let response = next.call(request).await?;
+        println!("Called after the request is handled");
+        Ok::<_, Error>(response)
+    });
+
+    hey.respond(via::get(|request: Request, _: Next| async move {
+        let name = request.param("name").required()?;
+        Response::text(format!("Hey, {}! 👋", name)).end()
+    }));
+
+    let mut id = app.at("/:id");
+
+    id.respond(via::get(|request: Request, next: Next| async move {
+        if let Ok(id) = request.param("id").parse::<i32>() {
+            Response::text(format!("ID: {}", id)).end()
+        } else {
+            next.call(request).await
+        }
+    }));
+
+    let mut catch_all = app.at("/catch-all/*name");
+
+    catch_all.respond(via::get(|request: Request, _: Next| async move {
+        let path = request.param("name").required()?;
+        Response::text(format!("Catch-all: {}", path)).end()
+    }));
+
+    serve_static(app.at("/*path")).serve("./public")?;
+
+    app.listen(("127.0.0.1", 8080), |event| match event {
+        Event::ConnectionError(error) | Event::UncaughtError(error) => {
+            eprintln!("Error: {}", error);
+        }
+        Event::ServerReady(address) => {
+            println!("Server listening at http://{}", address);
+        }
+    })
+    .await
 }

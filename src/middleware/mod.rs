@@ -1,11 +1,14 @@
-mod handler;
-mod session;
+pub mod error_boundary;
 
-pub mod context;
-pub mod filter;
+mod allow_method;
+mod middleware;
+mod next;
 
-pub(crate) use handler::DynMiddleware;
+pub(crate) use self::middleware::DynMiddleware;
 
-#[doc(inline)]
-pub use self::context::Context;
-pub use handler::{Middleware, Next};
+pub use self::{
+    allow_method::AllowMethod,
+    error_boundary::ErrorBoundary,
+    middleware::{BoxFuture, Middleware},
+    next::Next,
+};

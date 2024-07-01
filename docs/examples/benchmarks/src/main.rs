@@ -1,10 +1,24 @@
-use via::prelude::*;
+use via::{Event, Response, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut app = via::new();
+    let mut app = via::app(());
 
-    app.at("/text").get(|_, _| async { "Hello, world!" });
-    app.at("/unit").get(|_, _| async {});
-    app.listen(("0.0.0.0", 8080)).await
+    app.at("/text").respond(via::get(|_, _| async {
+        Response::text("Hello, world!").end()
+    }));
+
+    app.at("/unit").respond(via::get(|_, _| async {
+        Response::build().status(204).end()
+    }));
+
+    app.listen(("127.0.0.1", 8080), |event| match event {
+        Event::ConnectionError(error) | Event::UncaughtError(error) => {
+            eprintln!("Error: {}", error);
+        }
+        Event::ServerReady(address) => {
+            println!("Server listening at http://{}", address);
+        }
+    })
+    .await
 }
