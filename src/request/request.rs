@@ -1,5 +1,4 @@
 use http::{HeaderMap, Method, Uri, Version};
-use hyper::body::Incoming;
 use std::{
     fmt::{self, Debug},
     sync::Arc,
@@ -14,8 +13,6 @@ use super::{
     Body, PathParam,
 };
 
-pub(crate) type IncomingRequest = http::Request<Incoming>;
-
 pub struct Request<State> {
     inner: http::Request<Body>,
     app_state: Arc<State>,
@@ -26,20 +23,17 @@ pub struct Request<State> {
 
 impl<State> Request<State> {
     pub(crate) fn new(
-        inner: IncomingRequest,
+        inner: http::Request<Body>,
         app_state: Arc<State>,
         path_params: PathParams,
         event_listener: EventListener,
     ) -> Self {
-        let inner = inner.map(|body| Body { inner: Some(body) });
-        let query_params = None;
-
-        Request {
+        Self {
             inner,
             app_state,
             path_params,
-            query_params,
             event_listener,
+            query_params: None,
         }
     }
 

@@ -3,7 +3,7 @@ use via_router::{Endpoint as GenericEndpoint, Router as GenericRouter};
 
 use crate::{
     middleware::DynMiddleware,
-    request::{IncomingRequest, PathParams},
+    request::{self, PathParams},
     Middleware, Next,
 };
 
@@ -36,7 +36,11 @@ where
         }
     }
 
-    pub fn visit(&self, path_params: &mut PathParams, request: &IncomingRequest) -> Next<State> {
+    pub fn visit(
+        &self,
+        path_params: &mut PathParams,
+        request: &http::Request<request::Body>,
+    ) -> Next<State> {
         let mut stack = VecDeque::new();
         let path = request.uri().path();
 

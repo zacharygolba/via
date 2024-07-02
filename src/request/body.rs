@@ -6,7 +6,7 @@ use crate::Result;
 
 #[derive(Debug)]
 pub struct Body {
-    pub(super) inner: Option<Incoming>,
+    inner: Option<Box<Incoming>>,
 }
 
 impl Body {
@@ -37,6 +37,14 @@ impl Body {
             *error.status_mut() = StatusCode::BAD_REQUEST;
             error
         })
+    }
+}
+
+impl Body {
+    pub(crate) fn new(inner: Incoming) -> Self {
+        Self {
+            inner: Some(Box::new(inner)),
+        }
     }
 
     async fn aggregate(&mut self) -> Result<impl Buf> {
