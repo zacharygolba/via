@@ -31,7 +31,6 @@ use crate::{
     event::EventListener,
     middleware::{AllowMethod, BoxFuture},
     request::PathParams,
-    response::OutgoingResponse,
     router::Router,
 };
 
@@ -192,7 +191,7 @@ where
         &self,
         request: http::Request<request::Body>,
         event_listener: &EventListener,
-    ) -> Result<OutgoingResponse, Infallible> {
+    ) -> Result<http::Response<response::Body>, Infallible> {
         let mut path_params = PathParams::new();
 
         let next = self.router.visit(&mut path_params, &request);

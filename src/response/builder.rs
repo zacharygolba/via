@@ -45,6 +45,26 @@ impl ResponseBuilder {
         }
     }
 
+    pub fn headers<I, K, V>(self, headers: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        HeaderName: TryFrom<K>,
+        <HeaderName as TryFrom<K>>::Error: Into<http::Error>,
+        HeaderValue: TryFrom<V>,
+        <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+    {
+        let inner = headers
+            .into_iter()
+            .fold(self.inner, |builder, (key, value)| {
+                builder.header(key, value)
+            });
+
+        Self {
+            inner,
+            body: self.body,
+        }
+    }
+
     pub fn status<T>(self, status: T) -> Self
     where
         StatusCode: TryFrom<T>,

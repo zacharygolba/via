@@ -11,10 +11,8 @@ use super::{
 };
 use crate::Error;
 
-pub(crate) type OutgoingResponse = http::Response<Body>;
-
 pub struct Response {
-    pub(super) inner: OutgoingResponse,
+    pub(super) inner: http::Response<Body>,
 }
 
 impl Response {
@@ -27,16 +25,11 @@ impl Response {
         Body: From<T>,
     {
         let body = Body::from(body);
-        let content_len = body.len();
-        let mut response = ResponseBuilder::with_body(Ok(body));
+        let len = body.len();
 
-        response = response.header(header::CONTENT_TYPE, "text/html; charset=utf-8");
-
-        if let Some(value) = content_len {
-            response = response.header(header::CONTENT_LENGTH, value)
-        }
-
-        response
+        ResponseBuilder::with_body(Ok(body))
+            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+            .headers(len.map(|content_length| (header::CONTENT_LENGTH, content_length)))
     }
 
     pub fn text<T>(body: T) -> ResponseBuilder
@@ -44,16 +37,11 @@ impl Response {
         Body: From<T>,
     {
         let body = Body::from(body);
-        let content_len = body.len();
-        let mut response = ResponseBuilder::with_body(Ok(body));
+        let len = body.len();
 
-        response = response.header(header::CONTENT_TYPE, "text/plain; charset=utf-8");
-
-        if let Some(value) = content_len {
-            response = response.header(header::CONTENT_LENGTH, value)
-        }
-
-        response
+        ResponseBuilder::with_body(Ok(body))
+            .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+            .headers(len.map(|content_length| (header::CONTENT_LENGTH, content_length)))
     }
 
     #[cfg(feature = "serde")]
@@ -66,16 +54,11 @@ impl Response {
         let body = serde_json::to_vec(body)
             .map(Body::from)
             .map_err(Error::from);
-        let content_len = body.as_ref().map_or(None, Body::len);
-        let mut response = ResponseBuilder::with_body(body);
+        let len = body.as_ref().map_or(None, Body::len);
 
-        response = response.header(header::CONTENT_TYPE, "application/json; charset=utf-8");
-
-        if let Some(value) = content_len {
-            response = response.header(header::CONTENT_LENGTH, value)
-        }
-
-        response
+        ResponseBuilder::with_body(body)
+            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .headers(len.map(|content_length| (header::CONTENT_LENGTH, content_length)))
     }
 
     pub fn stream<T, D, E>(body: T) -> ResponseBuilder
@@ -84,12 +67,13 @@ impl Response {
         Bytes: From<D>,
         Error: From<E>,
     {
-        let body = Body::stream(Box::pin(body.map(|result| match result {
+        let stream = Box::pin(body.map(|result| match result {
             Ok(data) => Ok(Frame::data(Bytes::from(data))),
             Err(error) => Err(Error::from(error)),
-        })));
+        }));
 
-        ResponseBuilder::with_body(Ok(body)).header(header::TRANSFER_ENCODING, "chunked")
+        ResponseBuilder::with_body(Ok(Body::stream(stream)))
+            .header(header::TRANSFER_ENCODING, "chunked")
     }
 
     pub fn body(&self) -> &Body {
@@ -128,7 +112,7 @@ impl Response {
         }
     }
 
-    pub(crate) fn into_inner(self) -> OutgoingResponse {
+    pub(crate) fn into_inner(self) -> http::Response<Body> {
         self.inner
     }
 }
