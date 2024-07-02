@@ -4,7 +4,7 @@ mod query_param;
 mod query_parser;
 mod request;
 
-pub(crate) use self::{path_param::PathParams, request::IncomingRequest};
+pub(crate) use self::path_param::PathParams;
 
 pub use self::{
     body::Body,

@@ -30,7 +30,7 @@ use tokio::net::TcpListener;
 use crate::{
     event::EventListener,
     middleware::{AllowMethod, BoxFuture},
-    request::{IncomingRequest, PathParams},
+    request::PathParams,
     response::OutgoingResponse,
     router::Router,
 };
@@ -165,6 +165,10 @@ where
             // Spawn a tokio task to serve multiple connections concurrently.
             tokio::spawn(async move {
                 let service = service_fn(|request| {
+                    // Wrap the request body with `request::Body` to move the
+                    // underlying value to the heap as early as possible.
+                    let request = request.map(request::Body::new);
+
                     // Delegate the request to the application to route the
                     // request to the appropriate middleware stack.
                     app.call(request, &event_listener)
@@ -186,7 +190,7 @@ where
 
     async fn call(
         &self,
-        request: IncomingRequest,
+        request: http::Request<request::Body>,
         event_listener: &EventListener,
     ) -> Result<OutgoingResponse, Infallible> {
         let mut path_params = PathParams::new();
