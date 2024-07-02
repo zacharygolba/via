@@ -10,6 +10,9 @@ use std::{
 use tokio::{runtime::Handle, sync::mpsc, task};
 use via::{Error, Result};
 
+/// The amount of `ReadChunkedResult` to buffer before polling the receiver again.
+const CHANNEL_CAPACITY: usize = 8;
+
 /// The high watermark for the buffer size used to read the file in chunks.
 const HIGH_WATERMARK: usize = 32768; // 32KB
 
@@ -17,10 +20,11 @@ const HIGH_WATERMARK: usize = 32768; // 32KB
 /// sleep while the channel has no capacity.
 const SLEEP_DURATION: u64 = 25;
 
-type ReadChunkedResult = Result<Vec<u8>, io::Error>;
+type ReadChunkResult = Result<Vec<u8>, io::Error>;
 
 pub struct StreamFile {
-    receiver: mpsc::Receiver<ReadChunkedResult>,
+    receiver: mpsc::Receiver<ReadChunkResult>,
+    results: Vec<ReadChunkResult>,
 }
 
 /// Calculate the elapsed time in seconds since the provided `SystemTime`. If we
@@ -36,7 +40,7 @@ fn elapsed_as_secs(from: SystemTime, timeout: u64) -> u64 {
 /// within a blocking task using `block_in_place`. This will prevent the task
 /// from blocking the entire runtime while the receiver catches up to the
 /// sender.
-async fn wait_for_capacity(sender: &mpsc::Sender<ReadChunkedResult>) {
+async fn wait_for_capacity(sender: &mpsc::Sender<ReadChunkResult>) {
     let duration = Duration::from_micros(SLEEP_DURATION);
 
     while sender.capacity() == 0 {
@@ -46,7 +50,7 @@ async fn wait_for_capacity(sender: &mpsc::Sender<ReadChunkedResult>) {
 
 /// Read the file at `path` in chunks and send the chunks to the receiver. This
 /// function should only be called within a blocking task.
-fn stream_file_blocking(sender: mpsc::Sender<ReadChunkedResult>, path: PathBuf, timeout: u64) {
+fn stream_file_blocking(sender: mpsc::Sender<ReadChunkResult>, path: PathBuf, timeout: u64) {
     let start_time = SystemTime::now();
     let mut file = match File::open(&path) {
         Ok(opened) => opened,
@@ -112,21 +116,54 @@ fn stream_file_blocking(sender: mpsc::Sender<ReadChunkedResult>, path: PathBuf, 
 
 impl StreamFile {
     pub fn new(path: PathBuf, timeout: u64) -> Self {
-        let (sender, receiver) = mpsc::channel(16);
+        let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
+        let mut results = Vec::new();
+
+        results.reserve_exact(CHANNEL_CAPACITY);
 
         // Spawn a blocking task to read the file in chunks.
         task::spawn_blocking(move || stream_file_blocking(sender, path, timeout));
 
-        Self { receiver }
+        Self { receiver, results }
     }
 }
 
 impl Stream for StreamFile {
     type Item = Result<Vec<u8>>;
 
-    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.receiver
-            .poll_recv(context)
-            .map_err(Error::from_io_error)
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        // Get a mutable reference to the pinned data.
+        let this = self.get_mut();
+
+        loop {
+            // Check whether or not we have results in `self.results`. If so,
+            // pop the last result and return it.
+            if let Some(result) = this.results.pop() {
+                return Poll::Ready(Some(result.map_err(Error::from_io_error)));
+            }
+
+            // Create an intermediate buffer to hold received chunks. While it's
+            // possible to reverse the order of the chunks in the results buffer,
+            // it's probably safer to extend `self.results` with a reversed
+            // iterator.
+            let mut buf = Vec::new();
+
+            buf.reserve_exact(CHANNEL_CAPACITY);
+
+            // Poll the receiver for new data.
+            match this
+                .receiver
+                .poll_recv_many(context, &mut buf, CHANNEL_CAPACITY)
+            {
+                // No data yet.
+                Poll::Pending => return Poll::Pending,
+                // No more data.
+                Poll::Ready(0) => return Poll::Ready(None),
+                // Extend `self.results` with the elements in `buf`.
+                Poll::Ready(_) => {
+                    this.results.extend(buf.into_iter().rev());
+                }
+            }
+        }
     }
 }
