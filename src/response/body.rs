@@ -11,10 +11,11 @@ use crate::{Error, Result};
 
 pub type Frame = http_body::Frame<Bytes>;
 
+type BodyData = dyn http_body::Body<Data = Bytes, Error = Error> + Send + 'static;
 type BoxStream = Pin<Box<dyn Stream<Item = Result<Frame>> + Send + 'static>>;
 
 pub struct Body {
-    data: Pin<Box<dyn HttpBody<Data = Bytes, Error = Error> + Send + 'static>>,
+    data: Box<BodyData>,
     len: Option<usize>,
 }
 
@@ -27,7 +28,7 @@ impl Body {
 impl Body {
     pub(super) fn empty() -> Self {
         Self {
-            data: Box::pin(Empty::new().map_err(Error::from)),
+            data: Box::new(Empty::new().map_err(Error::from)),
             len: Some(0),
         }
     }
@@ -36,15 +37,24 @@ impl Body {
         let len = body.len();
 
         Self {
-            data: Box::pin(Full::new(body).map_err(Error::from)),
+            data: Box::new(Full::new(body).map_err(Error::from)),
             len: Some(len),
         }
     }
 
     pub(super) fn stream(body: BoxStream) -> Self {
         Self {
-            data: Box::pin(StreamBody::new(body)),
+            data: Box::new(StreamBody::new(body)),
             len: None,
+        }
+    }
+
+    fn project(self: Pin<&mut Self>) -> Pin<&mut BodyData> {
+        // SAFETY:
+        // A pin projection.
+        unsafe {
+            let this = self.get_unchecked_mut();
+            Pin::new_unchecked(&mut *this.data)
         }
     }
 }
@@ -93,8 +103,7 @@ impl HttpBody for Body {
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame, Self::Error>>> {
-        let this = self.get_mut();
-        this.data.as_mut().poll_frame(context)
+        self.project().poll_frame(context)
     }
 
     fn is_end_stream(&self) -> bool {

@@ -4,6 +4,4 @@ mod builder;
 mod convert;
 mod response;
 
-pub(crate) use self::response::OutgoingResponse;
-
-pub use self::{builder::ResponseBuilder, convert::IntoResponse, response::Response};
+pub use self::{body::Body, builder::ResponseBuilder, convert::IntoResponse, response::Response};
