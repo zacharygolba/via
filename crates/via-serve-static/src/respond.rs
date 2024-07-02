@@ -77,9 +77,9 @@ where
             .body(data)
             .end()
     } else {
-        // The file is too large to be eagerly read into memory. We will stream the
-        // file data from disk to the response body.
-        Response::stream(StreamFile::new(file.path))
+        // The file is too large to be eagerly read into memory. Stream the file
+        // data from disk into the response body.
+        Response::stream(StreamFile::new(file.path, config.chunked_read_timeout))
             .header(header::CONTENT_TYPE, content_type)
             .end()
     }
