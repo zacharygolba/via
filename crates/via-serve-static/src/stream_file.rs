@@ -10,7 +10,12 @@ use std::{
 use tokio::{runtime::Handle, sync::mpsc, task};
 use via::{Error, Result};
 
+/// The high watermark for the buffer size used to read the file in chunks.
 const HIGH_WATERMARK: usize = 32768; // 32KB
+
+/// The duration in microseconds for which the `stream_file_blocking` task will
+/// sleep while the channel has no capacity.
+const SLEEP_DURATION: u64 = 25;
 
 type ReadChunkedResult = Result<Vec<u8>, io::Error>;
 
@@ -18,65 +23,99 @@ pub struct StreamFile {
     receiver: mpsc::Receiver<ReadChunkedResult>,
 }
 
-fn stream_file_blocking(sender: mpsc::Sender<ReadChunkedResult>, path: PathBuf) -> Result<()> {
+/// Calculate the elapsed time in seconds since the provided `SystemTime`. If we
+/// are unable to calculate the elapsed time, we return a value greater than the
+/// configured timeout.
+fn elapsed_as_secs(from: SystemTime, timeout: u64) -> u64 {
+    SystemTime::now()
+        .duration_since(from)
+        .map_or(timeout + 1, |elapsed| elapsed.as_secs())
+}
+
+/// Sleep until the channel has capacity. This function should only be called
+/// within a blocking task using `block_in_place`. This will prevent the task
+/// from blocking the entire runtime while the receiver catches up to the
+/// sender.
+async fn wait_for_capacity(sender: &mpsc::Sender<ReadChunkedResult>) {
+    let duration = Duration::from_micros(SLEEP_DURATION);
+
+    while sender.capacity() == 0 {
+        tokio::time::sleep(duration).await;
+    }
+}
+
+/// Read the file at `path` in chunks and send the chunks to the receiver. This
+/// function should only be called within a blocking task.
+fn stream_file_blocking(sender: mpsc::Sender<ReadChunkedResult>, path: PathBuf, timeout: u64) {
     let start_time = SystemTime::now();
-    let mut file = File::open(&path)?;
+    let mut file = match File::open(&path) {
+        Ok(opened) => opened,
+        Err(error) => {
+            // There was an error opening the file. Send the error to the
+            // receiver and return. Since we didn't allocate our buffer
+            // yet, there is no need to zero it out.
+            let _ = sender.blocking_send(Err(error));
+            return;
+        }
+    };
     let mut buf = vec![0; HIGH_WATERMARK];
 
     loop {
+        // Check if we have been reading for more than the configured timeout.
+        // If so, send a TimedOut error to the receiver, zero out the buffer,
+        // and return.
+        if elapsed_as_secs(start_time, timeout) > timeout {
+            use std::io::{Error, ErrorKind};
+
+            let _ = sender.blocking_send(Err(Error::new(
+                ErrorKind::TimedOut,
+                "Timed out while reading file",
+            )));
+            buf.fill(0);
+            return;
+        }
+
+        if sender.capacity() == 0 {
+            // Wait for the channel to have capacity.
+            task::block_in_place(|| {
+                Handle::current().block_on(wait_for_capacity(&sender));
+            });
+        }
+
         match file.read(&mut buf) {
-            Err(e) => {
-                let _ = sender.blocking_send(Err(e));
-                break;
+            Err(error) => {
+                // An error occurred while reading the file. Send the error to
+                // the receiver, zero out the buffer, and return.
+                let _ = sender.blocking_send(Err(error));
+                buf.fill(0);
+                return;
             }
             Ok(0) => {
-                // We reached the end of the file.
-                break;
+                // We reached the end of the file. Zero out the buffer and return.
+                buf.fill(0);
+                return;
             }
             Ok(n) => {
+                // Copy the slice of bytes that were read into the buffer and
+                // send it as a vec to the receiver.
                 if sender.blocking_send(Ok(buf[..n].to_vec())).is_err() {
-                    // Receiver has been dropped.
-                    break;
+                    // The receiver has been dropped. This may happen if the
+                    // client disconnects before the file has been fully read.
+                    // Zero out the buffer and return.
+                    buf.fill(0);
+                    return;
                 }
             }
         }
-
-        // Check if we have been reading for more than 60 seconds. If so, break the loop.
-        // In the future we may want to make this value configurable.
-        if start_time.elapsed()?.as_secs() > 60 {
-            let error = io::Error::new(io::ErrorKind::TimedOut, "Timed out while reading file");
-            let _ = sender.blocking_send(Err(error));
-            break;
-        }
-
-        if sender.capacity() > 0 {
-            continue;
-        }
-
-        task::block_in_place(|| {
-            // Wait for the receiver to have capacity.
-            Handle::current().block_on(async {
-                while sender.capacity() == 0 {
-                    // Sleep for 25 microseconds. The sleep duration is arbitrary
-                    // and may need to be adjusted.
-                    tokio::time::sleep(Duration::from_micros(25)).await;
-                }
-            });
-        });
     }
-
-    // Zero out the buffer.
-    buf.fill(0);
-
-    Ok(())
 }
 
 impl StreamFile {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(path: PathBuf, timeout: u64) -> Self {
         let (sender, receiver) = mpsc::channel(16);
 
         // Spawn a blocking task to read the file in chunks.
-        task::spawn_blocking(|| stream_file_blocking(sender, path));
+        task::spawn_blocking(move || stream_file_blocking(sender, path, timeout));
 
         Self { receiver }
     }

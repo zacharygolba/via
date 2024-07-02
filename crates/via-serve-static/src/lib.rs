@@ -7,7 +7,15 @@ use via::{Endpoint, Error, Result};
 
 use crate::respond::{respond_to_get_request, respond_to_head_request};
 
+/// The default file size threshold in bytes at which the server will eagerly
+/// read the file into memory.
+const DEFAULT_EAGER_READ_THRESHOLD: u64 = 1048576; // 1MB
+
+/// The default timeout in seconds used when reading a file in chunks.
+const DEFAULT_CHUNKED_READ_TIMEOUT: u64 = 60;
+
 pub struct ServeStatic<'a, State> {
+    chunked_read_timeout: u64,
     eager_read_threshold: u64,
     fall_through: bool,
     endpoint: Endpoint<'a, State>,
@@ -15,6 +23,7 @@ pub struct ServeStatic<'a, State> {
 
 #[derive(Clone)]
 pub(crate) struct ServerConfig {
+    chunked_read_timeout: u64,
     eager_read_threshold: u64,
     fall_through: bool,
     path_param: &'static str,
@@ -25,7 +34,8 @@ pub(crate) struct ServerConfig {
 /// The provided `endpoint` must have a path parameter.
 pub fn serve_static<State>(endpoint: Endpoint<State>) -> ServeStatic<State> {
     ServeStatic {
-        eager_read_threshold: 1024 * 1024, // 1MB
+        chunked_read_timeout: DEFAULT_CHUNKED_READ_TIMEOUT,
+        eager_read_threshold: DEFAULT_EAGER_READ_THRESHOLD,
         fall_through: true,
         endpoint,
     }
@@ -35,6 +45,13 @@ impl<'a, State> ServeStatic<'a, State>
 where
     State: Send + Sync + 'static,
 {
+    /// Configures the timeout in seconds used when reading a file in chunks. The
+    /// default value is 60 seconds.
+    pub fn chunked_read_timeout(mut self, timeout: u64) -> Self {
+        self.chunked_read_timeout = timeout;
+        self
+    }
+
     /// Configures the file size threshold in bytes at which the server will eagerly
     /// read the file into memory. The default value is 1MB.
     pub fn eager_read_threshold(mut self, threshold: u64) -> Self {
@@ -60,6 +77,7 @@ where
         T: TryInto<PathBuf>,
     {
         let mut public_dir: PathBuf = public_dir.try_into()?;
+        let chunked_read_timeout = self.chunked_read_timeout;
         let eager_read_threshold = self.eager_read_threshold;
         let fall_through = self.fall_through;
         let path_param = match self.endpoint.param() {
@@ -77,6 +95,7 @@ where
         }
 
         let config = ServerConfig {
+            chunked_read_timeout,
             eager_read_threshold,
             fall_through,
             path_param,
