@@ -87,7 +87,9 @@ impl<State> Request<State> {
         QueryParamValues::new(name, query, values)
     }
 
-    pub fn state(&self) -> &State {
+    /// Returns a thread-safe reference-counting pointer to the application
+    /// state that was passed as an argument to the `via::app` function.
+    pub fn state(&self) -> &Arc<State> {
         &self.app_state
     }
 
