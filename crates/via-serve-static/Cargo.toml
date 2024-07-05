@@ -5,24 +5,22 @@ edition = "2021"
 license = "MIT"
 
 [features]
-default = ["etag-sha256"]
+default = []
 etag-md5 = ["dep:md-5"]
 etag-sha1 = ["dep:sha1"]
 etag-sha256 = ["dep:sha2"]
-last-modified = ["dep:httpdate"]
 
 [dependencies]
-bitflags = "2.6.0"
-futures-util = { version = "0.3.30", default-features = false }
-httpdate = { version = "1.0.3", optional = true }
-md-5 = { version = "0.10.6", optional = true }
-mime = "0.3.17"
-mime_guess = "2.0.4"
-sha1 = { version = "0.10.6", optional = true }
-sha2 = { version = "0.10.8", optional = true }
+bitflags = "2.6"
+futures-util = { version = "0.3", default-features = false }
+httpdate = "1.0"
+md-5 = { version = "0.10", optional = true }
+mime_guess = "2.0"
+sha1 = { version = "0.10", optional = true }
+sha2 = { version = "0.10", optional = true }
 
 [dependencies.tokio]
-version = "1.38.0"
+version = "1.38"
 
 [dependencies.via]
 path = "../.."

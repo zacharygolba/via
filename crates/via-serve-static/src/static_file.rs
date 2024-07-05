@@ -115,7 +115,12 @@ impl StaticFile {
     /// Resolves a file path to a `ResolvedFile` without loading the file data
     /// into memory.
     pub async fn metadata(path: PathBuf, flags: Flags) -> io::Result<StaticFile> {
-        task::spawn_blocking(move || resolve_metadata_blocking(path, flags)).await?
+        let future = task::spawn_blocking(move || {
+            // Run the blocking operation in a separate thread.
+            resolve_metadata_blocking(path, flags)
+        });
+
+        future.await?
     }
 
     /// Resolves a file path to a `StaticFile` and conditionally loads the file
@@ -125,7 +130,11 @@ impl StaticFile {
         flags: Flags,
         eager_read_threshold: u64,
     ) -> io::Result<StaticFile> {
-        task::spawn_blocking(move || resolve_file_blocking(path, flags, eager_read_threshold))
-            .await?
+        let future = task::spawn_blocking(move || {
+            // Run the blocking operation in a separate thread.
+            resolve_file_blocking(path, flags, eager_read_threshold)
+        });
+
+        future.await?
     }
 }

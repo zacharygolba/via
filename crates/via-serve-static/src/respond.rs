@@ -1,4 +1,5 @@
-use std::{path::PathBuf, sync::Arc};
+use httpdate::HttpDate;
+use std::path::PathBuf;
 use via::{
     http::{header, HeaderName},
     Next, Request, Response, Result,
@@ -47,18 +48,18 @@ macro_rules! try_unwrap_file {
 }
 
 pub async fn respond_to_head_request<State>(
-    config: Arc<ServerConfig>,
+    config: ServerConfig,
     request: Request<State>,
     next: Next<State>,
 ) -> Result<Response>
 where
     State: Send + Sync + 'static,
 {
-    let file = try_unwrap_file!(config, request, next, {
+    let mut file = try_unwrap_file!(config, request, next, {
         let path = build_path_from_request(&request, &config)?;
         StaticFile::metadata(path, config.flags).await
     });
-    let optional_headers = get_optional_headers(&file, &config.flags);
+    let optional_headers = get_optional_headers(&mut file, &config.flags);
 
     Response::build()
         .header(header::CONTENT_TYPE, file.mime_type)
@@ -68,23 +69,23 @@ where
 }
 
 pub async fn respond_to_get_request<State>(
-    config: Arc<ServerConfig>,
+    config: ServerConfig,
     request: Request<State>,
     next: Next<State>,
 ) -> Result<Response>
 where
     State: Send + Sync + 'static,
 {
-    let file = try_unwrap_file!(config, request, next, {
+    let mut file = try_unwrap_file!(config, request, next, {
         let path = build_path_from_request(&request, &config)?;
         let flags = config.flags;
         let eager_read_threshold = config.eager_read_threshold;
 
         StaticFile::open(path, flags, eager_read_threshold).await
     });
-    let optional_headers = get_optional_headers(&file, &config.flags);
+    let optional_headers = get_optional_headers(&mut file, &config.flags);
 
-    match file.data {
+    match file.data.take() {
         Some(data) => {
             // The file was small enough to be eagerly read into memory. We can
             // respond immediately with the entire vector of bytes as the
@@ -117,26 +118,22 @@ fn build_path_from_request<State>(
     Ok(config.public_dir.join(path_param.trim_end_matches('/')))
 }
 
-#[cfg(not(feature = "last-modified"))]
-fn get_last_modified_header(_: &StaticFile, _: &Flags) -> Option<(HeaderName, String)> {
-    None
-}
-
-#[cfg(feature = "last-modified")]
-fn get_last_modified_header(file: &StaticFile, flags: &Flags) -> Option<(HeaderName, String)> {
-    Some((
-        header::LAST_MODIFIED,
-        httpdate::fmt_http_date(file.modified_at?),
-    ))
-}
-
 fn get_optional_headers(
-    file: &StaticFile,
+    file: &mut StaticFile,
     flags: &Flags,
 ) -> impl Iterator<Item = (HeaderName, String)> {
-    file.etag
-        .clone()
-        .map(|etag| (header::ETAG, etag))
-        .into_iter()
-        .chain(get_last_modified_header(file, flags))
+    let last_modified = if flags.contains(Flags::INCLUDE_LAST_MODIFIED) {
+        file.modified_at.map(|time| {
+            let http_date = HttpDate::from(time);
+            (header::LAST_MODIFIED, http_date.to_string())
+        })
+    } else {
+        None
+    };
+
+    // We don't need to check if the `INCLUDE_ETAG` flag is set because the
+    // value of `file.etag` is `None` when the flag is not set.
+    let etag = file.etag.take().map(|etag| (header::ETAG, etag));
+
+    last_modified.into_iter().chain(etag)
 }
