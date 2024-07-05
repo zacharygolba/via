@@ -117,8 +117,10 @@ impl StreamFile {
     pub fn new(path: PathBuf, timeout: u64) -> Self {
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
 
-        // Spawn a blocking task to read the file in chunks.
-        task::spawn_blocking(move || stream_file_blocking(sender, path, timeout));
+        task::spawn_blocking(move || {
+            // Spawn a blocking task to read the file in chunks.
+            stream_file_blocking(sender, path, timeout)
+        });
 
         Self { receiver }
     }

@@ -4,7 +4,7 @@ mod static_file;
 mod stream_file;
 
 use bitflags::bitflags;
-use std::{path::PathBuf, sync::Arc};
+use std::{path::Path, sync::Arc};
 use via::{Endpoint, Error, Result};
 
 use crate::respond::{respond_to_get_request, respond_to_head_request};
@@ -21,15 +21,16 @@ pub(crate) struct ServerConfig {
     eager_read_threshold: u64,
     read_stream_timeout: u64,
     path_param: &'static str,
-    public_dir: PathBuf,
+    public_dir: Arc<Path>,
     flags: Flags,
 }
 
 bitflags! {
     #[derive(Debug, Clone, Copy)]
     pub(crate) struct Flags: u8 {
-        const FALL_THROUGH = 0b00000001;
-        const INCLUDE_ETAG = 0b00000010;
+        const FALL_THROUGH          = 0b00000001;
+        const INCLUDE_ETAG          = 0b00000010;
+        const INCLUDE_LAST_MODIFIED = 0b00000100;
     }
 }
 
@@ -39,7 +40,7 @@ pub fn serve_static<State>(endpoint: Endpoint<State>) -> ServeStatic<State> {
     ServeStatic {
         eager_read_threshold: 1048576, // 1MB
         read_stream_timeout: 60,       // 60 seconds
-        flags: Flags::FALL_THROUGH | Flags::INCLUDE_ETAG,
+        flags: Flags::FALL_THROUGH,
         endpoint,
     }
 }
@@ -63,10 +64,15 @@ where
         self
     }
 
-    /// Configures whether or not to include an ETag header in the response. The
-    /// default value is `true`.
-    pub fn include_etag(mut self, value: bool) -> Self {
-        self.flags.set(Flags::INCLUDE_ETAG, value);
+    /// Configures the server to include a Last-Modified header in the response.
+    pub fn include_last_modified(mut self) -> Self {
+        self.flags.insert(Flags::INCLUDE_LAST_MODIFIED);
+        self
+    }
+
+    /// Configures the server to include an ETag header in the response.
+    pub fn include_etag(mut self) -> Self {
+        self.flags.insert(Flags::INCLUDE_ETAG);
         self
     }
 
@@ -81,10 +87,9 @@ where
     /// the provided `public_dir` is a relative path, it will be resolved relative to
     /// the current working directory. If the `public_dir` is not a directory or the
     /// `location` does not have a path parameter, an error will be returned.
-    pub fn serve<T>(mut self, public_dir: T) -> Result<()>
+    pub fn serve<P>(mut self, public_dir: P) -> Result<()>
     where
-        Error: From<T::Error>,
-        T: TryInto<PathBuf>,
+        P: AsRef<Path>,
     {
         let ServeStatic {
             eager_read_threshold,
@@ -92,7 +97,7 @@ where
             flags,
             ..
         } = self;
-        let mut public_dir: PathBuf = public_dir.try_into()?;
+        let mut public_dir = public_dir.as_ref().to_path_buf();
         let path_param = match self.endpoint.param() {
             Some(param) => param,
             None => {
@@ -108,25 +113,25 @@ where
         }
 
         let config = ServerConfig {
+            public_dir: public_dir.into(),
             eager_read_threshold,
             read_stream_timeout,
             path_param,
-            public_dir,
             flags,
         };
 
         self.endpoint.respond({
-            let config = Arc::new(config.clone());
+            let config = config.clone();
             via::head(move |request, next| {
-                let config = Arc::clone(&config);
+                let config = config.clone();
                 respond_to_head_request(config, request, next)
             })
         });
 
         self.endpoint.respond({
-            let config = Arc::new(config.clone());
+            let config = config.clone();
             via::get(move |request, next| {
-                let config = Arc::clone(&config);
+                let config = config.clone();
                 respond_to_get_request(config, request, next)
             })
         });
