@@ -1,54 +1,44 @@
-use via::{IntoResponse, Response, Result};
+use via::{Response, Result};
 
-use super::Document;
+use super::Payload;
 use crate::{database::models::post::*, Next, Request};
 
-pub async fn authenticate(request: Request, next: Next) -> Result<impl IntoResponse> {
+pub async fn authenticate(request: Request, next: Next) -> Result<Response> {
     println!("authenticate");
     next.call(request).await
 }
 
-pub async fn index(request: Request, _: Next) -> Result<impl IntoResponse> {
-    let state = request.state();
+pub async fn index(request: Request, _: Next) -> Result<Response> {
+    let posts = Post::public(&request.state().pool).await?;
 
-    Ok(Response::json(&Document {
-        data: Post::public(&state.pool).await?,
-    }))
+    Response::json(&Payload::new(posts)).end()
 }
 
-pub async fn create(mut request: Request, _: Next) -> Result<impl IntoResponse> {
-    let body: Document<NewPost> = request.body_mut().read_json().await?;
-    let state = request.state();
+pub async fn create(mut request: Request, _: Next) -> Result<Response> {
+    let body: Payload<NewPost> = request.body_mut().read_json().await?;
+    let post = body.data.insert(&request.state().pool).await?;
 
-    Ok(Response::json(&Document {
-        data: body.data.insert(&state.pool).await?,
-    }))
+    Response::json(&Payload::new(post)).end()
 }
 
-pub async fn show(request: Request, _: Next) -> Result<impl IntoResponse> {
+pub async fn show(request: Request, _: Next) -> Result<Response> {
     let id = request.param("id").parse::<i32>()?;
-    let state = request.state();
+    let post = Post::find(&request.state().pool, id).await?;
 
-    Ok(Response::json(&Document {
-        data: Post::find(&state.pool, id).await?,
-    }))
+    Response::json(&Payload::new(post)).end()
 }
 
-pub async fn update(mut request: Request, _: Next) -> Result<impl IntoResponse> {
+pub async fn update(mut request: Request, _: Next) -> Result<Response> {
     let id = request.param("id").parse::<i32>()?;
-    let body: Document<ChangeSet> = request.body_mut().read_json().await?;
-    let state = request.state();
+    let body: Payload<ChangeSet> = request.body_mut().read_json().await?;
+    let post = body.data.apply(&request.state().pool, id).await?;
 
-    Ok(Response::json(&Document {
-        data: body.data.apply(&state.pool, id).await?,
-    }))
+    Response::json(&Payload::new(post)).end()
 }
 
-pub async fn destroy(request: Request, _: Next) -> Result<impl IntoResponse> {
+pub async fn destroy(request: Request, _: Next) -> Result<Response> {
     let id = request.param("id").parse::<i32>()?;
-    let state = request.state();
 
-    Ok(Response::json(&Document {
-        data: Post::delete(&state.pool, id).await?,
-    }))
+    Post::delete(&request.state().pool, id).await?;
+    Response::json(&Payload::new(())).end()
 }

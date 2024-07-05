@@ -1,49 +1,39 @@
-use via::{IntoResponse, Response, Result};
+use via::{Response, Result};
 
-use super::Document;
+use super::Payload;
 use crate::{database::models::user::*, Next, Request};
 
-pub async fn index(request: Request, _: Next) -> Result<impl IntoResponse> {
-    let state = request.state();
+pub async fn index(request: Request, _: Next) -> Result<Response> {
+    let users = User::all(&request.state().pool).await?;
 
-    Ok(Response::json(&Document {
-        data: User::all(&state.pool).await?,
-    }))
+    Response::json(&Payload::new(users)).end()
 }
 
-pub async fn create(mut request: Request, _: Next) -> Result<impl IntoResponse> {
-    let body: Document<NewUser> = request.body_mut().read_json().await?;
-    let state = request.state();
+pub async fn create(mut request: Request, _: Next) -> Result<Response> {
+    let body: Payload<NewUser> = request.body_mut().read_json().await?;
+    let user = body.data.insert(&request.state().pool).await?;
 
-    Ok(Response::json(&Document {
-        data: body.data.insert(&state.pool).await?,
-    }))
+    Response::json(&Payload::new(user)).end()
 }
 
-pub async fn show(request: Request, _: Next) -> Result<impl IntoResponse> {
+pub async fn show(request: Request, _: Next) -> Result<Response> {
     let id = request.param("id").parse::<i32>()?;
-    let state = request.state();
+    let user = User::find(&request.state().pool, id).await?;
 
-    Ok(Response::json(&Document {
-        data: User::find(&state.pool, id).await?,
-    }))
+    Response::json(&Payload::new(user)).end()
 }
 
-pub async fn update(mut request: Request, _: Next) -> Result<impl IntoResponse> {
+pub async fn update(mut request: Request, _: Next) -> Result<Response> {
     let id = request.param("id").parse::<i32>()?;
-    let body: Document<ChangeSet> = request.body_mut().read_json().await?;
-    let state = request.state();
+    let body: Payload<ChangeSet> = request.body_mut().read_json().await?;
+    let user = body.data.apply(&request.state().pool, id).await?;
 
-    Ok(Response::json(&Document {
-        data: body.data.apply(&state.pool, id).await?,
-    }))
+    Response::json(&Payload::new(user)).end()
 }
 
-pub async fn destroy(request: Request, _: Next) -> Result<impl IntoResponse> {
+pub async fn destroy(request: Request, _: Next) -> Result<Response> {
     let id = request.param("id").parse::<i32>()?;
-    let state = request.state();
 
-    Ok(Response::json(&Document {
-        data: User::delete(&state.pool, id).await?,
-    }))
+    User::delete(&request.state().pool, id).await?;
+    Response::json(&Payload::new(())).end()
 }

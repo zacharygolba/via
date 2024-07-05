@@ -5,7 +5,7 @@ use std::{
     io::{Error as IoError, ErrorKind as IoErrorKind},
 };
 
-use crate::{response::Response, IntoResponse};
+use crate::response::Response;
 
 type AnyError = Box<dyn StdError + Send + Sync + 'static>;
 
@@ -120,13 +120,17 @@ impl Error {
     {
         use http::header::HeaderValue;
 
-        let status_code = self.status;
-        let message = self.to_string();
+        let result = match self.format {
+            #[cfg(feature = "serde")]
+            Some(Format::Json) => Response::json(&self).status(self.status).end(),
+            _ => Response::text(self.to_string()).status(self.status).end(),
+        };
 
-        match self.into_response() {
+        match result {
             Ok(response) => response,
             Err(error) => {
                 let mut response = Response::new();
+                let message = self.to_string();
 
                 response.headers_mut().insert(
                     http::header::CONTENT_TYPE,
@@ -139,7 +143,7 @@ impl Error {
                         .insert(http::header::CONTENT_LENGTH, length);
                 }
 
-                *response.status_mut() = status_code;
+                *response.status_mut() = self.status;
                 *response.body_mut() = message.into();
 
                 error_callback(&error);
@@ -163,18 +167,6 @@ impl Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(&self.source, f)
-    }
-}
-
-impl IntoResponse for Error {
-    fn into_response(self) -> crate::Result<Response> {
-        let response = match self.format {
-            #[cfg(feature = "serde")]
-            Some(Format::Json) => Response::json(&self),
-            _ => Response::text(self.to_string()),
-        };
-
-        response.status(self.status).end()
     }
 }
 

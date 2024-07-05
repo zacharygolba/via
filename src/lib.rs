@@ -13,7 +13,7 @@ pub use crate::{
     event::Event,
     middleware::{ErrorBoundary, Middleware, Next},
     request::Request,
-    response::{IntoResponse, Response},
+    response::Response,
     router::Endpoint,
 };
 

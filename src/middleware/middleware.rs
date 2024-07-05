@@ -1,7 +1,7 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use super::Next;
-use crate::{IntoResponse, Request, Response, Result};
+use crate::{Request, Response, Result};
 
 pub(crate) type DynMiddleware<State> = Arc<dyn Middleware<State>>;
 
@@ -14,11 +14,9 @@ pub trait Middleware<State>: Send + Sync + 'static {
 impl<State, T, F> Middleware<State> for T
 where
     T: Fn(Request<State>, Next<State>) -> F + Send + Sync + 'static,
-    F: Future + Send + 'static,
-    F::Output: IntoResponse,
+    F: Future<Output = Result<Response>> + Send + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
-        let future = self(request, next);
-        Box::pin(async { future.await.into_response() })
+        Box::pin(self(request, next))
     }
 }

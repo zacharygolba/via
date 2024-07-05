@@ -4,6 +4,12 @@ pub mod users;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Document<T> {
-    pub data: T,
+pub struct Payload<T> {
+    data: T,
+}
+
+impl<T: Serialize> Payload<T> {
+    pub fn new(data: T) -> Self {
+        Self { data }
+    }
 }
