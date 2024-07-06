@@ -30,7 +30,6 @@ use tokio::net::TcpListener;
 use crate::{
     event::EventListener,
     middleware::{AllowMethod, BoxFuture},
-    request::PathParams,
     router::Router,
 };
 
@@ -164,9 +163,12 @@ where
             // Spawn a tokio task to serve multiple connections concurrently.
             tokio::spawn(async move {
                 let service = service_fn(|request| {
-                    // Wrap the request body with `request::Body` to move the
-                    // underlying value to the heap as early as possible.
-                    let request = request.map(request::Body::new);
+                    // Wrap the hyper request with `Request` as early as possible.
+                    let request = {
+                        let app_state = Arc::clone(&app.state);
+                        let event_listener = event_listener.clone();
+                        Request::new(request, app_state, event_listener)
+                    };
 
                     // Delegate the request to the application to route the
                     // request to the appropriate middleware stack.
@@ -189,14 +191,10 @@ where
 
     async fn call(
         &self,
-        request: http::Request<request::Body>,
+        mut request: Request<State>,
         event_listener: &EventListener,
     ) -> Result<http::Response<response::Body>, Infallible> {
-        let mut path_params = PathParams::new();
-
-        let next = self.router.visit(&mut path_params, &request);
-        let state = Arc::clone(&self.state);
-        let request = Request::new(request, state, path_params, event_listener.clone());
+        let next = self.router.visit(&mut request);
         let response = next.call(request).await.unwrap_or_else(|error| {
             error.into_infallible_response(|error| {
                 // If the error was not able to be converted into a response,

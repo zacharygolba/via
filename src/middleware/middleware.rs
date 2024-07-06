@@ -3,8 +3,7 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use super::Next;
 use crate::{Request, Response, Result};
 
-pub(crate) type DynMiddleware<State> = Arc<dyn Middleware<State>>;
-
+pub(crate) type ArcMiddleware<State> = Arc<dyn Middleware<State>>;
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
 pub trait Middleware<State>: Send + Sync + 'static {

@@ -1,67 +1,51 @@
 use http::{HeaderMap, Method, Uri, Version};
+use hyper::body::Incoming;
 use std::{
     fmt::{self, Debug},
     sync::Arc,
 };
 
+use super::{parse_query_params, Body, PathParam, QueryParamValues};
 use crate::event::EventListener;
 
-use super::{
-    path_param::PathParams,
-    query_param::{QueryParamValues, QueryParams},
-    query_parser::parse_query_params,
-    Body, PathParam,
-};
-
 pub struct Request<State> {
-    inner: http::Request<Body>,
+    inner: Box<RequestInner<State>>,
+}
+
+struct RequestInner<State> {
+    request: http::Request<Body>,
     app_state: Arc<State>,
-    path_params: PathParams,
-    query_params: Option<QueryParams>,
+    path_params: Vec<(&'static str, (usize, usize))>,
+    query_params: Option<Vec<(String, (usize, usize))>>,
     event_listener: EventListener,
 }
 
 impl<State> Request<State> {
-    pub(crate) fn new(
-        inner: http::Request<Body>,
-        app_state: Arc<State>,
-        path_params: PathParams,
-        event_listener: EventListener,
-    ) -> Self {
-        Self {
-            inner,
-            app_state,
-            path_params,
-            event_listener,
-            query_params: None,
-        }
-    }
-
     /// Returns a reference to the body associated with the request.
     pub fn body(&self) -> &Body {
-        self.inner.body()
+        self.inner.request.body()
     }
 
     /// Returns a mutable reference to the body associated with the request.
     pub fn body_mut(&mut self) -> &mut Body {
-        self.inner.body_mut()
+        self.inner.request.body_mut()
     }
 
     /// Returns a reference to a map that contains the headers associated with
     /// the request.
     pub fn headers(&self) -> &HeaderMap {
-        self.inner.headers()
+        self.inner.request.headers()
     }
 
     /// Returns a reference to the HTTP method associated with the request.
     pub fn method(&self) -> &Method {
-        self.inner.method()
+        self.inner.request.method()
     }
 
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
-        let path = self.inner.uri().path();
+        let path = self.inner.request.uri().path();
 
-        for (param, range) in &self.path_params {
+        for (param, range) in &self.inner.path_params {
             if name == *param {
                 return PathParam::new(name, path, Some(range));
             }
@@ -73,8 +57,9 @@ impl<State> Request<State> {
     pub fn query<'a>(&mut self, name: &'a str) -> QueryParamValues<'_, 'a> {
         let mut values = Vec::new();
 
-        let query = self.inner.uri().query().unwrap_or("");
+        let query = self.inner.request.uri().query().unwrap_or("");
         let params = self
+            .inner
             .query_params
             .get_or_insert_with(|| parse_query_params(query));
 
@@ -90,23 +75,51 @@ impl<State> Request<State> {
     /// Returns a thread-safe reference-counting pointer to the application
     /// state that was passed as an argument to the `via::app` function.
     pub fn state(&self) -> &Arc<State> {
-        &self.app_state
+        &self.inner.app_state
     }
 
     /// Returns a reference to the uri associated with the request.
     pub fn uri(&self) -> &Uri {
-        self.inner.uri()
+        self.inner.request.uri()
     }
 
     /// Returns the HTTP version associated with the request.
     pub fn version(&self) -> Version {
-        self.inner.version()
+        self.inner.request.version()
     }
 }
 
 impl<State> Request<State> {
+    pub(crate) fn new(
+        request: http::Request<Incoming>,
+        app_state: Arc<State>,
+        event_listener: EventListener,
+    ) -> Self {
+        let mut path_params = Vec::new();
+
+        path_params.reserve_exact(10);
+
+        Self {
+            // Box the request and map the request body to `request::Body` to
+            // move both the request and body independently to the heap. Doing
+            // so keeps the size of the request small and allows the body to be
+            // easily moved out of the request when it is read.
+            inner: Box::new(RequestInner {
+                app_state,
+                path_params,
+                event_listener,
+                request: request.map(Body::new),
+                query_params: None,
+            }),
+        }
+    }
+
     pub(crate) fn event_listener(&self) -> &EventListener {
-        &self.event_listener
+        &self.inner.event_listener
+    }
+
+    pub(crate) fn params_mut(&mut self) -> &mut Vec<(&'static str, (usize, usize))> {
+        &mut self.inner.path_params
     }
 }
 
@@ -115,8 +128,8 @@ impl<State> Debug for Request<State> {
         f.debug_struct("Request")
             .field("method", self.method())
             .field("uri", self.uri())
-            .field("params", &self.path_params)
-            .field("query", &self.query_params)
+            .field("params", &self.inner.path_params)
+            .field("query", &self.inner.query_params)
             .field("version", &self.version())
             .field("headers", self.headers())
             .field("body", self.body())

@@ -1,9 +1,7 @@
 use percent_encoding::percent_decode_str;
 use std::{iter::Peekable, str::CharIndices};
 
-use super::query_param::QueryParams;
-
-pub fn parse_query_params(input: &str) -> QueryParams {
+pub fn parse_query_params(input: &str) -> Vec<(String, (usize, usize))> {
     let mut query_params = Vec::with_capacity(16);
     let mut input = QueryParserInput::new(input);
 
@@ -98,7 +96,7 @@ impl<'a> QueryParserInput<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_query_params, QueryParams};
+    use super::parse_query_params;
 
     static QUERY_STRINGS: [&str; 21] = [
         "query=books&category=fiction&sort=asc",
@@ -127,7 +125,7 @@ mod tests {
         "query%C3%28=books&category=%C3%28", // Invalid UTF-8 sequence in key
     ];
 
-    fn get_expected_results() -> [QueryParams<&'static str>; 21] {
+    fn get_expected_results() -> [Vec<(&'static str, (usize, usize))>; 21] {
         [
             vec![
                 ("query", (6, 11)),

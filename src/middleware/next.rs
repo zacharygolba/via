@@ -1,18 +1,20 @@
 use std::collections::VecDeque;
 
-use super::DynMiddleware;
+use super::ArcMiddleware;
 use crate::{BoxFuture, Request, Response, Result};
 
 pub struct Next<State> {
-    stack: VecDeque<DynMiddleware<State>>,
+    stack: Box<VecDeque<ArcMiddleware<State>>>,
 }
 
 impl<State> Next<State>
 where
     State: Send + Sync + 'static,
 {
-    pub(crate) fn new(stack: VecDeque<DynMiddleware<State>>) -> Self {
-        Next { stack }
+    pub(crate) fn new(stack: VecDeque<ArcMiddleware<State>>) -> Self {
+        Next {
+            stack: Box::new(stack),
+        }
     }
 
     pub fn call(mut self, request: Request<State>) -> BoxFuture<Result<Response>> {
