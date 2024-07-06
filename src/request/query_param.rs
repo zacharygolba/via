@@ -4,10 +4,6 @@ use std::{borrow::Cow, slice::Iter, str::FromStr};
 
 use crate::{Error, Result};
 
-pub(crate) type QueryParams<T = String> = Vec<(T, (usize, usize))>;
-
-type ValuesVec<'a> = Vec<&'a (usize, usize)>;
-
 pub struct QueryParamValue<'a, 'b, 'c> {
     name: &'b str,
     range: Option<&'c (usize, usize)>,
@@ -17,7 +13,7 @@ pub struct QueryParamValue<'a, 'b, 'c> {
 pub struct QueryParamValues<'a, 'b> {
     name: &'b str,
     query: &'a str,
-    values: ValuesVec<'a>,
+    values: Vec<&'a (usize, usize)>,
 }
 
 pub struct QueryParamValuesIter<'a> {
@@ -55,7 +51,7 @@ impl<'a, 'b, 'c> QueryParamValue<'a, 'b, 'c> {
 }
 
 impl<'a, 'b> QueryParamValues<'a, 'b> {
-    pub(super) fn new(name: &'b str, query: &'a str, values: ValuesVec<'a>) -> Self {
+    pub(super) fn new(name: &'b str, query: &'a str, values: Vec<&'a (usize, usize)>) -> Self {
         QueryParamValues {
             name,
             query,

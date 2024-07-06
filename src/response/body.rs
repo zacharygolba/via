@@ -1,7 +1,7 @@
-use bytes::Bytes;
 use futures_util::Stream;
 use http_body::{Body as HttpBody, SizeHint};
 use http_body_util::{BodyExt, Empty, Full, StreamBody};
+use hyper::body::Bytes;
 use std::{
     pin::Pin,
     task::{Context, Poll},

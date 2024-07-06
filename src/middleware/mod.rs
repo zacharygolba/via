@@ -4,7 +4,7 @@ mod allow_method;
 mod middleware;
 mod next;
 
-pub(crate) use self::middleware::DynMiddleware;
+pub(crate) use self::middleware::ArcMiddleware;
 
 pub use self::{
     allow_method::AllowMethod,

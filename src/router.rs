@@ -1,23 +1,18 @@
 use std::{collections::VecDeque, sync::Arc};
-use via_router::{Endpoint as GenericEndpoint, Router as GenericRouter};
 
-use crate::{
-    middleware::DynMiddleware,
-    request::{self, PathParams},
-    Middleware, Next,
-};
+use crate::{middleware::ArcMiddleware, Middleware, Next, Request};
 
 pub struct Router<State> {
-    inner: GenericRouter<Route<State>>,
+    inner: via_router::Router<Route<State>>,
 }
 
 pub struct Endpoint<'a, State> {
-    inner: GenericEndpoint<'a, Route<State>>,
+    inner: via_router::Endpoint<'a, Route<State>>,
 }
 
 struct Route<State> {
-    middleware: Vec<DynMiddleware<State>>,
-    responders: Vec<DynMiddleware<State>>,
+    middleware: Vec<ArcMiddleware<State>>,
+    responders: Vec<ArcMiddleware<State>>,
 }
 
 impl<State> Router<State>
@@ -36,24 +31,27 @@ where
         }
     }
 
-    pub fn visit(
-        &self,
-        path_params: &mut PathParams,
-        request: &http::Request<request::Body>,
-    ) -> Next<State> {
+    pub fn visit(&self, request: &mut Request<State>) -> Next<State> {
         let mut stack = VecDeque::new();
-        let path = request.uri().path();
+        let matches = self.inner.visit(request.uri().path());
+        let params = request.params_mut();
 
-        for matched in self.inner.visit(path) {
+        stack.reserve_exact(48);
+
+        for matched in matches {
             if let Some(param) = matched.param() {
-                path_params.push(param);
+                params.push(param);
             }
 
             if let Some(route) = matched.route() {
-                stack.extend(route.middleware.iter().cloned());
+                for middleware in &route.middleware {
+                    stack.push_back(Arc::clone(middleware));
+                }
 
                 if matched.is_exact_match {
-                    stack.extend(route.responders.iter().cloned());
+                    for responder in &route.responders {
+                        stack.push_back(Arc::clone(responder));
+                    }
                 }
             }
         }
