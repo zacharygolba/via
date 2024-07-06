@@ -107,7 +107,7 @@ impl Response {
 
 impl Response {
     pub(crate) fn new() -> Self {
-        Response {
+        Self {
             inner: http::Response::new(Body::empty()),
         }
     }
