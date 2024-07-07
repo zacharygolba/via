@@ -198,8 +198,8 @@ where
         let response = next.call(request).await.unwrap_or_else(|error| {
             error.into_infallible_response(|error| {
                 // If the error was not able to be converted into a response,
-                // with the configured error format (i.e json), fall back to
-                // a plain text response and propagate the reason why the error
+                // with the configured error format (i.e json), fallback to a
+                // plain text response and propagate the reason why the error
                 // could not be converted to the event listener so it can be
                 // handled at the application level.
                 event_listener.call(Event::UncaughtError(&error));
