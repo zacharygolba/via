@@ -18,7 +18,7 @@ pub struct Response {
 }
 
 impl Response {
-    pub fn build() -> ResponseBuilder {
+    pub fn builder() -> ResponseBuilder {
         ResponseBuilder::new()
     }
 
