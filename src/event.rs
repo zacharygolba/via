@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 
 use crate::Error;
 
@@ -22,7 +22,7 @@ pub enum Event<'a> {
 }
 
 pub(crate) struct EventListener {
-    f: Arc<dyn Fn(Event) + Send + Sync + 'static>,
+    f: Box<dyn Fn(Event) + Send + Sync + 'static>,
 }
 
 impl EventListener {
@@ -30,18 +30,10 @@ impl EventListener {
     where
         F: Fn(Event) + Send + Sync + 'static,
     {
-        Self { f: Arc::new(f) }
+        Self { f: Box::new(f) }
     }
 
     pub fn call(&self, event: Event) {
         (self.f)(event)
-    }
-}
-
-impl Clone for EventListener {
-    fn clone(&self) -> Self {
-        Self {
-            f: Arc::clone(&self.f),
-        }
     }
 }
