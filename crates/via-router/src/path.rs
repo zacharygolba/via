@@ -27,16 +27,16 @@ pub(crate) struct SplitPath<'a> {
 impl From<&'static str> for Pattern {
     fn from(value: &'static str) -> Pattern {
         match value.chars().next() {
-            Some('*') => Pattern::CatchAll(&value[1..]),
-            Some(':') => Pattern::Dynamic(&value[1..]),
-            _ => Pattern::Static(value),
+            Some('*') => Self::CatchAll(&value[1..]),
+            Some(':') => Self::Dynamic(&value[1..]),
+            _ => Self::Static(value),
         }
     }
 }
 
 impl PartialEq<&str> for Pattern {
     fn eq(&self, other: &&str) -> bool {
-        if let Pattern::Static(value) = *self {
+        if let Self::Static(value) = *self {
             value == *other
         } else {
             true
@@ -60,7 +60,7 @@ impl<'a> PathSegments<'a> {
             segments.push(segment);
         }
 
-        PathSegments { value, segments }
+        Self { value, segments }
     }
 
     /// Returns the value of the current path segment that we are attempting to
@@ -84,7 +84,7 @@ impl<'a> PathSegments<'a> {
 
 impl<'a> SplitPath<'a> {
     pub(crate) fn new(value: &'a str) -> Self {
-        SplitPath {
+        Self {
             len: value.len(),
             iter: value.char_indices(),
             offset: 0,

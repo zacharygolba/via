@@ -26,7 +26,7 @@ pub(crate) struct RouteEntry<'a, T> {
 
 impl<T> Node<T> {
     pub(crate) fn new(pattern: Pattern) -> Self {
-        Node {
+        Self {
             pattern,
             entries: None,
             route: None,
