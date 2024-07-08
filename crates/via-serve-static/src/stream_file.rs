@@ -51,7 +51,7 @@ async fn wait_for_capacity(sender: &mpsc::Sender<ReadChunkResult>) {
 /// function should only be called within a blocking task.
 fn stream_file_blocking(sender: mpsc::Sender<ReadChunkResult>, path: PathBuf, timeout: u64) {
     let start_time = SystemTime::now();
-    let mut file = match File::open(&path) {
+    let mut file = match File::open(path) {
         Ok(opened) => opened,
         Err(error) => {
             // There was an error opening the file. Send the error to the

@@ -120,7 +120,7 @@ where
                 // plain text response and propagate the reason why the error
                 // could not be converted to the event listener so it can be
                 // handled at the application level.
-                event_listener.call(Event::UncaughtError(&error));
+                event_listener.call(Event::UncaughtError(error));
             })
         });
 

@@ -60,15 +60,15 @@ impl<'a, 'b> QueryParamValues<'a, 'b> {
     }
 
     pub fn get(&self, index: usize) -> QueryParamValue<'a, 'b, '_> {
-        self.value_at(self.values.get(index).map(|range| *range))
+        self.value_at(self.values.get(index).copied())
     }
 
     pub fn first(&self) -> QueryParamValue<'a, 'b, '_> {
-        self.value_at(self.values.first().map(|range| *range))
+        self.value_at(self.values.first().copied())
     }
 
     pub fn last(&self) -> QueryParamValue<'a, 'b, '_> {
-        self.value_at(self.values.last().map(|range| *range))
+        self.value_at(self.values.last().copied())
     }
 
     pub fn iter(&self) -> QueryParamValuesIter {
