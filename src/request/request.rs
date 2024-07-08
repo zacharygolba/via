@@ -8,7 +8,7 @@ use std::{
 use super::{parse_query_params, Body, PathParam, QueryParamValues};
 use crate::event::EventListener;
 
-pub struct Request<State> {
+pub struct Request<State = ()> {
     inner: Box<RequestInner<State>>,
 }
 
