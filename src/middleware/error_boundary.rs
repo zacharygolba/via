@@ -44,10 +44,10 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
-        Box::pin(async {
-            let event_listener = request.event_listener().clone();
+        let event_listener = Arc::clone(request.event_listener());
 
-            next.call(request).await.or_else(|error| {
+        Box::pin(async {
+            next.call(request).await.or_else(move |error| {
                 Ok(error.into_infallible_response(|error| {
                     event_listener.call(Event::UncaughtError(&error))
                 }))
@@ -62,12 +62,11 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+        let event_listener = Arc::clone(request.event_listener());
         let map = Arc::clone(&self.map);
 
-        Box::pin(async move {
-            let event_listener = request.event_listener().clone();
-
-            next.call(request).await.or_else(|error| {
+        Box::pin(async {
+            next.call(request).await.or_else(move |error| {
                 Ok(map(error).into_infallible_response(|error| {
                     event_listener.call(Event::UncaughtError(&error))
                 }))
@@ -82,12 +81,11 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+        let event_listener = Arc::clone(request.event_listener());
         let inspect = Arc::clone(&self.inspect);
 
-        Box::pin(async move {
-            let event_listener = request.event_listener().clone();
-
-            next.call(request).await.or_else(|error| {
+        Box::pin(async {
+            next.call(request).await.or_else(move |error| {
                 inspect(&error);
                 Ok(error.into_infallible_response(|error| {
                     event_listener.call(Event::UncaughtError(&error));
