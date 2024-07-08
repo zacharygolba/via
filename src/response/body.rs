@@ -23,6 +23,10 @@ impl Body {
     pub fn len(&self) -> Option<usize> {
         self.len
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len.map_or(true, |len| len == 0)
+    }
 }
 
 impl Body {

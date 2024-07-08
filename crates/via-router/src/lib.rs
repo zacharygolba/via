@@ -46,6 +46,12 @@ impl<T> Router<T> {
     }
 }
 
+impl<T> Default for Router<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a, T> Endpoint<'a, T> {
     pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
         let mut segments = SplitPath::new(path).into_patterns();
@@ -79,7 +85,7 @@ where
     // into a catch-all node rather than silently ignoring the rest of the
     // segments.
     if let Pattern::CatchAll(_) = routes[into_index].pattern {
-        while let Some(_) = segments.next() {}
+        for _ in segments {}
         return into_index;
     }
 
@@ -138,7 +144,7 @@ mod tests {
 
                 assert_eq!(matched.route(), None);
                 assert_eq!(&path[start..end], "");
-                assert_eq!(matched.is_exact_match, true);
+                assert!(matched.is_exact_match);
             }
 
             {
@@ -150,7 +156,7 @@ mod tests {
                 assert_eq!(matched.route(), Some(&()));
                 assert_eq!(&path[start..end], "");
                 // Should be considered exact because of the catch-all pattern.
-                assert_eq!(matched.is_exact_match, true);
+                assert!(matched.is_exact_match);
             }
         }
 
@@ -168,7 +174,7 @@ mod tests {
 
                 assert_eq!(matched.route(), None);
                 assert_eq!(&path[start..end], "");
-                assert_eq!(matched.is_exact_match, false);
+                assert!(!matched.is_exact_match);
             }
 
             {
@@ -180,7 +186,7 @@ mod tests {
                 assert_eq!(matched.route(), Some(&()));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert_eq!(matched.is_exact_match, true);
+                assert!(matched.is_exact_match);
             }
         }
 
@@ -198,7 +204,7 @@ mod tests {
 
                 assert_eq!(matched.route(), None);
                 assert_eq!(&path[start..end], "");
-                assert_eq!(matched.is_exact_match, false);
+                assert!(!matched.is_exact_match);
             }
 
             {
@@ -210,7 +216,7 @@ mod tests {
                 assert_eq!(matched.route(), Some(&()));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert_eq!(matched.is_exact_match, true);
+                assert!(matched.is_exact_match);
             }
 
             {
@@ -221,7 +227,7 @@ mod tests {
 
                 assert_eq!(matched.route(), None);
                 assert_eq!(&path[start..end], "echo");
-                assert_eq!(matched.is_exact_match, false);
+                assert!(!matched.is_exact_match);
             }
 
             {
@@ -232,7 +238,7 @@ mod tests {
 
                 assert_eq!(matched.route(), Some(&()));
                 assert_eq!(&path[start..end], "hello/world");
-                assert_eq!(matched.is_exact_match, true);
+                assert!(matched.is_exact_match);
             }
         }
 
@@ -250,7 +256,7 @@ mod tests {
 
                 assert_eq!(matched.route(), None);
                 assert_eq!(&path[start..end], "");
-                assert_eq!(matched.is_exact_match, false);
+                assert!(!matched.is_exact_match);
             }
 
             {
@@ -262,7 +268,7 @@ mod tests {
                 assert_eq!(matched.route(), Some(&()));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert_eq!(matched.is_exact_match, true);
+                assert!(matched.is_exact_match);
             }
 
             {
@@ -273,7 +279,7 @@ mod tests {
 
                 assert_eq!(matched.route(), None);
                 assert_eq!(&path[start..end], "articles");
-                assert_eq!(matched.is_exact_match, false);
+                assert!(!matched.is_exact_match);
             }
 
             {
@@ -284,7 +290,7 @@ mod tests {
 
                 assert_eq!(matched.route(), Some(&()));
                 assert_eq!(&path[start..end], "100");
-                assert_eq!(matched.is_exact_match, true);
+                assert!(matched.is_exact_match);
             }
         }
 
@@ -302,7 +308,7 @@ mod tests {
 
                 assert_eq!(matched.route(), None);
                 assert_eq!(&path[start..end], "");
-                assert_eq!(matched.is_exact_match, false);
+                assert!(!matched.is_exact_match);
             }
 
             {
@@ -314,7 +320,7 @@ mod tests {
                 assert_eq!(matched.route(), Some(&()));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert_eq!(matched.is_exact_match, true);
+                assert!(matched.is_exact_match);
             }
 
             {
@@ -325,7 +331,7 @@ mod tests {
 
                 assert_eq!(matched.route(), None);
                 assert_eq!(&path[start..end], "articles");
-                assert_eq!(matched.is_exact_match, false);
+                assert!(!matched.is_exact_match);
             }
 
             {
@@ -336,7 +342,7 @@ mod tests {
 
                 assert_eq!(matched.route(), Some(&()));
                 assert_eq!(&path[start..end], "100");
-                assert_eq!(matched.is_exact_match, false);
+                assert!(!matched.is_exact_match);
             }
 
             {
@@ -348,7 +354,7 @@ mod tests {
                 assert_eq!(matched.route(), Some(&()));
                 assert_eq!(&path[start..end], "comments");
                 // Should be considered exact because it is the last path segment.
-                assert_eq!(matched.is_exact_match, true);
+                assert!(matched.is_exact_match);
             }
         }
     }

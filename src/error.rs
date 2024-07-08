@@ -137,7 +137,7 @@ impl Error {
                     HeaderValue::from_static("text/plain; charset=utf-8"),
                 );
 
-                if let Some(length) = HeaderValue::from_str(&message.len().to_string()).ok() {
+                if let Ok(length) = HeaderValue::from_str(&message.len().to_string()) {
                     response
                         .headers_mut()
                         .insert(http::header::CONTENT_LENGTH, length);

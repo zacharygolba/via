@@ -49,7 +49,7 @@ where
         Box::pin(async {
             next.call(request).await.or_else(move |error| {
                 Ok(error.into_infallible_response(|error| {
-                    event_listener.call(Event::UncaughtError(&error))
+                    event_listener.call(Event::UncaughtError(error))
                 }))
             })
         })
@@ -68,7 +68,7 @@ where
         Box::pin(async {
             next.call(request).await.or_else(move |error| {
                 Ok(map(error).into_infallible_response(|error| {
-                    event_listener.call(Event::UncaughtError(&error))
+                    event_listener.call(Event::UncaughtError(error))
                 }))
             })
         })
@@ -88,7 +88,7 @@ where
             next.call(request).await.or_else(move |error| {
                 inspect(&error);
                 Ok(error.into_infallible_response(|error| {
-                    event_listener.call(Event::UncaughtError(&error));
+                    event_listener.call(Event::UncaughtError(error));
                 }))
             })
         })

@@ -29,7 +29,7 @@ pub(crate) struct StaticFile {
 }
 
 fn get_mime_type_from_path(path: &PathBuf) -> String {
-    let mut mime_type = mime_guess::from_path(&path)
+    let mut mime_type = mime_guess::from_path(path)
         .first_or_octet_stream()
         .to_string();
 

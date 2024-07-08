@@ -1,3 +1,5 @@
+#![allow(clippy::module_inception)]
+
 mod app;
 mod error;
 mod event;
