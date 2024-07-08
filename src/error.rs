@@ -35,8 +35,8 @@ enum Format {
 }
 
 impl Bail {
-    pub fn new(message: String) -> Bail {
-        Bail { message }
+    pub fn new(message: String) -> Self {
+        Self { message }
     }
 }
 
@@ -67,7 +67,7 @@ impl<'a> Iterator for Chain<'a> {
 
 impl Error {
     pub fn new(message: String) -> Self {
-        Error {
+        Self {
             format: None,
             source: Box::new(Bail::new(message)),
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -81,7 +81,7 @@ impl Error {
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
-        Error {
+        Self {
             format: None,
             source: Box::new(error),
             status,
@@ -156,7 +156,7 @@ impl Error {
 
 impl Error {
     pub(crate) fn with_status(message: String, status: StatusCode) -> Self {
-        Error {
+        Self {
             format: None,
             source: Box::new(Bail::new(message)),
             status,
@@ -175,7 +175,7 @@ where
     T: StdError + Send + Sync + 'static,
 {
     fn from(value: T) -> Self {
-        Error {
+        Self {
             format: None,
             source: Box::new(value),
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -205,7 +205,7 @@ impl serde::Serialize for Error {
 
         impl<'a> From<&'a Source> for SerializedError {
             fn from(error: &'a Source) -> Self {
-                SerializedError {
+                Self {
                     message: error.to_string(),
                 }
             }

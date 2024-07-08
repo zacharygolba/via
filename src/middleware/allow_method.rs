@@ -9,7 +9,7 @@ pub struct AllowMethod<T> {
 
 impl<T> AllowMethod<T> {
     pub(crate) fn new(predicate: Method, middleware: T) -> Self {
-        AllowMethod {
+        Self {
             middleware,
             predicate,
         }

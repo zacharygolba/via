@@ -12,7 +12,7 @@ where
     State: Send + Sync + 'static,
 {
     pub(crate) fn new(stack: VecDeque<ArcMiddleware<State>>) -> Self {
-        Next {
+        Self {
             stack: Box::new(stack),
         }
     }

@@ -61,37 +61,37 @@ impl Body {
 
 impl From<()> for Body {
     fn from(_: ()) -> Self {
-        Body::empty()
+        Self::empty()
     }
 }
 
 impl From<Bytes> for Body {
     fn from(bytes: Bytes) -> Self {
-        Body::full(bytes)
+        Self::full(bytes)
     }
 }
 
 impl From<Vec<u8>> for Body {
     fn from(vec: Vec<u8>) -> Self {
-        Body::full(Bytes::from(vec))
+        Self::full(Bytes::from(vec))
     }
 }
 
 impl From<&'static [u8]> for Body {
     fn from(slice: &'static [u8]) -> Self {
-        Body::full(Bytes::from_static(slice))
+        Self::full(Bytes::from_static(slice))
     }
 }
 
 impl From<String> for Body {
     fn from(string: String) -> Self {
-        Body::full(Bytes::from(string))
+        Self::full(Bytes::from(string))
     }
 }
 
 impl From<&'static str> for Body {
     fn from(slice: &'static str) -> Self {
-        Body::full(Bytes::from_static(slice.as_bytes()))
+        Self::full(Bytes::from_static(slice.as_bytes()))
     }
 }
 

@@ -75,7 +75,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
 
         matches.reserve_exact(32);
 
-        Visitor {
+        Self {
             routes,
             matches,
             path: PathSegments::new(path),

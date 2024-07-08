@@ -11,8 +11,10 @@ use super::{
 };
 use crate::Error;
 
+pub(crate) type ResponseInner = http::Response<Body>;
+
 pub struct Response {
-    pub(super) inner: http::Response<Body>,
+    pub(super) inner: ResponseInner,
 }
 
 impl Response {
@@ -108,11 +110,11 @@ impl Response {
 impl Response {
     pub(crate) fn new() -> Self {
         Self {
-            inner: http::Response::new(Body::empty()),
+            inner: ResponseInner::new(Body::empty()),
         }
     }
 
-    pub(crate) fn into_inner(self) -> http::Response<Body> {
+    pub(crate) fn into_inner(self) -> ResponseInner {
         self.inner
     }
 }

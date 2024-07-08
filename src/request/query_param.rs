@@ -52,7 +52,7 @@ impl<'a, 'b, 'c> QueryParamValue<'a, 'b, 'c> {
 
 impl<'a, 'b> QueryParamValues<'a, 'b> {
     pub(super) fn new(name: &'b str, query: &'a str, values: Vec<&'a (usize, usize)>) -> Self {
-        QueryParamValues {
+        Self {
             name,
             query,
             values,

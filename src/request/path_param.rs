@@ -11,7 +11,7 @@ pub struct PathParam<'a, 'b> {
 
 impl<'a, 'b> PathParam<'a, 'b> {
     pub(super) fn new(name: &'b str, path: &'a str, range: Option<&'a (usize, usize)>) -> Self {
-        PathParam { name, path, range }
+        Self { name, path, range }
     }
 
     pub fn parse<T>(self) -> Result<T>
