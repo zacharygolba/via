@@ -142,7 +142,7 @@ where
         let app = Arc::new(self);
         let address = get_addr(address)?;
         let tcp_listener = TcpListener::bind(address).await?;
-        let event_listener = EventListener::new(event_listener);
+        let event_listener = Arc::new(EventListener::new(event_listener));
 
         // Notify the event listener that the server is ready to accept incoming
         // connections at the given address.
@@ -157,7 +157,7 @@ where
 
             // Clone the `EventListener` and `App` instances by incrementing
             // the reference counts of the `Arc`.
-            let event_listener = event_listener.clone();
+            let event_listener = Arc::clone(&event_listener);
             let app = Arc::clone(&app);
 
             // Spawn a tokio task to serve multiple connections concurrently.
@@ -166,7 +166,7 @@ where
                     // Wrap the hyper request with `Request` as early as possible.
                     let request = {
                         let app_state = Arc::clone(&app.state);
-                        let event_listener = event_listener.clone();
+                        let event_listener = Arc::clone(&event_listener);
                         Request::new(request, app_state, event_listener)
                     };
 
