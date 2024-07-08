@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use super::ArcMiddleware;
 use crate::{BoxFuture, Request, Response, Result};
 
-pub struct Next<State> {
+pub struct Next<State = ()> {
     stack: VecDeque<ArcMiddleware<State>>,
 }
 

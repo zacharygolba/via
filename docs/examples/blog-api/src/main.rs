@@ -5,8 +5,8 @@ use via::{ErrorBoundary, Event, Result};
 
 use database::Pool;
 
-pub type Request = via::Request<State>;
-pub type Next = via::Next<State>;
+type Request = via::Request<State>;
+type Next = via::Next<State>;
 
 pub struct State {
     pub pool: Pool,
