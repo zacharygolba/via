@@ -1,11 +1,7 @@
 use hyper::{server::conn::http1, service::service_fn};
 use hyper_util::rt::{TokioIo, TokioTimer};
-use std::{
-    convert::Infallible,
-    net::{SocketAddr, ToSocketAddrs},
-    sync::Arc,
-};
-use tokio::net::TcpListener;
+use std::{convert::Infallible, sync::Arc};
+use tokio::net::{TcpListener, ToSocketAddrs};
 
 use crate::{
     event::{Event, EventListener},
@@ -26,13 +22,6 @@ where
     App {
         router: Router::new(),
         state: Arc::new(state),
-    }
-}
-
-fn get_addr(sources: impl ToSocketAddrs) -> Result<SocketAddr> {
-    match sources.to_socket_addrs()?.next() {
-        Some(value) => Ok(value),
-        None => todo!(),
     }
 }
 
@@ -58,13 +47,12 @@ where
         F: Fn(Event) + Send + Sync + 'static,
     {
         let app = Arc::new(self);
-        let address = get_addr(address)?;
         let tcp_listener = TcpListener::bind(address).await?;
         let event_listener = Arc::new(EventListener::new(event_listener));
 
         // Notify the event listener that the server is ready to accept incoming
         // connections at the given address.
-        event_listener.call(Event::ServerReady(&address));
+        event_listener.call(Event::ServerReady(&tcp_listener.local_addr()?));
 
         loop {
             // Accept a new connection and pass the returned stream to the
