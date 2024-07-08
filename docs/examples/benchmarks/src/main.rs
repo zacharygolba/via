@@ -9,7 +9,7 @@ async fn main() -> Result<()> {
     }));
 
     app.at("/unit").respond(via::get(|_, _| async {
-        Response::build().status(204).end()
+        Response::builder().status(204).end()
     }));
 
     app.listen(("127.0.0.1", 8080), |event| match event {

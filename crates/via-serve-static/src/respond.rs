@@ -61,7 +61,7 @@ where
     });
     let optional_headers = get_optional_headers(&mut file, &config.flags);
 
-    Response::build()
+    Response::builder()
         .header(header::CONTENT_TYPE, file.mime_type)
         .header(header::CONTENT_LENGTH, file.size)
         .headers(optional_headers)
@@ -90,7 +90,7 @@ where
             // The file was small enough to be eagerly read into memory. We can
             // respond immediately with the entire vector of bytes as the
             // response body.
-            Response::build()
+            Response::builder()
                 .header(header::CONTENT_TYPE, file.mime_type)
                 .header(header::CONTENT_LENGTH, file.size)
                 .headers(optional_headers)
