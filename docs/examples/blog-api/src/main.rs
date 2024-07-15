@@ -1,7 +1,7 @@
 mod api;
 mod database;
 
-use via::{ErrorBoundary, Event, Result};
+use via::{http::StatusCode, ErrorBoundary, Event, Result};
 
 use database::Pool;
 
@@ -42,9 +42,19 @@ async fn main() -> Result<()> {
 
     let mut api = app.at("/api");
 
-    // Errors that occur in middleware or responders nested within the /api
-    // namespace will have their responses converted to JSON.
-    api.include(ErrorBoundary::map(|error| error.json()));
+    // Apply specific error handling logic to the /api namespace.
+    api.include(ErrorBoundary::map(|mut error| {
+        use diesel::result::Error as DieselError;
+
+        if let Some(DieselError::NotFound) = error.source().downcast_ref() {
+            // The error occurred because a record was not found in the
+            // database, set the status to 404 Not Found.
+            *error.status_mut() = StatusCode::NOT_FOUND;
+        }
+
+        // Return the error with the response format of JSON.
+        error.json()
+    }));
 
     api.at("/posts").scope(|posts| {
         use api::posts;
