@@ -13,11 +13,8 @@ diesel-async = { version = "0.4.1", features = ["bb8", "postgres"] }
 dotenvy = "0.15.7"
 serde = { features = ["derive"], version = "1.0.202" }
 serde_json = "1.0.117"
+tokio = { version = "1.38", features = ["macros", "rt-multi-thread"] }
 bb8 = "0.8.3"
-
-[dependencies.tokio]
-features = ["macros", "rt-multi-thread"]
-version = "1.38.0"
 
 [dependencies.via]
 features = ["serde"]
