@@ -20,15 +20,13 @@ async fn main() -> Result<()> {
     });
 
     app.include(|request: Request, next: Next| async {
-        let state = request.state();
-        let errors = Arc::clone(&state.errors);
-        let sucesses = Arc::clone(&state.sucesses);
+        let state = Arc::clone(request.state());
         let response = next.call(request).await?;
 
         if response.status().is_success() {
-            sucesses.fetch_add(1, Ordering::Relaxed);
+            state.sucesses.fetch_add(1, Ordering::Relaxed);
         } else {
-            errors.fetch_add(1, Ordering::Relaxed);
+            state.errors.fetch_add(1, Ordering::Relaxed);
         }
 
         Ok::<_, Error>(response)
