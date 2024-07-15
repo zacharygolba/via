@@ -18,7 +18,7 @@ md-5 = { version = "0.10", optional = true }
 mime_guess = "2.0"
 sha1 = { version = "0.10", optional = true }
 sha2 = { version = "0.10", optional = true }
-tokio = "1"
+tokio = "1.38"
 
 [dependencies.via]
 path = "../.."

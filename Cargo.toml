@@ -17,7 +17,7 @@ http-body = "1"
 http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["tokio"] }
 percent-encoding = "2.3"
-tokio = "1"
+tokio = "1.38"
 
 [dependencies.hyper]
 features = ["http1", "server"]
