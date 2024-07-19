@@ -2,13 +2,12 @@ use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use tokio::net::{TcpListener, ToSocketAddrs};
 
+use super::service::AppService;
 use crate::{
     event::Event,
     router::{Endpoint, Router},
     Error, Middleware, Result,
 };
-
-use super::service::AppService;
 
 pub struct App<State> {
     pub(super) router: Router<State>,
