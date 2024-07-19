@@ -71,9 +71,7 @@ impl<'a, T> Match<'a, T> {
 
 impl<'a, 'b, T> Visitor<'a, 'b, T> {
     pub(crate) fn new(routes: &'a RouteStore<T>, path: &'b str) -> Self {
-        let mut matches = Vec::new();
-
-        matches.reserve_exact(32);
+        let matches = Vec::with_capacity(32);
 
         Self {
             routes,
