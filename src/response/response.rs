@@ -69,10 +69,10 @@ impl Response {
         Bytes: From<D>,
         Error: From<E>,
     {
-        let stream = Box::pin(body.map(|result| match result {
+        let stream = body.map(|result| match result {
             Ok(data) => Ok(Frame::data(Bytes::from(data))),
             Err(error) => Err(Error::from(error)),
-        }));
+        });
 
         ResponseBuilder::with_body(Ok(Body::stream(stream)))
             .header(header::TRANSFER_ENCODING, "chunked")
@@ -110,7 +110,7 @@ impl Response {
 impl Response {
     pub(crate) fn new() -> Self {
         Self {
-            inner: ResponseInner::new(Body::empty()),
+            inner: ResponseInner::new(Body::new()),
         }
     }
 

@@ -25,7 +25,7 @@ impl ResponseBuilder {
     }
 
     pub fn end(mut self) -> Result<Response> {
-        let body = self.body.take().unwrap_or_else(|| Ok(Body::empty()))?;
+        let body = self.body.take().unwrap_or_else(|| Ok(Body::new()))?;
 
         Ok(Response {
             inner: self.inner.body(body)?,
