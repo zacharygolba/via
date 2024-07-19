@@ -1,6 +1,5 @@
 use futures_util::Stream;
 use http_body::{Body as HttpBody, SizeHint};
-use http_body_util::{BodyExt, Empty, Full, StreamBody};
 use hyper::body::Bytes;
 use std::{
     pin::Pin,
@@ -10,92 +9,124 @@ use std::{
 use crate::{Error, Result};
 
 pub type Frame = http_body::Frame<Bytes>;
+type DynStream = dyn Stream<Item = Result<Frame>> + Send + 'static;
 
-type BodyData = dyn http_body::Body<Data = Bytes, Error = Error> + Send + 'static;
-type BoxStream = Pin<Box<dyn Stream<Item = Result<Frame>> + Send + 'static>>;
+pub enum Body {
+    Buffer(Option<Pin<Box<Bytes>>>),
+    Stream(Pin<Box<DynStream>>),
+}
 
-pub struct Body {
-    data: Box<BodyData>,
-    len: Option<usize>,
+enum BodyProject<'a> {
+    Buffer(Option<Pin<&'a mut Bytes>>),
+    Stream(Pin<&'a mut DynStream>),
 }
 
 impl Body {
     pub fn len(&self) -> Option<usize> {
-        self.len
+        self.as_buffer().map(Bytes::len)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len.map_or(true, |len| len == 0)
+        self.len().map_or(true, |len| len == 0)
     }
 }
 
 impl Body {
-    pub(super) fn empty() -> Self {
-        Self {
-            data: Box::new(Empty::new().map_err(Error::from)),
-            len: Some(0),
+    pub(super) fn new() -> Self {
+        Self::Buffer(None)
+    }
+
+    pub(super) fn buffer(bytes: Bytes) -> Self {
+        Self::Buffer(Some(Box::pin(bytes)))
+    }
+
+    pub(super) fn stream<S>(stream: S) -> Self
+    where
+        S: Stream<Item = Result<Frame>> + Send + 'static,
+    {
+        Self::Stream(Box::pin(stream))
+    }
+
+    fn as_buffer(&self) -> Option<&Bytes> {
+        if let Self::Buffer(option) = self {
+            option.as_ref().map(|bytes| bytes.as_ref().get_ref())
+        } else {
+            None
         }
     }
 
-    pub(super) fn full(body: Bytes) -> Self {
-        let len = body.len();
-
-        Self {
-            data: Box::new(Full::new(body).map_err(Error::from)),
-            len: Some(len),
-        }
-    }
-
-    pub(super) fn stream(body: BoxStream) -> Self {
-        Self {
-            data: Box::new(StreamBody::new(body)),
-            len: None,
-        }
-    }
-
-    fn project(self: Pin<&mut Self>) -> Pin<&mut BodyData> {
+    fn project(self: Pin<&mut Self>) -> BodyProject {
         // SAFETY:
-        // A pin projection.
+        // This block is necessary because we need to project the pin through
+        // the different variants of the enum. The `unsafe` block ensures that
+        // we can safely create a new `Pin` to the inner data without violating
+        // the guarantees of the `Pin` API.
         unsafe {
-            let this = self.get_unchecked_mut();
-            Pin::new_unchecked(&mut *this.data)
+            match self.get_unchecked_mut() {
+                Self::Buffer(buffer) => {
+                    // Map `Option<Pin<Box<Bytes>>>` to `Option<Pin<&mut Bytes>>`.
+                    let projected = buffer.as_mut().map(|bytes| {
+                        // Get a mutable reference to the inner `Bytes` from the
+                        // pinned box. This is safe because the box is pinned,
+                        // so the `Bytes` cannot move.
+                        let ptr = bytes.as_mut().get_unchecked_mut();
+
+                        // Create a new `Pin` from the mutable reference to
+                        // the `Bytes`.
+                        Pin::new_unchecked(ptr)
+                    });
+
+                    // Return the option containing the pin projection
+                    // wrapped in `BodyProject::Buffer`.
+                    BodyProject::Buffer(projected)
+                }
+                Self::Stream(stream) => {
+                    // Get a mutable reference to the inner `DynStream` from the
+                    // pinned box. This is safe because the box is pinned, so
+                    // the `DynStream` cannot move.
+                    let ptr = stream.as_mut().get_unchecked_mut();
+
+                    // Create a new `Pin` from the mutable reference to the `DynStream`.
+                    BodyProject::Stream(Pin::new_unchecked(ptr))
+                }
+            }
         }
     }
 }
 
 impl From<()> for Body {
     fn from(_: ()) -> Self {
-        Self::empty()
+        Self::new()
     }
 }
 
 impl From<Bytes> for Body {
     fn from(bytes: Bytes) -> Self {
-        Self::full(bytes)
+        Self::buffer(bytes)
     }
 }
 
 impl From<Vec<u8>> for Body {
     fn from(vec: Vec<u8>) -> Self {
-        Self::full(Bytes::from(vec))
+        Self::buffer(Bytes::from(vec))
     }
 }
 
 impl From<&'static [u8]> for Body {
     fn from(slice: &'static [u8]) -> Self {
-        Self::full(Bytes::from_static(slice))
+        Self::buffer(Bytes::from_static(slice))
     }
 }
 
 impl From<String> for Body {
     fn from(string: String) -> Self {
-        Self::full(Bytes::from(string))
+        Self::buffer(Bytes::from(string))
     }
 }
 
 impl From<&'static str> for Body {
     fn from(slice: &'static str) -> Self {
-        Self::full(Bytes::from_static(slice.as_bytes()))
+        Self::buffer(Bytes::from_static(slice.as_bytes()))
     }
 }
 
@@ -107,14 +138,38 @@ impl HttpBody for Body {
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame, Self::Error>>> {
-        self.project().poll_frame(context)
+        match self.project() {
+            BodyProject::Buffer(None) => Poll::Ready(None),
+            BodyProject::Buffer(Some(mut bytes)) => {
+                let bytes = bytes.split_off(0);
+                let frame = Frame::data(bytes);
+
+                Poll::Ready(Some(Ok(frame)))
+            }
+            BodyProject::Stream(stream) => stream.poll_next(context),
+        }
     }
 
     fn is_end_stream(&self) -> bool {
-        self.data.is_end_stream()
+        self.as_buffer().is_none()
     }
 
     fn size_hint(&self) -> SizeHint {
-        self.data.size_hint()
+        match &self {
+            Self::Buffer(Some(bytes)) => SizeHint::with_exact(bytes.len() as u64),
+            Self::Buffer(None) => SizeHint::new(),
+            Self::Stream(stream) => {
+                let (lower, upper) = stream.size_hint();
+                let mut size_hint = SizeHint::new();
+
+                size_hint.set_lower(lower as u64);
+
+                if let Some(value) = upper {
+                    size_hint.set_upper(value as u64);
+                }
+
+                size_hint
+            }
+        }
     }
 }
