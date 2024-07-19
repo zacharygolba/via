@@ -4,6 +4,7 @@ use std::{convert::Infallible, sync::Arc};
 use crate::{
     event::{Event, EventListener},
     middleware::BoxFuture,
+    response::Body,
     router::Router,
     App, Request, Result,
 };
@@ -43,7 +44,7 @@ where
 {
     type Error = Infallible;
     type Future = BoxFuture<Result<Self::Response, Self::Error>>;
-    type Response = http::Response<crate::response::Body>;
+    type Response = http::Response<Body>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
         let mut request = {
