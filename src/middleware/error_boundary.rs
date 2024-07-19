@@ -44,7 +44,7 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
-        let event_listener = Arc::clone(request.event_listener());
+        let event_listener = request.event_listener().clone();
 
         Box::pin(async {
             next.call(request).await.or_else(move |error| {
@@ -62,7 +62,7 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
-        let event_listener = Arc::clone(request.event_listener());
+        let event_listener = request.event_listener().clone();
         let map = Arc::clone(&self.map);
 
         Box::pin(async {
@@ -81,7 +81,7 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
-        let event_listener = Arc::clone(request.event_listener());
+        let event_listener = request.event_listener().clone();
         let inspect = Arc::clone(&self.inspect);
 
         Box::pin(async {
