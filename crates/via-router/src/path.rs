@@ -52,9 +52,7 @@ impl PartialEq<Pattern> for &str {
 
 impl<'a> PathSegments<'a> {
     pub(crate) fn new(value: &'a str) -> Self {
-        let mut segments = Vec::new();
-
-        segments.reserve_exact(10);
+        let mut segments = Vec::with_capacity(10);
 
         for segment in SplitPath::new(value) {
             segments.push(segment);

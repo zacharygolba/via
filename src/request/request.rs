@@ -95,10 +95,6 @@ impl<State> Request<State> {
         app_state: Arc<State>,
         event_listener: EventListener,
     ) -> Self {
-        let mut path_params = Vec::new();
-
-        path_params.reserve_exact(10);
-
         Self {
             // Box the request and map the request body to `request::Body` to
             // move both the request and body independently to the heap. Doing
@@ -106,9 +102,9 @@ impl<State> Request<State> {
             // easily moved out of the request when it is read.
             inner: Box::new(RequestInner {
                 app_state,
-                path_params,
                 event_listener,
                 request: request.map(Body::new),
+                path_params: Vec::with_capacity(10),
                 query_params: None,
             }),
         }

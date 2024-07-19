@@ -32,11 +32,9 @@ where
     }
 
     pub fn visit(&self, request: &mut Request<State>) -> Next<State> {
-        let mut stack = VecDeque::new();
+        let mut stack = VecDeque::with_capacity(48);
         let matches = self.inner.visit(request.uri().path());
         let params = request.params_mut();
-
-        stack.reserve_exact(48);
 
         for matched in matches {
             if let Some(param) = matched.param() {
