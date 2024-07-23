@@ -56,7 +56,7 @@ impl Body {
     }
 
     fn project(self: Pin<&mut Self>) -> BodyProject {
-        // SAFETY:
+        // Safety:
         // This block is necessary because we need to project the pin through
         // the different variants of the enum. The `unsafe` block ensures that
         // we can safely create a new `Pin` to the inner data without violating
