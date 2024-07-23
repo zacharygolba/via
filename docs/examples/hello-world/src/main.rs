@@ -1,62 +1,44 @@
-use via::{Error, ErrorBoundary, Event, Next, Request, Response, Result};
-use via_serve_static::serve_static;
+use via::{Event, Next, Request, Response, Result};
+
+async fn hello(request: Request, _: Next) -> Result<Response> {
+    // Get a reference to the path parameter `name` from the request uri.
+    let name = request.param("name").required()?;
+    //                               ^^^^^^^^
+    // Calling `required` here converts the PathParam wrapper into a result.
+    // if there is no path parameter named `name` in the request uri, an
+    // error will be returned to the client with a 400 status code.
+    //
+    // In this example application, the `name` path parameter will always be
+    // present since this middleware function is only added to the endpoint
+    // /hello/:name.
+
+    // Send a plain text response with a greeting that includes the name from
+    // the request's uri path.
+    Response::text(format!("Hello, {}!", name)).end()
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Create a new app by calling the `via::app` function.
     let mut app = via::app(());
+    //                     ^^
+    // Shared state can be passed to the app by passing a value to the
+    // `via::app` function. Check out the shared-state example for more
+    // information.
 
-    // Setup a simple logger middleware that logs the method, path, and
-    // response of each request.
-    app.include(|request: Request, next: Next| {
-        let method = request.method().clone();
-        let path = request.uri().path().to_owned();
-
-        async move {
-            next.call(request).await.inspect(|response| {
-                println!("{} {} => {}", method, path, response.status());
-            })
-        }
-    });
-
-    // Catch any errors that occur in downstream middleware, convert them
-    // into a response and log the error message. Upstream middleware will
-    // continue to execute as normal.
-    app.include(ErrorBoundary::inspect(|error| {
-        eprintln!("ERROR: {}", error);
-    }));
-
-    let mut hey = app.at("/hey/:name");
-
-    hey.include(|request: Request, next: Next| async move {
-        println!("Called before the request is handled");
-        let response = next.call(request).await?;
-        println!("Called after the request is handled");
-        Ok::<_, Error>(response)
-    });
-
-    hey.respond(via::get(|request: Request, _: Next| async move {
-        let name = request.param("name").required()?;
-        Response::text(format!("Hey, {}! 👋", name)).end()
-    }));
-
-    let mut id = app.at("/:id");
-
-    id.respond(via::get(|request: Request, next: Next| async move {
-        if let Ok(id) = request.param("id").parse::<i32>() {
-            Response::text(format!("ID: {}", id)).end()
-        } else {
-            next.call(request).await
-        }
-    }));
-
-    let mut catch_all = app.at("/catch-all/*name");
-
-    catch_all.respond(via::get(|request: Request, _: Next| async move {
-        let path = request.param("name").required()?;
-        Response::text(format!("Catch-all: {}", path)).end()
-    }));
-
-    serve_static(app.at("/*path")).serve("./public")?;
+    // Add our hello responder to the endpoint /hello/:name. Middleware that is
+    // added to an endpoint with `.respond()` will only run if a request's path
+    // matches the path of the endpoint exactly.
+    app.at("/hello/:name").respond(via::get(hello));
+    //             ^^^^^           ^^^^^^^^
+    // When defining an endpoint with a colon prefix in a path segment, the
+    // path segment is treated as dynamic and will match any value up to the
+    // next path segment or the end of the request uri. A reference to the path
+    // path parameter will be available in the requests params under the name
+    // that immediately follows the colon in the path segment (i.e "name").
+    //
+    // You can specify the HTTP method that middleware should accept with the
+    // helper functions at the top-level of the `via` crate.
 
     app.listen(("127.0.0.1", 8080), |event| match event {
         Event::ConnectionError(error) | Event::UncaughtError(error) => {
