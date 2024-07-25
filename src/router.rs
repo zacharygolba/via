@@ -98,9 +98,11 @@ impl<'a, State> Endpoint<'a, State> {
     }
 
     fn route_mut(&mut self) -> &mut Route<State> {
-        self.inner.route_mut().get_or_insert_with(|| Route {
-            middleware: Vec::new(),
-            responders: Vec::new(),
+        self.inner.route_mut().get_or_insert_with(|| {
+            Box::new(Route {
+                middleware: Vec::new(),
+                responders: Vec::new(),
+            })
         })
     }
 }

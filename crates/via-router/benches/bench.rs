@@ -112,7 +112,7 @@ fn find_all_matches(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
-        let _ = router.at(path).route_mut().insert(());
+        let _ = router.at(path).route_mut().insert(Box::new(()));
     }
 
     b.iter(|| {

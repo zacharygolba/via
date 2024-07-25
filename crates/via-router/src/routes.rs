@@ -1,8 +1,5 @@
-use std::{
-    fmt::{self, Debug},
-    ops::{Index, IndexMut},
-    slice,
-};
+use slab::Slab;
+use std::slice;
 
 use crate::path::Pattern;
 
@@ -10,15 +7,13 @@ use crate::path::Pattern;
 pub(crate) struct Node<T> {
     pub(crate) entries: Option<Vec<usize>>,
     pub(crate) pattern: Pattern,
-    pub(crate) route: Option<T>,
+    pub(crate) route: Option<Box<T>>,
 }
 
-#[derive(Clone)]
 pub(crate) struct RouteStore<T> {
-    entries: Vec<Node<T>>,
+    entries: Slab<Box<Node<T>>>,
 }
 
-#[derive(Debug)]
 pub(crate) struct RouteEntry<'a, T> {
     pub(crate) index: usize,
     routes: &'a mut RouteStore<T>,
@@ -27,9 +22,9 @@ pub(crate) struct RouteEntry<'a, T> {
 impl<T> Node<T> {
     pub(crate) fn new(pattern: Pattern) -> Self {
         Self {
-            pattern,
             entries: None,
             route: None,
+            pattern,
         }
     }
 
@@ -41,17 +36,16 @@ impl<T> Node<T> {
         }
     }
 
-    pub(crate) fn push(&mut self, index: usize) {
-        self.entries
-            .get_or_insert_with(|| Vec::with_capacity(4))
-            .push(index);
+    pub(crate) fn push(&mut self, index: usize) -> usize {
+        self.entries.get_or_insert_with(Vec::new).push(index);
+        index
     }
 }
 
 impl<T> RouteStore<T> {
     pub(crate) fn new() -> Self {
         Self {
-            entries: Vec::with_capacity(256),
+            entries: Slab::with_capacity(256),
         }
     }
 
@@ -62,43 +56,22 @@ impl<T> RouteStore<T> {
         }
     }
 
-    pub(crate) fn insert(&mut self, node: Node<T>) -> usize {
-        let next_index = self.entries.len();
-
-        self.entries.push(node);
-        next_index
+    pub(crate) fn get(&self, index: usize) -> &Node<T> {
+        self.entries.get(index).unwrap()
     }
-}
 
-impl<T: Debug> Debug for RouteStore<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Debug::fmt(&self.entries, f)
+    pub(crate) fn get_mut(&mut self, index: usize) -> &mut Node<T> {
+        self.entries.get_mut(index).unwrap()
     }
-}
 
-impl<T> Index<usize> for RouteStore<T> {
-    type Output = Node<T>;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.entries[index]
-    }
-}
-
-impl<T> IndexMut<usize> for RouteStore<T> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.entries[index]
+    pub(crate) fn insert(&mut self, node: Box<Node<T>>) -> usize {
+        self.entries.insert(node)
     }
 }
 
 impl<'a, T> RouteEntry<'a, T> {
-    pub(crate) fn insert(&mut self, node: Node<T>) -> usize {
-        let key = self.routes.insert(node);
-
-        self.node_mut().push(key);
-        key
-    }
-
-    pub(crate) fn node_mut(&mut self) -> &mut Node<T> {
-        &mut self.routes[self.index]
+    pub(crate) fn insert(&mut self, node: Box<Node<T>>) -> usize {
+        let index = self.routes.insert(node);
+        self.routes.get_mut(self.index).push(index)
     }
 }
