@@ -25,7 +25,7 @@ impl<T> Router<T> {
     pub fn new() -> Self {
         let mut routes = RouteStore::new();
 
-        routes.insert(Node::new(Pattern::Root));
+        routes.insert(Box::new(Node::new(Pattern::Root)));
         Self { routes }
     }
 
@@ -40,7 +40,7 @@ impl<T> Router<T> {
 
     pub fn visit(&self, path: &str) -> Vec<Match<T>> {
         let visitor = Visitor::new(&self.routes, path);
-        let root = &self.routes[0];
+        let root = self.routes.get(0);
 
         visitor.visit(root)
     }
@@ -63,7 +63,7 @@ impl<'a, T> Endpoint<'a, T> {
     }
 
     pub fn param(&self) -> Option<&'static str> {
-        let node = &self.routes[self.index];
+        let node = self.routes.get(self.index);
 
         match node.pattern {
             Pattern::CatchAll(param) | Pattern::Dynamic(param) => Some(param),
@@ -71,8 +71,8 @@ impl<'a, T> Endpoint<'a, T> {
         }
     }
 
-    pub fn route_mut(&mut self) -> &mut Option<T> {
-        &mut self.routes[self.index].route
+    pub fn route_mut(&mut self) -> &mut Option<Box<T>> {
+        &mut self.routes.get_mut(self.index).route
     }
 }
 
@@ -84,7 +84,7 @@ where
     // In the future we may want to panic if the caller tries to insert a node
     // into a catch-all node rather than silently ignoring the rest of the
     // segments.
-    if let Pattern::CatchAll(_) = routes[into_index].pattern {
+    if let Pattern::CatchAll(_) = routes.get(into_index).pattern {
         for _ in segments {}
         return into_index;
     }
@@ -97,13 +97,15 @@ where
 
     // Check if the pattern already exists in the node at `current_key`. If it does,
     // we can continue to the next segment.
-    for next_index in routes[into_index].entries() {
-        if pattern == routes[*next_index].pattern {
+    for next_index in routes.get(into_index).entries() {
+        if pattern == routes.get(*next_index).pattern {
             return insert(routes, segments, *next_index);
         }
     }
 
-    let next_index = routes.entry(into_index).insert(Node::new(pattern));
+    let next_index = routes
+        .entry(into_index)
+        .insert(Box::new(Node::new(pattern)));
 
     // If the pattern does not exist in the node at `current_key`, we need to create
     // a new node as a descendant of the node at `current_key` and then insert it
@@ -127,7 +129,7 @@ mod tests {
         let mut router = Router::new();
 
         for path in &PATHS {
-            let _ = router.at(path).route_mut().insert(());
+            let _ = router.at(path).route_mut().insert(Box::new(()));
         }
 
         {

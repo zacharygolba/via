@@ -3,30 +3,6 @@ use crate::{
     routes::{Node, RouteStore},
 };
 
-/// Inserts a match into the `Vec` of matches for a `Visitor` and then
-/// continues to match descendants of `$node` that matched the path segment.
-///
-/// This macro is used to prevent duplication between match branches of nodes
-/// that have a `Pattern::Dynamic` or `Pattern::Static` pattern.
-macro_rules! insert_match_and_continue {
-    (
-        // Should be a `Visitor`.
-        $self:ident,
-        // The next depth to match against. Arithmetic operations should be
-        // done by the caller.
-        $depth:expr,
-        // The match that should be inserted into the `Vec` of matches.
-        $matched:expr,
-    ) => {
-        // Add the matching node to our `Vec` of matches.
-        $self.matches.push($matched);
-
-        // Continue to match descendants of `$node` against the path segment at
-        // the next depth. This function is called in recursive context.
-        $self.match_at_depth($depth, $matched.node);
-    };
-}
-
 /// Represents either a partial or exact match for a given path segment.
 #[derive(Debug)]
 pub struct Match<'a, T> {
@@ -65,7 +41,7 @@ impl<'a, T> Match<'a, T> {
 
     /// Returns a reference to the route that matches `self.value`.
     pub fn route(&self) -> Option<&'a T> {
-        self.node.route.as_ref()
+        self.node.route.as_deref()
     }
 }
 
@@ -105,7 +81,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         // to support matching the "index" path of a descendant node with a
         // CatchAll pattern.
         for index in node.entries() {
-            let next = &self.routes[*index];
+            let next = self.routes.get(*index);
 
             // If the next node does not have a CatchAll pattern, we can skip
             // this node and continue to search for adjacent nodes with a
@@ -134,7 +110,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         let path_segment_value = &self.path.value[start..end];
 
         for index in node.entries() {
-            let next = &self.routes[*index];
+            let next = self.routes.get(*index);
 
             match next.pattern {
                 Pattern::CatchAll(_) => {
@@ -151,26 +127,20 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     });
                 }
                 Pattern::Dynamic(_) => {
-                    insert_match_and_continue!(
-                        self,
-                        depth + 1,
-                        Match {
-                            node: next,
-                            is_exact_match,
-                            path_segment_range,
-                        },
-                    );
+                    self.matches.push(Match {
+                        node: next,
+                        is_exact_match,
+                        path_segment_range,
+                    });
+                    self.match_at_depth(depth + 1, next);
                 }
                 Pattern::Static(value) if value == path_segment_value => {
-                    insert_match_and_continue!(
-                        self,
-                        depth + 1,
-                        Match {
-                            node: next,
-                            is_exact_match,
-                            path_segment_range,
-                        },
-                    );
+                    self.matches.push(Match {
+                        node: next,
+                        is_exact_match,
+                        path_segment_range,
+                    });
+                    self.match_at_depth(depth + 1, next);
                 }
                 _ => {
                     // We don't have to check and see if the pattern is `Pattern::Root`
