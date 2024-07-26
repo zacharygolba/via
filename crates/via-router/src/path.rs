@@ -1,7 +1,7 @@
 use std::str::CharIndices;
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum Pattern {
+#[derive(Clone, PartialEq)]
+pub enum Pattern {
     CatchAll(&'static str),
     Dynamic(&'static str),
     Static(&'static str),
@@ -10,18 +10,32 @@ pub(crate) enum Pattern {
 
 /// Represents a url path with start and indices of each segment in the url
 /// path separated by `/`.
-pub(crate) struct PathSegments<'a> {
-    pub(crate) value: &'a str,
+pub struct PathSegments<'a> {
+    pub value: &'a str,
     segments: Vec<(usize, usize)>,
 }
 
 /// An iterator that splits the path into segments and yields a key-value pair
 /// containing the start and end offset of the substring separated by `/`.
 #[derive(Debug)]
-pub(crate) struct SplitPath<'a> {
+pub struct SplitPath<'a> {
     len: usize,
     iter: CharIndices<'a>,
     offset: usize,
+}
+
+/// Returns an iterator that yields a `Pattern` for each segment in the url path.
+pub fn patterns(value: &'static str) -> impl Iterator<Item = Pattern> {
+    SplitPath::new(value).map(|(start, end)| Pattern::from(&value[start..end]))
+}
+
+/// Returns an iterator that yields a key-value pair containing the start and
+/// end offset of each segment in the url path.
+pub fn segments(value: &str) -> PathSegments {
+    let mut segments = Vec::with_capacity(10);
+
+    segments.extend(SplitPath::new(value));
+    PathSegments { value, segments }
 }
 
 impl From<&'static str> for Pattern {
@@ -51,20 +65,10 @@ impl PartialEq<Pattern> for &str {
 }
 
 impl<'a> PathSegments<'a> {
-    pub(crate) fn new(value: &'a str) -> Self {
-        let mut segments = Vec::with_capacity(10);
-
-        for segment in SplitPath::new(value) {
-            segments.push(segment);
-        }
-
-        Self { value, segments }
-    }
-
     /// Returns the value of the current path segment that we are attempting to
     /// match if it exists. The returned value should only be `None` if we are
     /// attempting to match a root url path (i.e `"/"`).
-    pub(crate) fn get(&self, index: usize) -> Option<&(usize, usize)> {
+    pub fn get(&self, index: usize) -> Option<&(usize, usize)> {
         self.segments.get(index)
     }
 
@@ -72,7 +76,7 @@ impl<'a> PathSegments<'a> {
     /// at `index` and the end offset of the last path segment in the url path.
     ///
     /// This is used to get the start and end offset of a `CatchAll` pattern.
-    pub(crate) fn slice_from(&self, index: usize) -> (usize, usize) {
+    pub fn slice_from(&self, index: usize) -> (usize, usize) {
         self.segments
             .get(index)
             .zip(self.segments.last())
@@ -81,19 +85,12 @@ impl<'a> PathSegments<'a> {
 }
 
 impl<'a> SplitPath<'a> {
-    pub(crate) fn new(value: &'a str) -> Self {
+    pub fn new(value: &'a str) -> Self {
         Self {
             len: value.len(),
             iter: value.char_indices(),
             offset: 0,
         }
-    }
-}
-
-impl SplitPath<'static> {
-    pub(crate) fn into_patterns(self) -> impl Iterator<Item = Pattern> {
-        let value = self.iter.as_str();
-        self.map(|(start, end)| Pattern::from(&value[start..end]))
     }
 }
 
