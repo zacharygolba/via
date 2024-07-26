@@ -46,7 +46,7 @@ where
                     stack.push_back(Arc::clone(middleware));
                 }
 
-                if matched.is_exact_match {
+                if matched.is_exact {
                     for responder in &route.responders {
                         stack.push_back(Arc::clone(responder));
                     }

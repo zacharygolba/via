@@ -72,6 +72,16 @@ impl<'a> PathSegments<'a> {
         self.segments.get(index)
     }
 
+    /// Returns the number of segments in the url path.
+    pub fn len(&self) -> usize {
+        self.segments.len()
+    }
+
+    /// Returns `true` if the url path has no segments.
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
+    }
+
     /// Returns a key value pair containing the start offset of the path segment
     /// at `index` and the end offset of the last path segment in the url path.
     ///
