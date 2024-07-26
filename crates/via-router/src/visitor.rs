@@ -1,10 +1,9 @@
 use crate::{
-    path::{PathSegments, Pattern},
+    path::{self, PathSegments, Pattern},
     routes::{Node, RouteStore},
 };
 
 /// Represents either a partial or exact match for a given path segment.
-#[derive(Debug)]
 pub struct Match<'a, T> {
     /// Indicates whether or not the match is considered an exact match.
     /// If the match is exact, both the middleware and responders will be
@@ -52,7 +51,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         Self {
             routes,
             matches,
-            path: PathSegments::new(path),
+            path: path::segments(path),
         }
     }
 

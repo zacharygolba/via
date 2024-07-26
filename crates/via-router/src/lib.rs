@@ -5,7 +5,7 @@ mod routes;
 mod visitor;
 
 use crate::{
-    path::{Pattern, SplitPath},
+    path::Pattern,
     routes::{Node, RouteStore},
     visitor::Visitor,
 };
@@ -30,7 +30,7 @@ impl<T> Router<T> {
     }
 
     pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
-        let mut segments = SplitPath::new(path).into_patterns();
+        let mut segments = path::patterns(path);
 
         Endpoint {
             index: insert(&mut self.routes, &mut segments, 0),
@@ -54,7 +54,7 @@ impl<T> Default for Router<T> {
 
 impl<'a, T> Endpoint<'a, T> {
     pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
-        let mut segments = SplitPath::new(path).into_patterns();
+        let mut segments = path::patterns(path);
 
         Endpoint {
             index: insert(self.routes, &mut segments, self.index),

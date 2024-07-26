@@ -3,7 +3,6 @@ use std::slice;
 
 use crate::path::Pattern;
 
-#[derive(Clone, Debug)]
 pub(crate) struct Node<T> {
     pub(crate) entries: Option<Vec<usize>>,
     pub(crate) pattern: Pattern,
