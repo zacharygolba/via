@@ -19,7 +19,7 @@ pub struct Match<'a, T> {
     node: &'a Node<T>,
 }
 
-pub(crate) struct Visitor<'a, 'b, T> {
+pub struct Visitor<'a, 'b, T> {
     path: PathSegments<'b>,
     matches: Vec<Match<'a, T>>,
     routes: &'a RouteStore<T>,
@@ -45,7 +45,7 @@ impl<'a, T> Match<'a, T> {
 }
 
 impl<'a, 'b, T> Visitor<'a, 'b, T> {
-    pub(crate) fn new(routes: &'a RouteStore<T>, path: &'b str) -> Self {
+    pub fn new(routes: &'a RouteStore<T>, path: &'b str) -> Self {
         let matches = Vec::with_capacity(32);
 
         Self {
@@ -55,7 +55,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         }
     }
 
-    pub(crate) fn visit(mut self, root: &'a Node<T>) -> Vec<Match<'a, T>> {
+    pub fn visit(mut self, root: &'a Node<T>) -> Vec<Match<'a, T>> {
         // The root node is a special case that we always consider a match.
         self.matches.push(Match {
             is_exact_match: self.path.get(0).is_none(),
@@ -68,7 +68,9 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         self.match_at_depth(0, root);
         self.matches
     }
+}
 
+impl<'a, 'b, T> Visitor<'a, 'b, T> {
     fn match_at_depth(&mut self, depth: usize, node: &'a Node<T>) {
         if let Some(path_segment_range) = self.path.get(depth) {
             self.match_segment_at_depth(*path_segment_range, depth, node);
