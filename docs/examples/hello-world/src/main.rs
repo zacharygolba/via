@@ -14,7 +14,7 @@ async fn hello(request: Request, _: Next) -> Result<Response> {
 
     // Send a plain text response with a greeting that includes the name from
     // the request's uri path.
-    Response::text(format!("Hello, {}!", name)).end()
+    Response::text(format!("Hello, {}!", name)).finish()
 }
 
 #[tokio::main]

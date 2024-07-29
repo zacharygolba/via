@@ -122,13 +122,31 @@ impl Error {
 
         let result = match self.format {
             #[cfg(feature = "serde")]
-            Some(Format::Json) => Response::json(&self).status(self.status).end(),
-            _ => Response::text(self.to_string()).status(self.status).end(),
+            Some(Format::Json) => {
+                // The `serde` feature is enabled and the error format is `Json`.
+                // Attempt to serialize the error as JSON. If serialization fails,
+                // fallback to a plain text response.
+                let status = self.status;
+                Response::json(&self).status(status).finish()
+            }
+            _ => {
+                // The `serde` feature is disabled or the error format is not `Json`.
+                // Generate a plain text response by converting the error to a string.
+                let message = self.to_string();
+                let status = self.status;
+                Response::text(message).status(status).finish()
+            }
         };
 
         match result {
-            Ok(response) => response,
+            Ok(response) => {
+                // The response was generated successfully.
+                response
+            }
             Err(error) => {
+                // An error occurred while generating the response. Generate a
+                // plain text response with the original error message and
+                // return it without using the `ResponseBuilder`.
                 let mut response = Response::new();
                 let message = self.to_string();
 
@@ -146,6 +164,9 @@ impl Error {
                 *response.status_mut() = self.status;
                 *response.body_mut() = message.into();
 
+                // Bubble up the error that prevented the response from being
+                // generated to the app-level event listener so that it can be
+                // reported or handled appropriately.
                 error_callback(&error);
 
                 response

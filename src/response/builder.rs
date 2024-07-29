@@ -24,7 +24,7 @@ impl ResponseBuilder {
         }
     }
 
-    pub fn end(mut self) -> Result<Response> {
+    pub fn finish(mut self) -> Result<Response> {
         let body = self.body.take().unwrap_or_else(|| Ok(Body::new()))?;
 
         Ok(Response {

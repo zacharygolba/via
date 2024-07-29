@@ -67,7 +67,7 @@ impl Redirect {
         let response = Response::builder()
             .header(header::LOCATION, location)
             .status(status)
-            .end()?;
+            .finish()?;
         let status = response.status();
 
         if !status.is_redirection() {
