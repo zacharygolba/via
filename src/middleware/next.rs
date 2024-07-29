@@ -22,7 +22,7 @@ where
         if let Some(middleware) = self.stack.pop_front() {
             middleware.call(request, self)
         } else {
-            Box::pin(async { Response::text("Not Found").status(404).end() })
+            Box::pin(async { Response::text("Not Found").status(404).finish() })
         }
     }
 }

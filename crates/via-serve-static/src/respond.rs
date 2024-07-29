@@ -65,7 +65,7 @@ where
         .header(header::CONTENT_TYPE, file.mime_type)
         .header(header::CONTENT_LENGTH, file.size)
         .headers(optional_headers)
-        .end()
+        .finish()
 }
 
 pub async fn respond_to_get_request<State>(
@@ -95,7 +95,7 @@ where
                 .header(header::CONTENT_LENGTH, file.size)
                 .headers(optional_headers)
                 .body(data)
-                .end()
+                .finish()
         }
         None => {
             // The file is too large to be eagerly read into memory. Stream the
@@ -105,7 +105,7 @@ where
             Response::stream(stream)
                 .header(header::CONTENT_TYPE, file.mime_type)
                 .headers(optional_headers)
-                .end()
+                .finish()
         }
     }
 }
