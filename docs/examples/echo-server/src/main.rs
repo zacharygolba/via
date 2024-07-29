@@ -22,7 +22,7 @@ async fn echo(mut request: Request, _: Next) -> Result<Response> {
     Response::builder()
         .headers(response_headers)
         .body(request_body)
-        .end()
+        .finish()
 }
 
 #[tokio::main]

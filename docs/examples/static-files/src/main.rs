@@ -23,7 +23,7 @@ async fn not_found(request: Request, _: Next) -> Result<Response> {
         path
     );
 
-    Response::html(html).status(404).end()
+    Response::html(html).status(404).finish()
 }
 
 #[tokio::main]

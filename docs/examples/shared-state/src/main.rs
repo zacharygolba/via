@@ -34,10 +34,13 @@ async fn main() -> Result<()> {
 
     app.at("/counter").respond(via::get(|request: Request, _: Next| async move {
         let state = request.state();
-        let errors = state.errors.load(Ordering::Relaxed);
-        let sucesses = state.sucesses.load(Ordering::Relaxed);
+        let body = format!(
+            "Errors: {}\nSucesses: {}",
+            state.errors.load(Ordering::Relaxed),
+            state.sucesses.load(Ordering::Relaxed)
+        );
 
-        Response::text(format!("Errors: {}\nSucesses: {}", errors, sucesses)).end()
+        Response::text(body).finish()
     }));
 
     app.listen(("127.0.0.1", 8080), |event| match event {
