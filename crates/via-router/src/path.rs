@@ -1,6 +1,6 @@
 use std::str::CharIndices;
 
-#[derive(Clone, PartialEq)]
+#[derive(PartialEq)]
 pub enum Pattern {
     CatchAll(&'static str),
     Dynamic(&'static str),
@@ -17,8 +17,7 @@ pub struct PathSegments<'a> {
 
 /// An iterator that splits the path into segments and yields a key-value pair
 /// containing the start and end offset of the substring separated by `/`.
-#[derive(Debug)]
-pub struct SplitPath<'a> {
+struct SplitPath<'a> {
     len: usize,
     iter: CharIndices<'a>,
     offset: usize,
@@ -26,16 +25,26 @@ pub struct SplitPath<'a> {
 
 /// Returns an iterator that yields a `Pattern` for each segment in the url path.
 pub fn patterns(value: &'static str) -> impl Iterator<Item = Pattern> {
-    SplitPath::new(value).map(|(start, end)| Pattern::from(&value[start..end]))
+    split(value).map(|(start, end)| Pattern::from(&value[start..end]))
 }
 
-/// Returns an iterator that yields a key-value pair containing the start and
-/// end offset of each segment in the url path.
+/// Returns a collection containing the start and end offset of each segment in
+/// the url path.
 pub fn segments(value: &str) -> PathSegments {
     let mut segments = Vec::with_capacity(10);
 
-    segments.extend(SplitPath::new(value));
+    segments.extend(split(value));
     PathSegments { value, segments }
+}
+
+/// Returns an iterator that yields a tuple containing the start and end offset
+/// of each segment in the url path.
+fn split(value: &str) -> SplitPath {
+    SplitPath {
+        len: value.len(),
+        iter: value.char_indices(),
+        offset: 0,
+    }
 }
 
 impl From<&'static str> for Pattern {
@@ -45,22 +54,6 @@ impl From<&'static str> for Pattern {
             Some(':') => Self::Dynamic(&value[1..]),
             _ => Self::Static(value),
         }
-    }
-}
-
-impl PartialEq<&str> for Pattern {
-    fn eq(&self, other: &&str) -> bool {
-        if let Self::Static(value) = *self {
-            value == *other
-        } else {
-            true
-        }
-    }
-}
-
-impl PartialEq<Pattern> for &str {
-    fn eq(&self, other: &Pattern) -> bool {
-        other == self
     }
 }
 
@@ -94,16 +87,6 @@ impl<'a> PathSegments<'a> {
     }
 }
 
-impl<'a> SplitPath<'a> {
-    pub fn new(value: &'a str) -> Self {
-        Self {
-            len: value.len(),
-            iter: value.char_indices(),
-            offset: 0,
-        }
-    }
-}
-
 impl<'a> Iterator for SplitPath<'a> {
     type Item = (usize, usize);
 
@@ -111,10 +94,12 @@ impl<'a> Iterator for SplitPath<'a> {
         let mut start = self.offset;
         let mut end = self.len;
 
+        // Advance the start index to the next character that is not a `/`.
         while let (index, '/') = self.iter.next()? {
             start = index + 1;
         }
 
+        // Advance the end index to the next character that is a `/`.
         for (index, char) in &mut self.iter {
             if char == '/' {
                 end = index;
@@ -130,7 +115,7 @@ impl<'a> Iterator for SplitPath<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::SplitPath;
+    use super::split;
 
     const PATHS: [&str; 15] = [
         "/home/about",
@@ -175,7 +160,7 @@ mod tests {
         let expected_results = get_expected_results();
 
         for (path_index, path_value) in PATHS.iter().enumerate() {
-            for (segment_index, segment_value) in SplitPath::new(path_value).enumerate() {
+            for (segment_index, segment_value) in split(path_value).enumerate() {
                 assert_eq!(segment_value, expected_results[path_index][segment_index]);
             }
         }
