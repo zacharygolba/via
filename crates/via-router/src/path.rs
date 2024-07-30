@@ -1,4 +1,5 @@
-use std::str::CharIndices;
+use std::iter::Enumerate;
+use std::str::Bytes;
 
 #[derive(PartialEq)]
 pub enum Pattern {
@@ -19,8 +20,8 @@ pub struct PathSegments<'a> {
 /// containing the start and end offset of the substring separated by `/`.
 struct SplitPath<'a> {
     len: usize,
-    iter: CharIndices<'a>,
-    offset: usize,
+    iter: Enumerate<Bytes<'a>>,
+    value: &'a str,
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the url path.
@@ -42,8 +43,8 @@ pub fn segments(value: &str) -> PathSegments {
 fn split(value: &str) -> SplitPath {
     SplitPath {
         len: value.len(),
-        iter: value.char_indices(),
-        offset: 0,
+        iter: value.bytes().enumerate(),
+        value,
     }
 }
 
@@ -87,28 +88,47 @@ impl<'a> PathSegments<'a> {
     }
 }
 
+impl<'a> SplitPath<'a> {
+    /// Advances `self.iter` to the next occurance of a character that is not a
+    /// `/` character and returns the index.
+    fn next_non_terminator(&mut self) -> Option<usize> {
+        self.iter.find_map(|(index, byte)| {
+            if byte != b'/' && self.value.is_char_boundary(index) {
+                // We found a character that is not a `/`. Return the index.
+                Some(index)
+            } else {
+                // Skip the character and continue searching for the next
+                // non-terminator character.
+                None
+            }
+        })
+    }
+
+    /// Advances `self.iter` to the next occurance of a `/` character and
+    /// returns the index.
+    fn next_terminator(&mut self) -> Option<usize> {
+        self.iter.find_map(|(index, byte)| {
+            if byte == b'/' && self.value.is_char_boundary(index) {
+                // We found a character that is a `/`. Return the index.
+                Some(index)
+            } else {
+                // Skip the character and continue searching for the next
+                // terminator character.
+                None
+            }
+        })
+    }
+}
+
 impl<'a> Iterator for SplitPath<'a> {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut start = self.offset;
-        let mut end = self.len;
-
-        // Advance the start index to the next character that is not a `/`.
-        while let (index, '/') = self.iter.next()? {
-            start = index + 1;
-        }
-
-        // Advance the end index to the next character that is a `/`.
-        for (index, char) in &mut self.iter {
-            if char == '/' {
-                end = index;
-                break;
-            }
-        }
-
-        self.offset = end + 1;
-
+        // Set the start index to the next character that is not a `/`.
+        let start = self.next_non_terminator()?;
+        // Set the end index to the next character that is a `/`.
+        let end = self.next_terminator().unwrap_or(self.len);
+        // Return the start and end offset of the current path segment.
         Some((start, end))
     }
 }
