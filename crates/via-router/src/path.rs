@@ -1,5 +1,4 @@
-use std::iter::Enumerate;
-use std::str::Bytes;
+use std::{iter::Enumerate, str::Bytes};
 
 #[derive(PartialEq)]
 pub enum Pattern {
