@@ -1,16 +1,16 @@
-use slab::Slab;
+use smallvec::SmallVec;
 use std::slice;
 
 use crate::path::Pattern;
 
 pub struct Node<T> {
-    pub entries: Option<Vec<usize>>,
+    pub entries: Option<SmallVec<[usize; 2]>>,
     pub pattern: Pattern,
     pub route: Option<Box<T>>,
 }
 
 pub struct RouteStore<T> {
-    entries: Slab<Box<Node<T>>>,
+    entries: Vec<Box<Node<T>>>,
 }
 
 pub struct RouteEntry<'a, T> {
@@ -36,7 +36,7 @@ impl<T> Node<T> {
     }
 
     pub fn push(&mut self, index: usize) -> usize {
-        self.entries.get_or_insert_with(Vec::new).push(index);
+        self.entries.get_or_insert_with(SmallVec::new).push(index);
         index
     }
 }
@@ -44,7 +44,7 @@ impl<T> Node<T> {
 impl<T> RouteStore<T> {
     pub fn new() -> Self {
         Self {
-            entries: Slab::with_capacity(256),
+            entries: Vec::new(),
         }
     }
 
@@ -64,7 +64,9 @@ impl<T> RouteStore<T> {
     }
 
     pub fn insert(&mut self, node: Box<Node<T>>) -> usize {
-        self.entries.insert(node)
+        let index = self.entries.len();
+        self.entries.push(node);
+        index
     }
 }
 

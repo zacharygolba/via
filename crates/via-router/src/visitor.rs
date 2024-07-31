@@ -92,8 +92,8 @@ fn visit_matching_entries<'a, 'b, T>(
     let next_index = visit.index + 1;
     let is_exact = next_index == visitor.path_segments.len();
 
-    for key in visit.node.entries() {
-        let node = visitor.route_store.get(*key);
+    for index in visit.node.entries() {
+        let node = visitor.route_store.get(*index);
 
         match node.pattern {
             Pattern::CatchAll(_) => {
