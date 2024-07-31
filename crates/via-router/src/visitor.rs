@@ -9,14 +9,17 @@ pub struct Match<'a, T> {
     /// If the match is exact, both the middleware and responders will be
     /// called during a request. Otherwise, only the middleware will be
     /// called.
-    pub is_exact: bool,
+    pub exact: bool,
 
     /// A tuple that contains the start and end offset of the path segment that
     /// matches `self.route()`.
     pub range: (usize, usize),
 
-    /// The node that matches the value in the url path at `self.path_segment`.
-    node: &'a Node<T>,
+    /// The route that matches the path segement at `self.range`.
+    pub route: Option<&'a T>,
+
+    /// The name of the dynamic segment that was matched against.
+    param: Option<&'static str>,
 }
 
 struct Visitor<'a, 'b, T> {
@@ -149,26 +152,20 @@ impl<'a, T> Match<'a, T> {
     /// start and end offset of the path segment in the url path. If the matched
     /// route does not have any dynamic segments, `None` will be returned.
     pub fn param(&self) -> Option<(&'static str, (usize, usize))> {
-        if let Pattern::CatchAll(name) | Pattern::Dynamic(name) = self.node.pattern {
-            Some((name, self.range))
-        } else {
-            None
-        }
-    }
-
-    /// Returns an optional reference to the route that matches the path segment
-    /// at `self.path_segment_range`.
-    pub fn route(&self) -> Option<&'a T> {
-        self.node.route.as_deref()
+        self.param.map(|param| (param, self.range))
     }
 }
 
 impl<'a, 'b, T> Visitor<'a, 'b, T> {
-    fn push(&mut self, is_exact: bool, range: (usize, usize), node: &'a Node<T>) {
+    fn push(&mut self, exact: bool, range: (usize, usize), node: &'a Node<T>) {
+        let route = node.route.as_deref();
+        let param = node.pattern.param();
+
         self.matched_routes.push(Match {
-            is_exact,
+            exact,
+            param,
             range,
-            node,
+            route,
         });
     }
 }

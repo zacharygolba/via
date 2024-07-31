@@ -41,12 +41,12 @@ where
                 params.push(param);
             }
 
-            if let Some(route) = matched.route() {
+            if let Some(route) = matched.route {
                 for middleware in &route.middleware {
                     stack.push_back(Arc::clone(middleware));
                 }
 
-                if matched.is_exact {
+                if matched.exact {
                     for responder in &route.responders {
                         stack.push_back(Arc::clone(responder));
                     }
