@@ -14,7 +14,7 @@ pub struct RouteStore<T> {
 }
 
 pub struct RouteEntry<'a, T> {
-    pub index: usize,
+    index: usize,
     routes: &'a mut RouteStore<T>,
 }
 
