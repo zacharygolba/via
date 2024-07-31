@@ -47,6 +47,15 @@ fn split(value: &str) -> SplitPath {
     }
 }
 
+impl Pattern {
+    pub fn param(&self) -> Option<&'static str> {
+        match self {
+            Self::CatchAll(param) | Self::Dynamic(param) => Some(param),
+            _ => None,
+        }
+    }
+}
+
 impl From<&'static str> for Pattern {
     fn from(value: &'static str) -> Pattern {
         match value.chars().next() {

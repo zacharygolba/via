@@ -155,9 +155,9 @@ mod tests {
                 let matched = &matches[0];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), None);
+                assert_eq!(matched.route, None);
                 assert_eq!(&path[start..end], "");
-                assert!(matched.is_exact);
+                assert!(matched.exact);
             }
 
             {
@@ -166,10 +166,10 @@ mod tests {
                 let matched = &matches[1];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), Some(&()));
+                assert_eq!(matched.route, Some(&()));
                 assert_eq!(&path[start..end], "");
                 // Should be considered exact because of the catch-all pattern.
-                assert!(matched.is_exact);
+                assert!(matched.exact);
             }
         }
 
@@ -185,9 +185,9 @@ mod tests {
                 let matched = &matches[0];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), None);
+                assert_eq!(matched.route, None);
                 assert_eq!(&path[start..end], "");
-                assert!(!matched.is_exact);
+                assert!(!matched.exact);
             }
 
             {
@@ -196,10 +196,10 @@ mod tests {
                 let matched = &matches[1];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), Some(&()));
+                assert_eq!(matched.route, Some(&()));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert!(matched.is_exact);
+                assert!(matched.exact);
             }
         }
 
@@ -215,9 +215,9 @@ mod tests {
                 let matched = &matches[0];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), None);
+                assert_eq!(matched.route, None);
                 assert_eq!(&path[start..end], "");
-                assert!(!matched.is_exact);
+                assert!(!matched.exact);
             }
 
             {
@@ -226,10 +226,10 @@ mod tests {
                 let matched = &matches[1];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), Some(&()));
+                assert_eq!(matched.route, Some(&()));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert!(matched.is_exact);
+                assert!(matched.exact);
             }
 
             {
@@ -238,9 +238,9 @@ mod tests {
                 let matched = &matches[2];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), None);
+                assert_eq!(matched.route, None);
                 assert_eq!(&path[start..end], "echo");
-                assert!(!matched.is_exact);
+                assert!(!matched.exact);
             }
 
             {
@@ -249,9 +249,9 @@ mod tests {
                 let matched = &matches[3];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), Some(&()));
+                assert_eq!(matched.route, Some(&()));
                 assert_eq!(&path[start..end], "hello/world");
-                assert!(matched.is_exact);
+                assert!(matched.exact);
             }
         }
 
@@ -267,9 +267,9 @@ mod tests {
                 let matched = &matches[0];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), None);
+                assert_eq!(matched.route, None);
                 assert_eq!(&path[start..end], "");
-                assert!(!matched.is_exact);
+                assert!(!matched.exact);
             }
 
             {
@@ -278,10 +278,10 @@ mod tests {
                 let matched = &matches[1];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), Some(&()));
+                assert_eq!(matched.route, Some(&()));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert!(matched.is_exact);
+                assert!(matched.exact);
             }
 
             {
@@ -290,9 +290,9 @@ mod tests {
                 let matched = &matches[2];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), None);
+                assert_eq!(matched.route, None);
                 assert_eq!(&path[start..end], "articles");
-                assert!(!matched.is_exact);
+                assert!(!matched.exact);
             }
 
             {
@@ -301,9 +301,9 @@ mod tests {
                 let matched = &matches[3];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), Some(&()));
+                assert_eq!(matched.route, Some(&()));
                 assert_eq!(&path[start..end], "100");
-                assert!(matched.is_exact);
+                assert!(matched.exact);
             }
         }
 
@@ -319,9 +319,9 @@ mod tests {
                 let matched = &matches[0];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), None);
+                assert_eq!(matched.route, None);
                 assert_eq!(&path[start..end], "");
-                assert!(!matched.is_exact);
+                assert!(!matched.exact);
             }
 
             {
@@ -330,10 +330,10 @@ mod tests {
                 let matched = &matches[1];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), Some(&()));
+                assert_eq!(matched.route, Some(&()));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert!(matched.is_exact);
+                assert!(matched.exact);
             }
 
             {
@@ -342,9 +342,9 @@ mod tests {
                 let matched = &matches[2];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), None);
+                assert_eq!(matched.route, None);
                 assert_eq!(&path[start..end], "articles");
-                assert!(!matched.is_exact);
+                assert!(!matched.exact);
             }
 
             {
@@ -353,9 +353,9 @@ mod tests {
                 let matched = &matches[3];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), Some(&()));
+                assert_eq!(matched.route, Some(&()));
                 assert_eq!(&path[start..end], "100");
-                assert!(!matched.is_exact);
+                assert!(!matched.exact);
             }
 
             {
@@ -364,10 +364,10 @@ mod tests {
                 let matched = &matches[4];
                 let (start, end) = matched.range;
 
-                assert_eq!(matched.route(), Some(&()));
+                assert_eq!(matched.route, Some(&()));
                 assert_eq!(&path[start..end], "comments");
                 // Should be considered exact because it is the last path segment.
-                assert!(matched.is_exact);
+                assert!(matched.exact);
             }
         }
     }
