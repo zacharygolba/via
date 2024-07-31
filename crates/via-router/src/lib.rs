@@ -4,6 +4,8 @@ mod path;
 mod routes;
 mod visitor;
 
+use std::sync::Arc;
+
 use crate::{
     path::Pattern,
     routes::{Node, RouteStore},
@@ -73,13 +75,9 @@ impl<'a, T> Endpoint<'a, T> {
         }
     }
 
-    pub fn param(&self) -> Option<&'static str> {
+    pub fn param(&self) -> Option<&Arc<str>> {
         let node = self.routes.get(self.index);
-
-        match node.pattern {
-            Pattern::CatchAll(param) | Pattern::Dynamic(param) => Some(param),
-            _ => None,
-        }
+        node.pattern.param()
     }
 
     pub fn route_mut(&mut self) -> &mut Option<Box<T>> {

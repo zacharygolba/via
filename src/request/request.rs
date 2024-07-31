@@ -15,7 +15,7 @@ pub struct Request<State = ()> {
 struct RequestInner<State> {
     request: http::Request<Body>,
     app_state: Arc<State>,
-    path_params: Vec<(&'static str, (usize, usize))>,
+    path_params: Vec<(Arc<str>, (usize, usize))>,
     query_params: Option<Vec<(String, (usize, usize))>>,
     event_listener: EventListener,
 }
@@ -46,7 +46,7 @@ impl<State> Request<State> {
         let path = self.inner.request.uri().path();
 
         for (param, range) in &self.inner.path_params {
-            if name == *param {
+            if name == &**param {
                 return PathParam::new(name, path, Some(range));
             }
         }
@@ -114,7 +114,7 @@ impl<State> Request<State> {
         &self.inner.event_listener
     }
 
-    pub(crate) fn params_mut(&mut self) -> &mut Vec<(&'static str, (usize, usize))> {
+    pub(crate) fn params_mut(&mut self) -> &mut Vec<(Arc<str>, (usize, usize))> {
         &mut self.inner.path_params
     }
 }

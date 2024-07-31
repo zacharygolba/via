@@ -37,8 +37,8 @@ where
         let params = request.params_mut();
 
         for matched in matches {
-            if let Some(param) = matched.param() {
-                params.push(param);
+            if let Some((name, value)) = matched.param() {
+                params.push((Arc::clone(name), value));
             }
 
             if let Some(route) = matched.route {
@@ -73,7 +73,7 @@ impl<'a, State> Endpoint<'a, State> {
         self
     }
 
-    pub fn param(&self) -> Option<&'static str> {
+    pub fn param(&self) -> Option<&Arc<str>> {
         self.inner.param()
     }
 

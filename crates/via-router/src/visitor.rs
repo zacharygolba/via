@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     path::{PathSegments, Pattern},
     routes::{Node, RouteStore},
@@ -19,7 +21,7 @@ pub struct Match<'a, T> {
     pub route: Option<&'a T>,
 
     /// The name of the dynamic segment that was matched against.
-    param: Option<&'static str>,
+    param: Option<&'a Arc<str>>,
 }
 
 struct Visitor<'a, 'b, T> {
@@ -98,7 +100,7 @@ fn visit_matching_entries<'a, 'b, T>(
     for index in visit.node.entries() {
         let node = visitor.route_store.get(*index);
 
-        match node.pattern {
+        match &node.pattern {
             Pattern::CatchAll(_) => {
                 // The next node has a `CatchAll` pattern and will be considered
                 // an exact match. Due to the nature of `CatchAll` patterns, we
@@ -121,7 +123,7 @@ fn visit_matching_entries<'a, 'b, T>(
                 visitor.push(is_exact, range, node);
                 visit_node(visitor, visit.next(node));
             }
-            Pattern::Static(value) if value == path_segment => {
+            Pattern::Static(value) if &**value == path_segment => {
                 // The next node has a `Static` pattern that matches the value
                 // of the path segment.
                 visitor.push(is_exact, range, node);
@@ -151,8 +153,8 @@ impl<'a, T> Match<'a, T> {
     /// that was matched against and value is a key-value pair containing the
     /// start and end offset of the path segment in the url path. If the matched
     /// route does not have any dynamic segments, `None` will be returned.
-    pub fn param(&self) -> Option<(&'static str, (usize, usize))> {
-        self.param.map(|param| (param, self.range))
+    pub fn param(&self) -> Option<(&'a Arc<str>, (usize, usize))> {
+        self.param.zip(Some(self.range))
     }
 }
 

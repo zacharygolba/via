@@ -1,10 +1,10 @@
-use std::{iter::Enumerate, str::Bytes};
+use std::{iter::Enumerate, str::Bytes, sync::Arc};
 
 #[derive(PartialEq)]
 pub enum Pattern {
-    CatchAll(&'static str),
-    Dynamic(&'static str),
-    Static(&'static str),
+    CatchAll(Arc<str>),
+    Dynamic(Arc<str>),
+    Static(Arc<str>),
     Root,
 }
 
@@ -48,7 +48,7 @@ fn split(value: &str) -> SplitPath {
 }
 
 impl Pattern {
-    pub fn param(&self) -> Option<&'static str> {
+    pub fn param(&self) -> Option<&Arc<str>> {
         match self {
             Self::CatchAll(param) | Self::Dynamic(param) => Some(param),
             _ => None,
@@ -59,9 +59,9 @@ impl Pattern {
 impl From<&'static str> for Pattern {
     fn from(value: &'static str) -> Pattern {
         match value.chars().next() {
-            Some('*') => Self::CatchAll(&value[1..]),
-            Some(':') => Self::Dynamic(&value[1..]),
-            _ => Self::Static(value),
+            Some('*') => Self::CatchAll((&value[1..]).into()),
+            Some(':') => Self::Dynamic((&value[1..]).into()),
+            _ => Self::Static(value.into()),
         }
     }
 }
