@@ -11,11 +11,11 @@ Welcome to **Via**, an asynchronous web framework for Rust, designed to be simpl
 
 ## Getting Started
 
-To start using Via, add the following to your `Cargo.toml`:
+Currently, Via is not published to crates.io. If you wish to use Via during the early development phase, you may do so by adding the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-via = "0.1"
+via = { git = "https://github.com/zacharygolba/via.git", branch = "feat-multi-route-match-with-slab" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
