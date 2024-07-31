@@ -33,6 +33,7 @@ struct Visitor<'a, 'b, T> {
 struct Visit<'a, T> {
     /// The index of the path segment that matches `self.node`.
     index: usize,
+
     /// The node that matches the path segment at `self.index`.
     node: &'a Node<T>,
 }
