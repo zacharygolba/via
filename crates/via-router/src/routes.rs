@@ -10,7 +10,7 @@ pub struct Node<T> {
 }
 
 pub struct RouteStore<T> {
-    entries: Vec<Box<Node<T>>>,
+    entries: Vec<Node<T>>,
 }
 
 pub struct RouteEntry<'a, T> {
@@ -19,14 +19,6 @@ pub struct RouteEntry<'a, T> {
 }
 
 impl<T> Node<T> {
-    pub fn new(pattern: Pattern) -> Self {
-        Self {
-            entries: None,
-            route: None,
-            pattern,
-        }
-    }
-
     pub fn entries(&self) -> slice::Iter<usize> {
         if let Some(entries) = self.entries.as_ref() {
             entries.iter()
@@ -63,7 +55,7 @@ impl<T> RouteStore<T> {
         self.entries.get_mut(index).unwrap()
     }
 
-    pub fn insert(&mut self, node: Box<Node<T>>) -> usize {
+    pub fn insert(&mut self, node: Node<T>) -> usize {
         let index = self.entries.len();
         self.entries.push(node);
         index
@@ -71,7 +63,7 @@ impl<T> RouteStore<T> {
 }
 
 impl<'a, T> RouteEntry<'a, T> {
-    pub fn insert(&mut self, node: Box<Node<T>>) -> usize {
+    pub fn insert(&mut self, node: Node<T>) -> usize {
         let index = self.routes.insert(node);
         self.routes.get_mut(self.index).push(index)
     }

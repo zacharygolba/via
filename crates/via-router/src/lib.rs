@@ -19,14 +19,18 @@ pub struct Router<T> {
 }
 
 pub struct Endpoint<'a, T> {
-    index: usize,
-    routes: &'a mut RouteStore<T>,
+    node_index: usize,
+    route_store: &'a mut RouteStore<T>,
 }
 
 impl<T> Router<T> {
     pub fn new() -> Self {
         let mut route_store = RouteStore::new();
-        let root_index = route_store.insert(Box::new(Node::new(Pattern::Root)));
+        let root_index = route_store.insert(Node {
+            entries: None,
+            pattern: Pattern::Root,
+            route: None,
+        });
 
         Self {
             root_index,
@@ -38,8 +42,8 @@ impl<T> Router<T> {
         let mut segments = path::patterns(path);
 
         Endpoint {
-            index: insert(&mut self.route_store, &mut segments, 0),
-            routes: &mut self.route_store,
+            node_index: insert(&mut self.route_store, &mut segments, 0),
+            route_store: &mut self.route_store,
         }
     }
 
@@ -70,18 +74,18 @@ impl<'a, T> Endpoint<'a, T> {
         let mut segments = path::patterns(path);
 
         Endpoint {
-            index: insert(self.routes, &mut segments, self.index),
-            routes: self.routes,
+            node_index: insert(self.route_store, &mut segments, self.node_index),
+            route_store: self.route_store,
         }
     }
 
     pub fn param(&self) -> Option<&Arc<str>> {
-        let node = self.routes.get(self.index);
+        let node = self.route_store.get(self.node_index);
         node.pattern.param()
     }
 
     pub fn route_mut(&mut self) -> &mut Option<Box<T>> {
-        &mut self.routes.get_mut(self.index).route
+        &mut self.route_store.get_mut(self.node_index).route
     }
 }
 
@@ -112,9 +116,11 @@ where
         }
     }
 
-    let next_index = routes
-        .entry(into_index)
-        .insert(Box::new(Node::new(pattern)));
+    let next_index = routes.entry(into_index).insert(Node {
+        entries: None,
+        route: None,
+        pattern,
+    });
 
     // If the pattern does not exist in the node at `current_key`, we need to create
     // a new node as a descendant of the node at `current_key` and then insert it
