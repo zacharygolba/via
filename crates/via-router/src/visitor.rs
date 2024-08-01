@@ -68,7 +68,7 @@ pub fn visit<'a, 'b, T>(
 /// Perform a shallow search for descendants of the current node that have a
 /// `CatchAll` pattern. This is required to support matching the "index" path
 /// of a descendant node with a `CatchAll` pattern.
-fn visit_catch_all_entries<'a, 'b, T>(visitor: &mut Visitor<'a, 'b, T>, visit: Visit<'a, T>) {
+fn visit_catch_all_entries<T>(visitor: &mut Visitor<'_, '_, T>, visit: Visit<T>) {
     for index in visit.node.entries() {
         let node = visitor.route_store.get(*index);
 
@@ -89,8 +89,8 @@ fn visit_catch_all_entries<'a, 'b, T>(visitor: &mut Visitor<'a, 'b, T>, visit: V
 /// that matches the path segment at `range`. If a match is found, we will add
 /// it to our vector of matches and continue to search for matching nodes at
 /// the next depth in the route tree.
-fn visit_matching_entries<'a, 'b, T>(
-    visitor: &mut Visitor<'a, 'b, T>,
+fn visit_matching_entries<'a, T>(
+    visitor: &mut Visitor<'a, '_, T>,
     visit: Visit<'a, T>,
     range: (usize, usize),
 ) {
@@ -141,7 +141,7 @@ fn visit_matching_entries<'a, 'b, T>(
 /// Recursively search for matches in the route tree starting at the current node.
 /// If there is no path segment to match against, we will attempt to find immediate
 /// descendants of the current node with a `CatchAll` pattern.
-fn visit_node<'a, 'b, T>(visitor: &mut Visitor<'a, 'b, T>, visit: Visit<'a, T>) {
+fn visit_node<'a, T>(visitor: &mut Visitor<'a, '_, T>, visit: Visit<'a, T>) {
     if let Some(range) = visitor.path_segments.get(visit.index) {
         visit_matching_entries(visitor, visit, *range);
     } else {

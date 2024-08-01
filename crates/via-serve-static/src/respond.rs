@@ -114,7 +114,7 @@ fn build_path_from_request<State>(
     request: &Request<State>,
     config: &ServerConfig,
 ) -> Result<PathBuf> {
-    let path_param = request.param(&*config.path_param).required()?;
+    let path_param = request.param(&config.path_param).required()?;
     Ok(config.public_dir.join(path_param.trim_end_matches('/')))
 }
 
