@@ -179,7 +179,6 @@ impl Future for ReadToBytes {
                     buffer.put(frame);
                 }
                 Poll::Ready(Some(Err(error))) => {
-                    let error = Error::from(error);
                     return Poll::Ready(Err(error));
                 }
                 Poll::Ready(None) => {
