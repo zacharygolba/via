@@ -1,6 +1,6 @@
+use bytes::Bytes;
 use futures_util::Stream;
-use http_body::{Body as HttpBody, SizeHint};
-use hyper::body::Bytes;
+use hyper::body::{Body as BodyTrait, SizeHint};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -8,7 +8,7 @@ use std::{
 
 use crate::{Error, Result};
 
-pub type Frame = http_body::Frame<Bytes>;
+pub type Frame = hyper::body::Frame<Bytes>;
 type DynStream = dyn Stream<Item = Result<Frame>> + Send + 'static;
 
 pub enum Body {
@@ -130,7 +130,7 @@ impl From<&'static str> for Body {
     }
 }
 
-impl HttpBody for Body {
+impl BodyTrait for Body {
     type Data = Bytes;
     type Error = Error;
 
@@ -151,7 +151,10 @@ impl HttpBody for Body {
     }
 
     fn is_end_stream(&self) -> bool {
-        self.as_buffer().is_none()
+        match self {
+            Self::Buffer(buffer) => buffer.is_none(),
+            Self::Stream(_) => false,
+        }
     }
 
     fn size_hint(&self) -> SizeHint {
