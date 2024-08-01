@@ -1,4 +1,4 @@
-use http::{HeaderMap, Method, Uri, Version};
+use http::{header, HeaderMap, Method, Uri, Version};
 use hyper::body::Incoming;
 use std::{
     fmt::{self, Debug},
@@ -95,6 +95,11 @@ impl<State> Request<State> {
         app_state: Arc<State>,
         event_listener: EventListener,
     ) -> Self {
+        let content_len = request
+            .headers()
+            .get(header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok()?.parse::<usize>().ok());
+
         Self {
             // Box the request and map the request body to `request::Body` to
             // move both the request and body independently to the heap. Doing
@@ -103,7 +108,10 @@ impl<State> Request<State> {
             inner: Box::new(RequestInner {
                 app_state,
                 event_listener,
-                request: request.map(Body::new),
+                request: request.map(|body| match content_len {
+                    Some(len) => Body::with_len(body, len),
+                    None => Body::new(body),
+                }),
                 path_params: Vec::with_capacity(10),
                 query_params: None,
             }),
