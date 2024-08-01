@@ -17,7 +17,7 @@ http-body = "1"
 http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["tokio"] }
 percent-encoding = "2.3"
-tokio = "1.38"
+tokio = "1"
 
 [dependencies.hyper]
 features = ["http1", "server"]
@@ -29,11 +29,11 @@ path = "crates/via-router"
 
 [dependencies.serde]
 optional = true
-version = "1.0"
+version = "1"
 
 [dependencies.serde_json]
 optional = true
-version = "1.0"
+version = "1"
 
 [workspace]
 members = ["crates/*", "docs/examples/*"]
