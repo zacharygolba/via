@@ -1,28 +1,16 @@
 use via::{http::header, Event, Next, Request, Response, Result};
 
 async fn echo(mut request: Request, _: Next) -> Result<Response> {
-    // Read the request body into a Vec<u8>.
-    let request_body = request.body_mut().read_bytes().await?;
-    // Get a reference to the request headers.
-    let request_headers = request.headers();
-    // Create a new vector to store the response headers.
-    let mut response_headers = Vec::new();
+    // Get a stream of bytes from the request body.
+    let body_stream = request.body_mut().to_stream()?;
+    // Optionally get the Content-Type header from the request.
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .map(|value| (header::CONTENT_TYPE, value.clone()));
 
-    if let Some(content_type) = request_headers.get(header::CONTENT_TYPE) {
-        // Add the Content-Type header from the request to the response.
-        response_headers.push((header::CONTENT_TYPE, content_type.clone()));
-    }
-
-    if let Some(content_length) = request_headers.get(header::CONTENT_LENGTH) {
-        // Add the Content-Length header from the request to the response.
-        response_headers.push((header::CONTENT_LENGTH, content_length.clone()));
-    }
-
-    // Send the request body back to the client in the response.
-    Response::builder()
-        .headers(response_headers)
-        .body(request_body)
-        .finish()
+    // Stream the request body back to the client.
+    Response::stream(body_stream).headers(content_type).finish()
 }
 
 #[tokio::main]
