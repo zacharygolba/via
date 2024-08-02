@@ -30,19 +30,19 @@ struct Visitor<'a, 'b, T> {
     route_store: &'a RouteStore<T>,
 }
 
-struct Visit<'a, T> {
+struct Visit<'a> {
     /// The index of the path segment that matches `self.node`.
     index: usize,
 
     /// The node that matches the path segment at `self.index`.
-    node: &'a Node<T>,
+    node: &'a Node,
 }
 
 pub fn visit<'a, 'b, T>(
     matched_routes: &'b mut Vec<Match<'a, T>>,
     path_segments: &'b PathSegments<'b>,
     route_store: &'a RouteStore<T>,
-    node: &'a Node<T>,
+    node: &'a Node,
 ) {
     let mut visitor = Visitor {
         matched_routes,
@@ -57,7 +57,8 @@ pub fn visit<'a, 'b, T>(
         path_segments.is_empty(),
         // The root node's path segment range should produce to an empty str.
         (0, 0),
-        node,
+        None,
+        0,
     );
 
     // Begin the search for matches recursively starting with descendants of
@@ -68,19 +69,26 @@ pub fn visit<'a, 'b, T>(
 /// Perform a shallow search for descendants of the current node that have a
 /// `CatchAll` pattern. This is required to support matching the "index" path
 /// of a descendant node with a `CatchAll` pattern.
-fn visit_catch_all_entries<T>(visitor: &mut Visitor<'_, '_, T>, visit: Visit<T>) {
-    for index in visit.node.entries() {
-        let node = visitor.route_store.get(*index);
+fn visit_catch_all_entries<T>(visitor: &mut Visitor<'_, '_, T>, visit: Visit) {
+    for index in visit.node.entries().copied() {
+        let node = visitor.route_store.node(index);
 
-        if let Pattern::CatchAll(_) = node.pattern {
+        if let Pattern::CatchAll(param) = &node.pattern {
             // Add the matching node to the vector of matches and continue to
             // search for adjacent nodes with a `CatchAll` pattern.
-            visitor.push(true, (0, 0), node);
-            //                 ^^^^^^
-            // Due to the fact we are looking for `CatchAll` patterns as an
-            // immediate descendant of a node that we consider a match, we
-            // can safely assume that the path segment range should always
-            // produce an empty str.
+            visitor.push(
+                // `CatchAll` patterns are always considered an exact match.
+                true,
+                // Due to the fact we are looking for `CatchAll` patterns as an
+                // immediate descendant of a node that we consider a match, we
+                // can safely assume that the path segment range should always
+                // produce an empty str.
+                (0, 0),
+                // Include the name of the dynamic segment even if the value
+                // of the path segment is empty.
+                Some(param),
+                index,
+            );
         }
     }
 }
@@ -91,18 +99,18 @@ fn visit_catch_all_entries<T>(visitor: &mut Visitor<'_, '_, T>, visit: Visit<T>)
 /// the next depth in the route tree.
 fn visit_matching_entries<'a, T>(
     visitor: &mut Visitor<'a, '_, T>,
-    visit: Visit<'a, T>,
+    visit: Visit<'a>,
     range: (usize, usize),
 ) {
     let path_segment = &visitor.path_segments.value[range.0..range.1];
     let next_index = visit.index + 1;
-    let is_exact = next_index == visitor.path_segments.len();
+    let exact = next_index == visitor.path_segments.len();
 
-    for index in visit.node.entries() {
-        let node = visitor.route_store.get(*index);
+    for index in visit.node.entries().copied() {
+        let node = visitor.route_store.node(index);
 
         match &node.pattern {
-            Pattern::CatchAll(_) => {
+            Pattern::CatchAll(param) => {
                 // The next node has a `CatchAll` pattern and will be considered
                 // an exact match. Due to the nature of `CatchAll` patterns, we
                 // do not have to continue searching for descendants of this
@@ -115,19 +123,20 @@ fn visit_matching_entries<'a, T>(
                     // `CatchAll` patterns match the entire remainder of the
                     // url path from which they are matched.
                     visitor.path_segments.slice_from(visit.index),
-                    node,
+                    Some(param),
+                    index,
                 );
             }
-            Pattern::Dynamic(_) => {
+            Pattern::Dynamic(param) => {
                 // The next node has a `Dynamic` pattern. Therefore, we consider
                 // it a match regardless of the value of the path segment.
-                visitor.push(is_exact, range, node);
+                visitor.push(exact, range, Some(param), index);
                 visit_node(visitor, visit.next(node));
             }
             Pattern::Static(value) if &**value == path_segment => {
                 // The next node has a `Static` pattern that matches the value
                 // of the path segment.
-                visitor.push(is_exact, range, node);
+                visitor.push(exact, range, None, index);
                 visit_node(visitor, visit.next(node));
             }
             _ => {
@@ -141,7 +150,7 @@ fn visit_matching_entries<'a, T>(
 /// Recursively search for matches in the route tree starting at the current node.
 /// If there is no path segment to match against, we will attempt to find immediate
 /// descendants of the current node with a `CatchAll` pattern.
-fn visit_node<'a, T>(visitor: &mut Visitor<'a, '_, T>, visit: Visit<'a, T>) {
+fn visit_node<'a, T>(visitor: &mut Visitor<'a, '_, T>, visit: Visit<'a>) {
     if let Some(range) = visitor.path_segments.get(visit.index) {
         visit_matching_entries(visitor, visit, *range);
     } else {
@@ -160,21 +169,29 @@ impl<'a, T> Match<'a, T> {
 }
 
 impl<'a, 'b, T> Visitor<'a, 'b, T> {
-    fn push(&mut self, exact: bool, range: (usize, usize), node: &'a Node<T>) {
-        let route = node.route.as_deref();
-        let param = node.pattern.param();
-
+    fn push(
+        &mut self,
+        // Indicates whether or not the match is considered an exact match.
+        exact: bool,
+        // The start and end offset of the path segment that matches the node.
+        range: (usize, usize),
+        // The name of the dynamic segment that was matched against if the
+        // matched node has a `CatchAll` or `Dynamic` pattern.
+        param: Option<&'a Arc<str>>,
+        // The index of the node that matches the path segment at `range`.
+        index: usize,
+    ) {
         self.matched_routes.push(Match {
+            route: self.route_store.route_at_node(index),
             exact,
             param,
             range,
-            route,
         });
     }
 }
 
-impl<'a, T> Visit<'a, T> {
-    fn next(&self, node: &'a Node<T>) -> Self {
+impl<'a> Visit<'a> {
+    fn next(&self, node: &'a Node) -> Self {
         Self {
             index: self.index + 1,
             node,

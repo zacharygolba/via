@@ -4,6 +4,3 @@ version = "0.1.0"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2021"
 license = "MIT"
-
-[dependencies]
-smallvec = "1.13"
