@@ -26,7 +26,7 @@ pub struct Endpoint<'a, T> {
 impl<T> Router<T> {
     pub fn new() -> Self {
         let mut route_store = RouteStore::new();
-        let root_index = route_store.insert(Node {
+        let root_index = route_store.push(Node {
             entries: None,
             pattern: Pattern::Root,
             route: None,
@@ -50,7 +50,7 @@ impl<T> Router<T> {
     pub fn visit(&self, path: &str) -> Vec<Match<T>> {
         let mut matched_routes = Vec::with_capacity(32);
         let path_segments = path::segments(path);
-        let root_node = self.route_store.get(self.root_index);
+        let root_node = self.route_store.node(self.root_index);
 
         visitor::visit(
             &mut matched_routes,
@@ -80,12 +80,26 @@ impl<'a, T> Endpoint<'a, T> {
     }
 
     pub fn param(&self) -> Option<&Arc<str>> {
-        let node = self.route_store.get(self.node_index);
+        let node = self.route_store.node(self.node_index);
         node.pattern.param()
     }
 
-    pub fn route_mut(&mut self) -> &mut Option<Box<T>> {
-        &mut self.route_store.get_mut(self.node_index).route
+    /// Returns a mutable reference to the route associated with this `Endpoint`.
+    /// If the route does not exist, the route will be set to the result of the
+    /// provided closure `f`.
+    pub fn get_or_insert_route_with<F>(&mut self, f: F) -> &mut T
+    where
+        F: FnOnce() -> Box<T>,
+    {
+        // Get the index of the route associated with the current node or insert
+        // a new route by calling the provided closure `f` if it does not exist.
+        let route_index = self
+            .route_store
+            .entry(self.node_index)
+            .get_or_insert_route_with(f);
+
+        // Return a mutable reference to the route associated with this `Endpoint`.
+        self.route_store.route_mut(route_index)
     }
 }
 
@@ -97,7 +111,7 @@ where
     // In the future we may want to panic if the caller tries to insert a node
     // into a catch-all node rather than silently ignoring the rest of the
     // segments.
-    if let Pattern::CatchAll(_) = routes.get(into_index).pattern {
+    if let Pattern::CatchAll(_) = routes.node(into_index).pattern {
         for _ in segments {}
         return into_index;
     }
@@ -110,13 +124,13 @@ where
 
     // Check if the pattern already exists in the node at `current_key`. If it does,
     // we can continue to the next segment.
-    for next_index in routes.get(into_index).entries() {
-        if pattern == routes.get(*next_index).pattern {
+    for next_index in routes.node(into_index).entries() {
+        if pattern == routes.node(*next_index).pattern {
             return insert(routes, segments, *next_index);
         }
     }
 
-    let next_index = routes.entry(into_index).insert(Node {
+    let next_index = routes.entry(into_index).push_node(Node {
         entries: None,
         route: None,
         pattern,
@@ -144,7 +158,7 @@ mod tests {
         let mut router = Router::new();
 
         for path in &PATHS {
-            let _ = router.at(path).route_mut().insert(Box::new(()));
+            let _ = router.at(path).get_or_insert_route_with(|| Box::new(()));
         }
 
         {
