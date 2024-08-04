@@ -1,4 +1,4 @@
-use futures_util::Stream;
+use futures_core::Stream;
 use std::{
     fs::File,
     io::{self, Read},
