@@ -11,19 +11,35 @@ use crate::{Error, Result};
 
 #[derive(Debug)]
 pub struct Body {
-    inner: Option<Pin<Box<Incoming>>>,
+    inner: Option<Box<Incoming>>,
     len: Option<usize>,
 }
 
-#[derive(Debug)]
+#[must_use = "streams do nothing unless polled"]
 pub struct BodyStream {
-    body: Pin<Box<Incoming>>,
+    body: Box<Incoming>,
 }
 
-#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct ReadToBytes {
-    buffer: Option<BytesMut>,
+    buffer: BytesMut,
     stream: BodyStream,
+}
+
+/// Conditionally reserves `additional` capacity for `bytes` if the current
+/// capacity is less than additional. Returns an error if `capacity + additional`
+/// would overflow `usize`.
+fn try_reserve(bytes: &mut BytesMut, additional: usize) -> Result<()> {
+    let capacity = bytes.capacity();
+
+    if capacity < additional && capacity.checked_add(additional).is_some() {
+        bytes.reserve(additional);
+        return Ok(());
+    }
+
+    Err(Error::new(
+        "failed to reserve enough capacity for the next frame.".to_owned(),
+    ))
 }
 
 impl Body {
@@ -60,35 +76,36 @@ impl Body {
 
     pub fn to_stream(&mut self) -> Result<BodyStream> {
         match self.inner.take() {
-            Some(body) => Ok(BodyStream::new(body)),
+            Some(incoming) => Ok(BodyStream::new(incoming)),
             None => Err(Error::new("body has already been read".to_owned())),
         }
     }
 }
 
 impl Body {
-    pub(crate) fn new(inner: Incoming) -> Self {
+    pub(crate) fn new(incoming: Incoming) -> Self {
         Self {
-            inner: Some(Box::pin(inner)),
+            inner: Some(Box::new(incoming)),
             len: None,
         }
     }
 
-    pub(crate) fn with_len(inner: Incoming, len: usize) -> Self {
+    pub(crate) fn with_len(incoming: Incoming, len: usize) -> Self {
         Self {
-            inner: Some(Box::pin(inner)),
+            inner: Some(Box::new(incoming)),
             len: Some(len),
         }
     }
 }
 
 impl BodyStream {
-    fn new(body: Pin<Box<Incoming>>) -> Self {
+    fn new(body: Box<Incoming>) -> Self {
         Self { body }
     }
 
     fn project(self: Pin<&mut Self>) -> Pin<&mut Incoming> {
-        // Safety: `body` is never moved after being pinned.
+        // Safety:
+        // The `body` field is never moved out of `BodyStream`.
         unsafe {
             let this = self.get_unchecked_mut();
             Pin::new_unchecked(&mut this.body)
@@ -101,28 +118,33 @@ impl Stream for BodyStream {
 
     fn poll_next(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {
         loop {
-            match self.as_mut().project().poll_frame(context) {
-                Poll::Ready(Some(Ok(frame))) if frame.is_data() => {
-                    let bytes = frame.into_data().unwrap();
-                    return Poll::Ready(Some(Ok(bytes)));
+            return match self.as_mut().project().poll_frame(context) {
+                // A frame was read from the body.
+                Poll::Ready(Some(Ok(frame))) => {
+                    if let Ok(bytes) = frame.into_data() {
+                        // The frame is a data frame.
+                        Poll::Ready(Some(Ok(bytes)))
+                    } else {
+                        // The frame is not a data frame.
+                        continue;
+                    }
                 }
+                // An Error occurred when reading the next frame.
                 Poll::Ready(Some(Err(error))) => {
                     let error = Error::from(error);
-                    return Poll::Ready(Some(Err(error)));
+                    Poll::Ready(Some(Err(error)))
                 }
-                Poll::Ready(Some(Ok(_))) => {
-                    // Skip trailers.
-                    continue;
-                }
+                // We have read all the frames from the body.
                 Poll::Ready(None) => {
                     // No more frames.
-                    return Poll::Ready(None);
+                    Poll::Ready(None)
                 }
+                // The body is not ready to yield a frame.
                 Poll::Pending => {
                     // Wait for the next frame.
-                    return Poll::Pending;
+                    Poll::Pending
                 }
-            }
+            };
         }
     }
 }
@@ -130,19 +152,21 @@ impl Stream for BodyStream {
 impl ReadToBytes {
     fn new(stream: BodyStream) -> Self {
         Self {
-            buffer: Some(BytesMut::new()),
+            buffer: BytesMut::new(),
             stream,
         }
     }
 
     fn with_capacity(stream: BodyStream, capacity: usize) -> Self {
         Self {
-            buffer: Some(BytesMut::with_capacity(capacity)),
+            buffer: BytesMut::with_capacity(capacity),
             stream,
         }
     }
 
-    fn project(self: Pin<&mut Self>) -> (Pin<&mut BodyStream>, Pin<&mut Option<BytesMut>>) {
+    fn project(self: Pin<&mut Self>) -> (Pin<&mut BodyStream>, Pin<&mut BytesMut>) {
+        // Safety:
+        // The `stream` and `buffer` fields are never moved out of `ReadToBytes`.
         unsafe {
             let this = self.get_unchecked_mut();
             let stream = Pin::new_unchecked(&mut this.stream);
@@ -158,46 +182,49 @@ impl Future for ReadToBytes {
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         loop {
-            let (stream, option) = self.as_mut().project();
+            let (stream, mut buffer) = self.as_mut().project();
 
-            match stream.poll_next(context) {
+            return match stream.poll_next(context) {
+                // A frame was read from the stream.
                 Poll::Ready(Some(Ok(frame))) => {
                     let frame_len = frame.len();
-                    let buffer = match option.get_mut() {
-                        Some(buffer) => buffer,
-                        None => {
-                            return Poll::Ready(Err(Error::new(
-                                "buffer has already been taken".to_owned(),
-                            )));
-                        }
-                    };
 
-                    if buffer.capacity() < frame_len {
-                        buffer.reserve(frame_len);
+                    // Attempt to reserve enough capacity for the frame in the
+                    // buffer if the current capacity is less than the frame
+                    // length.
+                    if let Err(error) = try_reserve(&mut buffer, frame_len) {
+                        // Clear the buffer.
+                        buffer.clear();
+                        // Return the error.
+                        return Poll::Ready(Err(error));
                     }
 
+                    // Write the frame into the buffer.
                     buffer.put(frame);
-                }
-                Poll::Ready(Some(Err(error))) => {
-                    return Poll::Ready(Err(error));
-                }
-                Poll::Ready(None) => {
-                    let bytes = match option.get_mut().take() {
-                        Some(buffer) => buffer.freeze(),
-                        None => {
-                            return Poll::Ready(Err(Error::new(
-                                "buffer has already been taken".to_owned(),
-                            )));
-                        }
-                    };
 
-                    return Poll::Ready(Ok(bytes));
+                    // Continue reading the stream.
+                    continue;
                 }
+                // An Error occurred in the underlying stream.
+                Poll::Ready(Some(Err(error))) => {
+                    // Clear the buffer.
+                    buffer.clear();
+                    // Return the error and stop reading the stream.
+                    Poll::Ready(Err(error))
+                }
+                // We have read all the bytes from the stream.
+                Poll::Ready(None) => {
+                    // Copy the bytes into a new, immutable buffer.
+                    let bytes = buffer.split().freeze();
+                    // Return the immutable copy of the bytes in buffer.
+                    Poll::Ready(Ok(bytes))
+                }
+                // The stream is not ready to yield a frame.
                 Poll::Pending => {
                     // Wait for the next frame.
-                    return Poll::Pending;
+                    Poll::Pending
                 }
-            }
+            };
         }
     }
 }
