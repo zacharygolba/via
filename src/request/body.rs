@@ -21,7 +21,7 @@ pub struct BodyStream {
 }
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct ReadToBytes {
+pub struct ReadIntoBytes {
     buffer: BytesMut,
     stream: BodyStream,
 }
@@ -43,24 +43,24 @@ fn try_reserve(bytes: &mut BytesMut, additional: usize) -> Result<()> {
 }
 
 impl Body {
-    pub async fn read_to_bytes(&mut self) -> Result<Bytes> {
-        let stream = self.to_stream()?;
+    pub async fn into_bytes(&mut self) -> Result<Bytes> {
+        let stream = self.into_stream()?;
 
         if let Some(capacity) = self.len {
-            ReadToBytes::with_capacity(stream, capacity).await
+            ReadIntoBytes::with_capacity(stream, capacity).await
         } else {
-            ReadToBytes::new(stream).await
+            ReadIntoBytes::new(stream).await
         }
     }
 
     #[cfg(feature = "serde")]
-    pub async fn read_to_json<T>(&mut self) -> Result<T>
+    pub async fn into_json<T>(&mut self) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
         use crate::{http::StatusCode, Error};
 
-        let buffer = self.read_to_bytes().await?;
+        let buffer = self.into_bytes().await?;
 
         serde_json::from_slice(&buffer).map_err(|source| {
             let mut error = Error::from(source);
@@ -69,12 +69,12 @@ impl Body {
         })
     }
 
-    pub async fn read_to_string(&mut self) -> Result<String> {
-        let buffer = self.read_to_bytes().await?;
+    pub async fn into_string(&mut self) -> Result<String> {
+        let buffer = self.into_bytes().await?;
         Ok(String::from_utf8(Vec::from(buffer))?)
     }
 
-    pub fn to_stream(&mut self) -> Result<BodyStream> {
+    pub fn into_stream(&mut self) -> Result<BodyStream> {
         match self.inner.take() {
             Some(incoming) => Ok(BodyStream::new(incoming)),
             None => Err(Error::new("body has already been read".to_owned())),
@@ -149,7 +149,7 @@ impl Stream for BodyStream {
     }
 }
 
-impl ReadToBytes {
+impl ReadIntoBytes {
     fn new(stream: BodyStream) -> Self {
         Self {
             buffer: BytesMut::new(),
@@ -177,7 +177,7 @@ impl ReadToBytes {
     }
 }
 
-impl Future for ReadToBytes {
+impl Future for ReadIntoBytes {
     type Output = Result<Bytes>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
