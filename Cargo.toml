@@ -11,7 +11,7 @@ default = []
 serde = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
-bytes = "1.7.0"
+bytes = "1.7"
 futures-util = { version = "0.3", default-features = false }
 http = "1"
 hyper-util = { version = "0.1", features = ["tokio"] }
