@@ -1,14 +1,11 @@
 use bytes::Bytes;
-use futures_util::{Stream, StreamExt};
+use futures_core::Stream;
 use http::{
     header::{self, HeaderMap},
     StatusCode, Version,
 };
 
-use super::{
-    body::{Body, Frame},
-    ResponseBuilder,
-};
+use super::{body::Body, ResponseBuilder};
 use crate::Error;
 
 pub struct Response {
@@ -61,18 +58,13 @@ impl Response {
             .headers(len.map(|content_length| (header::CONTENT_LENGTH, content_length)))
     }
 
-    pub fn stream<T, D, E>(body: T) -> ResponseBuilder
+    pub fn stream<T, D: 'static, E: 'static>(body: T) -> ResponseBuilder
     where
-        T: Stream<Item = Result<D, E>> + Send + Sync + 'static,
+        T: Stream<Item = Result<D, E>> + Send + 'static,
         Bytes: From<D>,
         Error: From<E>,
     {
-        let stream = body.map(|result| match result {
-            Ok(data) => Ok(Frame::data(Bytes::from(data))),
-            Err(error) => Err(Error::from(error)),
-        });
-
-        ResponseBuilder::with_body(Ok(Body::stream(stream)))
+        ResponseBuilder::with_body(Ok(Body::stream(body)))
             .header(header::TRANSFER_ENCODING, "chunked")
     }
 

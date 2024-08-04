@@ -1,5 +1,5 @@
 use bytes::{BufMut, Bytes, BytesMut};
-use futures_util::Stream;
+use futures_core::Stream;
 use hyper::body::{Body as BodyTrait, Incoming};
 use std::{
     future::Future,
