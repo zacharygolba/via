@@ -1,9 +1,9 @@
+use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use http::{
     header::{self, HeaderMap},
     StatusCode, Version,
 };
-use hyper::body::Bytes;
 
 use super::{
     body::{Body, Frame},
