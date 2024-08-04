@@ -166,7 +166,8 @@ impl ReadIntoBytes {
 
     fn project(self: Pin<&mut Self>) -> (Pin<&mut BodyStream>, Pin<&mut BytesMut>) {
         // Safety:
-        // The `stream` and `buffer` fields are never moved out of `ReadToBytes`.
+        // The `stream` and `buffer` fields are never moved out of
+        // `ReadIntoBytes`.
         unsafe {
             let this = self.get_unchecked_mut();
             let stream = Pin::new_unchecked(&mut this.stream);
