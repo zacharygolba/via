@@ -193,8 +193,8 @@ impl Future for ReadIntoBytes {
                     // buffer if the current capacity is less than the frame
                     // length.
                     if let Err(error) = try_reserve(&mut buffer, frame_len) {
-                        // Clear the buffer.
-                        buffer.clear();
+                        // Zero out the buffer.
+                        buffer.fill(0);
                         // Return the error.
                         return Poll::Ready(Err(error));
                     }
@@ -207,8 +207,8 @@ impl Future for ReadIntoBytes {
                 }
                 // An Error occurred in the underlying stream.
                 Poll::Ready(Some(Err(error))) => {
-                    // Clear the buffer.
-                    buffer.clear();
+                    // Zero out the buffer.
+                    buffer.fill(0);
                     // Return the error and stop reading the stream.
                     Poll::Ready(Err(error))
                 }
