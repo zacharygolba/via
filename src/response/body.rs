@@ -1,6 +1,6 @@
 use bytes::{Buf, Bytes};
-use futures_util::Stream;
-use hyper::body::{Body as BodyTrait, SizeHint};
+use futures_core::Stream;
+use hyper::body::{Body as BodyTrait, Frame, SizeHint};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -8,8 +8,7 @@ use std::{
 
 use crate::{Error, Result};
 
-pub type Frame = hyper::body::Frame<Bytes>;
-type DynStream = dyn Stream<Item = Result<Frame>> + Send + 'static;
+type DynStream = dyn Stream<Item = Result<Frame<Bytes>>> + Send;
 
 pub struct Body {
     kind: BodyKind,
@@ -23,6 +22,15 @@ enum BodyKind {
 enum BodyKindProject<'a> {
     Buffer(Pin<&'a mut Bytes>),
     Stream(Pin<&'a mut DynStream>),
+}
+
+struct BodyStreamAdapter<T, D, E>
+where
+    T: Stream<Item = Result<D, E>> + Send,
+    Bytes: From<D>,
+    Error: From<E>,
+{
+    stream: T,
 }
 
 impl Body {
@@ -52,11 +60,13 @@ impl Body {
         }
     }
 
-    pub(super) fn stream<S>(stream: S) -> Self
+    pub(super) fn stream<T, D: 'static, E: 'static>(stream: T) -> Self
     where
-        S: Stream<Item = Result<Frame>> + Send + 'static,
+        T: Stream<Item = Result<D, E>> + Send + 'static,
+        Bytes: From<D>,
+        Error: From<E>,
     {
-        let stream = Box::new(stream);
+        let stream = Box::new(BodyStreamAdapter { stream });
 
         Self {
             kind: BodyKind::Stream(stream),
@@ -147,7 +157,7 @@ impl BodyTrait for Body {
     fn poll_frame(
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame, Self::Error>>> {
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.project() {
             // The body is a buffer.
             BodyKindProject::Buffer(mut bytes) => {
@@ -187,6 +197,67 @@ impl BodyTrait for Body {
                 }
 
                 size_hint
+            }
+        }
+    }
+}
+
+impl<T, D, E> BodyStreamAdapter<T, D, E>
+where
+    T: Stream<Item = Result<D, E>> + Send,
+    Bytes: From<D>,
+    Error: From<E>,
+{
+    fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
+        // Safety:
+        // This block is necessary because we need to project the inner stream
+        // through the outer pinned reference. The `unsafe` block ensures that
+        // we can safely create a new `Pin` to the inner stream without
+        // violating the guarantees of the `Pin` API.
+        unsafe {
+            // Get a mutable reference to `self`.
+            let this = self.get_unchecked_mut();
+            // Get a mutable reference to the `stream` field.
+            let stream = &mut this.stream;
+
+            // Return the projection of the `stream` field.
+            Pin::new_unchecked(stream)
+        }
+    }
+}
+
+impl<T, D, E> Stream for BodyStreamAdapter<T, D, E>
+where
+    T: Stream<Item = Result<D, E>> + Send,
+    Bytes: From<D>,
+    Error: From<E>,
+{
+    type Item = Result<Frame<Bytes>>;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.project().poll_next(context) {
+            Poll::Ready(Some(Ok(data))) => {
+                // Convert the data to bytes.
+                let bytes = Bytes::from(data);
+                // Wrap the bytes in a data frame.
+                let frame = Frame::data(bytes);
+                // Yield the data frame.
+                Poll::Ready(Some(Ok(frame)))
+            }
+            Poll::Ready(Some(Err(error))) => {
+                // An error occurred while reading the stream. Wrap the
+                // error with `via::Error`.
+                let error = Error::from(error);
+                // Yield the wrapped error.
+                Poll::Ready(Some(Err(error)))
+            }
+            Poll::Ready(None) => {
+                // The stream has ended.
+                Poll::Ready(None)
+            }
+            Poll::Pending => {
+                // The stream is not ready to yield a frame.
+                Poll::Pending
             }
         }
     }
