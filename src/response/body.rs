@@ -16,12 +16,7 @@ pub struct Body {
 
 enum BodyKind {
     Buffer(Box<Bytes>),
-    Stream(Box<DynStream>),
-}
-
-enum BodyKindProject<'a> {
-    Buffer(Pin<&'a mut Bytes>),
-    Stream(Pin<&'a mut DynStream>),
+    Stream(Pin<Box<DynStream>>),
 }
 
 struct BodyStreamAdapter<T, D, E>
@@ -66,7 +61,7 @@ impl Body {
         Bytes: From<D>,
         Error: From<E>,
     {
-        let stream = Box::new(BodyStreamAdapter { stream });
+        let stream = Box::pin(BodyStreamAdapter { stream });
 
         Self {
             kind: BodyKind::Stream(stream),
@@ -78,38 +73,6 @@ impl Body {
             Some(bytes)
         } else {
             None
-        }
-    }
-
-    fn project(self: Pin<&mut Self>) -> BodyKindProject {
-        // Safety:
-        // This block is necessary because we need to project the pin through
-        // the different variants of the enum. The `unsafe` block ensures that
-        // we can safely create a new `Pin` to the inner data without violating
-        // the guarantees of the `Pin` API.
-        unsafe {
-            let this = self.get_unchecked_mut();
-
-            match &mut this.kind {
-                BodyKind::Buffer(bytes) => {
-                    // Get a mutable reference to the inner `Bytes` from the box.
-                    // This is safe because `self` is pinned, and `kind` is never
-                    // moved out of `Body`.
-                    let ptr = &mut **bytes;
-
-                    // Return the pinned reference to the inner `Bytes`.
-                    BodyKindProject::Buffer(Pin::new_unchecked(ptr))
-                }
-                BodyKind::Stream(stream) => {
-                    // Get a mutable reference to the inner `DynStream` from the
-                    // box. This is safe because `self` is pinned, and `kind` is
-                    // never moved out of `Body`.
-                    let ptr = &mut **stream;
-
-                    // Return the pinned reference to the inner `DynStream`.
-                    BodyKindProject::Stream(Pin::new_unchecked(ptr))
-                }
-            }
         }
     }
 }
@@ -158,9 +121,11 @@ impl BodyTrait for Body {
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        match self.project() {
+        let this = self.get_mut();
+
+        match &mut this.kind {
             // The body is a buffer.
-            BodyKindProject::Buffer(mut bytes) => {
+            BodyKind::Buffer(bytes) => {
                 // Get remaining length of the buffer.
                 let remaining = bytes.remaining();
                 // Create a new data frame from the remaining bytes.
@@ -169,9 +134,9 @@ impl BodyTrait for Body {
                 Poll::Ready(Some(Ok(frame)))
             }
             // The body is a stream.
-            BodyKindProject::Stream(stream) => {
+            BodyKind::Stream(stream) => {
                 // Delegate to the stream to poll the next frame.
-                stream.poll_next(context)
+                stream.as_mut().poll_next(context)
             }
         }
     }
