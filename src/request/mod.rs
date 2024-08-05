@@ -7,7 +7,7 @@ mod request;
 use query_parser::parse_query_params;
 
 pub use self::{
-    body::Body,
+    body::{Body, BodyStream},
     path_param::PathParam,
     query_param::{QueryParamValue, QueryParamValues, QueryParamValuesIter},
     request::Request,
