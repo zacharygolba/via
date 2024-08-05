@@ -2,7 +2,7 @@ use via::{http::header, Event, Next, Request, Response, Result};
 
 async fn echo(mut request: Request, _: Next) -> Result<Response> {
     // Get a stream of bytes from the request body.
-    let body_stream = request.body_mut().into_stream()?;
+    let body_stream = request.take_body()?.into_stream();
     // Optionally get the Content-Type header from the request.
     let content_type = request
         .headers()
