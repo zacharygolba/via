@@ -117,30 +117,32 @@ impl Stream for BodyStream {
     type Item = Result<Bytes>;
 
     fn poll_next(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {
-        match Pin::new(&mut *self.body).poll_frame(context) {
-            // A frame was read from the body.
-            Poll::Ready(Some(Ok(frame))) => {
-                if let Ok(bytes) = frame.into_data() {
-                    // The frame is a data frame. Return it.
-                    Poll::Ready(Some(Ok(bytes)))
-                } else {
-                    self.poll_next(context)
+        let mut body = Pin::new(&mut *self.body);
+
+        loop {
+            match body.as_mut().poll_frame(context) {
+                // A frame was read from the body.
+                Poll::Ready(Some(Ok(frame))) => {
+                    if let Ok(bytes) = frame.into_data() {
+                        // The frame is a data frame. Return it.
+                        return Poll::Ready(Some(Ok(bytes)));
+                    }
                 }
-            }
-            // An Error occurred when reading the next frame.
-            Poll::Ready(Some(Err(error))) => {
-                let error = Error::from(error);
-                Poll::Ready(Some(Err(error)))
-            }
-            // We have read all the frames from the body.
-            Poll::Ready(None) => {
-                // No more frames.
-                Poll::Ready(None)
-            }
-            // The body is not ready to yield a frame.
-            Poll::Pending => {
-                // Wait for the next frame.
-                Poll::Pending
+                // An Error occurred when reading the next frame.
+                Poll::Ready(Some(Err(error))) => {
+                    let error = Error::from(error);
+                    return Poll::Ready(Some(Err(error)));
+                }
+                // We have read all the frames from the body.
+                Poll::Ready(None) => {
+                    // No more frames.
+                    return Poll::Ready(None);
+                }
+                // The body is not ready to yield a frame.
+                Poll::Pending => {
+                    // Wait for the next frame.
+                    return Poll::Pending;
+                }
             }
         }
     }
