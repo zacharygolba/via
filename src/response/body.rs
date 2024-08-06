@@ -206,9 +206,9 @@ where
     fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
         // Safety:
         // This block is necessary because we need to project the inner stream
-        // through the outer pinned reference. The `unsafe` block ensures that
-        // we can safely create a new `Pin` to the inner stream without
-        // violating the guarantees of the `Pin` API.
+        // through the outer pinned reference. We don't know if `T` is `Unpin`
+        // so we need to use `unsafe` to create the pinned reference with
+        // `Pin::new_unchecked`.
         unsafe {
             // Get a mutable reference to `self`.
             let this = self.get_unchecked_mut();
