@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{
     path::{PathSegments, Pattern},
     routes::{Node, RouteStore},
@@ -21,7 +19,7 @@ pub struct Match<'a, T> {
     pub route: Option<&'a T>,
 
     /// The name of the dynamic segment that was matched against.
-    param: Option<&'a Arc<str>>,
+    param: Option<&'static str>,
 }
 
 struct Visitor<'a, 'b, T> {
@@ -73,7 +71,7 @@ fn visit_catch_all_entries<T>(visitor: &mut Visitor<'_, '_, T>, visit: Visit) {
     for index in visit.node.entries().copied() {
         let node = visitor.route_store.node(index);
 
-        if let Pattern::CatchAll(param) = &node.pattern {
+        if let Pattern::CatchAll(param) = node.pattern {
             // Add the matching node to the vector of matches and continue to
             // search for adjacent nodes with a `CatchAll` pattern.
             visitor.push(
@@ -109,7 +107,7 @@ fn visit_matching_entries<'a, T>(
     for index in visit.node.entries().copied() {
         let node = visitor.route_store.node(index);
 
-        match &node.pattern {
+        match node.pattern {
             Pattern::CatchAll(param) => {
                 // The next node has a `CatchAll` pattern and will be considered
                 // an exact match. Due to the nature of `CatchAll` patterns, we
@@ -133,7 +131,7 @@ fn visit_matching_entries<'a, T>(
                 visitor.push(exact, range, Some(param), index);
                 visit_node(visitor, visit.next(node));
             }
-            Pattern::Static(value) if &**value == path_segment => {
+            Pattern::Static(value) if value == path_segment => {
                 // The next node has a `Static` pattern that matches the value
                 // of the path segment.
                 visitor.push(exact, range, None, index);
@@ -163,7 +161,7 @@ impl<'a, T> Match<'a, T> {
     /// that was matched against and value is a key-value pair containing the
     /// start and end offset of the path segment in the url path. If the matched
     /// route does not have any dynamic segments, `None` will be returned.
-    pub fn param(&self) -> Option<(&'a Arc<str>, (usize, usize))> {
+    pub fn param(&self) -> Option<(&'static str, (usize, usize))> {
         self.param.zip(Some(self.range))
     }
 }
@@ -177,7 +175,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         range: (usize, usize),
         // The name of the dynamic segment that was matched against if the
         // matched node has a `CatchAll` or `Dynamic` pattern.
-        param: Option<&'a Arc<str>>,
+        param: Option<&'static str>,
         // The index of the node that matches the path segment at `range`.
         index: usize,
     ) {
