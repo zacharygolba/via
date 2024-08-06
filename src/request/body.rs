@@ -64,36 +64,41 @@ fn try_reserve(bytes: &mut BytesMut, additional: usize) -> Result<()> {
 }
 
 impl Body {
-    pub async fn into_bytes(self) -> Result<Bytes> {
+    pub fn into_stream(self) -> BodyStream {
+        BodyStream { body: self.inner }
+    }
+
+    pub async fn read_into_bytes(self) -> Result<Bytes> {
         let buffer = bytes_mut_with_capacity(self.len);
         let stream = self.into_stream();
 
         (ReadIntoBytes { buffer, stream }).await
     }
 
+    pub async fn read_into_string(self) -> Result<String> {
+        let utf8 = self.read_into_vec().await?;
+        Ok(String::from_utf8(utf8)?)
+    }
+
+    pub async fn read_into_vec(self) -> Result<Vec<u8>> {
+        let bytes = self.read_into_bytes().await?;
+        Ok(Vec::from(bytes))
+    }
+
     #[cfg(feature = "serde")]
-    pub async fn into_json<T>(self) -> Result<T>
+    pub async fn read_json<T>(self) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
         use crate::{http::StatusCode, Error};
 
-        let buffer = self.into_bytes().await?;
+        let buffer = self.read_into_bytes().await?;
 
         serde_json::from_slice(&buffer).map_err(|source| {
             let mut error = Error::from(source);
             *error.status_mut() = StatusCode::BAD_REQUEST;
             error
         })
-    }
-
-    pub async fn into_string(self) -> Result<String> {
-        let buffer = self.into_bytes().await?;
-        Ok(String::from_utf8(Vec::from(buffer))?)
-    }
-
-    pub fn into_stream(self) -> BodyStream {
-        BodyStream { body: self.inner }
     }
 }
 
