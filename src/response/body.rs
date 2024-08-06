@@ -171,10 +171,7 @@ impl BodyTrait for Body {
     }
 
     fn is_end_stream(&self) -> bool {
-        match &self.kind {
-            BodyKind::Buffer(None) => true,
-            _ => false,
-        }
+        matches!(self.kind, BodyKind::Buffer(None))
     }
 
     fn size_hint(&self) -> SizeHint {
