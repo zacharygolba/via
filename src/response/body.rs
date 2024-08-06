@@ -15,8 +15,13 @@ pub struct Body {
 }
 
 enum BodyKind {
-    Buffer(Box<Bytes>),
-    Stream(Pin<Box<DynStream>>),
+    Buffer(Option<Bytes>),
+    Stream(Box<DynStream>),
+}
+
+enum BodyKindProjection<'a> {
+    Buffer(Pin<&'a mut Option<Bytes>>),
+    Stream(Pin<&'a mut DynStream>),
 }
 
 struct BodyStreamAdapter<T, D, E>
@@ -40,18 +45,18 @@ impl Body {
 
 impl Body {
     pub(super) fn new() -> Self {
-        let bytes = Box::new(Bytes::new());
+        let buffer = Some(Bytes::new());
 
         Self {
-            kind: BodyKind::Buffer(bytes),
+            kind: BodyKind::Buffer(buffer),
         }
     }
 
     pub(super) fn buffer(bytes: Bytes) -> Self {
-        let bytes = Box::new(bytes);
+        let buffer = Some(bytes);
 
         Self {
-            kind: BodyKind::Buffer(bytes),
+            kind: BodyKind::Buffer(buffer),
         }
     }
 
@@ -61,7 +66,7 @@ impl Body {
         Bytes: From<D>,
         Error: From<E>,
     {
-        let stream = Box::pin(BodyStreamAdapter { stream });
+        let stream = Box::new(BodyStreamAdapter { stream });
 
         Self {
             kind: BodyKind::Stream(stream),
@@ -69,10 +74,42 @@ impl Body {
     }
 
     fn as_buffer(&self) -> Option<&Bytes> {
-        if let BodyKind::Buffer(bytes) = &self.kind {
-            Some(bytes)
+        if let BodyKind::Buffer(buffer) = &self.kind {
+            buffer.as_ref()
         } else {
             None
+        }
+    }
+
+    /// Returns a pinned reference to the inner kind of the body.
+    fn project(self: Pin<&mut Self>) -> BodyKindProjection {
+        // Safety:
+        // This block is necessary because we need to project the inner kind
+        // through the outer pinned reference. While the data of `Self::Buffer`
+        // is `Unpin`, we don't know if the data of `Self::Stream` is `Unpin`.
+        // Therefore, we need to use `unsafe` to project the inner kind.
+        unsafe {
+            // Get a mutable reference to `self`.
+            let this = self.get_unchecked_mut();
+
+            match &mut this.kind {
+                BodyKind::Buffer(buffer) => {
+                    // Create a new pinned reference to the buffer.
+                    let pinned = Pin::new_unchecked(buffer);
+
+                    // Return the projection type for `BodyKind::Buffer`.
+                    BodyKindProjection::Buffer(pinned)
+                }
+                BodyKind::Stream(stream) => {
+                    // Get a mutable reference to the stream.
+                    let stream = &mut **stream;
+                    // Create a new pinned reference to the stream.
+                    let pinned = Pin::new_unchecked(stream);
+
+                    // Return the projection type for `BodyKind::Stream`.
+                    BodyKindProjection::Stream(pinned)
+                }
+            }
         }
     }
 }
@@ -121,21 +158,13 @@ impl BodyTrait for Body {
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let this = self.get_mut();
-
-        match &mut this.kind {
-            // The body is a buffer.
-            BodyKind::Buffer(bytes) => {
-                // Get remaining length of the buffer.
-                let remaining = bytes.remaining();
-                // Create a new data frame from the remaining bytes.
-                let frame = Frame::data(bytes.split_to(remaining));
-                // Return the remaining bytes of the buffer as a data frame.
-                Poll::Ready(Some(Ok(frame)))
+        match self.project() {
+            BodyKindProjection::Buffer(mut buffer) => {
+                // Take the buffer and map it to a data frame and return it.
+                Poll::Ready(buffer.take().map(|bytes| Ok(Frame::data(bytes))))
             }
-            // The body is a stream.
-            BodyKind::Stream(stream) => {
-                // Delegate to the stream to poll the next frame.
+            BodyKindProjection::Stream(mut stream) => {
+                // Poll the stream for the next frame and return the result.
                 stream.as_mut().poll_next(context)
             }
         }
@@ -143,14 +172,15 @@ impl BodyTrait for Body {
 
     fn is_end_stream(&self) -> bool {
         match &self.kind {
-            BodyKind::Buffer(bytes) => bytes.is_empty(),
-            BodyKind::Stream(_) => false,
+            BodyKind::Buffer(None) => true,
+            _ => false,
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match &self.kind {
-            BodyKind::Buffer(bytes) => SizeHint::with_exact(bytes.remaining() as u64),
+            BodyKind::Buffer(Some(bytes)) => SizeHint::with_exact(bytes.remaining() as u64),
+            BodyKind::Buffer(None) => SizeHint::new(),
             BodyKind::Stream(stream) => {
                 let (lower, upper) = stream.size_hint();
                 let mut size_hint = SizeHint::new();
@@ -185,7 +215,7 @@ where
             // Get a mutable reference to the `stream` field.
             let stream = &mut this.stream;
 
-            // Return the projection of the `stream` field.
+            // Return the pinned reference to the `stream` field.
             Pin::new_unchecked(stream)
         }
     }
