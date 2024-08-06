@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Buf, Bytes, BytesMut};
 use futures_core::Stream;
 use hyper::body::{Body as BodyTrait, Incoming};
 use std::{
@@ -9,7 +9,11 @@ use std::{
 
 use crate::{Error, Result};
 
-const MAX_BUFFER_SIZE: usize = isize::MAX as usize;
+/// The maximum amount of bytes that can be reserved during an allocation.
+const MAX_ALLOC_SIZE: usize = isize::MAX as usize;
+
+/// The maximum amount of bytes that can be preallocated.
+const MAX_PREALLOC_SIZE: usize = 104857600; // 100 MB
 
 #[derive(Debug)]
 pub struct Body {
@@ -19,19 +23,28 @@ pub struct Body {
 
 #[must_use = "streams do nothing unless polled"]
 pub struct BodyStream {
-    body: Pin<Box<Incoming>>,
+    body: Box<Incoming>,
 }
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct ReadIntoBytes {
-    buffer: Vec<u8>,
+    buffer: BytesMut,
     stream: BodyStream,
+}
+
+/// Preallocates a `BytesMut` buffer with the provided `capacity` if it is less
+/// than or equal to `MAX_PREALLOC_SIZE`. If `capacity` is `None`, an empty
+/// `BytesMut` buffer is returned.
+fn bytes_mut_with_capacity(capacity: Option<usize>) -> BytesMut {
+    capacity.map_or_else(BytesMut::new, |value| {
+        BytesMut::with_capacity(value.min(MAX_PREALLOC_SIZE))
+    })
 }
 
 /// Conditionally reserves `additional` capacity for `bytes` if the current
 /// capacity is less than additional. Returns an error if `capacity + additional`
 /// would overflow `isize`.
-fn try_reserve(bytes: &mut Vec<u8>, additional: usize) -> Result<()> {
+fn try_reserve(bytes: &mut BytesMut, additional: usize) -> Result<()> {
     let capacity = bytes.capacity();
 
     if capacity >= additional {
@@ -40,7 +53,7 @@ fn try_reserve(bytes: &mut Vec<u8>, additional: usize) -> Result<()> {
     }
 
     match capacity.checked_add(additional) {
-        Some(total) if total <= MAX_BUFFER_SIZE => {
+        Some(total) if total <= MAX_ALLOC_SIZE => {
             bytes.reserve(additional);
             Ok(())
         }
@@ -51,8 +64,8 @@ fn try_reserve(bytes: &mut Vec<u8>, additional: usize) -> Result<()> {
 }
 
 impl Body {
-    pub async fn into_bytes(self) -> Result<Vec<u8>> {
-        let buffer = self.len.map(Vec::with_capacity).unwrap_or_default();
+    pub async fn into_bytes(self) -> Result<Bytes> {
+        let buffer = bytes_mut_with_capacity(self.len);
         let stream = self.into_stream();
 
         (ReadIntoBytes { buffer, stream }).await
@@ -76,15 +89,11 @@ impl Body {
 
     pub async fn into_string(self) -> Result<String> {
         let buffer = self.into_bytes().await?;
-        let string = String::from_utf8(buffer)?;
-
-        Ok(string)
+        Ok(String::from_utf8(Vec::from(buffer))?)
     }
 
     pub fn into_stream(self) -> BodyStream {
-        BodyStream {
-            body: Box::into_pin(self.inner),
-        }
+        BodyStream { body: self.inner }
     }
 }
 
@@ -108,37 +117,37 @@ impl Stream for BodyStream {
     type Item = Result<Bytes>;
 
     fn poll_next(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {
-        loop {
-            match self.body.as_mut().poll_frame(context) {
-                // A frame was read from the body.
-                Poll::Ready(Some(Ok(frame))) => {
-                    if let Ok(bytes) = frame.into_data() {
-                        // The frame is a data frame.
-                        return Poll::Ready(Some(Ok(bytes)));
-                    }
+        match Pin::new(&mut *self.body).poll_frame(context) {
+            // A frame was read from the body.
+            Poll::Ready(Some(Ok(frame))) => {
+                if let Ok(bytes) = frame.into_data() {
+                    // The frame is a data frame. Return it.
+                    Poll::Ready(Some(Ok(bytes)))
+                } else {
+                    self.poll_next(context)
                 }
-                // An Error occurred when reading the next frame.
-                Poll::Ready(Some(Err(error))) => {
-                    let error = Error::from(error);
-                    return Poll::Ready(Some(Err(error)));
-                }
-                // We have read all the frames from the body.
-                Poll::Ready(None) => {
-                    // No more frames.
-                    return Poll::Ready(None);
-                }
-                // The body is not ready to yield a frame.
-                Poll::Pending => {
-                    // Wait for the next frame.
-                    return Poll::Pending;
-                }
-            };
+            }
+            // An Error occurred when reading the next frame.
+            Poll::Ready(Some(Err(error))) => {
+                let error = Error::from(error);
+                Poll::Ready(Some(Err(error)))
+            }
+            // We have read all the frames from the body.
+            Poll::Ready(None) => {
+                // No more frames.
+                Poll::Ready(None)
+            }
+            // The body is not ready to yield a frame.
+            Poll::Pending => {
+                // Wait for the next frame.
+                Poll::Pending
+            }
         }
     }
 }
 
 impl Future for ReadIntoBytes {
-    type Output = Result<Vec<u8>>;
+    type Output = Result<Bytes>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -173,10 +182,10 @@ impl Future for ReadIntoBytes {
                 }
                 // We have read all the bytes from the stream.
                 Poll::Ready(None) => {
-                    // Take ownership of the buffer.
-                    let buffer = std::mem::take(buffer);
-                    // Return the owned buffer.
-                    return Poll::Ready(Ok(buffer));
+                    // Copy the bytes in the buffer to a new bytes object.
+                    let bytes = buffer.copy_to_bytes(buffer.len());
+                    // Return the immutable, contents of buffer.
+                    return Poll::Ready(Ok(bytes));
                 }
                 // The stream is not ready to yield a frame.
                 Poll::Pending => {
