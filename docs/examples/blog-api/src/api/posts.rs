@@ -15,7 +15,7 @@ pub async fn index(request: Request, _: Next) -> Result<Response> {
 }
 
 pub async fn create(mut request: Request, _: Next) -> Result<Response> {
-    let body: Payload<NewPost> = request.take_body()?.into_json().await?;
+    let body: Payload<NewPost> = request.take_body()?.read_json().await?;
     let post = body.data.insert(&request.state().pool).await?;
 
     Response::json(&Payload::new(post)).finish()
@@ -30,7 +30,7 @@ pub async fn show(request: Request, _: Next) -> Result<Response> {
 
 pub async fn update(mut request: Request, _: Next) -> Result<Response> {
     let id = request.param("id").parse::<i32>()?;
-    let body: Payload<ChangeSet> = request.take_body()?.into_json().await?;
+    let body: Payload<ChangeSet> = request.take_body()?.read_json().await?;
     let post = body.data.apply(&request.state().pool, id).await?;
 
     Response::json(&Payload::new(post)).finish()
