@@ -1,5 +1,5 @@
 [package]
-name = "hello-world"
+name = "shared-state"
 version = "0.1.0"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2021"
@@ -9,4 +9,3 @@ edition = "2021"
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 via = { path = "../../.." }
-via-serve-static = { path = "../../../crates/via-serve-static" }

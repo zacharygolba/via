@@ -1,114 +1,390 @@
-mod iter;
-mod node;
-mod verb;
+#![forbid(unsafe_code)]
 
-use std::ops::{Deref, DerefMut};
+mod path;
+mod routes;
+mod visitor;
 
-use crate::{iter::*, node::*};
+use crate::{
+    path::Pattern,
+    routes::{Node, RouteStore},
+};
 
-pub use iter::{Component, Visit};
-pub use node::Pattern;
-pub use verb::Verb;
+pub use crate::visitor::Match;
 
-#[derive(Debug)]
-pub struct Location<'a, T>(&'a mut Node<T>);
+pub struct Router<T> {
+    root_index: usize,
+    route_store: RouteStore<T>,
+}
 
-#[derive(Clone, Debug, Default)]
-pub struct Router<T>(Node<T>);
+pub struct Endpoint<'a, T> {
+    node_index: usize,
+    route_store: &'a mut RouteStore<T>,
+}
 
-impl<'a, T: Default> Location<'a, T> {
-    pub fn at(&mut self, path: &'static str) -> Location<T> {
-        let mut segments = Path::segments(path);
-        Location(self.0.insert(&mut segments))
+impl<T> Router<T> {
+    pub fn new() -> Self {
+        let mut route_store = RouteStore::new();
+        let root_index = route_store.push(Node {
+            entries: None,
+            pattern: Pattern::Root,
+            route: None,
+        });
+
+        Self {
+            root_index,
+            route_store,
+        }
+    }
+
+    pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
+        let mut segments = path::patterns(path);
+
+        Endpoint {
+            node_index: insert(&mut self.route_store, &mut segments, 0),
+            route_store: &mut self.route_store,
+        }
+    }
+
+    pub fn visit(&self, path: &str) -> Vec<Match<T>> {
+        let mut matched_routes = Vec::with_capacity(32);
+        let path_segments = path::segments(path);
+        let root_node = self.route_store.node(self.root_index);
+
+        visitor::visit(
+            &mut matched_routes,
+            &path_segments,
+            &self.route_store,
+            root_node,
+        );
+
+        matched_routes
     }
 }
 
-impl<'a, T: Default> Deref for Location<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0.route
+impl<T> Default for Router<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-impl<'a, T: Default> DerefMut for Location<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0.route
+impl<'a, T> Endpoint<'a, T> {
+    pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
+        let mut segments = path::patterns(path);
+
+        Endpoint {
+            node_index: insert(self.route_store, &mut segments, self.node_index),
+            route_store: self.route_store,
+        }
+    }
+
+    pub fn param(&self) -> Option<&'static str> {
+        let node = self.route_store.node(self.node_index);
+        node.pattern.param()
+    }
+
+    /// Returns a mutable reference to the route associated with this `Endpoint`.
+    /// If the route does not exist, the route will be set to the result of the
+    /// provided closure `f`.
+    pub fn get_or_insert_route_with<F>(&mut self, f: F) -> &mut T
+    where
+        F: FnOnce() -> Box<T>,
+    {
+        // Get the index of the route associated with the current node or insert
+        // a new route by calling the provided closure `f` if it does not exist.
+        let route_index = self
+            .route_store
+            .entry(self.node_index)
+            .get_or_insert_route_with(f);
+
+        // Return a mutable reference to the route associated with this `Endpoint`.
+        self.route_store.route_mut(route_index)
     }
 }
 
-impl<T: Default> Router<T> {
-    pub fn new() -> Router<T> {
-        Default::default()
+fn insert<T, I>(routes: &mut RouteStore<T>, segments: &mut I, into_index: usize) -> usize
+where
+    I: Iterator<Item = Pattern>,
+{
+    // If the current node is a catch-all, we can skip the rest of the segments.
+    // In the future we may want to panic if the caller tries to insert a node
+    // into a catch-all node rather than silently ignoring the rest of the
+    // segments.
+    if let Pattern::CatchAll(_) = routes.node(into_index).pattern {
+        for _ in segments {}
+        return into_index;
     }
 
-    pub fn at(&mut self, path: &'static str) -> Location<T> {
-        let mut segments = Path::segments(path);
-        Location(self.0.insert(&mut segments))
+    // If there are no more segments, we can return the current key.
+    let pattern = match segments.next() {
+        Some(value) => value,
+        None => return into_index,
+    };
+
+    // Check if the pattern already exists in the node at `current_key`. If it does,
+    // we can continue to the next segment.
+    for next_index in routes.node(into_index).entries() {
+        if pattern == routes.node(*next_index).pattern {
+            return insert(routes, segments, *next_index);
+        }
     }
 
-    pub fn visit<'a, 'b>(&'a self, path: &'b str) -> Visit<'a, 'b, T> {
-        Visit::root(&self.0, path)
-    }
-}
+    let next_index = routes.entry(into_index).push_node(Node {
+        entries: None,
+        route: None,
+        pattern,
+    });
 
-impl<T: Default> Deref for Router<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0.route
-    }
-}
-
-impl<T: Default> DerefMut for Router<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0.route
-    }
+    // If the pattern does not exist in the node at `current_key`, we need to create
+    // a new node as a descendant of the node at `current_key` and then insert it
+    // into the store.
+    insert(routes, segments, next_index)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::PartialEq;
+    use super::Router;
 
-    type Router = super::Router<Path>;
-
-    #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-    struct Path(Option<&'static str>);
-
-    impl PartialEq<str> for Path {
-        fn eq(&self, other: &str) -> bool {
-            if let Some(value) = self.0 {
-                value == other
-            } else {
-                false
-            }
-        }
-    }
-
-    macro_rules! at {
-        ($target:expr, $path:expr) => {
-            *$target.at($path) = Path(Some($path));
-        };
-    }
-
-    macro_rules! visit {
-        ($target:expr, $path:expr) => {
-            $target.visit($path).last().unwrap().route
-        };
-    }
+    const PATHS: [&str; 4] = [
+        "/*path",
+        "/echo/*path",
+        "/articles/:id",
+        "/articles/:id/comments",
+    ];
 
     #[test]
-    fn ordering() {
-        let mut router = Router::default();
+    fn test_router_visit() {
+        let mut router = Router::new();
 
-        at!(router, "/*path");
-        at!(router, "/echo/*path");
-        at!(router, "/articles/:id");
-        at!(router, "/articles/:id/comments");
+        for path in &PATHS {
+            let _ = router.at(path).get_or_insert_route_with(|| Box::new(()));
+        }
 
-        assert!(visit!(router, "/not/a/path") == "/*path");
-        assert!(visit!(router, "/articles/100") == "/articles/:id");
-        assert!(visit!(router, "/echo/hello/world") == "/echo/*path");
-        assert!(visit!(router, "/articles/100/comments") == "/articles/:id/comments");
+        {
+            let path = "/";
+            let matches = router.visit(path);
+
+            assert_eq!(matches.len(), 2);
+
+            {
+                // /
+                // ^ as Pattern::Root
+                let matched = &matches[0];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, None);
+                assert_eq!(&path[start..end], "");
+                assert!(matched.exact);
+            }
+
+            {
+                // /
+                //  ^ as Pattern::CatchAll("*path")
+                let matched = &matches[1];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, Some(&()));
+                assert_eq!(&path[start..end], "");
+                // Should be considered exact because of the catch-all pattern.
+                assert!(matched.exact);
+            }
+        }
+
+        {
+            let path = "/not/a/path";
+            let matches = router.visit(path);
+
+            assert_eq!(matches.len(), 2);
+
+            {
+                // /not/a/path
+                // ^ as Pattern::Root
+                let matched = &matches[0];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, None);
+                assert_eq!(&path[start..end], "");
+                assert!(!matched.exact);
+            }
+
+            {
+                // /not/a/path
+                //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let matched = &matches[1];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, Some(&()));
+                assert_eq!(&path[start..end], &path[1..]);
+                // Should be considered exact because of the catch-all pattern.
+                assert!(matched.exact);
+            }
+        }
+
+        {
+            let path = "/echo/hello/world";
+            let matches = router.visit(path);
+
+            assert_eq!(matches.len(), 4);
+
+            {
+                // /echo/hello/world
+                // ^ as Pattern::Root
+                let matched = &matches[0];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, None);
+                assert_eq!(&path[start..end], "");
+                assert!(!matched.exact);
+            }
+
+            {
+                // /echo/hello/world
+                //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let matched = &matches[1];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, Some(&()));
+                assert_eq!(&path[start..end], &path[1..]);
+                // Should be considered exact because of the catch-all pattern.
+                assert!(matched.exact);
+            }
+
+            {
+                // /echo/hello/world
+                //  ^^^^ as Pattern::Static("echo")
+                let matched = &matches[2];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, None);
+                assert_eq!(&path[start..end], "echo");
+                assert!(!matched.exact);
+            }
+
+            {
+                // /echo/hello/world
+                //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let matched = &matches[3];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, Some(&()));
+                assert_eq!(&path[start..end], "hello/world");
+                assert!(matched.exact);
+            }
+        }
+
+        {
+            let path = "/articles/100";
+            let matches = router.visit(path);
+
+            assert_eq!(matches.len(), 4);
+
+            {
+                // /articles/100
+                // ^ as Pattern::Root
+                let matched = &matches[0];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, None);
+                assert_eq!(&path[start..end], "");
+                assert!(!matched.exact);
+            }
+
+            {
+                // /articles/100
+                //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let matched = &matches[1];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, Some(&()));
+                assert_eq!(&path[start..end], &path[1..]);
+                // Should be considered exact because of the catch-all pattern.
+                assert!(matched.exact);
+            }
+
+            {
+                // /articles/100
+                //  ^^^^^^^^ as Pattern::Static("articles")
+                let matched = &matches[2];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, None);
+                assert_eq!(&path[start..end], "articles");
+                assert!(!matched.exact);
+            }
+
+            {
+                // /articles/100
+                //           ^^^ as Pattern::Dynamic(":id")
+                let matched = &matches[3];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, Some(&()));
+                assert_eq!(&path[start..end], "100");
+                assert!(matched.exact);
+            }
+        }
+
+        {
+            let path = "/articles/100/comments";
+            let matches = router.visit(path);
+
+            assert_eq!(matches.len(), 5);
+
+            {
+                // /articles/100/comments
+                // ^ as Pattern::Root
+                let matched = &matches[0];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, None);
+                assert_eq!(&path[start..end], "");
+                assert!(!matched.exact);
+            }
+
+            {
+                // /articles/100/comments
+                //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let matched = &matches[1];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, Some(&()));
+                assert_eq!(&path[start..end], &path[1..]);
+                // Should be considered exact because of the catch-all pattern.
+                assert!(matched.exact);
+            }
+
+            {
+                // /articles/100/comments
+                //  ^^^^^^^^ as Pattern::Static("articles")
+                let matched = &matches[2];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, None);
+                assert_eq!(&path[start..end], "articles");
+                assert!(!matched.exact);
+            }
+
+            {
+                // /articles/100/comments
+                //           ^^^ as Pattern::Dynamic(":id")
+                let matched = &matches[3];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, Some(&()));
+                assert_eq!(&path[start..end], "100");
+                assert!(!matched.exact);
+            }
+
+            {
+                // /articles/100/comments
+                //               ^^^^^^^^ as Pattern::Static("comments")
+                let matched = &matches[4];
+                let (start, end) = matched.range;
+
+                assert_eq!(matched.route, Some(&()));
+                assert_eq!(&path[start..end], "comments");
+                // Should be considered exact because it is the last path segment.
+                assert!(matched.exact);
+            }
+        }
     }
 }

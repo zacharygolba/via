@@ -1,29 +1,26 @@
-use crate::{http::StatusCode, response::Response};
-use serde::ser::{Serialize, Serializer};
+use http::StatusCode;
 use std::{
-    collections::HashSet,
     error::Error as StdError,
     fmt::{self, Debug, Display, Formatter},
+    io::{Error as IoError, ErrorKind as IoErrorKind},
 };
+
+use crate::response::Response;
+
+type AnyError = Box<dyn StdError + Send + Sync + 'static>;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub type Source = (dyn StdError + 'static);
 
-pub trait ResultExt<T> {
-    fn json(self) -> Result<T>;
-    fn status(self, code: u16) -> Result<T>;
-}
-
 #[derive(Debug)]
 pub struct Error {
     format: Option<Format>,
-    source: Box<dyn StdError + Send>,
-    status: u16,
+    source: AnyError,
+    status: StatusCode,
 }
 
-#[doc(hidden)]
-pub struct Bail {
-    pub(crate) message: String,
+struct Bail {
+    message: String,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -33,18 +30,14 @@ struct Chain<'a> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Format {
+    #[cfg(feature = "serde")]
     Json,
 }
 
-fn respond(error: Error) -> Result<Response> {
-    let Error { format, status, .. } = error;
-    let mut response = Response::new(match format {
-        Some(Format::Json) => serde_json::to_vec(&error)?,
-        None => error.to_string().into_bytes(),
-    });
-
-    *response.status_mut() = StatusCode::from_u16(status)?;
-    Ok(response)
+impl Bail {
+    pub fn new(message: String) -> Self {
+        Self { message }
+    }
 }
 
 impl Debug for Bail {
@@ -73,24 +66,122 @@ impl<'a> Iterator for Chain<'a> {
 }
 
 impl Error {
+    pub fn new(message: String) -> Self {
+        Self {
+            format: None,
+            source: Box::new(Bail::new(message)),
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    pub fn from_io_error(error: IoError) -> Self {
+        let status = match error.kind() {
+            IoErrorKind::NotFound => StatusCode::NOT_FOUND,
+            IoErrorKind::PermissionDenied => StatusCode::FORBIDDEN,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+
+        Self {
+            format: None,
+            source: Box::new(error),
+            status,
+        }
+    }
+
     pub fn chain(&self) -> impl Iterator<Item = &Source> {
         Chain {
             source: Some(&*self.source),
         }
     }
 
-    pub fn json(mut self) -> Self {
-        self.format = Some(Format::Json);
-        self
-    }
-
     pub fn source(&self) -> &Source {
         &*self.source
     }
 
-    pub fn status(mut self, code: u16) -> Self {
-        self.status = code;
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    pub fn status_mut(&mut self) -> &mut StatusCode {
+        &mut self.status
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn json(mut self) -> Self {
+        self.format = Some(Format::Json);
         self
+    }
+}
+
+impl Error {
+    pub(crate) fn into_infallible_response<F>(self, error_callback: F) -> Response
+    where
+        F: FnOnce(&Error),
+    {
+        use http::header::HeaderValue;
+
+        let result = match self.format {
+            #[cfg(feature = "serde")]
+            Some(Format::Json) => {
+                // The `serde` feature is enabled and the error format is `Json`.
+                // Attempt to serialize the error as JSON. If serialization fails,
+                // fallback to a plain text response.
+                let status = self.status;
+                Response::json(&self).status(status).finish()
+            }
+            _ => {
+                // The `serde` feature is disabled or the error format is not `Json`.
+                // Generate a plain text response by converting the error to a string.
+                let message = self.to_string();
+                let status = self.status;
+                Response::text(message).status(status).finish()
+            }
+        };
+
+        match result {
+            Ok(response) => {
+                // The response was generated successfully.
+                response
+            }
+            Err(error) => {
+                // An error occurred while generating the response. Generate a
+                // plain text response with the original error message and
+                // return it without using the `ResponseBuilder`.
+                let mut response = Response::new();
+                let message = self.to_string();
+
+                response.headers_mut().insert(
+                    http::header::CONTENT_TYPE,
+                    HeaderValue::from_static("text/plain; charset=utf-8"),
+                );
+
+                if let Ok(length) = HeaderValue::from_str(&message.len().to_string()) {
+                    response
+                        .headers_mut()
+                        .insert(http::header::CONTENT_LENGTH, length);
+                }
+
+                *response.status_mut() = self.status;
+                *response.body_mut() = message.into();
+
+                // Bubble up the error that prevented the response from being
+                // generated to the app-level event listener so that it can be
+                // reported or handled appropriately.
+                error_callback(&error);
+
+                response
+            }
+        }
+    }
+}
+
+impl Error {
+    pub(crate) fn with_status(message: String, status: StatusCode) -> Self {
+        Self {
+            format: None,
+            source: Box::new(Bail::new(message)),
+            status,
+        }
     }
 }
 
@@ -102,23 +193,31 @@ impl Display for Error {
 
 impl<T> From<T> for Error
 where
-    T: StdError + Send + 'static,
+    T: StdError + Send + Sync + 'static,
 {
     fn from(value: T) -> Self {
-        Error {
+        Self {
             format: None,
             source: Box::new(value),
-            status: 500,
+            status: StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
 
-impl Serialize for Error {
+impl From<Error> for AnyError {
+    fn from(error: Error) -> Self {
+        error.source
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Error {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
+        use std::collections::HashSet;
 
         #[derive(Eq, PartialEq, Hash)]
         struct SerializedError {
@@ -127,16 +226,16 @@ impl Serialize for Error {
 
         impl<'a> From<&'a Source> for SerializedError {
             fn from(error: &'a Source) -> Self {
-                SerializedError {
+                Self {
                     message: error.to_string(),
                 }
             }
         }
 
-        impl Serialize for SerializedError {
+        impl serde::Serialize for SerializedError {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
-                S: Serializer,
+                S: serde::Serializer,
             {
                 let mut state = serializer.serialize_struct("Error", 1)?;
 
@@ -156,30 +255,5 @@ impl Serialize for Error {
 impl From<Error> for Box<dyn StdError + Send> {
     fn from(error: Error) -> Self {
         error.source
-    }
-}
-
-impl From<Error> for Response {
-    fn from(error: Error) -> Response {
-        respond(error).unwrap_or_else(|e| {
-            let mut response = Response::new("Internal Server Error");
-
-            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            eprintln!("{}", e);
-            response
-        })
-    }
-}
-
-impl<T, E> ResultExt<T> for Result<T, E>
-where
-    Error: From<E>,
-{
-    fn json(self) -> Result<T, Error> {
-        self.map_err(|e| Error::from(e).json())
-    }
-
-    fn status(self, code: u16) -> Result<T, Error> {
-        self.map_err(|e| Error::from(e).status(code))
     }
 }
