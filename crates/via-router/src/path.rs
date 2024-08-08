@@ -61,7 +61,7 @@ impl From<&'static str> for Pattern {
         match value.chars().next() {
             Some('*') => Self::CatchAll(&value[1..]),
             Some(':') => Self::Dynamic(&value[1..]),
-            _ => Self::Static(value.into()),
+            _ => Self::Static(value),
         }
     }
 }
