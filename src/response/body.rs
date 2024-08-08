@@ -1,7 +1,8 @@
-use bytes::{Buf, Bytes};
+use bytes::{Buf, Bytes, BytesMut};
 use futures_core::Stream;
 use hyper::body::{Body as BodyTrait, Frame, SizeHint};
 use std::{
+    marker::PhantomPinned,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -11,52 +12,81 @@ use crate::{Error, Result};
 type DynStream = dyn Stream<Item = Result<Frame<Bytes>>> + Send;
 
 pub struct Body {
+    /// The kind of body that is being used. This allows us to support both
+    /// buffered and streaming response bodies.
     kind: BodyKind,
+
+    /// A marker field that is used to indicate that `Body` is `!Unpin`. This
+    /// is necessary because `Body` may contain a stream that is not `Unpin`.
+    _pin: PhantomPinned,
 }
 
+/// An enum that represents the different kinds of bodies that can be used in
+/// a response. This allows us to support both buffered and streaming response
+/// bodies.
 enum BodyKind {
-    Buffer(Option<Bytes>),
+    /// A buffered body that contains a `BytesMut` buffer. This variant is used
+    /// when the entire body can be buffered in memory.
+    Buffer(Box<BytesMut>),
+
+    /// A stream body that contains a `DynStream` trait object. This variant is
+    /// used when the body is too large to be buffered in memory or when the
+    /// each frame of the body needs to be processed as it is received.
     Stream(Box<DynStream>),
 }
 
+/// A projection type of the `BodyKind` enum that allows for the inner kind to
+/// participate in API calls that require a pinned reference.
 enum BodyKindProjection<'a> {
-    Buffer(Pin<&'a mut Option<Bytes>>),
+    Buffer(Pin<&'a mut BytesMut>),
     Stream(Pin<&'a mut DynStream>),
 }
 
+/// A stream adapter that converts a stream of `Result<D, E>` into a stream of
+/// `Result<Frame<Bytes>>`. This adapter allows for response bodies to be built
+/// from virtually any stream that yields data that can be converted into bytes.
+#[must_use = "streams do nothing unless polled"]
 struct BodyStreamAdapter<T, D, E>
 where
     T: Stream<Item = Result<D, E>> + Send,
     Bytes: From<D>,
     Error: From<E>,
 {
+    /// The `Stream` that we are adapting to yield `Result<Frame<Bytes>>`.
     stream: T,
+
+    /// This field is used to mark `BodyStreamAdapter` as `!Unpin`. This is
+    /// necessary because `T` may not be `Unpin` and we need to project the
+    /// `stream` through a pinned reference to `Self` so it can be polled.
+    _pin: PhantomPinned,
 }
 
 impl Body {
     pub fn len(&self) -> Option<usize> {
-        self.as_buffer().map(Bytes::len)
+        self.as_buffer().map(BytesMut::len)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len().map_or(true, |len| len == 0)
+        self.len().map_or(false, |len| len == 0)
     }
 }
 
 impl Body {
     pub(super) fn new() -> Self {
-        let buffer = Some(Bytes::new());
+        let buffer = Box::new(BytesMut::new());
 
         Self {
             kind: BodyKind::Buffer(buffer),
+            _pin: PhantomPinned,
         }
     }
 
     pub(super) fn buffer(bytes: Bytes) -> Self {
-        let buffer = Some(bytes);
+        let buffer = Box::new(BytesMut::from(bytes));
 
         Self {
             kind: BodyKind::Buffer(buffer),
+            _pin: PhantomPinned,
         }
     }
 
@@ -66,16 +96,17 @@ impl Body {
         Bytes: From<D>,
         Error: From<E>,
     {
-        let stream = Box::new(BodyStreamAdapter { stream });
+        let stream = Box::new(BodyStreamAdapter::new(stream));
 
         Self {
             kind: BodyKind::Stream(stream),
+            _pin: PhantomPinned,
         }
     }
 
-    fn as_buffer(&self) -> Option<&Bytes> {
+    fn as_buffer(&self) -> Option<&BytesMut> {
         if let BodyKind::Buffer(buffer) = &self.kind {
-            buffer.as_ref()
+            Some(buffer)
         } else {
             None
         }
@@ -83,32 +114,43 @@ impl Body {
 
     /// Returns a pinned reference to the inner kind of the body.
     fn project(self: Pin<&mut Self>) -> BodyKindProjection {
-        // Safety:
-        // This block is necessary because we need to project the inner kind
-        // through the outer pinned reference. While the data of `Self::Buffer`
-        // is `Unpin`, we don't know if the data of `Self::Stream` is `Unpin`.
-        // Therefore, we need to use `unsafe` to project the inner kind.
-        unsafe {
-            // Get a mutable reference to `self`.
-            let this = self.get_unchecked_mut();
+        let this = unsafe {
+            // Safety:
+            // This block is necessary because we need to get a mutable reference
+            // to `self` through the pinned reference. Since `self.kind` may be
+            // `BodyKind::Stream` and wrap a type that is not `Unpin`, we need to
+            // use `unsafe` to get a mutable reference to `self`.
+            self.get_unchecked_mut()
+        };
 
-            match &mut this.kind {
-                BodyKind::Buffer(buffer) => {
-                    // Create a new pinned reference to the buffer.
-                    let pinned = Pin::new_unchecked(buffer);
+        match &mut this.kind {
+            BodyKind::Buffer(buffer) => {
+                // Deref the boxed bytes to get a mutable reference to the
+                // contained buffer.
+                let ptr = &mut **buffer;
+                // The `BodyKind::Buffer` variant wraps a `Box<BytesMut>` which
+                // is `Unpin`. We can safely create a pinned reference to the
+                // buffer without using `Pin::new_unchecked`.
+                let pin = Pin::new(ptr);
 
-                    // Return the projection type for `BodyKind::Buffer`.
-                    BodyKindProjection::Buffer(pinned)
-                }
-                BodyKind::Stream(stream) => {
-                    // Get a mutable reference to the stream.
-                    let stream = &mut **stream;
-                    // Create a new pinned reference to the stream.
-                    let pinned = Pin::new_unchecked(stream);
+                // Return the projection type for `BodyKind::Buffer`.
+                BodyKindProjection::Buffer(pin)
+            }
+            BodyKind::Stream(stream) => {
+                // Deref the boxed stream to get a mutable reference to the
+                // contained stream.
+                let ptr = &mut **stream;
+                // Construct a pinned reference around our mutable reference to
+                // `self.stream` using `Pin::new_unchecked`.
+                let pin = unsafe {
+                    // Safety:
+                    // We know that `self.stream` is `!Unpin`. Therefore, we need
+                    // to use `unsafe` to create a pinned reference to it.
+                    Pin::new_unchecked(ptr)
+                };
 
-                    // Return the projection type for `BodyKind::Stream`.
-                    BodyKindProjection::Stream(pinned)
-                }
+                // Return the projection type for `BodyKind::Stream`.
+                BodyKindProjection::Stream(pin)
             }
         }
     }
@@ -160,34 +202,74 @@ impl BodyTrait for Body {
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.project() {
             BodyKindProjection::Buffer(mut buffer) => {
-                // Take the buffer and map it to a data frame and return it.
-                Poll::Ready(buffer.take().map(|bytes| Ok(Frame::data(bytes))))
+                // Get the length of the buffer. This is used to determine how
+                // many bytes to copy from the buffer into the data frame.
+                let len = buffer.len();
+
+                // Check if the buffer has any data. If it doesn't, return
+                // `Poll::Ready(None)` to signal that the stream has ended.
+                if len == 0 {
+                    return Poll::Ready(None);
+                }
+
+                // Copy the bytes from the buffer into an immutable `Bytes`.
+                let bytes = buffer.copy_to_bytes(len);
+                // Wrap the bytes we copied from buffer in a data frame.
+                let frame = Frame::data(bytes);
+
+                // Return the data frame to the caller.
+                Poll::Ready(Some(Ok(frame)))
             }
-            BodyKindProjection::Stream(mut stream) => {
-                // Poll the stream for the next frame and return the result.
-                stream.as_mut().poll_next(context)
+            BodyKindProjection::Stream(stream) => {
+                // Poll the stream for the next frame.
+                stream.poll_next(context)
             }
         }
     }
 
     fn is_end_stream(&self) -> bool {
-        matches!(self.kind, BodyKind::Buffer(None))
+        match &self.kind {
+            BodyKind::Buffer(buffer) => buffer.is_empty(),
+            BodyKind::Stream(_) => false,
+        }
     }
 
     fn size_hint(&self) -> SizeHint {
         match &self.kind {
-            BodyKind::Buffer(Some(bytes)) => SizeHint::with_exact(bytes.remaining() as u64),
-            BodyKind::Buffer(None) => SizeHint::new(),
+            BodyKind::Buffer(buffer) => {
+                // Get the length of the buffer and attempt to cast it to a
+                // `u64`. If the cast fails, `len` will be `None`.
+                let len = u64::try_from(buffer.len()).ok();
+
+                // If `len` is `None`, return a size hint with no bounds. Otherwise,
+                // map the remaining length to a size hint with the exact size.
+                len.map_or_else(SizeHint::new, SizeHint::with_exact)
+            }
             BodyKind::Stream(stream) => {
+                // Get a tuple containing the lower and upper bounds of the
+                // stream. The `BodyTrait` uses the `SizeHint` type rather than
+                // a tuple so we need to convert the returned tuple instead of
+                // simply delegating the call to the stream.
                 let (lower, upper) = stream.size_hint();
+                // Create a new `SizeHint` with the default values. We will set
+                // the lower and upper bounds individually since we don't know
+                // if the stream has an upper bound.
                 let mut size_hint = SizeHint::new();
 
-                size_hint.set_lower(lower as u64);
-
-                if let Some(value) = upper {
-                    size_hint.set_upper(value as u64);
+                // Attempt to cast the lower bound to a `u64`. If the cast fails,
+                // do not set the lower bound of the size hint.
+                if let Some(value) = u64::try_from(lower).ok() {
+                    size_hint.set_lower(value);
                 }
 
+                // Check if the upper bound is `Some`. If it is, attempt to cast
+                // it to a `u64`. If the cast fails or the upper bound is `None`,
+                // do not set the upper bound of the size hint.
+                if let Some(value) = upper.and_then(|value| u64::try_from(value).ok()) {
+                    size_hint.set_upper(value);
+                }
+
+                // Return the size hint.
                 size_hint
             }
         }
@@ -200,6 +282,13 @@ where
     Bytes: From<D>,
     Error: From<E>,
 {
+    fn new(stream: T) -> Self {
+        Self {
+            stream,
+            _pin: PhantomPinned,
+        }
+    }
+
     fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
         // Safety:
         // This block is necessary because we need to project the inner stream
@@ -252,5 +341,10 @@ where
                 Poll::Pending
             }
         }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // Get the size hint from the inner stream.
+        self.stream.size_hint()
     }
 }
