@@ -1,4 +1,4 @@
-use http::{HeaderMap, Method, Uri, Version};
+use http::{header, HeaderMap, Method, Uri, Version};
 use hyper::body::Incoming;
 use std::{
     fmt::{self, Debug},
@@ -6,14 +6,14 @@ use std::{
 };
 
 use super::{parse_query_params, Body, PathParam, QueryParamValues};
-use crate::event::EventListener;
+use crate::{event::EventListener, Error, Result};
 
 pub struct Request<State = ()> {
     inner: Box<RequestInner<State>>,
 }
 
 struct RequestInner<State> {
-    request: http::Request<Body>,
+    request: http::Request<Option<Body>>,
     app_state: Arc<State>,
     path_params: Vec<(&'static str, (usize, usize))>,
     query_params: Option<Vec<(String, (usize, usize))>>,
@@ -21,16 +21,6 @@ struct RequestInner<State> {
 }
 
 impl<State> Request<State> {
-    /// Returns a reference to the body associated with the request.
-    pub fn body(&self) -> &Body {
-        self.inner.request.body()
-    }
-
-    /// Returns a mutable reference to the body associated with the request.
-    pub fn body_mut(&mut self) -> &mut Body {
-        self.inner.request.body_mut()
-    }
-
     /// Returns a reference to a map that contains the headers associated with
     /// the request.
     pub fn headers(&self) -> &HeaderMap {
@@ -78,6 +68,13 @@ impl<State> Request<State> {
         &self.inner.app_state
     }
 
+    pub fn take_body(&mut self) -> Result<Body> {
+        match self.inner.request.body_mut().take() {
+            Some(body) => Ok(body),
+            None => Err(Error::new("body has already been read".to_owned())),
+        }
+    }
+
     /// Returns a reference to the uri associated with the request.
     pub fn uri(&self) -> &Uri {
         self.inner.request.uri()
@@ -95,6 +92,15 @@ impl<State> Request<State> {
         app_state: Arc<State>,
         event_listener: EventListener,
     ) -> Self {
+        let content_len =
+            request
+                .headers()
+                .get(header::CONTENT_LENGTH)
+                .and_then(|value| match value.to_str() {
+                    Ok(value) => value.parse::<usize>().ok(),
+                    Err(_) => None,
+                });
+
         Self {
             // Box the request and map the request body to `request::Body` to
             // move both the request and body independently to the heap. Doing
@@ -103,7 +109,10 @@ impl<State> Request<State> {
             inner: Box::new(RequestInner {
                 app_state,
                 event_listener,
-                request: request.map(Body::new),
+                request: request.map(|body| match content_len {
+                    Some(len) => Some(Body::with_len(body, len)),
+                    None => Some(Body::new(body)),
+                }),
                 path_params: Vec::with_capacity(10),
                 query_params: None,
             }),
@@ -128,7 +137,7 @@ impl<State> Debug for Request<State> {
             .field("query", &self.inner.query_params)
             .field("version", &self.version())
             .field("headers", self.headers())
-            .field("body", self.body())
+            .field("body", self.inner.request.body())
             .finish()
     }
 }
