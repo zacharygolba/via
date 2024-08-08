@@ -206,9 +206,9 @@ impl BodyTrait for Body {
                 // many bytes to copy from the buffer into the data frame.
                 let len = buffer.len();
 
-                // Check if the buffer has any data. If it doesn't, return
-                // `Poll::Ready(None)` to signal that the stream has ended.
+                // Check if the buffer has any data.
                 if len == 0 {
+                    // The buffer is empty. Signal that the stream has ended.
                     return Poll::Ready(None);
                 }
 
