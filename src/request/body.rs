@@ -118,38 +118,71 @@ impl Body {
     }
 }
 
+impl BodyStream {
+    fn project(self: Pin<&mut Self>) -> Pin<&mut Incoming> {
+        // Get a mutable reference to self.
+        let this = self.get_mut();
+        // Get a mutable reference to the `body` field.
+        let body = &mut *this.body;
+
+        // Return the pinned reference to the `body` field.
+        Pin::new(body)
+    }
+}
+
 impl Stream for BodyStream {
     type Item = Result<Bytes>;
 
-    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {
-        let mut body = Pin::new(&mut *self.body);
-
-        loop {
-            match body.as_mut().poll_frame(context) {
-                // A frame was read from the body.
-                Poll::Ready(Some(Ok(frame))) => {
-                    if let Ok(bytes) = frame.into_data() {
-                        // The frame is a data frame. Return it.
-                        return Poll::Ready(Some(Ok(bytes)));
-                    }
-                }
-                // An Error occurred when reading the next frame.
-                Poll::Ready(Some(Err(error))) => {
-                    let error = Error::from(error);
-                    return Poll::Ready(Some(Err(error)));
-                }
-                // We have read all the frames from the body.
-                Poll::Ready(None) => {
-                    // No more frames.
-                    return Poll::Ready(None);
-                }
-                // The body is not ready to yield a frame.
-                Poll::Pending => {
-                    // Wait for the next frame.
-                    return Poll::Pending;
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {
+        match self.project().poll_frame(context) {
+            Poll::Ready(Some(Ok(frame))) => {
+                if let Ok(bytes) = frame.into_data() {
+                    // The frame is a data frame. Return it.
+                    Poll::Ready(Some(Ok(bytes)))
+                } else {
+                    Poll::Pending
                 }
             }
+            Poll::Ready(Some(Err(error))) => {
+                let error = Error::from(error);
+                Poll::Ready(Some(Err(error)))
+            }
+            Poll::Ready(None) => {
+                // No more frames.
+                Poll::Ready(None)
+            }
+            Poll::Pending => {
+                // Wait for the next frame.
+                Poll::Pending
+            }
         }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // Get the size hint from the body stream. We'll use this convert the
+        // `SizeHint` type to a tuple containing the upper and lower bound of
+        // the stream.
+        let hint = self.body.size_hint();
+        // Attempt to convert the lower bound to a usize. If the conversion
+        // fails, consider the lower bound to be zero.
+        let lower = usize::try_from(hint.lower()).unwrap_or(0);
+        // Attempt to convert the upper bound to a usize. If the conversion
+        // fails, return `None`.
+        let upper = hint.upper().and_then(|value| usize::try_from(value).ok());
+
+        (lower, upper)
+    }
+}
+
+impl ReadIntoBytes {
+    fn project(self: Pin<&mut Self>) -> (Pin<&mut BytesMut>, Pin<&mut BodyStream>) {
+        // Get a mutable reference to self.
+        let this = self.get_mut();
+        let buffer = &mut this.buffer;
+        let stream = &mut this.stream;
+
+        // Project the buffer and stream.
+        (Pin::new(buffer), Pin::new(stream))
     }
 }
 
@@ -157,22 +190,23 @@ impl Future for ReadIntoBytes {
     type Output = Result<Bytes>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        let buffer = &mut this.buffer;
-        let mut stream = Pin::new(&mut this.stream);
+        let (mut buffer, mut stream) = self.project();
 
         loop {
             match stream.as_mut().poll_next(context) {
-                // A frame was read from the stream.
                 Poll::Ready(Some(Ok(frame))) => {
                     let frame_len = frame.len();
 
                     // Attempt to reserve enough capacity for the frame in the
                     // buffer if the current capacity is less than the frame
                     // length.
-                    if let Err(error) = try_reserve(buffer, frame_len) {
+                    if let Err(error) = try_reserve(&mut buffer, frame_len) {
                         // Zero out the buffer.
                         buffer.fill(0);
+
+                        // Set the buffer's length to zero.
+                        buffer.clear();
+
                         // Return the error.
                         return Poll::Ready(Err(error));
                     }
@@ -180,26 +214,34 @@ impl Future for ReadIntoBytes {
                     // Write the frame into the buffer.
                     buffer.extend_from_slice(&frame);
                 }
-                // An Error occurred in the underlying stream.
                 Poll::Ready(Some(Err(error))) => {
                     // Zero out the buffer.
                     buffer.fill(0);
+
+                    // Set the buffer's length to zero.
+                    buffer.clear();
+
                     // Return the error and stop reading the stream.
                     return Poll::Ready(Err(error));
                 }
-                // We have read all the bytes from the stream.
                 Poll::Ready(None) => {
+                    let buffer_len = buffer.len();
+
+                    if buffer_len == 0 {
+                        return Poll::Ready(Ok(Bytes::new()));
+                    }
+
                     // Copy the bytes in the buffer to a new bytes object.
-                    let bytes = buffer.copy_to_bytes(buffer.len());
+                    let bytes = buffer.copy_to_bytes(buffer_len);
+
                     // Return the immutable, contents of buffer.
                     return Poll::Ready(Ok(bytes));
                 }
-                // The stream is not ready to yield a frame.
                 Poll::Pending => {
                     // Wait for the next frame.
                     return Poll::Pending;
                 }
-            };
+            }
         }
     }
 }
