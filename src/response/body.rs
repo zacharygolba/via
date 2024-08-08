@@ -258,14 +258,14 @@ impl BodyTrait for Body {
 
                 // Attempt to cast the lower bound to a `u64`. If the cast fails,
                 // do not set the lower bound of the size hint.
-                if let Some(value) = u64::try_from(lower).ok() {
+                if let Ok(value) = u64::try_from(lower) {
                     size_hint.set_lower(value);
                 }
 
                 // Check if the upper bound is `Some`. If it is, attempt to cast
                 // it to a `u64`. If the cast fails or the upper bound is `None`,
                 // do not set the upper bound of the size hint.
-                if let Some(value) = upper.and_then(|value| u64::try_from(value).ok()) {
+                if let Some(Ok(value)) = upper.map(u64::try_from) {
                     size_hint.set_upper(value);
                 }
 
