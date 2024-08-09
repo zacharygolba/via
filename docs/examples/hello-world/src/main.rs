@@ -1,6 +1,6 @@
-use via::{Event, Next, Request, Response, Result};
+use via::{Event, Next, Request, Result};
 
-async fn hello(request: Request, _: Next) -> Result<Response> {
+async fn hello(request: Request, _: Next) -> Result<String> {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").required()?;
     //                               ^^^^^^^^
@@ -14,7 +14,7 @@ async fn hello(request: Request, _: Next) -> Result<Response> {
 
     // Send a plain text response with a greeting that includes the name from
     // the request's uri path.
-    Response::text(format!("Hello, {}!", name)).finish()
+    Ok(format!("Hello, {}!", name))
 }
 
 #[tokio::main]
