@@ -5,21 +5,21 @@ use http::{
 };
 
 use super::Response;
-use crate::{body::response::Body, Error, Result};
+use crate::{body::ResponseBody, Error, Result};
 
 pub struct ResponseBuilder {
-    body: Option<Result<Body>>,
+    body: Option<Result<ResponseBody>>,
     inner: Builder,
 }
 
 impl ResponseBuilder {
     pub fn body<T>(self, body: T) -> Self
     where
-        Body: TryFrom<T>,
-        <Body as TryFrom<T>>::Error: Into<Error>,
+        ResponseBody: TryFrom<T>,
+        <ResponseBody as TryFrom<T>>::Error: Into<Error>,
     {
         Self {
-            body: Some(Body::try_from(body).map_err(Into::into)),
+            body: Some(ResponseBody::try_from(body).map_err(Into::into)),
             inner: self.inner,
         }
     }
@@ -27,7 +27,7 @@ impl ResponseBuilder {
     pub fn finish(mut self) -> Result<Response> {
         let body = match self.body.take() {
             Some(body) => body?,
-            None => Body::new(),
+            None => ResponseBody::new(),
         };
 
         Ok(Response {
@@ -95,7 +95,7 @@ impl ResponseBuilder {
         }
     }
 
-    pub(crate) fn with_body(body: Result<Body>) -> Self {
+    pub(crate) fn with_body(body: Result<ResponseBody>) -> Self {
         Self {
             body: Some(body),
             inner: Builder::new(),

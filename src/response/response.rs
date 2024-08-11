@@ -6,10 +6,10 @@ use http::{
 };
 
 use super::ResponseBuilder;
-use crate::{body::response::Body, Error};
+use crate::{body::ResponseBody, Error};
 
 pub struct Response {
-    pub(super) inner: http::Response<Body>,
+    pub(super) inner: http::Response<ResponseBody>,
 }
 
 impl Response {
@@ -19,9 +19,9 @@ impl Response {
 
     pub fn html<T>(body: T) -> ResponseBuilder
     where
-        Body: From<T>,
+        ResponseBody: From<T>,
     {
-        let body = Body::from(body);
+        let body = ResponseBody::from(body);
         let len = body.len();
 
         ResponseBuilder::with_body(Ok(body))
@@ -31,9 +31,9 @@ impl Response {
 
     pub fn text<T>(body: T) -> ResponseBuilder
     where
-        Body: From<T>,
+        ResponseBody: From<T>,
     {
-        let body = Body::from(body);
+        let body = ResponseBody::from(body);
         let len = body.len();
 
         ResponseBuilder::with_body(Ok(body))
@@ -49,9 +49,9 @@ impl Response {
         use crate::Error;
 
         let body = serde_json::to_vec(body)
-            .map(Body::from)
+            .map(ResponseBody::from)
             .map_err(Error::from);
-        let len = body.as_ref().map_or(None, Body::len);
+        let len = body.as_ref().map_or(None, ResponseBody::len);
 
         ResponseBuilder::with_body(body)
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
@@ -64,15 +64,15 @@ impl Response {
         Bytes: From<D>,
         Error: From<E>,
     {
-        ResponseBuilder::with_body(Ok(Body::stream(body)))
+        ResponseBuilder::with_body(Ok(ResponseBody::stream(body)))
             .header(header::TRANSFER_ENCODING, "chunked")
     }
 
-    pub fn body(&self) -> &Body {
+    pub fn body(&self) -> &ResponseBody {
         self.inner.body()
     }
 
-    pub fn body_mut(&mut self) -> &mut Body {
+    pub fn body_mut(&mut self) -> &mut ResponseBody {
         self.inner.body_mut()
     }
 
@@ -110,11 +110,11 @@ impl Response {
 impl Response {
     pub(crate) fn new() -> Self {
         Self {
-            inner: http::Response::new(Body::new()),
+            inner: http::Response::new(ResponseBody::new()),
         }
     }
 
-    pub(crate) fn into_inner(self) -> http::Response<Body> {
+    pub(crate) fn into_inner(self) -> http::Response<ResponseBody> {
         self.inner
     }
 }

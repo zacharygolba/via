@@ -12,7 +12,7 @@ use crate::{Error, Result};
 use super::size_hint;
 
 #[must_use = "streams do nothing unless polled"]
-pub struct Map<F, B, E>
+pub struct MapBody<F, B, E>
 where
     F: Fn(Bytes) -> Result<Bytes, E> + Send + 'static,
     B: Body<Data = Bytes, Error = Error>,
@@ -25,7 +25,7 @@ where
     _pinned: PhantomPinned,
 }
 
-impl<F, B, E> Map<F, B, E>
+impl<F, B, E> MapBody<F, B, E>
 where
     F: Fn(Bytes) -> Result<Bytes, E> + Send,
     B: Body<Data = Bytes, Error = Error>,
@@ -51,7 +51,7 @@ where
     }
 }
 
-impl<F, B, E> Body for Map<F, B, E>
+impl<F, B, E> Body for MapBody<F, B, E>
 where
     F: Fn(Bytes) -> Result<Bytes, E> + Send,
     B: Body<Data = Bytes, Error = Error>,
@@ -85,7 +85,7 @@ where
     }
 }
 
-impl<F, B, E> Stream for Map<F, B, E>
+impl<F, B, E> Stream for MapBody<F, B, E>
 where
     F: Fn(Bytes) -> Result<Bytes, E> + Send,
     B: Body<Data = Bytes, Error = Error>,

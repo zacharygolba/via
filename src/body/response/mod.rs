@@ -3,4 +3,4 @@ mod stream_adapter;
 
 use stream_adapter::StreamAdapter;
 
-pub use body::Body;
+pub use body::ResponseBody;
