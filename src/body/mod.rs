@@ -1,7 +1,9 @@
 mod map;
+mod request;
+mod response;
 mod size_hint;
 
-pub mod request;
-pub mod response;
+pub(crate) use map::MapBody;
 
-pub(crate) use map::Map;
+pub use request::{BodyStream, ReadIntoBytes, ReadIntoString, RequestBody};
+pub use response::ResponseBody;
