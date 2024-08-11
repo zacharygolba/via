@@ -8,7 +8,7 @@ use crate::Result;
 const MAX_PREALLOC_SIZE: usize = 104857600; // 100 MB
 
 #[derive(Debug)]
-pub struct Body {
+pub struct RequestBody {
     body: Box<Incoming>,
     len: Option<usize>,
 }
@@ -22,7 +22,7 @@ fn bytes_mut_with_capacity(capacity: Option<usize>) -> BytesMut {
     })
 }
 
-impl Body {
+impl RequestBody {
     pub fn into_stream(self) -> BodyStream {
         BodyStream::new(self.body)
     }
@@ -56,7 +56,7 @@ impl Body {
     }
 }
 
-impl Body {
+impl RequestBody {
     pub(crate) fn new(body: Incoming) -> Self {
         Self {
             body: Box::new(body),

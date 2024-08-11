@@ -12,10 +12,10 @@ use crate::{body::size_hint, Error, Result};
 
 type DynStream = dyn Stream<Item = Result<Frame<Bytes>>> + Send;
 
-pub struct Body {
+pub struct ResponseBody {
     /// The kind of body that is being used. This allows us to support both
     /// buffered and streaming response bodies.
-    kind: BodyKind,
+    kind: ResponseBodyKind,
 
     /// A marker field that is used to indicate that `Body` is `!Unpin`. This
     /// is necessary because `Body` may contain a stream that is not `Unpin`.
@@ -25,7 +25,7 @@ pub struct Body {
 /// An enum that represents the different kinds of bodies that can be used in
 /// a response. This allows us to support both buffered and streaming response
 /// bodies.
-enum BodyKind {
+enum ResponseBodyKind {
     /// A buffered body that contains a `BytesMut` buffer. This variant is used
     /// when the entire body can be buffered in memory.
     Buffer(Box<BytesMut>),
@@ -38,12 +38,12 @@ enum BodyKind {
 
 /// A projection type of the `BodyKind` enum that allows for the inner kind to
 /// participate in API calls that require a pinned reference.
-enum BodyKindProjection<'a> {
+enum ResponseBodyKindProjection<'a> {
     Buffer(Pin<&'a mut BytesMut>),
     Stream(Pin<&'a mut DynStream>),
 }
 
-impl Body {
+impl ResponseBody {
     pub fn is_empty(&self) -> bool {
         self.len().map_or(false, |len| len == 0)
     }
@@ -53,12 +53,12 @@ impl Body {
     }
 }
 
-impl Body {
+impl ResponseBody {
     pub(crate) fn new() -> Self {
         let buffer = Box::new(BytesMut::new());
 
         Self {
-            kind: BodyKind::Buffer(buffer),
+            kind: ResponseBodyKind::Buffer(buffer),
             _pin: PhantomPinned,
         }
     }
@@ -67,7 +67,7 @@ impl Body {
         let buffer = Box::new(BytesMut::from(bytes));
 
         Self {
-            kind: BodyKind::Buffer(buffer),
+            kind: ResponseBodyKind::Buffer(buffer),
             _pin: PhantomPinned,
         }
     }
@@ -81,7 +81,7 @@ impl Body {
         let stream = Box::new(StreamAdapter::new(stream));
 
         Self {
-            kind: BodyKind::Stream(stream),
+            kind: ResponseBodyKind::Stream(stream),
             _pin: PhantomPinned,
         }
     }
@@ -107,7 +107,7 @@ impl Body {
     }
 
     fn as_buffer(&self) -> Option<&BytesMut> {
-        if let BodyKind::Buffer(buffer) = &self.kind {
+        if let ResponseBodyKind::Buffer(buffer) = &self.kind {
             Some(buffer)
         } else {
             None
@@ -115,7 +115,7 @@ impl Body {
     }
 
     /// Returns a pinned reference to the inner kind of the body.
-    fn project(self: Pin<&mut Self>) -> BodyKindProjection {
+    fn project(self: Pin<&mut Self>) -> ResponseBodyKindProjection {
         let this = unsafe {
             // Safety:
             // This block is necessary because we need to get a mutable reference
@@ -126,7 +126,7 @@ impl Body {
         };
 
         match &mut this.kind {
-            BodyKind::Buffer(buffer) => {
+            ResponseBodyKind::Buffer(buffer) => {
                 // Deref the boxed bytes to get a mutable reference to the
                 // contained buffer.
                 let ptr = &mut **buffer;
@@ -136,9 +136,9 @@ impl Body {
                 let pin = Pin::new(ptr);
 
                 // Return the projection type for `BodyKind::Buffer`.
-                BodyKindProjection::Buffer(pin)
+                ResponseBodyKindProjection::Buffer(pin)
             }
-            BodyKind::Stream(stream) => {
+            ResponseBodyKind::Stream(stream) => {
                 // Deref the boxed stream to get a mutable reference to the
                 // contained stream.
                 let ptr = &mut **stream;
@@ -152,49 +152,49 @@ impl Body {
                 };
 
                 // Return the projection type for `BodyKind::Stream`.
-                BodyKindProjection::Stream(pin)
+                ResponseBodyKindProjection::Stream(pin)
             }
         }
     }
 }
 
-impl From<()> for Body {
+impl From<()> for ResponseBody {
     fn from(_: ()) -> Self {
         Self::new()
     }
 }
 
-impl From<Bytes> for Body {
+impl From<Bytes> for ResponseBody {
     fn from(bytes: Bytes) -> Self {
         Self::buffer(bytes)
     }
 }
 
-impl From<Vec<u8>> for Body {
+impl From<Vec<u8>> for ResponseBody {
     fn from(vec: Vec<u8>) -> Self {
         Self::buffer(Bytes::from(vec))
     }
 }
 
-impl From<&'static [u8]> for Body {
+impl From<&'static [u8]> for ResponseBody {
     fn from(slice: &'static [u8]) -> Self {
         Self::buffer(Bytes::from_static(slice))
     }
 }
 
-impl From<String> for Body {
+impl From<String> for ResponseBody {
     fn from(string: String) -> Self {
         Self::buffer(Bytes::from(string))
     }
 }
 
-impl From<&'static str> for Body {
+impl From<&'static str> for ResponseBody {
     fn from(slice: &'static str) -> Self {
         Self::buffer(Bytes::from_static(slice.as_bytes()))
     }
 }
 
-impl hyper::body::Body for Body {
+impl hyper::body::Body for ResponseBody {
     type Data = Bytes;
     type Error = Error;
 
@@ -203,7 +203,7 @@ impl hyper::body::Body for Body {
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.project() {
-            BodyKindProjection::Buffer(mut buffer) => {
+            ResponseBodyKindProjection::Buffer(mut buffer) => {
                 // Get the length of the buffer. This is used to determine how
                 // many bytes to copy from the buffer into the data frame.
                 let len = buffer.len();
@@ -222,7 +222,7 @@ impl hyper::body::Body for Body {
                 // Return the data frame to the caller.
                 Poll::Ready(Some(Ok(frame)))
             }
-            BodyKindProjection::Stream(stream) => {
+            ResponseBodyKindProjection::Stream(stream) => {
                 // Poll the stream for the next frame.
                 stream.poll_next(context)
             }
@@ -231,14 +231,14 @@ impl hyper::body::Body for Body {
 
     fn is_end_stream(&self) -> bool {
         match &self.kind {
-            BodyKind::Buffer(buffer) => buffer.is_empty(),
-            BodyKind::Stream(_) => false,
+            ResponseBodyKind::Buffer(buffer) => buffer.is_empty(),
+            ResponseBodyKind::Stream(_) => false,
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match &self.kind {
-            BodyKind::Buffer(buffer) => {
+            ResponseBodyKind::Buffer(buffer) => {
                 // Get the length of the buffer and attempt to cast it to a
                 // `u64`. If the cast fails, `len` will be `None`.
                 let len = u64::try_from(buffer.len()).ok();
@@ -247,7 +247,7 @@ impl hyper::body::Body for Body {
                 // map the remaining length to a size hint with the exact size.
                 len.map_or_else(SizeHint::new, SizeHint::with_exact)
             }
-            BodyKind::Stream(stream) => {
+            ResponseBodyKind::Stream(stream) => {
                 // Delegate the call to the stream to get the size hint and use
                 // the helper function to adapt the returned tuple to a
                 // `SizeHint`.

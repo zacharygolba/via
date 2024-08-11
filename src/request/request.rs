@@ -6,14 +6,14 @@ use std::{
 };
 
 use super::{parse_query_params, PathParam, QueryParamValues};
-use crate::{body::request::Body, event::EventListener, Error, Result};
+use crate::{body::RequestBody, event::EventListener, Error, Result};
 
 pub struct Request<State = ()> {
     inner: Box<RequestInner<State>>,
 }
 
 struct RequestInner<State> {
-    request: http::Request<Option<Body>>,
+    request: http::Request<Option<RequestBody>>,
     app_state: Arc<State>,
     path_params: Vec<(&'static str, (usize, usize))>,
     query_params: Option<Vec<(String, (usize, usize))>>,
@@ -68,7 +68,7 @@ impl<State> Request<State> {
         &self.inner.app_state
     }
 
-    pub fn take_body(&mut self) -> Result<Body> {
+    pub fn take_body(&mut self) -> Result<RequestBody> {
         match self.inner.request.body_mut().take() {
             Some(body) => Ok(body),
             None => Err(Error::new("body has already been read".to_owned())),
@@ -110,8 +110,8 @@ impl<State> Request<State> {
                 app_state,
                 event_listener,
                 request: request.map(|body| match content_len {
-                    Some(len) => Some(Body::with_len(body, len)),
-                    None => Some(Body::new(body)),
+                    Some(len) => Some(RequestBody::with_len(body, len)),
+                    None => Some(RequestBody::new(body)),
                 }),
                 path_params: Vec::with_capacity(10),
                 query_params: None,
