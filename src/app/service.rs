@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::{
-    body::{self, ResponseBody},
+    body::ResponseBody,
     event::{Event, EventListener},
     middleware::BoxFuture,
     response::Response,
