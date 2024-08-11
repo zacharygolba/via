@@ -5,8 +5,8 @@ use std::{
     sync::Arc,
 };
 
-use super::{parse_query_params, Body, PathParam, QueryParamValues};
-use crate::{event::EventListener, Error, Result};
+use super::{parse_query_params, PathParam, QueryParamValues};
+use crate::{body::request::Body, event::EventListener, Error, Result};
 
 pub struct Request<State = ()> {
     inner: Box<RequestInner<State>>,

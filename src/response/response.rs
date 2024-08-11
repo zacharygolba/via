@@ -5,8 +5,8 @@ use http::{
     StatusCode, Version,
 };
 
-use super::{body::Body, ResponseBuilder};
-use crate::Error;
+use super::ResponseBuilder;
+use crate::{body::response::Body, Error};
 
 pub struct Response {
     pub(super) inner: http::Response<Body>,
@@ -82,6 +82,16 @@ impl Response {
 
     pub fn headers_mut(&mut self) -> &mut HeaderMap {
         self.inner.headers_mut()
+    }
+
+    pub fn map<F, E: 'static>(self, map: F) -> Self
+    where
+        F: Fn(Bytes) -> Result<Bytes, E> + Send + 'static,
+        Error: From<E>,
+    {
+        Self {
+            inner: self.inner.map(|body| body.map(map)),
+        }
     }
 
     pub fn status(&self) -> StatusCode {

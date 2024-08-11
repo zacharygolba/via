@@ -4,8 +4,8 @@ use http::{
     StatusCode, Version,
 };
 
-use super::{body::Body, Response};
-use crate::{Error, Result};
+use super::Response;
+use crate::{body::response::Body, Error, Result};
 
 pub struct ResponseBuilder {
     body: Option<Result<Body>>,
@@ -25,7 +25,10 @@ impl ResponseBuilder {
     }
 
     pub fn finish(mut self) -> Result<Response> {
-        let body = self.body.take().unwrap_or_else(|| Ok(Body::new()))?;
+        let body = match self.body.take() {
+            Some(body) => body?,
+            None => Body::new(),
+        };
 
         Ok(Response {
             inner: self.inner.body(body)?,

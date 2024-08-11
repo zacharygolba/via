@@ -1,13 +1,14 @@
 use bytes::{Buf, Bytes, BytesMut};
 use futures_core::Stream;
-use hyper::body::{Body as BodyTrait, Frame, SizeHint};
+use hyper::body::{Frame, SizeHint};
 use std::{
     marker::PhantomPinned,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use crate::{Error, Result};
+use super::StreamAdapter;
+use crate::{body::size_hint, Error, Result};
 
 type DynStream = dyn Stream<Item = Result<Frame<Bytes>>> + Send;
 
@@ -42,37 +43,18 @@ enum BodyKindProjection<'a> {
     Stream(Pin<&'a mut DynStream>),
 }
 
-/// A stream adapter that converts a stream of `Result<D, E>` into a stream of
-/// `Result<Frame<Bytes>>`. This adapter allows for response bodies to be built
-/// from virtually any stream that yields data that can be converted into bytes.
-#[must_use = "streams do nothing unless polled"]
-struct BodyStreamAdapter<T, D, E>
-where
-    T: Stream<Item = Result<D, E>> + Send,
-    Bytes: From<D>,
-    Error: From<E>,
-{
-    /// The `Stream` that we are adapting to yield `Result<Frame<Bytes>>`.
-    stream: T,
-
-    /// This field is used to mark `BodyStreamAdapter` as `!Unpin`. This is
-    /// necessary because `T` may not be `Unpin` and we need to project the
-    /// `stream` through a pinned reference to `Self` so it can be polled.
-    _pin: PhantomPinned,
-}
-
 impl Body {
-    pub fn len(&self) -> Option<usize> {
-        self.as_buffer().map(BytesMut::len)
-    }
-
     pub fn is_empty(&self) -> bool {
         self.len().map_or(false, |len| len == 0)
     }
+
+    pub fn len(&self) -> Option<usize> {
+        self.as_buffer().map(BytesMut::len)
+    }
 }
 
 impl Body {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let buffer = Box::new(BytesMut::new());
 
         Self {
@@ -81,7 +63,7 @@ impl Body {
         }
     }
 
-    pub(super) fn buffer(bytes: Bytes) -> Self {
+    pub(crate) fn buffer(bytes: Bytes) -> Self {
         let buffer = Box::new(BytesMut::from(bytes));
 
         Self {
@@ -90,18 +72,32 @@ impl Body {
         }
     }
 
-    pub(super) fn stream<T, D: 'static, E: 'static>(stream: T) -> Self
+    pub(crate) fn stream<T, D: 'static, E: 'static>(stream: T) -> Self
     where
         T: Stream<Item = Result<D, E>> + Send + 'static,
         Bytes: From<D>,
         Error: From<E>,
     {
-        let stream = Box::new(BodyStreamAdapter::new(stream));
+        let stream = Box::new(StreamAdapter::new(stream));
 
         Self {
             kind: BodyKind::Stream(stream),
             _pin: PhantomPinned,
         }
+    }
+
+    pub(crate) fn map<F, E: 'static>(self, _: F) -> Self
+    where
+        F: Fn(Bytes) -> Result<Bytes, E> + Send + 'static,
+        Error: From<E>,
+    {
+        todo!()
+        // let stream = Box::new(MapBody::new(self, map));
+
+        // Body {
+        //     kind: BodyKind::Stream(stream),
+        //     _pin: PhantomPinned,
+        // }
     }
 
     fn as_buffer(&self) -> Option<&BytesMut> {
@@ -192,7 +188,7 @@ impl From<&'static str> for Body {
     }
 }
 
-impl BodyTrait for Body {
+impl hyper::body::Body for Body {
     type Data = Bytes;
     type Error = Error;
 
@@ -246,105 +242,11 @@ impl BodyTrait for Body {
                 len.map_or_else(SizeHint::new, SizeHint::with_exact)
             }
             BodyKind::Stream(stream) => {
-                // Get a tuple containing the lower and upper bounds of the
-                // stream. The `BodyTrait` uses the `SizeHint` type rather than
-                // a tuple so we need to convert the returned tuple instead of
-                // simply delegating the call to the stream.
-                let (lower, upper) = stream.size_hint();
-                // Create a new `SizeHint` with the default values. We will set
-                // the lower and upper bounds individually since we don't know
-                // if the stream has an upper bound.
-                let mut size_hint = SizeHint::new();
-
-                // Attempt to cast the lower bound to a `u64`. If the cast fails,
-                // do not set the lower bound of the size hint.
-                if let Ok(value) = u64::try_from(lower) {
-                    size_hint.set_lower(value);
-                }
-
-                // Check if the upper bound is `Some`. If it is, attempt to cast
-                // it to a `u64`. If the cast fails or the upper bound is `None`,
-                // do not set the upper bound of the size hint.
-                if let Some(Ok(value)) = upper.map(u64::try_from) {
-                    size_hint.set_upper(value);
-                }
-
-                // Return the size hint.
-                size_hint
+                // Delegate the call to the stream to get the size hint and use
+                // the helper function to adapt the returned tuple to a
+                // `SizeHint`.
+                size_hint::from_stream_for_body(&**stream)
             }
         }
-    }
-}
-
-impl<T, D, E> BodyStreamAdapter<T, D, E>
-where
-    T: Stream<Item = Result<D, E>> + Send,
-    Bytes: From<D>,
-    Error: From<E>,
-{
-    fn new(stream: T) -> Self {
-        Self {
-            stream,
-            _pin: PhantomPinned,
-        }
-    }
-
-    fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
-        // Safety:
-        // This block is necessary because we need to project the inner stream
-        // through the outer pinned reference. We don't know if `T` is `Unpin`
-        // so we need to use `unsafe` to create the pinned reference with
-        // `Pin::new_unchecked`.
-        unsafe {
-            // Get a mutable reference to `self`.
-            let this = self.get_unchecked_mut();
-            // Get a mutable reference to the `stream` field.
-            let stream = &mut this.stream;
-
-            // Return the pinned reference to the `stream` field.
-            Pin::new_unchecked(stream)
-        }
-    }
-}
-
-impl<T, D, E> Stream for BodyStreamAdapter<T, D, E>
-where
-    T: Stream<Item = Result<D, E>> + Send,
-    Bytes: From<D>,
-    Error: From<E>,
-{
-    type Item = Result<Frame<Bytes>>;
-
-    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.project().poll_next(context) {
-            Poll::Ready(Some(Ok(data))) => {
-                // Convert the data to bytes.
-                let bytes = Bytes::from(data);
-                // Wrap the bytes in a data frame.
-                let frame = Frame::data(bytes);
-                // Yield the data frame.
-                Poll::Ready(Some(Ok(frame)))
-            }
-            Poll::Ready(Some(Err(error))) => {
-                // An error occurred while reading the stream. Wrap the
-                // error with `via::Error`.
-                let error = Error::from(error);
-                // Yield the wrapped error.
-                Poll::Ready(Some(Err(error)))
-            }
-            Poll::Ready(None) => {
-                // The stream has ended.
-                Poll::Ready(None)
-            }
-            Poll::Pending => {
-                // The stream is not ready to yield a frame.
-                Poll::Pending
-            }
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        // Get the size hint from the inner stream.
-        self.stream.size_hint()
     }
 }

@@ -5,6 +5,7 @@ mod error;
 mod event;
 mod router;
 
+pub mod body;
 pub mod middleware;
 pub mod request;
 pub mod response;
