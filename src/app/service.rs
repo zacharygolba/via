@@ -8,9 +8,10 @@ use std::{
 };
 
 use crate::{
+    body,
     event::{Event, EventListener},
     middleware::BoxFuture,
-    response::{Body, Response},
+    response::Response,
     router::Router,
     App, Request, Result,
 };
@@ -55,7 +56,7 @@ where
 {
     type Error = Infallible;
     type Future = FutureResponse;
-    type Response = http::Response<Body>;
+    type Response = http::Response<body::response::Body>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
         // Wrap the incoming request with `via::Request`.
@@ -111,7 +112,7 @@ impl FutureResponse {
 }
 
 impl Future for FutureResponse {
-    type Output = Result<http::Response<Body>, Infallible>;
+    type Output = Result<http::Response<body::response::Body>, Infallible>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         let (event_listener, response_future) = self.project();
