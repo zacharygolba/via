@@ -86,6 +86,12 @@ impl Body {
         }
     }
 
+    // TODO:
+    // Determine if there is a way we can compose closures of nested map
+    // functions to avoid recursive pointers as the value of `BodyKind::Stream`.
+    //
+    // Perhaps we can use a `Box<dyn Fn(Bytes) -> Result<Bytes, E> + Send>` to
+    // store the map functions and unwind them in the `poll_frame` method.
     pub(crate) fn map<F, E: 'static>(self, _: F) -> Self
     where
         F: Fn(Bytes) -> Result<Bytes, E> + Send + 'static,
