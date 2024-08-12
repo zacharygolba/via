@@ -21,11 +21,11 @@ impl Mapped {
         }
     }
 
-    pub fn push<F>(&mut self, map: F)
+    pub fn push<F>(&mut self, map: Box<F>)
     where
         F: Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static,
     {
-        self.queue.push(Box::new(map));
+        self.queue.push(map);
     }
 
     pub fn is_empty(&self) -> bool {

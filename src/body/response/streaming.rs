@@ -25,12 +25,12 @@ pub struct Streaming {
 }
 
 impl Streaming {
-    pub fn new<T>(stream: T) -> Self
+    pub fn new<T>(stream: Box<T>) -> Self
     where
         T: Stream<Item = Result<Bytes>> + Send + 'static,
     {
         Self {
-            stream: Box::new(stream),
+            stream,
             _pin: PhantomPinned,
         }
     }
