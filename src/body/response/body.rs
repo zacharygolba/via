@@ -23,8 +23,10 @@ pub struct ResponseBody {
 enum ResponseBodyProjection<'a> {
     /// The projection type for a `Buffered` response body.
     Buffered(Pin<&'a mut Buffered>),
+
     /// The projection type for a `Mapped` response body.
     Mapped(Pin<&'a mut Mapped>),
+
     /// The projection type for a `Streaming` response body.
     Streaming(Pin<&'a mut Streaming>),
 }
