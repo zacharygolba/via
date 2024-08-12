@@ -10,7 +10,23 @@ use super::{Buffered, Either, Mapped, Streaming};
 use crate::{Error, Result};
 
 pub struct ResponseBody {
-    body: Either<Either<Buffered, Streaming>, Mapped>,
+    body: Either<Either<Buffered, Streaming>, Box<Mapped>>,
+}
+
+/// A projection type for the possible variants of the nested `Either` enums
+/// that compose the `body` field of the `ResponseBody` struct.
+//
+// This `enum` primarily exists to get a `Pin<&mut Mapped>` reference to the
+// `Box<Mapped>` contained in the `Either::Right` variant of the `body` field
+// of the `ResponseBody` struct so we can delegate the call to `poll_frame` to
+// `Mapped` struct when necessary since it is `!Unpin`.
+enum ResponseBodyProjection<'a> {
+    /// The projection type for a `Buffered` response body.
+    Buffered(Pin<&'a mut Buffered>),
+    /// The projection type for a `Mapped` response body.
+    Mapped(Pin<&'a mut Mapped>),
+    /// The projection type for a `Streaming` response body.
+    Streaming(Pin<&'a mut Streaming>),
 }
 
 impl ResponseBody {
@@ -63,7 +79,7 @@ impl ResponseBody {
                 mapped.push(map);
 
                 Self {
-                    body: Either::Right(mapped),
+                    body: Either::Right(Box::new(mapped)),
                 }
             }
             Either::Right(mut mapped) => {
@@ -76,13 +92,58 @@ impl ResponseBody {
         }
     }
 
-    /// Returns a pinned reference to the inner kind of the body.
-    fn project(self: Pin<&mut Self>) -> Pin<&mut Either<Either<Buffered, Streaming>, Mapped>> {
-        unsafe {
-            // Safety:
-            // TODO: Add safety explanation.
-            let this = self.get_unchecked_mut();
-            Pin::new_unchecked(&mut this.body)
+    /// Returns a projection type of the possible variants of the nested `Either`
+    /// enums that compose the `body` field.
+    fn project(self: Pin<&mut Self>) -> ResponseBodyProjection {
+        let this = unsafe { self.get_unchecked_mut() };
+
+        match &mut this.body {
+            Either::Left(Either::Left(buffered)) => {
+                // Get a pinned reference to the `Buffered` variant.
+                let pin = Pin::new(buffered);
+
+                // Return the projection type for a `Buffered` response body.
+                ResponseBodyProjection::Buffered(pin)
+            }
+            Either::Left(Either::Right(streaming)) => {
+                let pin = unsafe {
+                    //
+                    // Safety:
+                    //
+                    // The `Streaming` struct is `!Unpin` since it contains a
+                    // `Box<dyn Stream>`. Since we're delegating the call to
+                    // `poll_frame` directly to the `Streaming` struct, we
+                    // know that creating a pinned reference to `streaming` is
+                    // safe as long as the `Streaming` struct's internal API
+                    // upholds the invariants of the `Pin` API.
+                    Pin::new_unchecked(streaming)
+                };
+
+                // Return the projection type for a `Streaming` response body.
+                ResponseBodyProjection::Streaming(pin)
+            }
+            Either::Right(mapped) => {
+                // Get a mutable reference to the `Mapped` variant by
+                // dereferencing the `&mut Box<Mapped>` to `&mut Mapped`.
+                let ptr = &mut **mapped;
+                // Create a `Pin` around the mutable reference at `ptr`.
+                let pin = unsafe {
+                    //
+                    // Safety:
+                    //
+                    // The `Mapped` struct is `!Unpin` since it may contains a
+                    // `Streaming` struct which is also `!Unpin`. Since we're
+                    // delegating the call to `poll_frame` directly to the
+                    // `Mapped` struct, we know that creating a pinned reference
+                    // to `mapped` is safe as long as the `Mapped` and `Streaming`
+                    // structs' internal API upholds the invariants of the `Pin`
+                    // API.
+                    Pin::new_unchecked(ptr)
+                };
+
+                // Return the projection type for a `Mapped` response body.
+                ResponseBodyProjection::Mapped(pin)
+            }
         }
     }
 }
@@ -95,15 +156,25 @@ impl Body for ResponseBody {
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        self.project().poll_frame(context)
+        match self.project() {
+            ResponseBodyProjection::Buffered(buffered) => buffered.poll_frame(context),
+            ResponseBodyProjection::Mapped(mapped) => mapped.poll_frame(context),
+            ResponseBodyProjection::Streaming(streaming) => streaming.poll_frame(context),
+        }
     }
 
     fn is_end_stream(&self) -> bool {
-        self.body.is_end_stream()
+        match &self.body {
+            Either::Left(original) => original.is_end_stream(),
+            Either::Right(mapped) => mapped.is_end_stream(),
+        }
     }
 
     fn size_hint(&self) -> SizeHint {
-        self.body.size_hint()
+        match &self.body {
+            Either::Left(original) => original.size_hint(),
+            Either::Right(mapped) => mapped.size_hint(),
+        }
     }
 }
 

@@ -3,9 +3,9 @@ mod buffered;
 mod mapped;
 mod streaming;
 
-use super::Either;
-
 pub use body::ResponseBody;
-pub use buffered::Buffered;
-pub use mapped::Mapped;
-pub use streaming::Streaming;
+
+use super::Either;
+use buffered::Buffered;
+use mapped::Mapped;
+use streaming::Streaming;
