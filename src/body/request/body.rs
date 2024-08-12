@@ -2,7 +2,6 @@ use bytes::BytesMut;
 use hyper::body::Incoming;
 
 use super::{BodyStream, ReadIntoBytes, ReadIntoString};
-use crate::Result;
 
 /// The maximum amount of bytes that can be preallocated for a request body.
 const MAX_PREALLOC_SIZE: usize = 104857600; // 100 MB
@@ -40,7 +39,7 @@ impl RequestBody {
     }
 
     #[cfg(feature = "serde")]
-    pub async fn read_json<T>(self) -> Result<T>
+    pub async fn read_json<T>(self) -> crate::Result<T>
     where
         T: serde::de::DeserializeOwned,
     {

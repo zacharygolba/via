@@ -6,7 +6,7 @@ use http::{
 };
 
 use super::ResponseBuilder;
-use crate::{body::ResponseBody, Error};
+use crate::{body::ResponseBody, Result};
 
 pub struct Response {
     pub(super) inner: http::Response<ResponseBody>,
@@ -58,14 +58,21 @@ impl Response {
             .headers(len.map(|content_length| (header::CONTENT_LENGTH, content_length)))
     }
 
-    pub fn stream<T, D: 'static, E: 'static>(body: T) -> ResponseBuilder
+    pub fn stream<T>(body: T) -> ResponseBuilder
     where
-        T: Stream<Item = Result<D, E>> + Send + 'static,
-        Bytes: From<D>,
-        Error: From<E>,
+        T: Stream<Item = Result<Bytes>> + Send + 'static,
     {
         ResponseBuilder::with_body(Ok(ResponseBody::stream(body)))
             .header(header::TRANSFER_ENCODING, "chunked")
+    }
+
+    pub fn map<F>(self, map: F) -> Self
+    where
+        F: Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static,
+    {
+        Self {
+            inner: self.inner.map(|body| body.map(map)),
+        }
     }
 
     pub fn body(&self) -> &ResponseBody {
@@ -82,16 +89,6 @@ impl Response {
 
     pub fn headers_mut(&mut self) -> &mut HeaderMap {
         self.inner.headers_mut()
-    }
-
-    pub fn map<F, E: 'static>(self, map: F) -> Self
-    where
-        F: Fn(Bytes) -> Result<Bytes, E> + Send + 'static,
-        Error: From<E>,
-    {
-        Self {
-            inner: self.inner.map(|body| body.map(map)),
-        }
     }
 
     pub fn status(&self) -> StatusCode {
