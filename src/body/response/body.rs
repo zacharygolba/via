@@ -29,15 +29,12 @@ impl ResponseBody {
 
 impl ResponseBody {
     pub(crate) fn new() -> Self {
-        let buffered = Buffered::empty();
-
-        Self {
-            body: Either::Left(Either::Left(buffered)),
-        }
+        Self::buffer(Bytes::new())
     }
 
     pub(crate) fn buffer(data: Bytes) -> Self {
-        let buffered = Buffered::new(BytesMut::from(data));
+        let buffer = Box::new(BytesMut::from(data));
+        let buffered = Buffered::new(buffer);
 
         Self {
             body: Either::Left(Either::Left(buffered)),
@@ -48,14 +45,14 @@ impl ResponseBody {
     where
         T: Stream<Item = Result<Bytes>> + Send + 'static,
     {
-        let stream = Streaming::new(stream);
+        let stream = Streaming::new(Box::new(stream));
 
         Self {
             body: Either::Left(Either::Right(stream)),
         }
     }
 
-    pub(crate) fn map<F>(self, map: F) -> Self
+    pub(crate) fn map<F>(self, map: Box<F>) -> Self
     where
         F: Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static,
     {

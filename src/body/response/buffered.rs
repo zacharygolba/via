@@ -9,20 +9,13 @@ use crate::{Error, Result};
 
 /// A buffered body that contains a `BytesMut` buffer. This variant is used
 /// when the entire body can be buffered in memory.
-#[derive(Default)]
 pub struct Buffered {
     data: Box<BytesMut>,
 }
 
 impl Buffered {
-    pub fn new(data: BytesMut) -> Self {
-        Self {
-            data: Box::new(data),
-        }
-    }
-
-    pub fn empty() -> Self {
-        Default::default()
+    pub fn new(data: Box<BytesMut>) -> Self {
+        Self { data }
     }
 
     pub fn is_empty(&self) -> bool {
