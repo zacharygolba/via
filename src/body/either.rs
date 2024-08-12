@@ -15,7 +15,7 @@ pub enum EitherProjection<'a, L, R> {
 }
 
 impl<L, R> Either<L, R> {
-    pub fn project(self: Pin<&mut Self>) -> EitherProjection<L, R> {
+    fn project(self: Pin<&mut Self>) -> EitherProjection<L, R> {
         let this = unsafe {
             // Safety:
             // TODO: Add safety explanation.
