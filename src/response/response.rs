@@ -71,7 +71,7 @@ impl Response {
         F: Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static,
     {
         Self {
-            inner: self.inner.map(|body| body.map(map)),
+            inner: self.inner.map(|body| body.map(Box::new(map))),
         }
     }
 
