@@ -1,6 +1,11 @@
 mod body;
-mod stream_adapter;
+mod buffered;
+mod mapped;
+mod streaming;
 
-use stream_adapter::StreamAdapter;
+use super::Either;
 
 pub use body::ResponseBody;
+pub use buffered::Buffered;
+pub use mapped::Mapped;
+pub use streaming::Streaming;
