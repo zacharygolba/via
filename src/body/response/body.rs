@@ -95,7 +95,17 @@ impl ResponseBody {
     /// Returns a projection type of the possible variants of the nested `Either`
     /// enums that compose the `body` field.
     fn project(self: Pin<&mut Self>) -> ResponseBodyProjection {
-        let this = unsafe { self.get_unchecked_mut() };
+        // Get a mutable reference to `self`.
+        let this = unsafe {
+            //
+            // Safety:
+            //
+            // The only type of response body that is `Unpin` is the `Buffered`
+            // struct so we have to use `get_unchecked_mut` to get a mutable
+            // reference to `self`. This is safe since we're not moving any data
+            // out of the pinned reference to `Self`.
+            self.get_unchecked_mut()
+        };
 
         match &mut this.body {
             Either::Left(Either::Left(buffered)) => {
