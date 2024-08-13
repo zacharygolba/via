@@ -24,7 +24,6 @@ pub(crate) struct StaticFile {
     pub size: u64,
     pub etag: Option<String>,
     pub mime_type: String,
-    #[cfg_attr(not(feature = "last-modified"), allow(dead_code))]
     pub modified_at: Option<SystemTime>,
 }
 
