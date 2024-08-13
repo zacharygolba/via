@@ -6,7 +6,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use super::BodyStream;
+use super::BodyDataStream;
 use crate::{Error, Result};
 
 /// The maximum amount of bytes that can be reserved during an allocation.
@@ -15,7 +15,7 @@ const MAX_ALLOC_SIZE: usize = isize::MAX as usize;
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct ReadIntoBytes {
     buffer: BytesMut,
-    stream: BodyStream,
+    stream: BodyDataStream,
 }
 
 /// Conditionally reserves `additional` capacity for `bytes` if the current
@@ -41,11 +41,11 @@ fn try_reserve(bytes: &mut BytesMut, additional: usize) -> Result<()> {
 }
 
 impl ReadIntoBytes {
-    pub(crate) fn new(buffer: BytesMut, stream: BodyStream) -> Self {
+    pub(crate) fn new(buffer: BytesMut, stream: BodyDataStream) -> Self {
         Self { buffer, stream }
     }
 
-    fn project(self: Pin<&mut Self>) -> (Pin<&mut BytesMut>, Pin<&mut BodyStream>) {
+    fn project(self: Pin<&mut Self>) -> (Pin<&mut BytesMut>, Pin<&mut BodyDataStream>) {
         // Get a mutable reference to self.
         let this = self.get_mut();
         let buffer = &mut this.buffer;

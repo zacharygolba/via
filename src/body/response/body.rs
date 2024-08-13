@@ -1,8 +1,9 @@
 use bytes::{Bytes, BytesMut};
 use futures_core::Stream;
+use hyper::body::Frame;
 
-use super::{Buffered, Either, Mapped, Pollable, Streaming};
-use crate::Result;
+use super::{Buffered, Either, Mapped, Pollable, StreamAdapter, Streaming};
+use crate::{Error, Result};
 
 pub struct ResponseBody {
     body: Either<Either<Buffered, Streaming>, Box<Mapped>>,
@@ -36,9 +37,18 @@ impl ResponseBody {
         }
     }
 
+    pub(crate) fn data_stream<T, D: 'static, E: 'static>(stream: T) -> Self
+    where
+        T: Stream<Item = Result<D, E>> + Send + 'static,
+        Bytes: From<D>,
+        Error: From<E>,
+    {
+        Self::stream(StreamAdapter::new(stream))
+    }
+
     pub(crate) fn stream<T>(stream: T) -> Self
     where
-        T: Stream<Item = Result<Bytes>> + Send + 'static,
+        T: Stream<Item = Result<Frame<Bytes>>> + Send + 'static,
     {
         let stream = Streaming::new(Box::new(stream));
 

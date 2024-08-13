@@ -1,7 +1,7 @@
 use bytes::BytesMut;
 use hyper::body::Incoming;
 
-use super::{BodyStream, ReadIntoBytes, ReadIntoString};
+use super::{BodyDataStream, BodyStream, ReadIntoBytes, ReadIntoString};
 
 /// The maximum amount of bytes that can be preallocated for a request body.
 const MAX_PREALLOC_SIZE: usize = 104857600; // 100 MB
@@ -26,15 +26,22 @@ impl RequestBody {
         BodyStream::new(self.body)
     }
 
+    pub fn into_data_stream(self) -> BodyDataStream {
+        let stream = self.into_stream();
+
+        BodyDataStream::new(stream)
+    }
+
     pub fn read_into_bytes(self) -> ReadIntoBytes {
         let buffer = bytes_mut_with_capacity(self.len);
-        let stream = self.into_stream();
+        let stream = self.into_data_stream();
 
         ReadIntoBytes::new(buffer, stream)
     }
 
     pub fn read_into_string(self) -> ReadIntoString {
         let future = self.read_into_bytes();
+
         ReadIntoString::new(future)
     }
 

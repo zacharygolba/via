@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use futures_core::Stream;
-use hyper::body::{Body, Incoming};
+use hyper::body::{Body, Frame, Incoming};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -10,7 +10,7 @@ use crate::{body::size_hint, Error, Result};
 
 #[must_use = "streams do nothing unless polled"]
 pub struct BodyStream {
-    pub(super) body: Box<Incoming>,
+    body: Box<Incoming>,
 }
 
 impl BodyStream {
@@ -30,31 +30,10 @@ impl BodyStream {
 }
 
 impl Stream for BodyStream {
-    type Item = Result<Bytes>;
+    type Item = Result<Frame<Bytes>>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {
-        match self.project().poll_frame(context) {
-            Poll::Ready(Some(Ok(frame))) => {
-                if let Ok(bytes) = frame.into_data() {
-                    // The frame is a data frame. Return it.
-                    Poll::Ready(Some(Ok(bytes)))
-                } else {
-                    Poll::Pending
-                }
-            }
-            Poll::Ready(Some(Err(error))) => {
-                let error = Error::from(error);
-                Poll::Ready(Some(Err(error)))
-            }
-            Poll::Ready(None) => {
-                // No more frames.
-                Poll::Ready(None)
-            }
-            Poll::Pending => {
-                // Wait for the next frame.
-                Poll::Pending
-            }
-        }
+        self.project().poll_frame(context).map_err(Error::from)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

@@ -8,7 +8,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 use tokio::{runtime::Handle, sync::mpsc, task};
-use via::{body::Bytes, Error, Result};
+use via::body::{Bytes, Frame};
+use via::{Error, Result};
 
 /// The amount of `ReadChunkResult` that can be stored in the channel buffer.
 const CHANNEL_CAPACITY: usize = 16;
@@ -127,14 +128,14 @@ impl StreamFile {
 }
 
 impl Stream for StreamFile {
-    type Item = Result<Bytes>;
+    type Item = Result<Frame<Bytes>>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
         this.receiver
             .poll_recv(context)
-            .map_ok(Bytes::from)
+            .map_ok(|data| Frame::data(data.into()))
             .map_err(Error::from_io_error)
     }
 }
