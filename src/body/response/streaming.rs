@@ -15,7 +15,7 @@ use crate::{body::size_hint, Error, Result};
 pub struct Streaming {
     /// A trait object that implements `Stream` that we'll poll to get the next
     /// frame of the response body in the `poll_frame` method.
-    stream: Box<dyn Stream<Item = Result<Bytes>> + Send>,
+    stream: Box<dyn Stream<Item = Result<Frame<Bytes>>> + Send>,
 
     /// This field is used to mark `Streaming` as `!Unpin`. This is necessary
     /// because `self.stream` may not be `Unpin` and we need to project the
@@ -27,7 +27,7 @@ pub struct Streaming {
 impl Streaming {
     pub fn new<T>(stream: Box<T>) -> Self
     where
-        T: Stream<Item = Result<Bytes>> + Send + 'static,
+        T: Stream<Item = Result<Frame<Bytes>>> + Send + 'static,
     {
         Self {
             stream,
@@ -35,7 +35,7 @@ impl Streaming {
         }
     }
 
-    fn project(self: Pin<&mut Self>) -> Pin<&mut (dyn Stream<Item = Result<Bytes>> + Send)> {
+    fn project(self: Pin<&mut Self>) -> Pin<&mut (dyn Stream<Item = Result<Frame<Bytes>>> + Send)> {
         // Get a mutable reference to `self`.
         let this = unsafe {
             // Safety:
@@ -62,7 +62,7 @@ impl Body for Streaming {
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        self.project().poll_next(context).map_ok(Frame::data)
+        self.project().poll_next(context)
     }
 
     fn is_end_stream(&self) -> bool {

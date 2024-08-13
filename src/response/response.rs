@@ -6,8 +6,8 @@ use http::{
 };
 
 use super::ResponseBuilder;
-use crate::body::{Pollable, ResponseBody};
-use crate::Result;
+use crate::body::{Frame, Pollable, ResponseBody};
+use crate::{Error, Result};
 
 pub struct Response {
     pub(super) inner: http::Response<ResponseBody>,
@@ -16,6 +16,16 @@ pub struct Response {
 impl Response {
     pub fn builder() -> ResponseBuilder {
         ResponseBuilder::new()
+    }
+
+    pub fn data_stream<T, D: 'static, E: 'static>(body: T) -> ResponseBuilder
+    where
+        T: Stream<Item = Result<D, E>> + Send + 'static,
+        Bytes: From<D>,
+        Error: From<E>,
+    {
+        ResponseBuilder::with_body(Ok(ResponseBody::data_stream(body)))
+            .header(header::TRANSFER_ENCODING, "chunked")
     }
 
     pub fn html<T>(body: T) -> ResponseBuilder
@@ -61,7 +71,7 @@ impl Response {
 
     pub fn stream<T>(body: T) -> ResponseBuilder
     where
-        T: Stream<Item = Result<Bytes>> + Send + 'static,
+        T: Stream<Item = Result<Frame<Bytes>>> + Send + 'static,
     {
         ResponseBuilder::with_body(Ok(ResponseBody::stream(body)))
             .header(header::TRANSFER_ENCODING, "chunked")
