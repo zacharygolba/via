@@ -6,7 +6,8 @@ use http::{
 };
 
 use super::ResponseBuilder;
-use crate::{body::ResponseBody, Result};
+use crate::body::{Pollable, ResponseBody};
+use crate::Result;
 
 pub struct Response {
     pub(super) inner: http::Response<ResponseBody>,
@@ -111,7 +112,8 @@ impl Response {
         }
     }
 
-    pub(crate) fn into_inner(self) -> http::Response<ResponseBody> {
-        self.inner
+    pub(crate) fn into_inner(self) -> http::Response<Pollable> {
+        // Unwrap the inner response and map the body to `Pollable`.
+        self.inner.map(ResponseBody::into_pollable)
     }
 }
