@@ -40,6 +40,7 @@ impl Mapped {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn project(
         self: Pin<&mut Self>,
     ) -> (
