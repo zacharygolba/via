@@ -16,7 +16,12 @@ type MapFn = dyn Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static;
 /// A response body that maps the data frame by frame by folding a queue of map
 /// functions.
 pub struct Mapped {
+    /// The response body that will be used as the source of frames to map in
+    /// the implementation of `Body::poll_frame`.
     body: Either<Buffered, Streaming>,
+
+    /// A queue of map functions that are applied to data frames as they are
+    /// polled from `body` in the implementation of `Body::poll_frame`.
     queue: Vec<Box<MapFn>>,
 }
 
