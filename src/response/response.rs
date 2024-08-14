@@ -18,11 +18,11 @@ impl Response {
         ResponseBuilder::new()
     }
 
-    pub fn data_stream<T, D: 'static, E: 'static>(body: T) -> ResponseBuilder
+    pub fn data_stream<S, D, E>(body: S) -> ResponseBuilder
     where
-        T: Stream<Item = Result<D, E>> + Send + 'static,
-        Bytes: From<D>,
-        Error: From<E>,
+        S: Stream<Item = Result<D, E>> + Send + 'static,
+        D: Into<Bytes> + 'static,
+        E: Into<Error> + 'static,
     {
         ResponseBuilder::with_body(Ok(ResponseBody::data_stream(body)))
             .header(header::TRANSFER_ENCODING, "chunked")

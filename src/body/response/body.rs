@@ -37,11 +37,11 @@ impl ResponseBody {
         }
     }
 
-    pub(crate) fn data_stream<T, D: 'static, E: 'static>(stream: T) -> Self
+    pub(crate) fn data_stream<S, D, E>(stream: S) -> Self
     where
-        T: Stream<Item = Result<D, E>> + Send + 'static,
-        Bytes: From<D>,
-        Error: From<E>,
+        S: Stream<Item = Result<D, E>> + Send + 'static,
+        D: Into<Bytes> + 'static,
+        E: Into<Error> + 'static,
     {
         Self::stream(StreamAdapter::new(stream))
     }
