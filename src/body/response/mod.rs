@@ -8,7 +8,7 @@ mod streaming;
 pub use body::ResponseBody;
 pub use pollable::Pollable;
 
-use super::Either;
+use super::{Either, FrameExt};
 use buffered::Buffered;
 use mapped::Mapped;
 use stream_adapter::StreamAdapter;

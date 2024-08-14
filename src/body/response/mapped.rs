@@ -6,18 +6,22 @@ use std::{
     task::{Context, Poll},
 };
 
-use super::{Buffered, Streaming};
-use crate::{
-    body::{frame::FrameExt, Either},
-    Error, Result,
-};
+use super::{Buffered, Either, FrameExt, Streaming};
+use crate::{Error, Result};
 
+/// A type alias for the trait object that represents a map function. This type
+/// alias exists to simply the type signatures in this module.
+type MapFn = dyn Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static;
+
+/// A response body that maps the data frame by frame by folding a queue of map
+/// functions.
 pub struct Mapped {
     body: Either<Buffered, Streaming>,
-    queue: Vec<Box<dyn Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static>>,
+    queue: Vec<Box<MapFn>>,
 }
 
 impl Mapped {
+    /// Creates a new `Mapped` response body with the given `body`.
     pub fn new(body: Either<Buffered, Streaming>) -> Self {
         Self {
             body,
@@ -25,6 +29,7 @@ impl Mapped {
         }
     }
 
+    /// Pushes a map function into the queue of map functions.
     pub fn push<F>(&mut self, map: Box<F>)
     where
         F: Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static,
@@ -32,10 +37,12 @@ impl Mapped {
         self.queue.push(map);
     }
 
+    /// Returns `true` if `body` is buffered in memory and contains no data.
     pub fn is_empty(&self) -> bool {
         self.len().map_or(false, |len| len == 0)
     }
 
+    /// Returns the byte length of the data in `body` if it is buffered in memory.
     pub fn len(&self) -> Option<usize> {
         if let Either::Left(buffered) = &self.body {
             Some(buffered.len())
@@ -44,30 +51,36 @@ impl Mapped {
         }
     }
 
-    #[allow(clippy::type_complexity)]
-    fn project(
-        self: Pin<&mut Self>,
-    ) -> (
-        Pin<&mut Either<Buffered, Streaming>>,
-        Pin<&[Box<dyn Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static>]>,
-    ) {
+    /// Returns a tuple that contains a pinned mutable reference to the `body`
+    /// field and a shared reference to the queue of map functions.
+    fn project(self: Pin<&mut Self>) -> (Pin<&mut Either<Buffered, Streaming>>, &[Box<MapFn>]) {
         // Get a mutable reference to `self`.
         let this = unsafe {
+            //
             // Safety:
-            // TODO: Add safety explanation.
+            //
+            // The `body` field may contain a `Streaming` response body which is
+            // not `Unpin`. We need to project the body field through a pinned
+            // reference to `Self` so that it can be polled in the `poll_frame`
+            // method. This is safe because no data is moved out of `self`.
             self.get_unchecked_mut()
         };
-        // Get a mutable reference to the `body` field.
-        let source = unsafe {
+        // Get a pinned mutable reference to the `body` field.
+        let body = unsafe {
+            //
             // Safety:
-            // TODO: Add safety explanation.
-            let ptr = &mut this.body;
-            Pin::new_unchecked(ptr)
+            //
+            // The `body` field may contain a `Streaming` response body which is
+            // not `Unpin`. Therefore we have to use `Pin::new_unchecked` to wrap
+            // the mutable reference to `body` in a pinned reference. This is safe
+            // because we are not moving the value or any data owned by the `body`
+            // field out of the pinned mutable reference.
+            Pin::new_unchecked(&mut this.body)
         };
-        // Get a shared pinned reference to the `queue` field.
-        let queue = Pin::new(&*this.queue);
 
-        (source, queue)
+        // Return the pinned reference to the `body` field and a shared reference
+        // to our queue of map functions.
+        (body, &*this.queue)
     }
 }
 
@@ -80,15 +93,17 @@ impl Body for Mapped {
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let (body, queue) = self.project();
-        let frame = ready!(body.poll_frame(context)).map(|result| {
+
+        Poll::Ready(ready!(body.poll_frame(context)).map(|result| {
             result?.try_map_data(|input| {
                 // Attempt to fold the queue of map functions over the data in
                 // the frame if `frame.is_data()` and return the result.
-                queue.iter().try_fold(input, |data, map| map(data))
+                //
+                // Due to the fact that the middleware is a stack, the map
+                // functions in `queue` are applied in reverse order.
+                queue.iter().rev().try_fold(input, |data, map| map(data))
             })
-        });
-
-        Poll::Ready(frame)
+        }))
     }
 
     fn is_end_stream(&self) -> bool {
