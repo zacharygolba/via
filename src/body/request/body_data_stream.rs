@@ -1,29 +1,36 @@
 use bytes::Bytes;
-use futures_core::Stream;
+use futures_core::{ready, Stream};
+use hyper::body::{Body, Incoming};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::BodyStream;
+use crate::body::size_hint;
 use crate::Result;
 
+/// A data stream of bytes that compose the body of a request.
 #[must_use = "streams do nothing unless polled"]
 pub struct BodyDataStream {
-    stream: BodyStream,
+    body: Box<Incoming>,
 }
 
 impl BodyDataStream {
-    pub(crate) fn new(stream: BodyStream) -> Self {
-        Self { stream }
+    /// Creates a new `BodyDataStream` with the provided request body.
+    pub(crate) fn new(body: Box<Incoming>) -> Self {
+        Self { body }
     }
 
-    fn project(self: Pin<&mut Self>) -> Pin<&mut BodyStream> {
+    /// Returns a pinned mutable reference to the `body` field. This method is
+    /// used to project the `body` field through a pinned reference to `Self`
+    /// so it can be polled for the next frame.
+    fn project(self: Pin<&mut Self>) -> Pin<&mut Incoming> {
         // Get a mutable reference to self.
         let this = self.get_mut();
-        // Get a mutable reference to the `stream` field.
-        let stream = &mut this.stream;
+        // Get a mutable reference to the `body` field by dereferencing
+        // `Box<Incoming>` to `&mut Incoming`.
+        let body = &mut *this.body;
 
-        // Return the pinned reference to the `stream` field.
-        Pin::new(stream)
+        // Return the pinned mutable reference to the `body` field.
+        Pin::new(body)
     }
 }
 
@@ -31,31 +38,35 @@ impl Stream for BodyDataStream {
     type Item = Result<Bytes>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {
-        match self.project().poll_next(context) {
-            Poll::Ready(Some(Ok(frame))) => {
-                if let Ok(bytes) = frame.into_data() {
-                    // The frame is a data frame. Return it.
-                    Poll::Ready(Some(Ok(bytes)))
-                } else {
-                    Poll::Pending
-                }
-            }
-            Poll::Ready(Some(Err(error))) => {
-                // An error occurred while polling the stream.
-                Poll::Ready(Some(Err(error)))
-            }
-            Poll::Ready(None) => {
-                // No more frames.
-                Poll::Ready(None)
-            }
-            Poll::Pending => {
-                // Wait for the next frame.
-                Poll::Pending
-            }
+        // Get a pinned mutable reference to `self.body`.
+        let mut body = self.project();
+
+        loop {
+            // Reborrow the pinned mutable reference to `self.body` and poll
+            // the stream for the next frame. If the stream is not ready,
+            // return early.
+            return match ready!(body.as_mut().poll_frame(context)) {
+                // A frame was successfully polled from the stream. Attempt
+                // to pull the data out of the frame.
+                Some(Ok(frame)) => match frame.into_data() {
+                    // The frame is a data frame. Return `Ready`.
+                    Ok(data) => Poll::Ready(Some(Ok(data))),
+                    // The frame is trailers. Ignore them and continue.
+                    Err(_) => continue,
+                },
+                // An error occurred while polling the stream. Convert the
+                // error to a `via::Error` and return.
+                Some(Err(error)) => Poll::Ready(Some(Err(error.into()))),
+                // The stream has been exhausted.
+                None => Poll::Ready(None),
+            };
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.stream.size_hint()
+        // Delegate the call to `self.body` to get a `SizeHint` and use the
+        // helper function to adapt the returned `SizeHint` to a tuple that
+        // contains the lower and upper bound of the stream.
+        size_hint::from_body_for_stream(&self.body)
     }
 }
