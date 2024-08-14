@@ -81,8 +81,10 @@ impl Response {
     where
         F: Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static,
     {
+        let map = Box::new(map);
+
         Self {
-            inner: self.inner.map(|body| body.map(Box::new(map))),
+            inner: self.inner.map(|body| body.map(map)),
         }
     }
 
