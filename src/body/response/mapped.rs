@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use futures_core::ready;
 use hyper::body::{Body, Frame, SizeHint};
 use std::{
     pin::Pin,
@@ -6,7 +7,10 @@ use std::{
 };
 
 use super::{Buffered, Streaming};
-use crate::{body::Either, Error, Result};
+use crate::{
+    body::{frame::FrameExt, Either},
+    Error, Result,
+};
 
 pub struct Mapped {
     body: Either<Buffered, Streaming>,
@@ -76,16 +80,15 @@ impl Body for Mapped {
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let (body, queue) = self.project();
+        let frame = ready!(body.poll_frame(context)).map(|result| {
+            result?.try_map_data(|input| {
+                // Attempt to fold the queue of map functions over the data in
+                // the frame if `frame.is_data()` and return the result.
+                queue.iter().try_fold(input, |data, map| map(data))
+            })
+        });
 
-        match body.poll_frame(context) {
-            Poll::Ready(Some(Ok(frame))) if frame.is_data() => {
-                let input = frame.into_data().unwrap();
-                let output = queue.iter().try_fold(input, |data, map| map(data));
-
-                Poll::Ready(Some(output.map(Frame::data)))
-            }
-            poll => poll,
-        }
+        Poll::Ready(frame)
     }
 
     fn is_end_stream(&self) -> bool {
