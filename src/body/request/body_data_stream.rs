@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures_core::{ready, Stream};
+use futures_core::Stream;
 use hyper::body::{Body, Incoming};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -45,10 +45,10 @@ impl Stream for BodyDataStream {
             // Reborrow the pinned mutable reference to `self.body` and poll
             // the stream for the next frame. If the stream is not ready,
             // return early.
-            return match ready!(body.as_mut().poll_frame(context)) {
+            return match body.as_mut().poll_frame(context) {
                 // A frame was successfully polled from the stream. Attempt
                 // to pull the data out of the frame.
-                Some(Ok(frame)) => match frame.into_data() {
+                Poll::Ready(Some(Ok(frame))) => match frame.into_data() {
                     // The frame is a data frame. Return `Ready`.
                     Ok(data) => Poll::Ready(Some(Ok(data))),
                     // The frame is trailers. Ignore them and continue.
@@ -56,9 +56,11 @@ impl Stream for BodyDataStream {
                 },
                 // An error occurred while polling the stream. Convert the
                 // error to a `via::Error` and return.
-                Some(Err(error)) => Poll::Ready(Some(Err(error.into()))),
+                Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(error.into()))),
                 // The stream has been exhausted.
-                None => Poll::Ready(None),
+                Poll::Ready(None) => Poll::Ready(None),
+                // Wait for the next frame.
+                Poll::Pending => Poll::Pending,
             };
         }
     }

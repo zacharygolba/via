@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use futures_core::ready;
 use hyper::body::{Body, Frame, SizeHint};
 use std::{
     pin::Pin,
@@ -82,10 +81,12 @@ impl Mapped {
             // field out of the pinned mutable reference.
             Pin::new_unchecked(&mut this.body)
         };
+        // Get a shared reference to the queue of map functions.
+        let queue = &*this.queue;
 
         // Return the pinned reference to the `body` field and a shared reference
         // to our queue of map functions.
-        (body, &*this.queue)
+        (body, queue)
     }
 }
 
@@ -99,23 +100,37 @@ impl Body for Mapped {
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let (body, queue) = self.project();
 
-        Poll::Ready(ready!(body.poll_frame(context)).map(|result| {
-            result?.try_map_data(|input| {
-                // Attempt to fold the queue of map functions over the data in
-                // the frame if `frame.is_data()` and return the result.
+        body.poll_frame(context).map(|option| {
+            let frame = match option {
+                // A frame was successfully polled from the stream. Store it
+                // at `frame`.
+                Some(Ok(value)) => value,
+                // An error occurred while polling the stream. Return early.
+                Some(error) => return Some(error),
+                // The stream has been exhausted. Return early.
+                None => return None,
+            };
+
+            // Return `Some` with the result of attempting to map the data at
+            // frame.
+            Some(frame.try_map_data(|input| {
+                // Attempt to fold the queue of map functions over the data
+                // in the frame if `frame.is_data()` and return the result.
                 //
                 // Due to the fact that the middleware is a stack, the map
                 // functions in `queue` are applied in reverse order.
                 queue.iter().rev().try_fold(input, |data, map| map(data))
-            })
-        }))
+            }))
+        })
     }
 
     fn is_end_stream(&self) -> bool {
+        // Delegate the call to `is_end_stream` to the `Body` at `self.body`.
         self.body.is_end_stream()
     }
 
     fn size_hint(&self) -> SizeHint {
+        // Delegate the call to `size_hint` to the `Body` at `self.body`.
         self.body.size_hint()
     }
 }
