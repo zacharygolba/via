@@ -146,8 +146,10 @@ where
 impl Future for FutureResponse {
     type Output = Result<http::Response<Pollable>, Infallible>;
 
-    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
-        self.future.as_mut().poll(context).map(|result| {
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        this.future.as_mut().poll(context).map(|result| {
             let response = result.unwrap_or_else(|_| {
                 // TODO: Log the error.
                 // TODO: Warn about missing error boundary in debug builds.
