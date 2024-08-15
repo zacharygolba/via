@@ -1,12 +1,12 @@
 use http::{header, HeaderMap, Method, Uri, Version};
 use hyper::body::Incoming;
-use std::{
-    fmt::{self, Debug},
-    sync::Arc,
-};
+use std::fmt::{self, Debug};
+use std::sync::Arc;
 
-use super::{parse_query_params, PathParam, QueryParamValues};
-use crate::{body::RequestBody, event::EventListener, Error, Result};
+use super::{parse_query_params, PathParam, PathParams, QueryParamValues};
+use crate::body::RequestBody;
+use crate::event::EventListener;
+use crate::{Error, Result};
 
 pub struct Request<State = ()> {
     inner: Box<RequestInner<State>>,
@@ -15,9 +15,9 @@ pub struct Request<State = ()> {
 struct RequestInner<State> {
     request: http::Request<Option<RequestBody>>,
     app_state: Arc<State>,
-    path_params: Vec<(&'static str, (usize, usize))>,
+    path_params: PathParams,
     query_params: Option<Vec<(String, (usize, usize))>>,
-    event_listener: EventListener,
+    event_listener: Arc<EventListener>,
 }
 
 impl<State> Request<State> {
@@ -90,7 +90,7 @@ impl<State> Request<State> {
     pub(crate) fn new(
         request: http::Request<Incoming>,
         app_state: Arc<State>,
-        event_listener: EventListener,
+        event_listener: Arc<EventListener>,
     ) -> Self {
         let content_len =
             request
@@ -119,12 +119,15 @@ impl<State> Request<State> {
         }
     }
 
-    pub(crate) fn event_listener(&self) -> &EventListener {
+    pub(crate) fn event_listener(&self) -> &Arc<EventListener> {
         &self.inner.event_listener
     }
 
-    pub(crate) fn params_mut(&mut self) -> &mut Vec<(&'static str, (usize, usize))> {
-        &mut self.inner.path_params
+    pub(crate) fn params_mut_with_path(&mut self) -> (&mut PathParams, &str) {
+        let params = &mut self.inner.path_params;
+        let path = self.inner.request.uri().path();
+
+        (params, path)
     }
 }
 

@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::{event::Event, BoxFuture, Error, Middleware, Next, Request, Response, Result};
+use crate::event::Event;
+use crate::middleware::BoxFuture;
+use crate::{Error, Middleware, Next, Request, Response, Result};
 
 /// Middleware that catches errors that occur in downstream middleware and
 /// converts the error into a response. Upstream middleware added to an app
@@ -44,10 +46,10 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
-        let event_listener = request.event_listener().clone();
+        let event_listener = Arc::clone(request.event_listener());
 
-        Box::pin(async {
-            next.call(request).await.or_else(move |error| {
+        Box::pin(async move {
+            next.call(request).await.or_else(|error| {
                 Ok(error.into_infallible_response(|error| {
                     event_listener.call(Event::UncaughtError(error))
                 }))
@@ -62,11 +64,11 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
-        let event_listener = request.event_listener().clone();
+        let event_listener = Arc::clone(request.event_listener());
         let map = Arc::clone(&self.map);
 
-        Box::pin(async {
-            next.call(request).await.or_else(move |error| {
+        Box::pin(async move {
+            next.call(request).await.or_else(|error| {
                 Ok(map(error).into_infallible_response(|error| {
                     event_listener.call(Event::UncaughtError(error))
                 }))
@@ -81,11 +83,11 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
-        let event_listener = request.event_listener().clone();
+        let event_listener = Arc::clone(request.event_listener());
         let inspect = Arc::clone(&self.inspect);
 
-        Box::pin(async {
-            next.call(request).await.or_else(move |error| {
+        Box::pin(async move {
+            next.call(request).await.or_else(|error| {
                 inspect(&error);
                 Ok(error.into_infallible_response(|error| {
                     event_listener.call(Event::UncaughtError(error));
