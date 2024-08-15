@@ -3,6 +3,10 @@ use std::str::FromStr;
 
 use crate::{Error, Result};
 
+/// TODO:
+/// Doc comment
+pub type PathParams = Vec<(&'static str, (usize, usize))>;
+
 pub struct PathParam<'a, 'b> {
     name: &'b str,
     path: &'a str,

@@ -1,6 +1,8 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use crate::{middleware::ArcMiddleware, Middleware, Next, Request};
+use crate::middleware::{ArcMiddleware, BoxFuture};
+use crate::request::PathParams;
+use crate::{Error, Middleware, Next, Request, Response};
 
 pub struct Router<State> {
     inner: via_router::Router<Route<State>>,
@@ -31,10 +33,16 @@ where
         }
     }
 
-    pub fn visit(&self, request: &mut Request<State>) -> Next<State> {
-        let mut stack = VecDeque::with_capacity(48);
-        let matches = self.inner.visit(request.uri().path());
-        let params = request.params_mut();
+    pub fn respond_to(&self, mut request: Request<State>) -> BoxFuture<Result<Response, Error>> {
+        let (params, path) = request.params_mut_with_path();
+        let next = self.visit(params, path);
+
+        next.call(request)
+    }
+
+    fn visit(&self, params: &mut PathParams, path: &str) -> Next<State> {
+        let mut stack = VecDeque::new();
+        let matches = self.inner.visit(path);
 
         for matched in matches {
             if let Some(param) = matched.param() {
