@@ -1,9 +1,7 @@
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use hyper::body::{Body, Frame, SizeHint};
-use std::{
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use crate::{Error, Result};
 
@@ -27,14 +25,6 @@ impl Buffered {
     }
 }
 
-impl Buffered {
-    /// Returns a pinned reference to the inner kind of the body.
-    fn project(self: Pin<&mut Self>) -> Pin<&mut BytesMut> {
-        let this = self.get_mut();
-        Pin::new(&mut *this.data)
-    }
-}
-
 impl Body for Buffered {
     type Data = Bytes;
     type Error = Error;
@@ -43,10 +33,11 @@ impl Body for Buffered {
         self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let mut buffer = self.project();
+        // Get a mutable reference to `self`.
+        let this = self.get_mut();
         // Get the length of the buffer. This is used to determine how
         // many bytes to copy from the buffer into the data frame.
-        let len = buffer.len();
+        let len = this.data.len();
 
         // Check if the buffer has any data.
         if len == 0 {
@@ -55,7 +46,7 @@ impl Body for Buffered {
         }
 
         // Copy the bytes from the buffer into an immutable `Bytes`.
-        let bytes = buffer.copy_to_bytes(len);
+        let bytes = this.data.split_to(len).freeze();
         // Wrap the bytes we copied from buffer in a data frame.
         let frame = Frame::data(bytes);
 
