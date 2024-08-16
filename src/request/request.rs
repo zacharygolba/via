@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use super::{parse_query_params, PathParam, PathParams, QueryParamValues};
 use crate::body::RequestBody;
-use crate::event::EventListener;
 use crate::{Error, Result};
 
 pub struct Request<State = ()> {
@@ -17,7 +16,6 @@ struct RequestInner<State> {
     app_state: Arc<State>,
     path_params: PathParams,
     query_params: Option<Vec<(String, (usize, usize))>>,
-    event_listener: EventListener<State>,
 }
 
 impl<State> Request<State> {
@@ -87,11 +85,7 @@ impl<State> Request<State> {
 }
 
 impl<State> Request<State> {
-    pub(crate) fn new(
-        request: http::Request<Incoming>,
-        app_state: Arc<State>,
-        event_listener: EventListener<State>,
-    ) -> Self {
+    pub(crate) fn new(request: http::Request<Incoming>, app_state: Arc<State>) -> Self {
         let content_len =
             request
                 .headers()
@@ -108,7 +102,6 @@ impl<State> Request<State> {
             // easily moved out of the request when it is read.
             inner: Box::new(RequestInner {
                 app_state,
-                event_listener,
                 request: request.map(|body| match content_len {
                     Some(len) => Some(RequestBody::with_len(body, len)),
                     None => Some(RequestBody::new(body)),
@@ -117,10 +110,6 @@ impl<State> Request<State> {
                 query_params: None,
             }),
         }
-    }
-
-    pub(crate) fn event_listener(&self) -> &EventListener<State> {
-        &self.inner.event_listener
     }
 
     pub(crate) fn params_mut_with_path(&mut self) -> (&mut PathParams, &str) {

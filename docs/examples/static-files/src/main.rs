@@ -1,4 +1,4 @@
-use via::{Event, Next, Request, Response, Result};
+use via::{Next, Request, Response, Result};
 use via_serve_static::serve_static;
 
 async fn not_found(request: Request, _: Next) -> Result<Response> {
@@ -61,13 +61,8 @@ async fn main() -> Result<()> {
     // behavior of via and the via_serve_static middleware.
     app.at("/*path").respond(via::get(not_found));
 
-    app.listen(("127.0.0.1", 8080), |event, _| match event {
-        Event::ConnectionError(error) | Event::UncaughtError(error) => {
-            eprintln!("Error: {}", error);
-        }
-        Event::ServerReady(address) => {
-            println!("Server listening at http://{}", address);
-        }
+    app.listen(("127.0.0.1", 8080), |address| {
+        println!("Server listening at http://{}", address);
     })
     .await
 }
