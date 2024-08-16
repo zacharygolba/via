@@ -1,4 +1,4 @@
-use via::{Event, Next, Request, Result};
+use via::{Next, Request, Result};
 
 async fn hello(request: Request, _: Next) -> Result<String> {
     // Get a reference to the path parameter `name` from the request uri.
@@ -40,13 +40,8 @@ async fn main() -> Result<()> {
     // You can specify the HTTP method that middleware should accept with the
     // helper functions at the top-level of the `via` crate.
 
-    app.listen(("127.0.0.1", 8080), |event, _| match event {
-        Event::ConnectionError(error) | Event::UncaughtError(error) => {
-            eprintln!("Error: {}", error);
-        }
-        Event::ServerReady(address) => {
-            println!("Server listening at http://{}", address);
-        }
+    app.listen(("127.0.0.1", 8080), |address| {
+        println!("Server listening at http://{}", address);
     })
     .await
 }

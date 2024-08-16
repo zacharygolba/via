@@ -1,4 +1,5 @@
-use via::{http::header, Event, Next, Request, Response, Result};
+use via::http::header;
+use via::{Next, Request, Response, Result};
 
 async fn echo(mut request: Request, _: Next) -> Result<Response> {
     // Get a stream of bytes from the request body.
@@ -25,13 +26,8 @@ async fn main() -> Result<()> {
     // `via::post` function is used to specify that the `echo` middleware should
     // only accept POST requests.
 
-    app.listen(("127.0.0.1", 8080), |event, _| match event {
-        Event::ConnectionError(error) | Event::UncaughtError(error) => {
-            eprintln!("Error: {}", error);
-        }
-        Event::ServerReady(address) => {
-            println!("Server listening at http://{}", address);
-        }
+    app.listen(("127.0.0.1", 8080), |address| {
+        println!("Server listening at http://{}", address);
     })
     .await
 }

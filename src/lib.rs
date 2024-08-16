@@ -1,31 +1,25 @@
 #![allow(clippy::module_inception)]
 
-mod app;
-mod error;
-mod event;
-mod router;
-
 pub mod body;
 pub mod middleware;
 pub mod request;
 pub mod response;
 
+mod app;
+mod error;
+mod router;
+
 pub use http;
 
-pub use crate::{
-    app::{app, App},
-    error::{Error, Result},
-    event::Event,
-    middleware::{ErrorBoundary, Middleware, Next},
-    request::Request,
-    response::Response,
-    router::Endpoint,
-};
+pub use app::{app, App};
+pub use error::{Error, Result};
+pub use middleware::{ErrorBoundary, Middleware, Next};
+pub use request::Request;
+pub use response::Response;
+pub use router::Endpoint;
 
-use crate::{
-    http::Method,
-    middleware::{AllowMethod, BoxFuture},
-};
+use http::Method;
+use middleware::{AllowMethod, BoxFuture};
 
 pub fn connect<State, T>(middleware: T) -> AllowMethod<T>
 where

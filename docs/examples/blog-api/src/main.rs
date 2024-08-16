@@ -2,7 +2,7 @@ mod api;
 mod database;
 
 use via::http::StatusCode;
-use via::{ErrorBoundary, Event, Result};
+use via::{ErrorBoundary, Result};
 
 use database::Pool;
 
@@ -85,13 +85,8 @@ async fn main() -> Result<()> {
         });
     });
 
-    app.listen(("127.0.0.1", 8080), |event, _| match event {
-        Event::ConnectionError(error) | Event::UncaughtError(error) => {
-            eprintln!("Error: {}", error);
-        }
-        Event::ServerReady(address) => {
-            println!("Server listening at http://{}", address);
-        }
+    app.listen(("127.0.0.1", 8080), |address| {
+        println!("Server listening at http://{}", address);
     })
     .await
 }

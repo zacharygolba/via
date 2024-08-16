@@ -1,8 +1,7 @@
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc,
-};
-use via::{http::StatusCode, Event, Response, Result};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use via::http::StatusCode;
+use via::{Response, Result};
 
 // Define a type alias for the `via::Request` to include the `Counter` state.
 // This is a convenience to avoid having to write out the full type signature.
@@ -82,13 +81,8 @@ async fn main() -> Result<()> {
     app.at("/totals").respond(via::get(totals));
 
     // Start the server.
-    app.listen(("127.0.0.1", 8080), |event, _| match event {
-        Event::ConnectionError(error) | Event::UncaughtError(error) => {
-            eprintln!("Error: {}", error);
-        }
-        Event::ServerReady(address) => {
-            println!("Server listening at http://{}", address);
-        }
+    app.listen(("127.0.0.1", 8080), |address| {
+        println!("Server listening at http://{}", address);
     })
     .await
 }
