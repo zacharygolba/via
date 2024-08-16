@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::event::Event;
+use crate::event::{Event, EventListener};
 use crate::middleware::BoxFuture;
 use crate::{Error, Middleware, Next, Request, Response, Result};
 
@@ -21,6 +21,24 @@ pub struct MapErrorBoundary<F> {
 /// or reporting the error to a monitoring service.
 pub struct InspectErrorBoundary<F> {
     inspect: Arc<F>,
+}
+
+/// Performs the conversion of an `Error` into a `Response`. If the conversion
+/// fails, a fallback response is generated and `event_listener` is notified of
+/// the error that prevented the response from being generated.
+fn respond_with_error(event_listener: &EventListener, error: Error) -> Response {
+    match error.try_into_response() {
+        Ok(response) => response,
+        Err((fallback_response, convert_error)) => {
+            // Notify `event_listener` of the error that prevented the response
+            // from being generated. This allows the error to be reported or
+            // handled in the most suitable way for the application's needs.
+            event_listener.call(Event::UncaughtError(&convert_error));
+
+            // Return the fallback response that contains `error` as plain text.
+            fallback_response
+        }
+    }
 }
 
 impl ErrorBoundary {
@@ -50,9 +68,8 @@ where
 
         Box::pin(async move {
             next.call(request).await.or_else(|error| {
-                Ok(error.into_infallible_response(|error| {
-                    event_listener.call(Event::UncaughtError(error))
-                }))
+                // Convert the error to a response and return `Ok`.
+                Ok(respond_with_error(&event_listener, error))
             })
         })
     }
@@ -69,9 +86,11 @@ where
 
         Box::pin(async move {
             next.call(request).await.or_else(|error| {
-                Ok(map(error).into_infallible_response(|error| {
-                    event_listener.call(Event::UncaughtError(error))
-                }))
+                // Apply the `map` function to `error`.
+                let mapped = map(error);
+
+                // Convert the mapped error to a response and return `Ok`.
+                Ok(respond_with_error(&event_listener, mapped))
             })
         })
     }
@@ -88,10 +107,12 @@ where
 
         Box::pin(async move {
             next.call(request).await.or_else(|error| {
+                // Call the `inspect` function before ownership of `error` is
+                // moved into `respond_with_error`.
                 inspect(&error);
-                Ok(error.into_infallible_response(|error| {
-                    event_listener.call(Event::UncaughtError(error));
-                }))
+
+                // Convert the error to a response and return `Ok`.
+                Ok(respond_with_error(&event_listener, error))
             })
         })
     }

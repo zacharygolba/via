@@ -1,9 +1,7 @@
 use bytes::Bytes;
 use futures_core::Stream;
-use http::{
-    header::{self, HeaderMap, CONTENT_TYPE},
-    HeaderValue, StatusCode, Version,
-};
+use http::header::{self, HeaderMap};
+use http::{StatusCode, Version};
 
 use super::ResponseBuilder;
 use crate::body::{Frame, Pollable, ResponseBody};
@@ -122,22 +120,6 @@ impl Response {
         Self {
             inner: http::Response::new(ResponseBody::new()),
         }
-    }
-
-    pub(crate) fn internal_server_error() -> Self {
-        let mut response = Response::new();
-
-        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-        *response.body_mut() = "Internal Server Error".into();
-
-        let headers = response.headers_mut();
-
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/plain; charset=utf-8"),
-        );
-
-        response
     }
 
     pub(crate) fn into_inner(self) -> http::Response<Pollable> {
