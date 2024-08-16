@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     // behavior of via and the via_serve_static middleware.
     app.at("/*path").respond(via::get(not_found));
 
-    app.listen(("127.0.0.1", 8080), |event| match event {
+    app.listen(("127.0.0.1", 8080), |event, _| match event {
         Event::ConnectionError(error) | Event::UncaughtError(error) => {
             eprintln!("Error: {}", error);
         }

@@ -1,15 +1,16 @@
 mod api;
 mod database;
 
-use via::{http::StatusCode, ErrorBoundary, Event, Result};
+use via::http::StatusCode;
+use via::{ErrorBoundary, Event, Result};
 
 use database::Pool;
 
 type Request = via::Request<State>;
 type Next = via::Next<State>;
 
-pub struct State {
-    pub pool: Pool,
+struct State {
+    pool: Pool,
 }
 
 #[tokio::main]
@@ -36,14 +37,14 @@ async fn main() -> Result<()> {
     // Catch any errors that occur in downstream middleware, convert them
     // into a response and log the error message. Upstream middleware will
     // continue to execute as normal.
-    app.include(ErrorBoundary::inspect(|error| {
+    app.include(ErrorBoundary::inspect(|error, _| {
         eprintln!("ERROR: {}", error);
     }));
 
     let mut api = app.at("/api");
 
     // Apply specific error handling logic to the /api namespace.
-    api.include(ErrorBoundary::map(|mut error| {
+    api.include(ErrorBoundary::map(|mut error, _| {
         use diesel::result::Error as DieselError;
 
         if let Some(DieselError::NotFound) = error.source().downcast_ref() {
@@ -84,7 +85,7 @@ async fn main() -> Result<()> {
         });
     });
 
-    app.listen(("127.0.0.1", 8080), |event| match event {
+    app.listen(("127.0.0.1", 8080), |event, _| match event {
         Event::ConnectionError(error) | Event::UncaughtError(error) => {
             eprintln!("Error: {}", error);
         }
