@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::event::{Event, EventListener};
 use crate::middleware::BoxFuture;
 use crate::{Error, Middleware, Next, Request, Response, Result};
 
@@ -21,28 +20,6 @@ pub struct MapErrorBoundary<F> {
 /// or reporting the error to a monitoring service.
 pub struct InspectErrorBoundary<F> {
     inspect: F,
-}
-
-/// Performs the conversion of an `Error` into a `Response`. If the conversion
-/// fails, a fallback response is generated and `event_listener` is notified of
-/// the error that prevented the response from being generated.
-fn respond_with_error<State>(
-    event_listener: &EventListener<State>,
-    state: &Arc<State>,
-    error: Error,
-) -> Response {
-    match error.try_into_response() {
-        Ok(response) => response,
-        Err((fallback_response, convert_error)) => {
-            // Notify `event_listener` of the error that prevented the response
-            // from being generated. This allows the error to be reported or
-            // handled in the most suitable way for the application's needs.
-            event_listener.call(Event::UncaughtError(&convert_error), state);
-
-            // Return the fallback response that contains `error` as plain text.
-            fallback_response
-        }
-    }
 }
 
 impl ErrorBoundary {
@@ -69,18 +46,10 @@ where
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
         Box::pin(async {
-            // Copy `request.event_listener` so it can be used after ownership
-            // of `request` is moved into `next.call()`. This is a cheap operation
-            // since `EventListener` is a wrapper around a function pointer.
-            let event_listener = *request.event_listener();
-            // Clone `request.state` so it can be used after ownership of
-            // `request` is moved into `next.call()`.
-            let state = Arc::clone(request.state());
-
-            next.call(request).await.or_else(|error| {
-                // Convert the error to a response and return `Ok`.
-                Ok(respond_with_error(&event_listener, &state, error))
-            })
+            match next.call(request).await {
+                Ok(response) => Ok(response),
+                Err(error) => Ok(error.into_response()),
+            }
         })
     }
 }
@@ -94,10 +63,6 @@ where
         let map = self.map;
 
         Box::pin(async move {
-            // Copy `request.event_listener` so it can be used after ownership
-            // of `request` is moved into `next.call()`. This is a cheap operation
-            // since `EventListener` is a wrapper around a function pointer.
-            let event_listener = *request.event_listener();
             // Clone `request.state` so it can be used after ownership of
             // `request` is moved into `next.call()`.
             let state = Arc::clone(request.state());
@@ -106,11 +71,9 @@ where
                 // Apply the `map` function to `error`. This allows the error
                 // to be configured to use a different response format or to
                 // filter out sensitive information from leaking into the
-                // response body.
-                let mapped = map(error, &state);
-
-                // Convert the mapped error to a response and return `Ok`.
-                Ok(respond_with_error(&event_listener, &state, mapped))
+                // response body. Then, convert the error to a response and
+                // return.
+                Ok(map(error, &state).into_response())
             })
         })
     }
@@ -125,10 +88,6 @@ where
         let inspect = self.inspect;
 
         Box::pin(async move {
-            // Copy `request.event_listener` so it can be used after ownership
-            // of `request` is moved into `next.call()`. This is a cheap operation
-            // since `EventListener` is a wrapper around a function pointer.
-            let event_listener = *request.event_listener();
             // Clone `request.state` so it can be used after ownership of
             // `request` is moved into `next.call()`.
             let state = Arc::clone(request.state());
@@ -139,8 +98,8 @@ where
                 // based on the needs of the application.
                 inspect(&error, &state);
 
-                // Convert the error to a response and return `Ok`.
-                Ok(respond_with_error(&event_listener, &state, error))
+                // Convert the error into a response and return.
+                Ok(error.into_response())
             })
         })
     }
