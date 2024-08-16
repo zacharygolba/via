@@ -135,7 +135,7 @@ impl Error {
             }
         };
 
-        result.or_else(|error| {
+        result.map_err(|error| {
             // An error occurred while generating the response. Generate a
             // plain text response with the original error message and
             // return it without using the `ResponseBuilder`.
@@ -156,7 +156,7 @@ impl Error {
             *response.status_mut() = self.status;
             *response.body_mut() = message.into();
 
-            Err((response, error))
+            (response, error)
         })
     }
 }
