@@ -150,10 +150,19 @@ impl Future for FutureResponse {
         let this = self.get_mut();
 
         this.future.as_mut().poll(context).map(|result| {
-            let response = result.unwrap_or_else(|_| {
-                // TODO: Log the error.
-                // TODO: Warn about missing error boundary in debug builds.
-                Response::internal_server_error()
+            let response = result.unwrap_or_else(|error| {
+                error.try_into_response().unwrap_or_else(|(fallback, _)| {
+                    // TODO:
+                    // Warn about missing error boundary in debug builds. If
+                    // the middleware stack of an application is missing an
+                    // error boundary. We assume that the default fallback
+                    // response is sufficient for the application's needs.
+
+                    // Return the fallback response and ignore any errors that
+                    // prevent the response from being generated with the
+                    // configured error format.
+                    fallback
+                })
             });
 
             Ok(response.into_inner())
