@@ -1,8 +1,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use crate::middleware::{ArcMiddleware, BoxFuture};
-use crate::request::PathParams;
-use crate::{Error, Middleware, Next, Request, Response};
+use crate::middleware::ArcMiddleware;
+use crate::{Middleware, Next, Request};
 
 pub struct Router<State> {
     inner: via_router::Router<Route<State>>,
@@ -33,18 +32,11 @@ where
         }
     }
 
-    pub fn respond_to(&self, mut request: Request<State>) -> BoxFuture<Result<Response, Error>> {
+    pub fn visit(&self, request: &mut Request<State>) -> Next<State> {
         let (params, path) = request.params_mut_with_path();
-        let next = self.visit(params, path);
-
-        next.call(request)
-    }
-
-    fn visit(&self, params: &mut PathParams, path: &str) -> Next<State> {
         let mut stack = VecDeque::new();
-        let matches = self.inner.visit(path);
 
-        for matched in matches {
+        for matched in self.inner.visit(path) {
             if let Some(param) = matched.param() {
                 params.push(param);
             }

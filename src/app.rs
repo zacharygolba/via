@@ -2,27 +2,20 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::convert::Infallible;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 use tokio::net::{TcpListener, ToSocketAddrs};
 
 use crate::body::Pollable;
-use crate::event::{Event, EventListener};
-use crate::middleware::BoxFuture;
+use crate::event::{Event, EventCallback, EventListener};
 use crate::router::{Endpoint, Router};
-use crate::{Error, Middleware, Request, Response, Result};
+use crate::{Error, Middleware, Next, Request, Result};
 
 pub struct App<State> {
     router: Router<State>,
     state: Arc<State>,
 }
 
-struct FutureResponse {
-    future: BoxFuture<Result<Response, Error>>,
-}
-
+/// Constructs a new `App` with the provided `state`.
 pub fn app<State>(state: State) -> App<State>
 where
     State: Send + Sync + 'static,
@@ -33,8 +26,44 @@ where
     }
 }
 
+/// Unwinds the middleware stack at `next` for the provided `request`. Returns
+/// a result containing an unwrapped `http::Response` that is compatible with
+/// the a `hyper` service.
+///
+/// If an error occurs while unwinding the middleware stack, we'll attempt to
+/// convert the error into a response. If the conversion fails, we'll fallback
+/// to a plain text response that contains the error message.
+///
+/// If you are concerned about sensitive data leaking into the response body,
+/// consider using [`ErrorBoundary::map`](crate::middleware::ErrorBoundary::map)
+/// to redact sensitive data from the error message.
+async fn run<State>(
+    request: Request<State>,
+    next: Next<State>,
+) -> Result<http::Response<Pollable>, Infallible>
+where
+    State: Send + Sync + 'static,
+{
+    let response = next.call(request).await.unwrap_or_else(|error| {
+        // Convert any potential errors that occured while unwinding the
+        // middleware stack into a `Response`.
+        error.try_into_response().unwrap_or_else(|(fallback, _)| {
+            // TODO:
+            // Warn about missing error boundary in debug builds. If
+            // the middleware stack of an application is missing an
+            // error boundary. We assume that the default fallback
+            // response is sufficient for the application's needs.
+
+            // Return the fallback response.
+            fallback
+        })
+    });
+
+    Ok(response.into_inner())
+}
+
 async fn serve<State>(
-    event_listener: Arc<EventListener>,
+    event_listener: EventListener<State>,
     tcp_listener: TcpListener,
     router: Arc<Router<State>>,
     state: Arc<State>,
@@ -49,40 +78,31 @@ where
         // the stream into a tokio-compatible I/O stream.
         let io = TokioIo::new(stream);
 
-        // Clone `event_listener`, `router`, and `state` so they can be moved
-        // into the async block passed to `tokio::spawn`. This is required in
-        // order for us to be able to serve multiple connections concurrently.
-        // The performance implications of cloning these values should be
-        // negligible in the context of a web server since they are all `Arc`
-        // pointers and the underlying values are not actually being cloned.
-        let event_listener = Arc::clone(&event_listener);
+        // Clone `router` by incrementing the reference count of the `Arc`. This
+        // allows us to share ownership of `router` across multiple threads.
         let router = Arc::clone(&router);
+        // Clone `state` by incrementing the reference count of the `Arc`. This
+        // allows us to share ownership of `state` across multiple threads.
         let state = Arc::clone(&state);
 
         // Spawn a tokio task to serve multiple connections concurrently.
         tokio::spawn(async move {
             let service = service_fn(|incoming| {
-                // Wrap the incoming request in with `via::Request`.
-                let request = Request::new(
-                    incoming,
-                    // Clone `state` so it can be moved into the wrapped request.
-                    // In the near future, we may want to consider passing
-                    // `&Arc<State>` to request instead of `Arc<State>`.
-                    Arc::clone(&state),
-                    // Clone `event_listener` so it can be moved into the wrapped
-                    // request. In the near future, we may want to consider
-                    // passing `&Arc<EventListener>` to request instead of
-                    // `Arc<EventListener>`.
-                    Arc::clone(&event_listener),
-                );
+                let mut request = {
+                    // Clone `state` so ownership can be shared with the request.
+                    // In the future, we may want to pass a reference to `state`
+                    // to avoid the incremeting the ref count of the `Arc`
+                    // unnecessarily.
+                    let state = Arc::clone(&state);
 
-                FutureResponse {
-                    // Unwind the middleware stack for `request`. Store the
-                    // future returned from the middleware stack so it can be
-                    // polled. Once the future is ready, we'll unwrap the inner
-                    // response so it can be returned to the client.
-                    future: router.respond_to(request),
-                }
+                    // Wrap the incoming request in with `via::Request`.
+                    Request::new(incoming, state, event_listener)
+                };
+                // Route `request` to the corresponding middleware stack.
+                let next = router.visit(&mut request);
+
+                // Unwind the middleware stack and return a response.
+                run(request, next)
             });
 
             // Create a new connection for the configured HTTP version. For
@@ -99,7 +119,7 @@ where
                 // A connection error occured while serving the connection.
                 // Propagate the error to the event listener so it can be
                 // handled at the application level.
-                event_listener.call(event);
+                event_listener.call(event, &state);
             }
         });
     }
@@ -121,12 +141,11 @@ where
         self
     }
 
-    pub async fn listen<T, F>(self, address: T, event_listener: F) -> Result<()>
+    pub async fn listen<T>(self, address: T, event_listener: EventCallback<State>) -> Result<()>
     where
         T: ToSocketAddrs,
-        F: Fn(Event) + Send + Sync + 'static,
     {
-        let event_listener = Arc::new(EventListener::new(event_listener));
+        let event_listener = EventListener::new(event_listener);
         let tcp_listener = TcpListener::bind(address).await?;
 
         let address = tcp_listener.local_addr()?;
@@ -136,36 +155,9 @@ where
         // Notify the event listener that the server is ready to accept
         // incoming connections at the address to which the TCP listener
         // is bound.
-        event_listener.call(Event::ServerReady(&address));
+        event_listener.call(Event::ServerReady(&address), &state);
 
         // Serve incoming connections from the TCP listener.
         serve(event_listener, tcp_listener, router, state).await
-    }
-}
-
-impl Future for FutureResponse {
-    type Output = Result<http::Response<Pollable>, Infallible>;
-
-    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
-        this.future.as_mut().poll(context).map(|result| {
-            let response = result.unwrap_or_else(|error| {
-                error.try_into_response().unwrap_or_else(|(fallback, _)| {
-                    // TODO:
-                    // Warn about missing error boundary in debug builds. If
-                    // the middleware stack of an application is missing an
-                    // error boundary. We assume that the default fallback
-                    // response is sufficient for the application's needs.
-
-                    // Return the fallback response and ignore any errors that
-                    // prevent the response from being generated with the
-                    // configured error format.
-                    fallback
-                })
-            });
-
-            Ok(response.into_inner())
-        })
     }
 }
