@@ -114,7 +114,7 @@ impl Error {
 }
 
 impl Error {
-    pub(crate) fn try_into_response(self) -> Result<Response, (Response, Error)> {
+    pub(crate) fn into_response(self) -> Response {
         use http::header::HeaderValue;
 
         let result = match self.format {
@@ -135,7 +135,17 @@ impl Error {
             }
         };
 
-        result.map_err(|error| {
+        result.unwrap_or_else(|error| {
+            if cfg!(debug_assertions) {
+                //
+                // TODO:
+                //
+                // Replace eprintln with pretty_env_logger or something
+                // similar.
+                //
+                eprintln!("Error: {}", error);
+            }
+
             // An error occurred while generating the response. Generate a
             // plain text response with the original error message and
             // return it without using the `ResponseBuilder`.
@@ -156,7 +166,7 @@ impl Error {
             *response.status_mut() = self.status;
             *response.body_mut() = message.into();
 
-            (response, error)
+            response
         })
     }
 }

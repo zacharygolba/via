@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use super::ArcMiddleware;
-use crate::{BoxFuture, Request, Response, Result};
+use crate::{BoxFuture, Error, Request, Response, Result};
 
 pub struct Next<State = ()> {
     #[allow(clippy::box_collection)]
@@ -18,7 +18,7 @@ where
         }
     }
 
-    pub fn call(mut self, request: Request<State>) -> BoxFuture<Result<Response>> {
+    pub fn call(mut self, request: Request<State>) -> BoxFuture<Result<Response, Error>> {
         if let Some(middleware) = self.stack.pop_front() {
             middleware.call(request, self)
         } else {
