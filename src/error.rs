@@ -19,6 +19,12 @@ pub struct Error {
     status: StatusCode,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Format {
+    #[cfg(feature = "serde")]
+    Json,
+}
+
 struct Bail {
     message: String,
 }
@@ -26,12 +32,6 @@ struct Bail {
 #[derive(Clone, Copy, Debug)]
 struct Chain<'a> {
     source: Option<&'a (dyn StdError + 'static)>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Format {
-    #[cfg(feature = "serde")]
-    Json,
 }
 
 impl Bail {
@@ -114,10 +114,7 @@ impl Error {
 }
 
 impl Error {
-    pub(crate) fn into_infallible_response<F>(self, error_callback: F) -> Response
-    where
-        F: FnOnce(&Error),
-    {
+    pub(crate) fn try_into_response(self) -> Result<Response, (Response, Error)> {
         use http::header::HeaderValue;
 
         let result = match self.format {
@@ -138,40 +135,29 @@ impl Error {
             }
         };
 
-        match result {
-            Ok(response) => {
-                // The response was generated successfully.
+        result.or_else(|error| {
+            // An error occurred while generating the response. Generate a
+            // plain text response with the original error message and
+            // return it without using the `ResponseBuilder`.
+            let mut response = Response::new();
+            let message = self.to_string();
+
+            response.headers_mut().insert(
+                http::header::CONTENT_TYPE,
+                HeaderValue::from_static("text/plain; charset=utf-8"),
+            );
+
+            if let Ok(length) = HeaderValue::from_str(&message.len().to_string()) {
                 response
+                    .headers_mut()
+                    .insert(http::header::CONTENT_LENGTH, length);
             }
-            Err(error) => {
-                // An error occurred while generating the response. Generate a
-                // plain text response with the original error message and
-                // return it without using the `ResponseBuilder`.
-                let mut response = Response::new();
-                let message = self.to_string();
 
-                response.headers_mut().insert(
-                    http::header::CONTENT_TYPE,
-                    HeaderValue::from_static("text/plain; charset=utf-8"),
-                );
+            *response.status_mut() = self.status;
+            *response.body_mut() = message.into();
 
-                if let Ok(length) = HeaderValue::from_str(&message.len().to_string()) {
-                    response
-                        .headers_mut()
-                        .insert(http::header::CONTENT_LENGTH, length);
-                }
-
-                *response.status_mut() = self.status;
-                *response.body_mut() = message.into();
-
-                // Bubble up the error that prevented the response from being
-                // generated to the app-level event listener so that it can be
-                // reported or handled appropriately.
-                error_callback(&error);
-
-                response
-            }
-        }
+            Err((response, error))
+        })
     }
 }
 
