@@ -100,7 +100,7 @@ where
     // In the future, we may want to pass a reference to `state` to avoid having
     // to incremet the ref count of the `Arc` unnecessarily.
     //
-    let mut request = Request::new(request, Arc::clone(&state));
+    let mut request = Request::new(request, Arc::clone(state));
 
     // Route `request` to the corresponding middleware stack.
     let next = router.visit(&mut request);
