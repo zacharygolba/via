@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
     // You can specify the HTTP method that middleware should accept with the
     // helper functions at the top-level of the `via` crate.
 
-    app.listen(("127.0.0.1", 8080), |event| match event {
+    app.listen(("127.0.0.1", 8080), |event, _| match event {
         Event::ConnectionError(error) | Event::UncaughtError(error) => {
             eprintln!("Error: {}", error);
         }
