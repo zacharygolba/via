@@ -55,6 +55,7 @@ impl<State> EventListener<State> {
 impl<State> Copy for EventListener<State> {}
 
 impl<State> Clone for EventListener<State> {
+    #[allow(clippy::non_canonical_clone_impl)]
     fn clone(&self) -> Self {
         Self {
             callback: self.callback,
