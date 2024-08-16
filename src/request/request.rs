@@ -17,7 +17,7 @@ struct RequestInner<State> {
     app_state: Arc<State>,
     path_params: PathParams,
     query_params: Option<Vec<(String, (usize, usize))>>,
-    event_listener: Arc<EventListener>,
+    event_listener: EventListener<State>,
 }
 
 impl<State> Request<State> {
@@ -90,7 +90,7 @@ impl<State> Request<State> {
     pub(crate) fn new(
         request: http::Request<Incoming>,
         app_state: Arc<State>,
-        event_listener: Arc<EventListener>,
+        event_listener: EventListener<State>,
     ) -> Self {
         let content_len =
             request
@@ -119,7 +119,7 @@ impl<State> Request<State> {
         }
     }
 
-    pub(crate) fn event_listener(&self) -> &Arc<EventListener> {
+    pub(crate) fn event_listener(&self) -> &EventListener<State> {
         &self.inner.event_listener
     }
 

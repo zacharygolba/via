@@ -1,6 +1,10 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use crate::Error;
+
+/// A function pointer to a callback that is called when an event occurs
+/// outside the context of a request/response cycle.
+pub type EventCallback<State> = fn(Event, &Arc<State>);
 
 #[derive(Clone, Copy)]
 pub enum Event<'a> {
@@ -21,19 +25,39 @@ pub enum Event<'a> {
     UncaughtError(&'a Error),
 }
 
-pub(crate) struct EventListener {
-    f: Box<dyn Fn(Event) + Send + Sync + 'static>,
+pub(crate) struct EventListener<State> {
+    callback: EventCallback<State>,
 }
 
-impl EventListener {
-    pub fn new<F>(f: F) -> Self
-    where
-        F: Fn(Event) + Send + Sync + 'static,
-    {
-        Self { f: Box::new(f) }
+impl<State> EventListener<State> {
+    pub fn new(callback: EventCallback<State>) -> Self {
+        Self { callback }
     }
 
-    pub fn call(&self, event: Event) {
-        (self.f)(event)
+    pub fn call(&self, event: Event, state: &Arc<State>) {
+        // TODO:
+        //
+        // Consider implementing an integrity check of some kind before calling
+        // the callback. If the performance overhead is acceptable and doing so
+        // mitigates the risk of an attacker exploiting `callback`, we'll avoid
+        // having to clone Arc<EventListener> twice for every request.
+        //
+        // Alternatives:
+        // - Use Arc<dyn Fn(Event, &Arc<State>) + Copy + Send + Sync + 'static>
+        // - Use a channel to send events to a stream that exists for the
+        //   lifetime of the application and spawn the event loop that accepts
+        //   incoming TCP connections in a separate tokio task.
+        //
+        (self.callback)(event, state)
+    }
+}
+
+impl<State> Copy for EventListener<State> {}
+
+impl<State> Clone for EventListener<State> {
+    fn clone(&self) -> Self {
+        Self {
+            callback: self.callback,
+        }
     }
 }

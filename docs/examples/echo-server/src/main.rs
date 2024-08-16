@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
     // `via::post` function is used to specify that the `echo` middleware should
     // only accept POST requests.
 
-    app.listen(("127.0.0.1", 8080), |event| match event {
+    app.listen(("127.0.0.1", 8080), |event, _| match event {
         Event::ConnectionError(error) | Event::UncaughtError(error) => {
             eprintln!("Error: {}", error);
         }
