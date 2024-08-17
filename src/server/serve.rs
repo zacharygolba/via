@@ -4,12 +4,21 @@ use hyper::service::service_fn;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::convert::Infallible;
 use std::sync::Arc;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task;
 
+use super::accept;
+use super::backoff::Backoff;
 use crate::body::Pollable;
 use crate::router::Router;
-use crate::server::TcpListener;
 use crate::{Error, Request};
+
+#[cfg(target_os = "macos")]
+const DEFAULT_MAX_CONNECTIONS: usize = 248;
+
+#[cfg(not(target_os = "macos"))]
+const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 
 /// The request type used by our `hyper` service. This is the type that we will
 /// use to create a `via::Request` that will be passed to the middleware stack.
@@ -23,52 +32,71 @@ pub async fn serve<State>(
     state: Arc<State>,
     router: Arc<Router<State>>,
     listener: TcpListener,
+    max_connections: Option<usize>,
 ) -> Result<(), Error>
 where
     State: Send + Sync + 'static,
 {
-    let mut listener = listener;
+    let mut backoff = Backoff::new(2, 5);
+    let semaphore = {
+        let permits = max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS);
+        Arc::new(Semaphore::new(permits))
+    };
 
     loop {
         // Accept a new connection from the TCP listener.
-        let (stream, _, permit) = listener.accept().await?;
+        let (stream, _, permit) = accept(&mut backoff, &listener, &semaphore).await?;
         // Pass the returned stream to the `TokioIo` wrapper to convert
         // the stream into a tokio-compatible I/O stream.
         let io = TokioIo::new(stream);
 
-        // Clone the `state` so it can be moved into the task.
-        let state = Arc::clone(&state);
-        // Clone the `router` so it can be moved into the task.
-        let router = Arc::clone(&router);
+        // Spawn a tokio task to serve multiple connections concurrently and push
+        // the returned `JoinHandle` into the handles vector.
+        handles.push({
+            // Clone the `state` so it can be moved into the task.
+            let state = Arc::clone(&state);
+            // Clone the `router` so it can be moved into the task.
+            let router = Arc::clone(&router);
 
-        // Spawn a tokio task to serve multiple connections concurrently.
-        task::spawn(async move {
-            // Create a hyper service from the `serve_request` function.
-            let service = service_fn(|request| serve_request(&state, &router, request));
-
-            // Create a new connection for the configured HTTP version. For
-            // now we only support HTTP/1.1. This will be expanded to
-            // support HTTP/2 in the future.
-            let connection = http1::Builder::new()
-                .timer(TokioTimer::new())
-                .serve_connection(io, service);
-
-            if let Err(error) = connection.await {
-                //
-                // TODO:
-                //
-                // Replace eprintln with pretty_env_logger or something similar.
-                // We should also determine if this is how we want to handle
-                // connection errors long-term.
-                //
-                if cfg!(debug_assertions) {
-                    eprintln!("Error: {}", error);
-                }
-            }
-
-            drop(permit)
+            task::spawn(async move {
+                serve_connection(&state, &router, permit, io).await;
+            })
         });
     }
+}
+
+async fn serve_connection<State>(
+    state: &Arc<State>,
+    router: &Arc<Router<State>>,
+    permit: OwnedSemaphorePermit,
+    io: TokioIo<TcpStream>,
+) where
+    State: Send + Sync + 'static,
+{
+    // Create a hyper service from the `serve_request` function.
+    let service = service_fn(|request| serve_request(&state, &router, request));
+
+    // Create a new connection for the configured HTTP version. For
+    // now we only support HTTP/1.1. This will be expanded to
+    // support HTTP/2 in the future.
+    let connection = http1::Builder::new()
+        .timer(TokioTimer::new())
+        .serve_connection(io, service);
+
+    if let Err(error) = connection.await {
+        //
+        // TODO:
+        //
+        // Replace eprintln with pretty_env_logger or something similar.
+        // We should also determine if this is how we want to handle
+        // connection errors long-term.
+        //
+        if cfg!(debug_assertions) {
+            eprintln!("Error: {}", error);
+        }
+    }
+
+    drop(permit)
 }
 
 /// Serves an incoming request by routing it to the corresponding middleware
