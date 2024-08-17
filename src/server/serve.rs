@@ -78,7 +78,7 @@ async fn serve_connection<State>(
     State: Send + Sync + 'static,
 {
     // Create a hyper service from the `serve_request` function.
-    let service = service_fn(|request| serve_request(&state, &router, request));
+    let service = service_fn(|request| serve_request(state, router, request));
 
     // Create a new connection for the configured HTTP version. For
     // now we only support HTTP/1.1. This will be expanded to
