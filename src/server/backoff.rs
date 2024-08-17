@@ -17,7 +17,7 @@ impl Backoff {
 
     pub fn next(&mut self) -> Duration {
         let duration = self.base * (1 << self.exp);
-        let delay = if duration > self.max {
+        let delay = if duration >= self.max {
             self.max
         } else {
             self.exp += 1;
