@@ -1,9 +1,9 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::net::ToSocketAddrs;
+use tokio::net::{TcpListener, ToSocketAddrs};
 
 use crate::router::{Endpoint, Router};
-use crate::server::{serve, TcpListener};
+use crate::server::serve;
 use crate::{Error, Middleware};
 
 pub struct App<State> {
@@ -52,9 +52,9 @@ where
     {
         let state = self.state;
         let router = Arc::new(self.router);
-        let listener = TcpListener::bind(address, self.max_connections).await?;
+        let listener = TcpListener::bind(address).await?;
 
-        if let Ok(address) = listener.local_address() {
+        if let Ok(address) = listener.local_addr() {
             // Call the listening callback with the address to which the TCP
             // listener is bound.
             listening(&address);
@@ -68,6 +68,6 @@ where
         }
 
         // Serve incoming connections from the TCP listener.
-        serve(state, router, listener).await
+        serve(state, router, listener, self.max_connections).await
     }
 }
