@@ -38,6 +38,7 @@ where
     State: Send + Sync + 'static,
 {
     let mut backoff = Backoff::new(2, 5);
+    let mut handles = Vec::new();
     let semaphore = {
         let permits = max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS);
         Arc::new(Semaphore::new(permits))
@@ -62,6 +63,9 @@ where
                 serve_connection(&state, &router, permit, io).await;
             })
         });
+
+        // Remove any handles that have finished.
+        handles.retain(|handle| !handle.is_finished());
     }
 }
 
