@@ -32,7 +32,10 @@ pub async fn accept(
         return match listener.accept().await {
             Ok((stream, address)) => Ok((stream, address, permit)),
             Err(error) => {
-                eprintln!("failed to accept incoming connection: {}", error);
+                if cfg!(debug_assertions) {
+                    eprintln!("failed to accept incoming connection: {}", error);
+                }
+
                 drop(permit);
                 continue;
             }
