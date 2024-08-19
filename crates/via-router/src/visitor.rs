@@ -1,7 +1,5 @@
-use crate::{
-    path::{PathSegments, Pattern},
-    routes::{Node, RouteStore},
-};
+use crate::path::{PathSegments, Pattern};
+use crate::routes::{Node, RouteStore};
 
 /// Represents either a partial or exact match for a given path segment.
 pub struct Match<'a, T> {
@@ -163,6 +161,14 @@ impl<'a, T> Match<'a, T> {
     /// route does not have any dynamic segments, `None` will be returned.
     pub fn param(&self) -> Option<(&'static str, (usize, usize))> {
         self.param.zip(Some(self.range))
+    }
+}
+
+impl<'a, T> Match<'a, Vec<T>> {
+    /// Returns an iterator that yields a reference to each item in the matched
+    /// route.
+    pub fn iter(&self) -> impl Iterator<Item = &'a T> {
+        self.route.map(|route| route.iter()).into_iter().flatten()
     }
 }
 
