@@ -85,7 +85,7 @@ where
         }
     }
 
-    pub fn respond_to(&self, request: &mut Request<State>) -> Next<State> {
+    pub fn lookup(&self, request: &mut Request<State>) -> Next<State> {
         let (params, path) = request.params_mut_with_path();
         let mut stack = VecDeque::with_capacity(32);
 
