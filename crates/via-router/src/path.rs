@@ -8,13 +8,6 @@ pub enum Pattern {
     Root,
 }
 
-/// Represents a url path with start and indices of each segment in the url
-/// path separated by `/`.
-pub struct PathSegments<'a> {
-    pub value: &'a str,
-    segments: Vec<(usize, usize)>,
-}
-
 /// An iterator that splits the path into segments and yields a key-value pair
 /// containing the start and end offset of the substring separated by `/`.
 struct SplitPath<'a> {
@@ -30,11 +23,18 @@ pub fn patterns(value: &'static str) -> impl Iterator<Item = Pattern> {
 
 /// Returns a collection containing the start and end offset of each segment in
 /// the url path.
-pub fn segments(value: &str) -> PathSegments {
+pub fn segments(value: &str) -> Vec<(usize, usize)> {
     let mut segments = Vec::with_capacity(10);
 
     segments.extend(split(value));
-    PathSegments { value, segments }
+    segments
+}
+
+pub fn slice_segments_from(segments: &[(usize, usize)], index: usize) -> (usize, usize) {
+    segments
+        .get(index)
+        .zip(segments.last())
+        .map_or((0, 0), |((start, _), (_, end))| (*start, *end))
 }
 
 /// Returns an iterator that yields a tuple containing the start and end offset
@@ -63,36 +63,6 @@ impl From<&'static str> for Pattern {
             Some(':') => Self::Dynamic(&value[1..]),
             _ => Self::Static(value),
         }
-    }
-}
-
-impl<'a> PathSegments<'a> {
-    /// Returns the value of the current path segment that we are attempting to
-    /// match if it exists. The returned value should only be `None` if we are
-    /// attempting to match a root url path (i.e `"/"`).
-    pub fn get(&self, index: usize) -> Option<&(usize, usize)> {
-        self.segments.get(index)
-    }
-
-    /// Returns the number of segments in the url path.
-    pub fn len(&self) -> usize {
-        self.segments.len()
-    }
-
-    /// Returns `true` if the url path has no segments.
-    pub fn is_empty(&self) -> bool {
-        self.segments.is_empty()
-    }
-
-    /// Returns a key value pair containing the start offset of the path segment
-    /// at `index` and the end offset of the last path segment in the url path.
-    ///
-    /// This is used to get the start and end offset of a `CatchAll` pattern.
-    pub fn slice_from(&self, index: usize) -> (usize, usize) {
-        self.segments
-            .get(index)
-            .zip(self.segments.last())
-            .map_or((0, 0), |((start, _), (_, end))| (*start, *end))
     }
 }
 

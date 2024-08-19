@@ -87,7 +87,7 @@ where
 
     pub fn lookup(&self, request: &mut Request<State>) -> Next<State> {
         let (params, path) = request.params_mut_with_path();
-        let mut stack = VecDeque::with_capacity(32);
+        let mut stack = VecDeque::with_capacity(16);
 
         // Iterate over the routes that match the request's path.
         for matched in self.inner.visit(path) {

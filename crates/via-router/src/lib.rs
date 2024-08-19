@@ -12,7 +12,6 @@ use crate::{
 pub use crate::visitor::Match;
 
 pub struct Router<T> {
-    root_index: usize,
     route_store: RouteStore<T>,
 }
 
@@ -24,16 +23,14 @@ pub struct Endpoint<'a, T> {
 impl<T> Router<T> {
     pub fn new() -> Self {
         let mut route_store = RouteStore::new();
-        let root_index = route_store.push(Node {
+
+        route_store.push(Node {
             entries: None,
             pattern: Pattern::Root,
             route: None,
         });
 
-        Self {
-            root_index,
-            route_store,
-        }
+        Self { route_store }
     }
 
     pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
@@ -47,16 +44,10 @@ impl<T> Router<T> {
 
     pub fn visit(&self, path: &str) -> Vec<Match<T>> {
         let mut matched_routes = Vec::with_capacity(32);
-        let path_segments = path::segments(path);
-        let root_node = self.route_store.node(self.root_index);
+        let route_store = &self.route_store;
+        let segments = path::segments(path);
 
-        visitor::visit(
-            &mut matched_routes,
-            &path_segments,
-            &self.route_store,
-            root_node,
-        );
-
+        visitor::visit(&mut matched_routes, route_store, &segments, path);
         matched_routes
     }
 }
