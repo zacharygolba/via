@@ -94,25 +94,21 @@ where
             // Extend `params` with the `matched.param()` if it is `Some`.
             params.extend(matched.param());
 
-            // Iterate over the middleware in `matched.route` and push them onto
-            // the stack conditionally based on the type of match they expect.
-            for when in matched.route.into_iter().flatten() {
-                let middleware = match when {
-                    // Include `exact` in `stack` because it targets exact
-                    // matches and `matched.exact` is `true`.
-                    MatchWhen::Exact(exact) if matched.exact => exact,
+            // Extend `stack` with middleware in `matched` depending on whether
+            // or not the middleware expects a partial or exact match.
+            stack.extend(matched.iter().filter_map(|when| match when {
+                // Include this middleware in `stack` because it expects an exact
+                // match and `matched.exact` is `true`.
+                MatchWhen::Exact(exact) if matched.exact => Some(Arc::clone(exact)),
 
-                    // Include `partial` in `stack` because it targets both
-                    // partial and exact matches.
-                    MatchWhen::Partial(partial) => partial,
+                // Include this middleware in `stack` unconditionally because it
+                // targets partial matches.
+                MatchWhen::Partial(partial) => Some(Arc::clone(partial)),
 
-                    // The middleware expects an exact match, but `matched` is
-                    // not exact. Continue to the next middleware for this route.
-                    MatchWhen::Exact(_) => continue,
-                };
-
-                stack.push_back(Arc::clone(middleware));
-            }
+                // Exclude this middleware from `stack` because it expects an
+                // exact match and `matched.exact` is `false`.
+                MatchWhen::Exact(_) => None,
+            }));
         }
 
         Next::new(stack)
