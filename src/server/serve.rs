@@ -123,7 +123,7 @@ where
     let mut request = Request::new(request, Arc::clone(state));
 
     // Route `request` to the corresponding middleware stack.
-    let next = router.respond_to(&mut request);
+    let next = router.lookup(&mut request);
 
     // Call the middleware stack and return a response.
     match next.call(request).await {
