@@ -23,7 +23,7 @@ pub fn patterns(value: &'static str) -> impl Iterator<Item = Pattern> {
 /// Returns a collection containing the start and end offset of each segment in
 /// the url path.
 pub fn segments(value: &str) -> Vec<(usize, usize)> {
-    let mut segments = Vec::with_capacity(6);
+    let mut segments = Vec::with_capacity(12);
 
     segments.extend(split(value));
     segments
