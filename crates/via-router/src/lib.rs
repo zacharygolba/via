@@ -37,7 +37,7 @@ impl<T> Router<T> {
     }
 
     pub fn visit(&self, path: &str) -> Vec<Match<T>> {
-        let mut results = Vec::with_capacity(32);
+        let mut results = Vec::with_capacity(6);
         let segments = path::segments(path);
         let visitor = Visitor::new(path, &segments, &self.store);
 
