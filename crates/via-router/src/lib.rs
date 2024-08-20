@@ -36,6 +36,11 @@ impl<T> Router<T> {
         }
     }
 
+    /// Shrinks the capacity of the router as much as possible.
+    pub fn shrink_to_fit(&mut self) {
+        self.store.shrink_to_fit();
+    }
+
     pub fn visit(&self, path: &str) -> Vec<Match<T>> {
         let mut results = Vec::with_capacity(6);
         let segments = path::segments(path);

@@ -122,6 +122,11 @@ impl<T> RouteStore<T> {
         index
     }
 
+    /// Shrinks the capacity of the route store as much as possible.
+    pub fn shrink_to_fit(&mut self) {
+        self.nodes.shrink_to_fit();
+    }
+
     /// Returns a shared reference to the node at the given index.
     pub fn get(&self, index: usize) -> &Node<T> {
         self.nodes.get(index).unwrap()

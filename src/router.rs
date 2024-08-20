@@ -85,6 +85,10 @@ where
         }
     }
 
+    pub fn shrink_to_fit(&mut self) {
+        self.inner.shrink_to_fit();
+    }
+
     pub fn lookup(&self, request: &mut Request<State>) -> Next<State> {
         let (params, path) = request.params_mut_with_path();
         let mut stack = VecDeque::with_capacity(32);

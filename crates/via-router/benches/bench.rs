@@ -115,6 +115,8 @@ fn find_all_matches(b: &mut Bencher) {
         let _ = router.at(path).get_or_insert_route_with(|| Box::new(()));
     }
 
+    router.shrink_to_fit();
+
     b.iter(|| {
         router.visit("/api/v1/products/12358132134558/edit");
     });
