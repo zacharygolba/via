@@ -65,7 +65,7 @@ impl<'a, State> Endpoint<'a, State> {
     }
 
     fn route_mut(&mut self) -> &mut Vec<MatchWhen<State>> {
-        self.inner.get_or_insert_route_with(|| Box::new(Vec::new()))
+        self.inner.get_or_insert_route_with(Vec::new)
     }
 }
 
@@ -83,6 +83,10 @@ where
         Endpoint {
             inner: self.inner.at(pattern),
         }
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.inner.shrink_to_fit();
     }
 
     pub fn lookup(&self, request: &mut Request<State>) -> Next<State> {
