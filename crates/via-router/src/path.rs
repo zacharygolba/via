@@ -1,4 +1,4 @@
-use std::{iter::Enumerate, str::Bytes};
+use core::{iter::Enumerate, str::Bytes};
 
 #[derive(PartialEq)]
 pub enum Pattern {
@@ -8,18 +8,10 @@ pub enum Pattern {
     Root,
 }
 
-/// Represents a url path with start and indices of each segment in the url
-/// path separated by `/`.
-pub struct PathSegments<'a> {
-    pub value: &'a str,
-    segments: Vec<(usize, usize)>,
-}
-
 /// An iterator that splits the path into segments and yields a key-value pair
 /// containing the start and end offset of the substring separated by `/`.
 struct SplitPath<'a> {
-    len: usize,
-    iter: Enumerate<Bytes<'a>>,
+    bytes: Enumerate<Bytes<'a>>,
     value: &'a str,
 }
 
@@ -30,29 +22,19 @@ pub fn patterns(value: &'static str) -> impl Iterator<Item = Pattern> {
 
 /// Returns a collection containing the start and end offset of each segment in
 /// the url path.
-pub fn segments(value: &str) -> PathSegments {
+pub fn segments(value: &str) -> Vec<(usize, usize)> {
     let mut segments = Vec::with_capacity(10);
 
     segments.extend(split(value));
-    PathSegments { value, segments }
+    segments
 }
 
 /// Returns an iterator that yields a tuple containing the start and end offset
 /// of each segment in the url path.
 fn split(value: &str) -> SplitPath {
     SplitPath {
-        len: value.len(),
-        iter: value.bytes().enumerate(),
+        bytes: value.bytes().enumerate(),
         value,
-    }
-}
-
-impl Pattern {
-    pub fn param(&self) -> Option<&'static str> {
-        match self {
-            Self::CatchAll(param) | Self::Dynamic(param) => Some(param),
-            _ => None,
-        }
     }
 }
 
@@ -66,41 +48,11 @@ impl From<&'static str> for Pattern {
     }
 }
 
-impl<'a> PathSegments<'a> {
-    /// Returns the value of the current path segment that we are attempting to
-    /// match if it exists. The returned value should only be `None` if we are
-    /// attempting to match a root url path (i.e `"/"`).
-    pub fn get(&self, index: usize) -> Option<&(usize, usize)> {
-        self.segments.get(index)
-    }
-
-    /// Returns the number of segments in the url path.
-    pub fn len(&self) -> usize {
-        self.segments.len()
-    }
-
-    /// Returns `true` if the url path has no segments.
-    pub fn is_empty(&self) -> bool {
-        self.segments.is_empty()
-    }
-
-    /// Returns a key value pair containing the start offset of the path segment
-    /// at `index` and the end offset of the last path segment in the url path.
-    ///
-    /// This is used to get the start and end offset of a `CatchAll` pattern.
-    pub fn slice_from(&self, index: usize) -> (usize, usize) {
-        self.segments
-            .get(index)
-            .zip(self.segments.last())
-            .map_or((0, 0), |((start, _), (_, end))| (*start, *end))
-    }
-}
-
 impl<'a> SplitPath<'a> {
     /// Advances `self.iter` to the next occurance of a character that is not a
     /// `/` character and returns the index.
     fn next_non_terminator(&mut self) -> Option<usize> {
-        self.iter.find_map(|(index, byte)| {
+        self.bytes.find_map(|(index, byte)| {
             if byte != b'/' && self.value.is_char_boundary(index) {
                 // We found a character that is not a `/`. Return the index.
                 Some(index)
@@ -115,7 +67,7 @@ impl<'a> SplitPath<'a> {
     /// Advances `self.iter` to the next occurance of a `/` character and
     /// returns the index.
     fn next_terminator(&mut self) -> Option<usize> {
-        self.iter.find_map(|(index, byte)| {
+        self.bytes.find_map(|(index, byte)| {
             if byte == b'/' && self.value.is_char_boundary(index) {
                 // We found a character that is a `/`. Return the index.
                 Some(index)
@@ -135,7 +87,8 @@ impl<'a> Iterator for SplitPath<'a> {
         // Set the start index to the next character that is not a `/`.
         let start = self.next_non_terminator()?;
         // Set the end index to the next character that is a `/`.
-        let end = self.next_terminator().unwrap_or(self.len);
+        let end = self.next_terminator().unwrap_or_else(|| self.value.len());
+
         // Return the start and end offset of the current path segment.
         Some((start, end))
     }
