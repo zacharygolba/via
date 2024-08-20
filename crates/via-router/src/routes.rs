@@ -72,10 +72,10 @@ impl<T> Node<T> {
 }
 
 impl<T> Node<T> {
-    /// Pushes a new index into the entries of the node and returns the index.
-    fn push(&mut self, index: usize) -> usize {
-        self.entries.get_or_insert_with(Vec::new).push(index);
-        index
+    /// Pushes a new key into the entries of the node and return it.
+    fn push(&mut self, key: usize) -> usize {
+        self.entries.get_or_insert_with(Vec::new).push(key);
+        key
     }
 }
 
@@ -84,16 +84,13 @@ impl<'a, T> RouteEntry<'a, T> {
     /// node to the entries of the current node. Returns the index of the
     /// newly inserted node.
     pub fn push(&mut self, node: Node<T>) -> usize {
-        // Push the node into the store and get the index of the newly inserted
+        // Push the node into the store and get the key of the newly inserted
         // node.
-        let next_node_index = self.store.push(node);
+        let next_node_key = self.store.push(node);
 
-        // Associate the index of the newly inserted node with the current node
-        // by adding the index to the entries of the current node.
-        self.store.get_mut(self.key).push(next_node_index);
-
-        // Return the index of the newly inserted node in the store.
-        next_node_index
+        // Associate the key of the newly inserted node with the current node
+        // by adding the key to the entries of the current node.
+        self.store.get_mut(self.key).push(next_node_key)
     }
 }
 
@@ -104,19 +101,17 @@ impl<T> RouteStore<T> {
     }
 
     /// Returns a mutable representation of a single node in the route store.
-    pub fn entry(&mut self, index: usize) -> RouteEntry<T> {
-        RouteEntry {
-            key: index,
-            store: self,
-        }
+    pub fn entry(&mut self, key: usize) -> RouteEntry<T> {
+        RouteEntry { key, store: self }
     }
 
-    /// Pushes a new node into the store and returns the index of the newly
+    /// Pushes a new node into the store and returns the key of the newly
     /// inserted node.
     pub fn push(&mut self, node: Node<T>) -> usize {
-        let index = self.nodes.len();
+        let key = self.nodes.len();
+
         self.nodes.push(node);
-        index
+        key
     }
 
     /// Shrinks the capacity of the route store as much as possible.
@@ -124,13 +119,13 @@ impl<T> RouteStore<T> {
         self.nodes.shrink_to_fit();
     }
 
-    /// Returns a shared reference to the node at the given index.
-    pub fn get(&self, index: usize) -> &Node<T> {
-        self.nodes.get(index).unwrap()
+    /// Returns a shared reference to the node at the given `key`.
+    pub fn get(&self, key: usize) -> &Node<T> {
+        &self.nodes[key]
     }
 
-    /// Returns a mutable reference to the node at the given index.
-    pub fn get_mut(&mut self, index: usize) -> &mut Node<T> {
-        self.nodes.get_mut(index).unwrap()
+    /// Returns a mutable reference to the node at the given `key`.
+    pub fn get_mut(&mut self, key: usize) -> &mut Node<T> {
+        &mut self.nodes[key]
     }
 }
