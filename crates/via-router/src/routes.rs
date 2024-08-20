@@ -11,7 +11,7 @@ pub struct Node<T> {
     pub pattern: Pattern,
 
     /// The index of the route in the route store associated with the node.
-    route: Option<Box<T>>,
+    route: Option<T>,
 }
 
 /// A mutable representation of a single node the route store. This type is used
@@ -62,14 +62,11 @@ impl<T> Node<T> {
 
     /// Returns an optional reference to the route associated with the node.
     pub fn route(&self) -> Option<&T> {
-        match &self.route {
-            Some(route) => Some(route),
-            None => None,
-        }
+        self.route.as_ref()
     }
 
     /// Returns a mutable reference to the `route` field of the node.
-    pub fn route_mut(&mut self) -> &mut Option<Box<T>> {
+    pub fn route_mut(&mut self) -> &mut Option<T> {
         &mut self.route
     }
 }

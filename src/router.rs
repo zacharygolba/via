@@ -65,7 +65,7 @@ impl<'a, State> Endpoint<'a, State> {
     }
 
     fn route_mut(&mut self) -> &mut Vec<MatchWhen<State>> {
-        self.inner.get_or_insert_route_with(|| Box::new(Vec::new()))
+        self.inner.get_or_insert_route_with(Vec::new)
     }
 }
 

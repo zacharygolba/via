@@ -76,7 +76,7 @@ impl<'a, T> Endpoint<'a, T> {
     /// provided closure `f`.
     pub fn get_or_insert_route_with<F>(&mut self, f: F) -> &mut T
     where
-        F: FnOnce() -> Box<T>,
+        F: FnOnce() -> T,
     {
         self.store
             .get_mut(self.key)
@@ -136,7 +136,7 @@ mod tests {
         let mut router = Router::new();
 
         for path in &PATHS {
-            let _ = router.at(path).get_or_insert_route_with(|| Box::new(()));
+            let _ = router.at(path).get_or_insert_route_with(|| ());
         }
 
         {
