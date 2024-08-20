@@ -2,10 +2,10 @@ use core::{iter::Enumerate, str::Bytes};
 
 #[derive(PartialEq)]
 pub enum Pattern {
-    CatchAll(&'static str),
-    Dynamic(&'static str),
-    Static(&'static str),
     Root,
+    Static(&'static str),
+    Dynamic(&'static str),
+    CatchAll(&'static str),
 }
 
 /// An iterator that splits the path into segments and yields a key-value pair

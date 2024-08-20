@@ -123,6 +123,30 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
 
             // Check if `descendant` has a pattern that matches `path_segment`.
             match descendant.pattern {
+                Pattern::Static(value) if value == path_segment => {
+                    // The next node has a `Static` pattern that matches the value
+                    // of the path segment.
+                    results.push(Match {
+                        exact,
+                        range,
+                        param: None,
+                        route: descendant.route(),
+                    });
+
+                    self.visit_node(results, next_index, next_key);
+                }
+                Pattern::Dynamic(param) => {
+                    // The next node has a `Dynamic` pattern. Therefore, we consider
+                    // it a match regardless of the value of the path segment.
+                    results.push(Match {
+                        exact,
+                        range,
+                        param: Some(param),
+                        route: descendant.route(),
+                    });
+
+                    self.visit_node(results, next_index, next_key);
+                }
                 Pattern::CatchAll(param) => {
                     // The next node has a `CatchAll` pattern and will be considered
                     // an exact match. Due to the nature of `CatchAll` patterns, we
@@ -139,30 +163,6 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                         param: Some(param),
                         route: descendant.route(),
                     });
-                }
-                Pattern::Dynamic(param) => {
-                    // The next node has a `Dynamic` pattern. Therefore, we consider
-                    // it a match regardless of the value of the path segment.
-                    results.push(Match {
-                        exact,
-                        range,
-                        param: Some(param),
-                        route: descendant.route(),
-                    });
-
-                    self.visit_node(results, next_index, next_key);
-                }
-                Pattern::Static(value) if value == path_segment => {
-                    // The next node has a `Static` pattern that matches the value
-                    // of the path segment.
-                    results.push(Match {
-                        exact,
-                        range,
-                        param: None,
-                        route: descendant.route(),
-                    });
-
-                    self.visit_node(results, next_index, next_key);
                 }
                 _ => {
                     // We don't have to check and see if the pattern is `Pattern::Root`
