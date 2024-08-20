@@ -87,7 +87,7 @@ impl<'a> Iterator for SplitPath<'a> {
         // Set the start index to the next character that is not a `/`.
         let start = self.next_non_terminator()?;
         // Set the end index to the next character that is a `/`.
-        let end = self.next_terminator().unwrap_or_else(|| self.value.len());
+        let end = self.next_terminator().unwrap_or(self.value.len());
 
         // Return the start and end offset of the current path segment.
         Some((start, end))
