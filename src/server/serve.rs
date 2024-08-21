@@ -14,12 +14,6 @@ use crate::body::Pollable;
 use crate::router::Router;
 use crate::{Error, Request};
 
-#[cfg(target_os = "macos")]
-const DEFAULT_MAX_CONNECTIONS: usize = 248;
-
-#[cfg(not(target_os = "macos"))]
-const DEFAULT_MAX_CONNECTIONS: usize = 1024;
-
 /// The request type used by our `hyper` service. This is the type that we will
 /// use to create a `via::Request` that will be passed to the middleware stack.
 type HttpRequest = http::Request<Incoming>;
@@ -32,17 +26,22 @@ pub async fn serve<State>(
     state: Arc<State>,
     router: Arc<Router<State>>,
     listener: TcpListener,
-    max_connections: Option<usize>,
+    max_connections: usize,
 ) -> Result<(), Error>
 where
     State: Send + Sync + 'static,
 {
-    let mut backoff = Backoff::new(2, 5);
+    // Create a new backoff strategy with a base delay of 20 milliseconds and a
+    // maximum delay of 30 seconds.
+    let mut backoff = Backoff::new(20, 30);
+    // Create a vector to store the join handles of the spawned tasks. We'll
+    // periodically check if any of the tasks have finished and remove them.
     let mut handles = Vec::new();
-    let semaphore = {
-        let permits = max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS);
-        Arc::new(Semaphore::new(permits))
-    };
+    // Create a semaphore with a number of permits equal to the maximum number
+    // of connections that the server can handle concurrently. If the maximum
+    // number of connections is reached, we'll wait until a permit is available
+    // using the `backoff` strategy before accepting a new connection.
+    let semaphore = Arc::new(Semaphore::new(max_connections));
 
     loop {
         // Accept a new connection from the TCP listener.

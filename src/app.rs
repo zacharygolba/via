@@ -6,8 +6,10 @@ use crate::router::{Endpoint, Router};
 use crate::server::serve;
 use crate::{Error, Middleware};
 
+const DEFAULT_MAX_CONNECTIONS: usize = 256;
+
 pub struct App<State> {
-    max_connections: Option<usize>,
+    max_connections: usize,
     router: Router<State>,
     state: Arc<State>,
 }
@@ -18,7 +20,7 @@ where
     State: Send + Sync + 'static,
 {
     App {
-        max_connections: None,
+        max_connections: DEFAULT_MAX_CONNECTIONS,
         router: Router::new(),
         state: Arc::new(state),
     }
@@ -41,7 +43,7 @@ where
     }
 
     pub fn set_max_connections(&mut self, n: usize) -> &mut Self {
-        self.max_connections = Some(n);
+        self.max_connections = n;
         self
     }
 
