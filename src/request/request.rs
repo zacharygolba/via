@@ -112,11 +112,8 @@ impl<State> Request<State> {
         }
     }
 
-    pub(crate) fn params_mut_with_path(&mut self) -> (&mut PathParams, &str) {
-        let params = &mut self.inner.path_params;
-        let path = self.inner.request.uri().path();
-
-        (params, path)
+    pub(crate) fn params_mut(&mut self) -> &mut PathParams {
+        &mut self.inner.path_params
     }
 }
 
