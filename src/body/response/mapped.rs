@@ -1,9 +1,8 @@
 use bytes::Bytes;
 use hyper::body::{Body, Frame, SizeHint};
-use std::{
-    pin::Pin,
-    task::{Context, Poll},
-};
+use smallvec::SmallVec;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use super::{Buffered, Either, FrameExt, Streaming};
 use crate::{Error, Result};
@@ -21,7 +20,7 @@ pub struct Mapped {
 
     /// A queue of map functions that are applied to data frames as they are
     /// polled from `body` in the implementation of `Body::poll_frame`.
-    queue: Vec<Box<MapFn>>,
+    queue: SmallVec<[Box<MapFn>; 2]>,
 }
 
 impl Mapped {
@@ -29,7 +28,7 @@ impl Mapped {
     pub fn new(body: Either<Buffered, Streaming>) -> Self {
         Self {
             body,
-            queue: Vec::new(),
+            queue: SmallVec::new(),
         }
     }
 
