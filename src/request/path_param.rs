@@ -3,8 +3,14 @@ use std::str::FromStr;
 
 use crate::{Error, Result};
 
-/// TODO:
-/// Doc comment
+//
+// TODO:
+//
+// Create a new type for  `Vec<(&'static str, (usize, usize))>` to represent
+// path parameters (and maybe query parameters). This would allow us to pass
+// around references to other parts of the codebase without exposing the
+// underlying implementation details.
+//
 pub type PathParams = Vec<(&'static str, (usize, usize))>;
 
 pub struct PathParam<'a, 'b> {
