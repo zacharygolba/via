@@ -27,7 +27,9 @@ impl RequestBody {
     }
 
     pub fn into_data_stream(self) -> BodyDataStream {
-        BodyDataStream::new(self.body)
+        let stream = self.into_stream();
+
+        BodyDataStream::new(stream)
     }
 
     pub fn read_into_bytes(self) -> ReadIntoBytes {
