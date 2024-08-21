@@ -1,6 +1,8 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::collections::VecDeque;
+use std::sync::Arc;
 
-use crate::{Middleware, Next, Request};
+use crate::request::PathParams;
+use crate::{Middleware, Next};
 
 pub struct Endpoint<'a, State> {
     inner: via_router::Endpoint<'a, Vec<MatchWhen<State>>>,
@@ -89,8 +91,8 @@ where
         self.inner.shrink_to_fit();
     }
 
-    pub fn lookup(&self, request: &mut Request<State>) -> Next<State> {
-        let (params, path) = request.params_mut_with_path();
+    pub fn lookup(&self, path: &str) -> (PathParams, Next<State>) {
+        let mut params = Vec::with_capacity(12);
         let mut stack = VecDeque::with_capacity(32);
 
         // Iterate over the routes that match the request's path.
@@ -115,6 +117,6 @@ where
             }));
         }
 
-        Next::new(stack)
+        (params, Next::new(stack))
     }
 }
