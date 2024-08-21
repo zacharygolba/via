@@ -1,10 +1,8 @@
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use futures_core::Stream;
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use super::BodyDataStream;
 use crate::{Error, Result};
@@ -63,26 +61,31 @@ impl Future for ReadIntoBytes {
         let (mut buffer, mut stream) = self.project();
 
         loop {
-            match stream.as_mut().poll_next(context) {
+            return match stream.as_mut().poll_next(context) {
                 Poll::Ready(Some(Ok(frame))) => {
-                    let frame_len = frame.len();
+                    // Get the length of the frame. If necessary, we'll use this
+                    // to reserve capacity in the buffer.
+                    let len = frame.len();
 
                     // Attempt to reserve enough capacity for the frame in the
                     // buffer if the current capacity is less than the frame
                     // length.
-                    if let Err(error) = try_reserve(&mut buffer, frame_len) {
+                    if let Err(error) = try_reserve(&mut buffer, len) {
                         // Zero out the buffer.
                         buffer.fill(0);
 
                         // Set the buffer's length to zero.
                         buffer.clear();
 
-                        // Return the error.
-                        return Poll::Ready(Err(error));
-                    }
+                        // Return ready with the error.
+                        Poll::Ready(Err(error))
+                    } else {
+                        // Write the frame into the buffer.
+                        buffer.extend_from_slice(&frame);
 
-                    // Write the frame into the buffer.
-                    buffer.extend_from_slice(&frame);
+                        // Continue polling the stream.
+                        continue;
+                    }
                 }
                 Poll::Ready(Some(Err(error))) => {
                     // Zero out the buffer.
@@ -92,26 +95,22 @@ impl Future for ReadIntoBytes {
                     buffer.clear();
 
                     // Return the error and stop reading the stream.
-                    return Poll::Ready(Err(error));
+                    Poll::Ready(Err(error))
                 }
                 Poll::Ready(None) => {
-                    let buffer_len = buffer.len();
-
-                    if buffer_len == 0 {
-                        return Poll::Ready(Ok(Bytes::new()));
-                    }
-
-                    // Copy the bytes in the buffer to a new bytes object.
-                    let bytes = buffer.copy_to_bytes(buffer_len);
+                    // Get the number of bytes to read from the buffer.
+                    let len = buffer.len();
+                    // Read `len` bytes from `buffer` into an immutable `Bytes`.
+                    let bytes = buffer.split_to(len).freeze();
 
                     // Return the immutable, contents of buffer.
-                    return Poll::Ready(Ok(bytes));
+                    Poll::Ready(Ok(bytes))
                 }
                 Poll::Pending => {
                     // Wait for the next frame.
-                    return Poll::Pending;
+                    Poll::Pending
                 }
-            }
+            };
         }
     }
 }
