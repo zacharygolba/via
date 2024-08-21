@@ -21,10 +21,10 @@ pub fn from_body_for_stream(body: &impl Body) -> (usize, Option<usize>) {
     (lower, upper)
 }
 
-/// Adapts the `SizeHint` of a `Body` to a tuple containing the lower and upper
-/// bound of the stream. If the conversion of the lower bound fails, it will be
-/// considered to be `0`. If the conversion of the upper bound fails, it will
-/// be considered to be `None`.
+/// Adapts the tuple returned from `Stream::size_hint` to a `SizeHint` that is
+/// compatible with the `Body` trait. If the conversion of the lower bound fails,
+/// it will be considered to be `0`. If the conversion of the upper bound fails,
+/// it will be considered to be `None`.
 pub fn from_stream_for_body(stream: &(impl Stream + ?Sized)) -> SizeHint {
     // Create a new `SizeHint` with the default values. We will set
     // the lower and upper bounds individually since we don't know
