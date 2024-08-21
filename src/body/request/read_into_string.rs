@@ -1,8 +1,6 @@
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use super::ReadIntoBytes;
 use crate::Result;
@@ -16,26 +14,24 @@ impl ReadIntoString {
     pub(crate) fn new(future: ReadIntoBytes) -> Self {
         Self { future }
     }
-
-    fn project(self: Pin<&mut Self>) -> Pin<&mut ReadIntoBytes> {
-        // Get a mutable reference to self.
-        let this = self.get_mut();
-        let future = &mut this.future;
-
-        // Project the buffer and stream.
-        Pin::new(future)
-    }
 }
 
 impl Future for ReadIntoString {
     type Output = Result<String>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        self.project().poll(context).map(|result| {
-            result.and_then(|bytes| {
-                let utf8 = Vec::from(bytes);
-                Ok(String::from_utf8(utf8)?)
-            })
+        // Get a mutable reference to `Self`.
+        let this = self.get_mut();
+        // Get a mutable reference to the `future` field.
+        let future = &mut this.future;
+
+        // Pin `future` on the stack and poll it.
+        Pin::new(future).poll(context).map(|result| {
+            // Perform the cheap conversion from `Bytes` to `Vec<u8>`.
+            let data = Vec::from(result?);
+
+            // Convert `data` to a string if it is valid UTF-8.
+            Ok(String::from_utf8(data)?)
         })
     }
 }
