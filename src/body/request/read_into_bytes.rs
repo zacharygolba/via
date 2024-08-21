@@ -42,23 +42,15 @@ impl ReadIntoBytes {
     pub(crate) fn new(buffer: BytesMut, stream: BodyDataStream) -> Self {
         Self { buffer, stream }
     }
-
-    fn project(self: Pin<&mut Self>) -> (Pin<&mut BytesMut>, Pin<&mut BodyDataStream>) {
-        // Get a mutable reference to self.
-        let this = self.get_mut();
-        let buffer = &mut this.buffer;
-        let stream = &mut this.stream;
-
-        // Project the buffer and stream.
-        (Pin::new(buffer), Pin::new(stream))
-    }
 }
 
 impl Future for ReadIntoBytes {
     type Output = Result<Bytes>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        let (mut buffer, mut stream) = self.project();
+        let this = self.get_mut();
+        let buffer = &mut this.buffer;
+        let mut stream = Pin::new(&mut this.stream);
 
         loop {
             return match stream.as_mut().poll_next(context) {
@@ -70,7 +62,7 @@ impl Future for ReadIntoBytes {
                     // Attempt to reserve enough capacity for the frame in the
                     // buffer if the current capacity is less than the frame
                     // length.
-                    if let Err(error) = try_reserve(&mut buffer, len) {
+                    if let Err(error) = try_reserve(buffer, len) {
                         // Zero out the buffer.
                         buffer.fill(0);
 
