@@ -120,9 +120,12 @@ where
     // to incremet the ref count of the `Arc` unnecessarily.
     //
     let mut request = Request::new(request, Arc::clone(state));
+    // Build the middleware stack for the request.
+    let (params, next) = router.lookup(request.uri().path());
 
-    // Route `request` to the corresponding middleware stack.
-    let next = router.lookup(&mut request);
+    // Set the path parameters on the request to params returned from the
+    // `router.lookup()` function.
+    *request.params_mut() = params;
 
     // Call the middleware stack and return a response.
     match next.call(request).await {
