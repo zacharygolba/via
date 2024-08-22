@@ -10,7 +10,7 @@ use crate::{Error, Result};
 /// when the entire body can be buffered in memory.
 pub struct Buffered {
     /// The buffer containing the body data.
-    data: BytesMut,
+    data: Box<BytesMut>,
 
     /// Buffered is marked as `!Unpin` because it parcitipates in an `Either`
     /// enum that contains other types that are `!Unpin`. This is a safety
@@ -20,7 +20,7 @@ pub struct Buffered {
 }
 
 impl Buffered {
-    pub fn new(data: BytesMut) -> Self {
+    pub fn new(data: Box<BytesMut>) -> Self {
         Self {
             data,
             _pin: PhantomPinned,
@@ -50,7 +50,7 @@ impl Buffered {
             // use `Pin::map_unchecked_mut` to get a pinned reference to the
             // `BytesMut` buffer.
             //
-            self.map_unchecked_mut(|this| &mut this.data)
+            self.map_unchecked_mut(|this| &mut *this.data)
         }
     }
 }
