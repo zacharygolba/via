@@ -29,7 +29,8 @@ impl ResponseBody {
     }
 
     pub(crate) fn buffer(data: Bytes) -> Self {
-        let buffered = Buffered::new(BytesMut::from(data));
+        let buffer = Box::new(BytesMut::from(data));
+        let buffered = Buffered::new(buffer);
 
         Self {
             body: Either::Left(Either::Left(buffered)),
