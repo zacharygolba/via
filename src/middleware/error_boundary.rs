@@ -4,22 +4,41 @@ use crate::middleware::BoxFuture;
 use crate::{Error, Middleware, Next, Request, Response, Result};
 
 /// Middleware that catches errors that occur in downstream middleware and
-/// converts the error into a response. Upstream middleware added to an app
-/// or endpoint before an `ErrorBoundary` will continue to execute as normal.
+/// converts the error into a response. Middleware that is upstream from a
+/// `ErrorBoundary` will continue to as usual.
 pub struct ErrorBoundary;
 
-/// Works like `ErrorBoundary`, but allows you to map the error before it is
-/// converted into a response. This can be useful for filtering out any
-/// sensitive information from leaking into the response body.
+/// A middleware that catches errors that occur downstream and then calls the
+/// provided closure to inspect the error to another error. Think of this as a
+/// `Result::inspect` for middleware.
+///
+/// Middleware that is upstream from a `MapErrorBoundary` will continue to
+/// execute as usual since the error is eagerly converted into a response after
+/// the `inspect` function is called.
+pub struct InspectErrorBoundary<F> {
+    inspect: F,
+}
+
+/// A middleware that catches errors that occur downstream and then calls the
+/// provided closure to map the error to another error. Think of this as a
+/// `Result::map` for middleware.
+///
+/// Middleware that is upstream from a `MapErrorBoundary` will continue to
+/// execute as usual since the error returned from the provided `map` function
+/// is eagerly converted into a response.
 pub struct MapErrorBoundary<F> {
     map: F,
 }
 
-/// Works like `ErrorBoundary` but allows you to inspect the error before it is
-/// converted into a response. This is useful for logging the error message
-/// or reporting the error to a monitoring service.
-pub struct InspectErrorBoundary<F> {
-    inspect: F,
+/// A middleware that catches errors that occur downstream and then calls the
+/// provided closure to map the error to another result. Think of this as a
+/// `Result::or_else` for middleware.
+///
+/// Middleware that is upstream from a `OrElseErrorBoundary` will continue to
+/// execute as usual since the result returned from the provided `or_else`
+/// function is eagerly converted into a response.
+pub struct OrElseErrorBoundary<F> {
+    or_else: F,
 }
 
 impl ErrorBoundary {
@@ -38,6 +57,14 @@ impl ErrorBoundary {
     {
         MapErrorBoundary { map }
     }
+
+    pub fn or_else<State, F>(or_else: F) -> OrElseErrorBoundary<F>
+    where
+        F: Fn(Error, &Arc<State>) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+        State: Send + Sync + 'static,
+    {
+        OrElseErrorBoundary { or_else }
+    }
 }
 
 impl<State> Middleware<State> for ErrorBoundary
@@ -46,35 +73,11 @@ where
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
         Box::pin(async {
-            match next.call(request).await {
-                Ok(response) => Ok(response),
-                Err(error) => Ok(error.into_response()),
-            }
-        })
-    }
-}
+            // Yield control to the next middleware in the stack.
+            let result = next.call(request).await;
 
-impl<State, F> Middleware<State> for MapErrorBoundary<F>
-where
-    F: Fn(Error, &Arc<State>) -> Error + Copy + Send + Sync + 'static,
-    State: Send + Sync + 'static,
-{
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
-        let map = self.map;
-
-        Box::pin(async move {
-            // Clone `request.state` so it can be used after ownership of
-            // `request` is moved into `next.call()`.
-            let state = Arc::clone(request.state());
-
-            next.call(request).await.or_else(|error| {
-                // Apply the `map` function to `error`. This allows the error
-                // to be configured to use a different response format or to
-                // filter out sensitive information from leaking into the
-                // response body. Then, convert the error to a response and
-                // return.
-                Ok(map(error, &state).into_response())
-            })
+            // Convert the error into a response and return.
+            Ok(result.unwrap_or_else(|error| error.into_response()))
         })
     }
 }
@@ -85,14 +88,17 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+        // Copy the `inspect` function so it can be moved in the async block.
         let inspect = self.inspect;
+        // Clone `request.state` so it can be used after ownership of `request`
+        // is transfered to `next.call()`.
+        let state = Arc::clone(request.state());
 
         Box::pin(async move {
-            // Clone `request.state` so it can be used after ownership of
-            // `request` is moved into `next.call()`.
-            let state = Arc::clone(request.state());
+            // Yield control to the next middleware in the stack.
+            let result = next.call(request).await;
 
-            next.call(request).await.or_else(|error| {
+            result.or_else(|error| {
                 // Pass a reference to `error` and `state` to the `inspect`
                 // function. This allows the error to be logged or reported
                 // based on the needs of the application.
@@ -100,6 +106,62 @@ where
 
                 // Convert the error into a response and return.
                 Ok(error.into_response())
+            })
+        })
+    }
+}
+
+impl<State, F> Middleware<State> for MapErrorBoundary<F>
+where
+    F: Fn(Error, &Arc<State>) -> Error + Copy + Send + Sync + 'static,
+    State: Send + Sync + 'static,
+{
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+        // Copy the `map` function so it can be moved in the async block.
+        let map = self.map;
+        // Clone `request.state` so it can be used after ownership of `request`
+        // is transfered to `next.call()`.
+        let state = Arc::clone(request.state());
+
+        Box::pin(async move {
+            // Yield control to the next middleware in the stack.
+            let result = next.call(request).await;
+
+            result.or_else(|error| {
+                // Apply the `map` function to `error`. This allows the error
+                // to be configured to use a different response format, filter
+                // out sensitive information from leaking into the response
+                // body, etc.
+                let error = map(error, &state);
+
+                // Convert the error into a response and return.
+                Ok(error.into_response())
+            })
+        })
+    }
+}
+
+impl<State, F> Middleware<State> for OrElseErrorBoundary<F>
+where
+    F: Fn(Error, &Arc<State>) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+    State: Send + Sync + 'static,
+{
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+        // Copy the `or_else` function so it can be moved in the async block.
+        let or_else = self.or_else;
+        // Clone `request.state` so it can be used after ownership of `request`
+        // is transfered to `next.call()`.
+        let state = Arc::clone(request.state());
+
+        Box::pin(async move {
+            // Yield control to the next middleware in the stack.
+            let result = next.call(request).await;
+
+            result.or_else(|error| {
+                // Apply the `or_else` function to the output of `next.call()`.
+                // This allows the error to be handled in a way that may
+                // produce a different response or error.
+                or_else(error, &state)
             })
         })
     }
