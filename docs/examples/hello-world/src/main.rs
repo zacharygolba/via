@@ -1,16 +1,11 @@
 use via::{Next, Request, Result};
 
-async fn hello(mut request: Request, _: Next) -> Result<String> {
-    // Attempt to parse the query parameter `n` to a `usize`. If the query
-    // parameter doesn't exist or can't be converted to a `usize`, default to 1.
-    let n = request.query("n").first().parse().unwrap_or(1);
+async fn hello(request: Request, _: Next) -> Result<String> {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").required()?;
-    // Create a greeting message that includes the name from the request's uri.
-    let message = format!("Hello, {}!\n", name);
 
-    // Send a plain text response with our greeting message, repeated `n` times.
-    Ok(message.repeat(n))
+    // Send a plain text response with our greeting message.
+    Ok(format!("Hello, {}!\n", name))
 }
 
 #[tokio::main]
