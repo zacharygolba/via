@@ -101,8 +101,8 @@ impl<State> Request<State> {
     /// Consumes the request and returns a tuple containing the boxed component
     /// parts of the request, the body, and an `Arc` to the shared application
     /// state.
-    pub fn into_parts(self) -> (Box<Parts>, RequestBody, Arc<State>) {
-        (self.parts, self.body, self.state)
+    pub fn into_parts(self) -> (Parts, RequestBody, Arc<State>) {
+        (*self.parts, self.body, self.state)
     }
 }
 
