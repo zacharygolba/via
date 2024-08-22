@@ -1,12 +1,14 @@
 use via::http::header;
 use via::{Next, Request, Response, Result};
 
-async fn echo(mut request: Request, _: Next) -> Result<Response> {
-    // Get a stream of bytes from the request body.
-    let body_stream = request.take_body()?.into_stream();
+async fn echo(request: Request, _: Next) -> Result<Response> {
+    // Deconstruct the request into it's parts.
+    let (parts, body, _) = request.into_parts();
+    // Get a stream of bytes from the body of the request.
+    let body_stream = body.into_stream();
     // Optionally get the Content-Type header from the request.
-    let content_type = request
-        .headers()
+    let content_type = parts
+        .headers
         .get(header::CONTENT_TYPE)
         .map(|value| (header::CONTENT_TYPE, value.clone()));
 

@@ -1,4 +1,4 @@
-use diesel::dsl::{Eq, Filter, IsNotNull};
+use diesel::dsl::IsNotNull;
 use serde::{Deserialize, Serialize};
 use via::Result;
 
@@ -9,13 +9,9 @@ use crate::database::{
 
 pub use schema::posts;
 
-// pub type All = Select<posts::table, posts::AllColumns>;
-pub type Find = Filter<Public, Eq<posts::id, i32>>;
-pub type Public = Filter<posts::table, IsNotNull<posts::published_at>>;
-
 #[derive(Clone, Debug, Deserialize, AsChangeset)]
+#[diesel(table_name = posts)]
 #[serde(rename_all = "camelCase")]
-#[table_name = "posts"]
 pub struct ChangeSet {
     pub body: Option<String>,
     pub title: Option<String>,
@@ -23,8 +19,8 @@ pub struct ChangeSet {
 }
 
 #[derive(Clone, Debug, Deserialize, Insertable)]
+#[diesel(table_name = posts)]
 #[serde(rename_all = "camelCase")]
-#[table_name = "posts"]
 pub struct NewPost {
     pub body: String,
     pub title: String,
@@ -32,7 +28,7 @@ pub struct NewPost {
 }
 
 #[derive(Associations, Clone, Debug, Identifiable, Queryable, Serialize)]
-#[belongs_to(User)]
+#[diesel(belongs_to(User))]
 #[serde(rename_all = "camelCase")]
 pub struct Post {
     pub id: i32,

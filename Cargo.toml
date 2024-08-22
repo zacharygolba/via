@@ -7,7 +7,7 @@ license = "MIT"
 
 [features]
 default = []
-serde = ["dep:serde", "dep:serde_json"]
+json = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
 bytes = "1.7"

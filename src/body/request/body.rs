@@ -45,7 +45,7 @@ impl RequestBody {
         ReadIntoString::new(future)
     }
 
-    #[cfg(feature = "serde")]
+    #[cfg(feature = "json")]
     pub async fn read_json<T>(self) -> crate::Result<T>
     where
         T: serde::de::DeserializeOwned,
