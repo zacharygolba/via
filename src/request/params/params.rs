@@ -3,7 +3,6 @@ use std::iter::Extend;
 
 use super::{parse_query_params, ParamType, QueryParamValues};
 
-#[derive(Default)]
 pub struct Params {
     did_parse_query: bool,
     param_indices: Vec<ParamType>,
