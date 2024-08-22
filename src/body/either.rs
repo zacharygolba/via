@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use hyper::body::{Body, Frame, SizeHint};
-use std::{pin::Pin, task::Poll};
+use std::pin::Pin;
+use std::task::Poll;
 
 use crate::{Error, Result};
 
