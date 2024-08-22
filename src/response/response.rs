@@ -50,7 +50,7 @@ impl Response {
             .headers(len.map(|content_length| (header::CONTENT_LENGTH, content_length)))
     }
 
-    #[cfg(feature = "serde")]
+    #[cfg(feature = "json")]
     pub fn json<T>(body: &T) -> ResponseBuilder
     where
         T: serde::Serialize,

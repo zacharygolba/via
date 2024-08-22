@@ -1,15 +1,11 @@
 use percent_encoding::percent_decode_str;
-use std::{iter::Peekable, str::CharIndices};
+use std::iter::{self, Peekable};
+use std::str::CharIndices;
 
-pub fn parse_query_params(input: &str) -> Vec<(String, (usize, usize))> {
-    let mut query_params = Vec::with_capacity(16);
+pub fn parse_query_params(input: &str) -> impl Iterator<Item = (String, (usize, usize))> + '_ {
     let mut input = QueryParserInput::new(input);
 
-    while let Some(query_param) = parse_query_param(&mut input) {
-        query_params.push(query_param);
-    }
-
-    query_params
+    iter::from_fn(move || parse_query_param(&mut input))
 }
 
 fn parse_name(input: &mut QueryParserInput) -> Option<String> {
@@ -171,7 +167,7 @@ mod tests {
             let expected_result = &expected_results[expected_result_index];
             let actual_result = parse_query_params(query_string);
 
-            for (entry_index, entry_value) in actual_result.into_iter().enumerate() {
+            for (entry_index, entry_value) in actual_result.enumerate() {
                 assert_eq!(entry_value.0, expected_result[entry_index].0);
                 assert_eq!(entry_value.1, expected_result[entry_index].1);
             }

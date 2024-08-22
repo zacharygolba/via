@@ -1,119 +1,133 @@
-use http::{header, HeaderMap, Method, Uri, Version};
+use http::header::CONTENT_LENGTH;
+use http::request::Parts;
+use http::{HeaderMap, Method, Uri, Version};
 use hyper::body::Incoming;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
-use super::{parse_query_params, PathParam, PathParams, QueryParamValues};
+use super::params::{Param, Params, QueryParamValues};
 use crate::body::RequestBody;
-use crate::{Error, Result};
 
 pub struct Request<State = ()> {
-    inner: Box<RequestInner<State>>,
+    /// The component parts of the underlying HTTP request.
+    parts: Box<Parts>,
+
+    /// The shared application state associated with the request.
+    state: Arc<State>,
+
+    /// The request's body.
+    body: RequestBody,
+
+    /// The request's path and query parameters.
+    params: Params,
 }
 
-struct RequestInner<State> {
-    request: http::Request<Option<RequestBody>>,
-    app_state: Arc<State>,
-    path_params: PathParams,
-    query_params: Option<Vec<(String, (usize, usize))>>,
+fn get_content_len(headers: &HeaderMap) -> Option<usize> {
+    match headers.get(CONTENT_LENGTH)?.to_str() {
+        Ok(value) => value.parse::<usize>().ok(),
+        Err(_) => None,
+    }
 }
 
 impl<State> Request<State> {
     /// Returns a reference to a map that contains the headers associated with
     /// the request.
     pub fn headers(&self) -> &HeaderMap {
-        self.inner.request.headers()
+        &self.parts.headers
     }
 
     /// Returns a reference to the HTTP method associated with the request.
     pub fn method(&self) -> &Method {
-        self.inner.request.method()
+        &self.parts.method
     }
 
-    pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
-        let path = self.inner.request.uri().path();
+    /// Returns a convenient wrapper around an optional reference to the path
+    /// parameter in the request's uri with the provided `name`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use via::{Error, Next, Request};
+    ///
+    /// async fn hello(request: Request, _: Next) -> Result<String, Error> {
+    ///     let required: Result<&str, Error> = request.param("name").required();
+    ///     let _optional: Option<&str> = request.param("name").ok();
+    ///
+    ///     Ok(format!("Hello, {}!", required?))
+    /// }
+    /// ```
+    pub fn param<'a>(&self, name: &'a str) -> Param<'_, 'a> {
+        // Get the path of the request's uri.
+        let path = self.parts.uri.path();
+        // Get an `Option<(usize, usize)>` that represents the start and end
+        // offset of the path parameter with the provided `name` in the request's
+        // uri.
+        let at = self.params.get_path_param(name);
 
-        for (param, range) in &self.inner.path_params {
-            if name == &**param {
-                return PathParam::new(name, path, Some(range));
-            }
-        }
-
-        PathParam::new(name, path, None)
+        Param::new(at, name, path)
     }
 
+    /// Returns a convenient wrapper around an optional references to the query
+    /// parameters in the request's uri with the provided `name`.
     pub fn query<'a>(&mut self, name: &'a str) -> QueryParamValues<'_, 'a> {
-        let mut values = Vec::new();
-
-        let query = self.inner.request.uri().query().unwrap_or("");
-        let params = self
-            .inner
-            .query_params
-            .get_or_insert_with(|| parse_query_params(query));
-
-        for (param, range) in params.iter() {
-            if name == param {
-                values.push(range);
-            }
-        }
-
-        QueryParamValues::new(name, query, values)
+        self.parts.uri.query().map_or_else(
+            || QueryParamValues::empty(name),
+            |query| self.params.get_query_params(query, name),
+        )
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
-    /// state that was passed as an argument to the `via::app` function.
+    /// state that was passed as an argument to the [`via::app`](crate::app::app)
+    /// function.
     pub fn state(&self) -> &Arc<State> {
-        &self.inner.app_state
-    }
-
-    pub fn take_body(&mut self) -> Result<RequestBody> {
-        match self.inner.request.body_mut().take() {
-            Some(body) => Ok(body),
-            None => Err(Error::new("body has already been read".to_owned())),
-        }
+        &self.state
     }
 
     /// Returns a reference to the uri associated with the request.
     pub fn uri(&self) -> &Uri {
-        self.inner.request.uri()
+        &self.parts.uri
     }
 
     /// Returns the HTTP version associated with the request.
     pub fn version(&self) -> Version {
-        self.inner.request.version()
+        self.parts.version
+    }
+
+    /// Consumes the request and returns the body.
+    pub fn into_body(self) -> RequestBody {
+        self.body
+    }
+
+    /// Consumes the request and returns a tuple containing the boxed component
+    /// parts of the request, the body, and an `Arc` to the shared application
+    /// state.
+    pub fn into_parts(self) -> (Box<Parts>, RequestBody, Arc<State>) {
+        (self.parts, self.body, self.state)
     }
 }
 
 impl<State> Request<State> {
-    pub(crate) fn new(request: http::Request<Incoming>, app_state: Arc<State>) -> Self {
-        let content_len =
-            request
-                .headers()
-                .get(header::CONTENT_LENGTH)
-                .and_then(|value| match value.to_str() {
-                    Ok(value) => value.parse::<usize>().ok(),
-                    Err(_) => None,
-                });
+    pub(crate) fn new(request: http::Request<Incoming>, params: Params, state: Arc<State>) -> Self {
+        // Destructure the `http::Request` into its component parts.
+        let (parts, body) = request.into_parts();
+        // Box the component parts of the request to keep the size of the request
+        // type small. This is important because the request type is passed by
+        // value to middleware and responder functions.
+        let parts = Box::new(parts);
+        // Check if the request has a `Content-Length` header. If it does, wrap
+        // the request body in a `RequestBody` with a known length. Otherwise,
+        // wrap the request body in a `RequestBody` with an unknown length.
+        let body = match get_content_len(&parts.headers) {
+            Some(len) => RequestBody::with_len(body, len),
+            None => RequestBody::new(body),
+        };
 
         Self {
-            // Box the request and map the request body to `request::Body` to
-            // move both the request and body independently to the heap. Doing
-            // so keeps the size of the request small and allows the body to be
-            // easily moved out of the request when it is read.
-            inner: Box::new(RequestInner {
-                app_state,
-                request: request.map(|body| match content_len {
-                    Some(len) => Some(RequestBody::with_len(body, len)),
-                    None => Some(RequestBody::new(body)),
-                }),
-                path_params: Vec::with_capacity(10),
-                query_params: None,
-            }),
+            params,
+            parts,
+            state,
+            body,
         }
-    }
-
-    pub(crate) fn params_mut(&mut self) -> &mut PathParams {
-        &mut self.inner.path_params
     }
 }
 
@@ -122,11 +136,10 @@ impl<State> Debug for Request<State> {
         f.debug_struct("Request")
             .field("method", self.method())
             .field("uri", self.uri())
-            .field("params", &self.inner.path_params)
-            .field("query", &self.inner.query_params)
+            .field("params", &self.params)
             .field("version", &self.version())
             .field("headers", self.headers())
-            .field("body", self.inner.request.body())
+            .field("body", &self.body)
             .finish()
     }
 }
