@@ -6,7 +6,7 @@ use super::{Buffered, Either, Mapped, Pollable, StreamAdapter, Streaming};
 use crate::{Error, Result};
 
 pub struct ResponseBody {
-    body: Either<Either<Buffered, Streaming>, Box<Mapped>>,
+    body: Either<Either<Buffered, Streaming>, Mapped>,
 }
 
 impl ResponseBody {
@@ -29,8 +29,7 @@ impl ResponseBody {
     }
 
     pub(crate) fn buffer(data: Bytes) -> Self {
-        let buffer = Box::new(BytesMut::from(data));
-        let buffered = Buffered::new(buffer);
+        let buffered = Buffered::new(BytesMut::from(data));
 
         Self {
             body: Either::Left(Either::Left(buffered)),
@@ -72,7 +71,7 @@ impl ResponseBody {
                 mapped.push(map);
 
                 Self {
-                    body: Either::Right(Box::new(mapped)),
+                    body: Either::Right(mapped),
                 }
             }
             Either::Right(mut mapped) => {

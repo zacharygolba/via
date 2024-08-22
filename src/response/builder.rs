@@ -30,9 +30,7 @@ impl ResponseBuilder {
             None => ResponseBody::new(),
         };
 
-        Ok(Response {
-            inner: self.inner.body(body)?,
-        })
+        Ok(Response::from_inner(self.inner.body(body)?))
     }
 
     pub fn header<K, V>(self, key: K, value: V) -> Self

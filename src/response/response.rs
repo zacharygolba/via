@@ -8,7 +8,7 @@ use crate::body::{Frame, Pollable, ResponseBody};
 use crate::{Error, Result};
 
 pub struct Response {
-    pub(super) inner: http::Response<ResponseBody>,
+    inner: http::Response<ResponseBody>,
 }
 
 impl Response {
@@ -117,9 +117,13 @@ impl Response {
 
 impl Response {
     pub(crate) fn new() -> Self {
-        Self {
-            inner: http::Response::new(ResponseBody::new()),
-        }
+        let body = ResponseBody::new();
+
+        Self::from_inner(http::Response::new(body))
+    }
+
+    pub(crate) fn from_inner(inner: http::Response<ResponseBody>) -> Self {
+        Self { inner }
     }
 
     pub(crate) fn into_inner(self) -> http::Response<Pollable> {
