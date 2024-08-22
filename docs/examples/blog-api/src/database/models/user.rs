@@ -1,23 +1,19 @@
 use crate::database::prelude::*;
-use diesel::dsl::{Eq, Filter};
 use serde::{Deserialize, Serialize};
 use via::Result;
 
 pub use schema::users;
 
-pub type ById = Eq<users::id, i32>;
-pub type Find = Filter<users::table, ById>;
-
 #[derive(Clone, Debug, Deserialize, AsChangeset)]
+#[diesel(table_name = users)]
 #[serde(rename_all = "camelCase")]
-#[table_name = "users"]
 pub struct ChangeSet {
     pub username: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Insertable)]
+#[diesel(table_name = users)]
 #[serde(rename_all = "camelCase")]
-#[table_name = "users"]
 pub struct NewUser {
     pub username: String,
 }
@@ -74,13 +70,5 @@ impl User {
             .filter(users::id.eq(id))
             .first(&mut pool.get().await?)
             .await?)
-    }
-
-    pub async fn login(pool: &Pool, username: String, password: String) -> Result<Option<User>> {
-        Ok(users::table
-            .filter(users::username.eq(username))
-            .first(&mut pool.get().await?)
-            .await
-            .optional()?)
     }
 }

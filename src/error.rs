@@ -21,7 +21,7 @@ pub struct Error {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Format {
-    #[cfg(feature = "serde")]
+    #[cfg(feature = "json")]
     Json,
 }
 
@@ -106,7 +106,7 @@ impl Error {
         &mut self.status
     }
 
-    #[cfg(feature = "serde")]
+    #[cfg(feature = "json")]
     pub fn json(mut self) -> Self {
         self.format = Some(Format::Json);
         self
@@ -118,7 +118,7 @@ impl Error {
         use http::header::HeaderValue;
 
         let result = match self.format {
-            #[cfg(feature = "serde")]
+            #[cfg(feature = "json")]
             Some(Format::Json) => {
                 // The `serde` feature is enabled and the error format is `Json`.
                 // Attempt to serialize the error as JSON. If serialization fails,
@@ -206,7 +206,7 @@ impl From<Error> for AnyError {
     }
 }
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "json")]
 impl serde::Serialize for Error {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
