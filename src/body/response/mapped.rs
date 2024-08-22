@@ -20,7 +20,7 @@ pub struct Mapped {
 
     /// A queue of map functions that are applied to data frames as they are
     /// polled from `body` in the implementation of `Body::poll_frame`.
-    queue: SmallVec<[Box<MapFn>; 2]>,
+    queue: SmallVec<[Box<MapFn>; 1]>,
 }
 
 impl Mapped {
@@ -53,39 +53,21 @@ impl Mapped {
             None
         }
     }
+}
 
-    /// Returns a tuple that contains a pinned mutable reference to the `body`
-    /// field and a shared reference to the queue of map functions.
-    fn project(self: Pin<&mut Self>) -> (Pin<&mut Either<Buffered, Streaming>>, &[Box<MapFn>]) {
-        // Get a mutable reference to `self`.
-        let this = unsafe {
+impl Mapped {
+    /// Returns a pinned mutable reference to the `body` field.
+    fn project(self: Pin<&mut Self>) -> Pin<&mut Either<Buffered, Streaming>> {
+        unsafe {
             //
             // Safety:
             //
-            // The `body` field may contain a `Streaming` response body which is
-            // not `Unpin`. We need to project the body field through a pinned
-            // reference to `Self` so that it can be polled in the `poll_frame`
-            // method. This is safe because no data is moved out of `self`.
-            self.get_unchecked_mut()
-        };
-        // Get a pinned mutable reference to the `body` field.
-        let body = unsafe {
+            // All possible variants of the `Either` enum that compose the `body`
+            // field are `!Unpin` and do not move data out of the pinned
+            // reference from which they are polled.
             //
-            // Safety:
-            //
-            // The `body` field may contain a `Streaming` response body which is
-            // not `Unpin`. Therefore we have to use `Pin::new_unchecked` to wrap
-            // the mutable reference to `body` in a pinned reference. This is safe
-            // because we are not moving the value or any data owned by the `body`
-            // field out of the pinned mutable reference.
-            Pin::new_unchecked(&mut this.body)
-        };
-        // Get a shared reference to the queue of map functions.
-        let queue = &*this.queue;
-
-        // Return the pinned reference to the `body` field and a shared reference
-        // to our queue of map functions.
-        (body, queue)
+            self.map_unchecked_mut(|this| &mut this.body)
+        }
     }
 }
 
@@ -94,12 +76,10 @@ impl Body for Mapped {
     type Error = Error;
 
     fn poll_frame(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let (body, queue) = self.project();
-
-        body.poll_frame(context).map(|option| {
+        self.as_mut().project().poll_frame(context).map(|option| {
             let frame = match option {
                 // A frame was successfully polled from the stream. Store it
                 // at `frame`.
@@ -118,7 +98,10 @@ impl Body for Mapped {
                 //
                 // Due to the fact that the middleware is a stack, the map
                 // functions in `queue` are applied in reverse order.
-                queue.iter().rev().try_fold(input, |data, map| map(data))
+                self.queue
+                    .iter()
+                    .rev()
+                    .try_fold(input, |data, map| map(data))
             }))
         })
     }
