@@ -1,39 +1,45 @@
 use via::{Response, Result};
 
-use super::Payload;
-use crate::{database::models::user::*, Next, Request};
+use super::{deserialize, Payload};
+use crate::database::models::user::*;
+use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> Result<Response> {
-    let users = User::all(&request.state().pool).await?;
+    let state = request.state();
+    let users = User::all(&state.pool).await?;
 
-    Response::json(&Payload::new(users)).finish()
+    Response::json(&Payload { data: users }).finish()
 }
 
-pub async fn create(mut request: Request, _: Next) -> Result<Response> {
-    let body: Payload<NewUser> = request.take_body()?.read_json().await?;
-    let user = body.data.insert(&request.state().pool).await?;
+pub async fn create(request: Request, _: Next) -> Result<Response> {
+    let (_, body, state) = request.into_parts();
+    let new_user = deserialize::<NewUser>(body).await?;
+    let user = new_user.insert(&state.pool).await?;
 
-    Response::json(&Payload::new(user)).finish()
+    Response::json(&Payload { data: user }).finish()
 }
 
 pub async fn show(request: Request, _: Next) -> Result<Response> {
     let id = request.param("id").parse::<i32>()?;
-    let user = User::find(&request.state().pool, id).await?;
+    let state = request.state();
+    let user = User::find(&state.pool, id).await?;
 
-    Response::json(&Payload::new(user)).finish()
+    Response::json(&Payload { data: user }).finish()
 }
 
-pub async fn update(mut request: Request, _: Next) -> Result<Response> {
+pub async fn update(request: Request, _: Next) -> Result<Response> {
     let id = request.param("id").parse::<i32>()?;
-    let body: Payload<ChangeSet> = request.take_body()?.read_json().await?;
-    let user = body.data.apply(&request.state().pool, id).await?;
+    let (_, body, state) = request.into_parts();
+    let change_set = deserialize::<ChangeSet>(body).await?;
+    let user = change_set.apply(&state.pool, id).await?;
 
-    Response::json(&Payload::new(user)).finish()
+    Response::json(&Payload { data: user }).finish()
 }
 
 pub async fn destroy(request: Request, _: Next) -> Result<Response> {
     let id = request.param("id").parse::<i32>()?;
+    let state = request.state();
 
-    User::delete(&request.state().pool, id).await?;
-    Response::json(&Payload::new(())).finish()
+    User::delete(&state.pool, id).await?;
+    Response::json(&Payload { data: () }).finish()
 }

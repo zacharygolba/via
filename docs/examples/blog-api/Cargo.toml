@@ -17,7 +17,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 bb8 = "0.8.3"
 
 [dependencies.via]
-features = ["serde"]
+features = ["json"]
 path = "../../.."
 
 [dev-dependencies]

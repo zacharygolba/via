@@ -112,20 +112,10 @@ async fn serve_request<State>(
 where
     State: Send + Sync + 'static,
 {
-    // Wrap the incoming request in with `via::Request`.
-    //
-    // Note:
-    //
-    // In the future, we may want to pass a reference to `state` to avoid having
-    // to incremet the ref count of the `Arc` unnecessarily.
-    //
-    let mut request = Request::new(request, Arc::clone(state));
     // Build the middleware stack for the request.
     let (params, next) = router.lookup(request.uri().path());
-
-    // Set the path parameters on the request to params returned from the
-    // `router.lookup()` function.
-    *request.params_mut() = params;
+    // Wrap the incoming request in with `via::Request`.
+    let request = Request::new(request, params, Arc::clone(state));
 
     // Call the middleware stack and return a response.
     match next.call(request).await {
