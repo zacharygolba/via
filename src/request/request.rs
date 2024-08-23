@@ -73,6 +73,28 @@ impl<State> Request<State> {
 
     /// Returns a convenient wrapper around an optional references to the query
     /// parameters in the request's uri with the provided `name`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use via::{Next, Request, Result};
+    ///
+    /// async fn hello(request: Request, _: Next) -> Result<String> {
+    ///     // Attempt to parse the first query parameter named `n` to a `usize`
+    ///     // no greater than 1000. If the query parameter doesn't exist or
+    ///     // can't be converted to a `usize`, default to 1.
+    ///     let n = request.query("n").first().parse().unwrap_or(1).min(1000);
+    ///
+    ///     // Get a reference to the path parameter `name` from the request uri.
+    ///     let name = request.param("name").required()?;
+    ///
+    ///     // Create a greeting message with the provided `name`.
+    ///     let message = format!("Hello, {}!\n", name);
+    ///
+    ///     // Send a response with our greeting message, repeated `n` times.
+    ///     Ok(message.repeat(n))
+    /// }
+    /// ```
     pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
         let query = self.data.parts.uri.query().unwrap_or("");
 
