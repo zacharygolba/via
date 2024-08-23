@@ -1,45 +1,58 @@
 use http::StatusCode;
 use std::str::FromStr;
+use std::{borrow::Cow, marker::PhantomData};
 
+use super::{DecodeParam, NoopDecoder};
 use crate::{Error, Result};
 
-pub struct Param<'a, 'b> {
+pub struct Param<'a, 'b, T = NoopDecoder> {
     at: Option<(usize, usize)>,
     name: &'b str,
     source: &'a str,
+    _decode: PhantomData<T>,
 }
 
-impl<'a, 'b> Param<'a, 'b> {
+impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     pub(crate) fn new(at: Option<(usize, usize)>, name: &'b str, source: &'a str) -> Self {
-        Self { at, name, source }
+        Self {
+            at,
+            name,
+            source,
+            _decode: PhantomData,
+        }
     }
 
-    pub fn parse<T>(self) -> Result<T>
+    pub fn parse<F>(self) -> Result<F>
     where
-        Error: From<<T as FromStr>::Err>,
-        T: FromStr,
+        Error: From<<F as FromStr>::Err>,
+        F: FromStr,
     {
         self.required()?.parse().map_err(|error| {
             let mut error = Error::from(error);
-            *error.status_mut() = StatusCode::BAD_REQUEST;
+            let status = StatusCode::BAD_REQUEST;
+
+            *error.status_mut() = status;
             error
         })
     }
 
-    pub fn ok(self) -> Option<&'a str> {
-        let (start, end) = self.at?;
-
-        Some(&self.source[start..end])
+    pub fn ok(self) -> Option<Cow<'a, str>> {
+        self.required().ok()
     }
 
-    pub fn required(self) -> Result<&'a str> {
+    pub fn required(self) -> Result<Cow<'a, str>, Error> {
         let name = self.name;
+        let source = self.source;
+        let encoded = self.at.map_or_else(
+            || {
+                let message = format!("missing required parameter: \"{}\"", name);
+                let status = StatusCode::BAD_REQUEST;
 
-        self.ok().ok_or_else(|| {
-            Error::with_status(
-                format!("missing required parameter: \"{}\"", name),
-                StatusCode::BAD_REQUEST,
-            )
-        })
+                Err(Error::with_status(message, status))
+            },
+            |(start, end)| Ok(&source[start..end]),
+        )?;
+
+        T::decode(encoded)
     }
 }
