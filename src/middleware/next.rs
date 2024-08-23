@@ -4,14 +4,15 @@ use super::ArcMiddleware;
 use crate::{BoxFuture, Error, Request, Response, Result};
 
 pub struct Next<State = ()> {
-    stack: VecDeque<ArcMiddleware<State>>,
+    #[allow(clippy::box_collection)]
+    stack: Box<VecDeque<ArcMiddleware<State>>>,
 }
 
 impl<State> Next<State>
 where
     State: Send + Sync + 'static,
 {
-    pub(crate) fn new(stack: VecDeque<ArcMiddleware<State>>) -> Self {
+    pub(crate) fn new(stack: Box<VecDeque<ArcMiddleware<State>>>) -> Self {
         Self { stack }
     }
 
