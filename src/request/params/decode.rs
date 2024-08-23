@@ -13,10 +13,6 @@ pub trait DecodeParam {
 pub struct NoopDecoder;
 
 /// A decoder that decodes a percent-encoded `&str`.
-///
-/// Instead of returning an error if the `&str` contains Invalid UTF-8
-/// percent-encoded byte sequences, this decoder will replace the invalid
-/// sequences with the Unicode replacement character.
 pub struct PercentDecoder;
 
 impl DecodeParam for NoopDecoder {
@@ -28,17 +24,6 @@ impl DecodeParam for NoopDecoder {
 
 impl DecodeParam for PercentDecoder {
     fn decode(encoded: &str) -> Result<Cow<str>, Error> {
-        percent_decode_str(encoded).decode_utf8().or_else(|_| {
-            // The decoder encountered an invalid UTF-8 byte sequence.
-            //
-            // TODO:
-            //
-            // Implement tracing and include information about the invalid
-            // byte sequence that we encountered.
-
-            // Fallback to a lossy decoding strategy. Invalid byte sequences
-            // will be replaced with the Unicode replacement character.
-            Ok(percent_decode_str(encoded).decode_utf8_lossy())
-        })
+        Ok(percent_decode_str(encoded).decode_utf8()?)
     }
 }
