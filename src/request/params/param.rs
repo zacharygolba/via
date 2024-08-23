@@ -3,20 +3,14 @@ use std::str::FromStr;
 
 use crate::{Error, Result};
 
-#[derive(Debug)]
-pub enum ParamType {
-    Path(&'static str, (usize, usize)),
-    Query(String, (usize, usize)),
-}
-
 pub struct Param<'a, 'b> {
-    at: Option<&'a (usize, usize)>,
+    at: Option<(usize, usize)>,
     name: &'b str,
     source: &'a str,
 }
 
 impl<'a, 'b> Param<'a, 'b> {
-    pub(crate) fn new(at: Option<&'a (usize, usize)>, name: &'b str, source: &'a str) -> Self {
+    pub(crate) fn new(at: Option<(usize, usize)>, name: &'b str, source: &'a str) -> Self {
         Self { at, name, source }
     }
 
@@ -33,7 +27,7 @@ impl<'a, 'b> Param<'a, 'b> {
     }
 
     pub fn ok(self) -> Option<&'a str> {
-        let (start, end) = *self.at?;
+        let (start, end) = self.at?;
 
         Some(&self.source[start..end])
     }
@@ -47,17 +41,5 @@ impl<'a, 'b> Param<'a, 'b> {
                 StatusCode::BAD_REQUEST,
             )
         })
-    }
-}
-
-impl From<(&'static str, (usize, usize))> for ParamType {
-    fn from((name, at): (&'static str, (usize, usize))) -> Self {
-        Self::Path(name, at)
-    }
-}
-
-impl From<(String, (usize, usize))> for ParamType {
-    fn from((name, at): (String, (usize, usize))) -> Self {
-        Self::Query(name, at)
     }
 }
