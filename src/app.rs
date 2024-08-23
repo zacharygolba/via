@@ -6,7 +6,7 @@ use crate::router::{Endpoint, Router};
 use crate::server::serve;
 use crate::{Error, Middleware};
 
-const DEFAULT_MAX_CONNECTIONS: usize = 256;
+const DEFAULT_MAX_CONNECTIONS: usize = 248;
 
 pub struct App<State> {
     max_connections: usize,
