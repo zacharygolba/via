@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::sync::Arc;
 
 use crate::request::PathParams;
@@ -93,16 +92,16 @@ where
 
     pub fn lookup(&self, path: &str) -> (PathParams, Next<State>) {
         let mut params = PathParams::with_capacity(12);
-        let mut stack = Box::new(VecDeque::with_capacity(32));
+        let mut stack = Vec::with_capacity(32);
 
         // Iterate over the routes that match the request's path.
-        for matched in self.inner.visit(path) {
+        for matched in self.inner.visit(path).into_iter().rev() {
             // Extend `params` with the `matched.param()` if it is `Some`.
             params.extend(matched.param());
 
             // Extend `stack` with middleware in `matched` depending on whether
             // or not the middleware expects a partial or exact match.
-            stack.extend(matched.iter().filter_map(|when| match when {
+            stack.extend(matched.iter().rev().filter_map(|when| match when {
                 // Include this middleware in `stack` because it expects an exact
                 // match and `matched.exact` is `true`.
                 MatchWhen::Exact(exact) if matched.exact => Some(Arc::clone(exact)),
