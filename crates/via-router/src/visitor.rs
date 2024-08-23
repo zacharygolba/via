@@ -1,3 +1,7 @@
+use core::iter::Flatten;
+use core::option::IntoIter;
+use core::slice::Iter;
+
 use crate::path::Pattern;
 use crate::routes::RouteStore;
 
@@ -45,7 +49,7 @@ impl<'a, T> Match<'a, T> {
 impl<'a, T> Match<'a, Vec<T>> {
     /// Returns an iterator that yields a reference to each item in the matched
     /// route.
-    pub fn iter(&self) -> impl Iterator<Item = &'a T> {
+    pub fn iter(&self) -> Flatten<IntoIter<Iter<T>>> {
         self.route.map(|route| route.iter()).into_iter().flatten()
     }
 }
