@@ -4,4 +4,4 @@ mod request;
 
 pub use self::request::Request;
 
-pub(crate) use self::params::Params;
+pub(crate) use self::params::PathParams;

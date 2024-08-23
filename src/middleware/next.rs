@@ -12,6 +12,7 @@ impl<State> Next<State>
 where
     State: Send + Sync + 'static,
 {
+    #[allow(clippy::box_collection)]
     pub(crate) fn new(stack: Box<VecDeque<ArcMiddleware<State>>>) -> Self {
         Self { stack }
     }

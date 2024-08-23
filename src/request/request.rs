@@ -5,7 +5,7 @@ use hyper::body::Incoming;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
-use super::params::{Param, Params, QueryParamValues};
+use super::params::{Param, PathParams, QueryParam};
 use crate::body::RequestBody;
 
 pub struct Request<State = ()> {
@@ -20,7 +20,7 @@ struct RequestData<State> {
     state: Arc<State>,
 
     /// The request's path and query parameters.
-    params: Params,
+    params: PathParams,
 
     /// The request's body.
     body: RequestBody,
@@ -66,18 +66,17 @@ impl<State> Request<State> {
         // Get an `Option<(usize, usize)>` that represents the start and end
         // offset of the path parameter with the provided `name` in the request's
         // uri.
-        let at = self.data.params.get_path_param(name);
+        let at = self.data.params.get(name);
 
         Param::new(at, name, path)
     }
 
     /// Returns a convenient wrapper around an optional references to the query
     /// parameters in the request's uri with the provided `name`.
-    pub fn query<'a>(&mut self, name: &'a str) -> QueryParamValues<'_, 'a> {
-        self.data.parts.uri.query().map_or_else(
-            || QueryParamValues::empty(name),
-            |query| self.data.params.get_query_params(query, name),
-        )
+    pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
+        let query = self.data.parts.uri.query().unwrap_or("");
+
+        QueryParam::new(name, query)
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
@@ -111,7 +110,11 @@ impl<State> Request<State> {
 }
 
 impl<State> Request<State> {
-    pub(crate) fn new(request: http::Request<Incoming>, params: Params, state: Arc<State>) -> Self {
+    pub(crate) fn new(
+        request: http::Request<Incoming>,
+        params: PathParams,
+        state: Arc<State>,
+    ) -> Self {
         // Destructure the `http::Request` into its component parts.
         let (parts, body) = request.into_parts();
         // Check if the request has a `Content-Length` header. If it does, wrap
