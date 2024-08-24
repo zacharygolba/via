@@ -86,10 +86,6 @@ where
         }
     }
 
-    pub fn shrink_to_fit(&mut self) {
-        self.inner.shrink_to_fit();
-    }
-
     pub fn lookup(&self, path: &str) -> (PathParams, Next<State>) {
         let mut params = PathParams::with_capacity(12);
         let mut stack = Vec::with_capacity(32);

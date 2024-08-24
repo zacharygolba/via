@@ -47,14 +47,11 @@ where
         self
     }
 
-    pub async fn listen<F, T>(mut self, address: T, listening: F) -> Result<(), Error>
+    pub async fn listen<F, T>(self, address: T, listening: F) -> Result<(), Error>
     where
         F: FnOnce(&SocketAddr),
         T: ToSocketAddrs,
     {
-        // Shrink the router to fit the number of routes that have been added.
-        self.router.shrink_to_fit();
-
         let state = self.state;
         let router = Arc::new(self.router);
         let listener = TcpListener::bind(address).await?;
