@@ -31,9 +31,9 @@ pub async fn serve<State>(
 where
     State: Send + Sync + 'static,
 {
-    // Create a new backoff strategy with a base delay of 20 milliseconds and a
+    // Create a new backoff strategy with a base delay of 3 milliseconds and a
     // maximum delay of 30 seconds.
-    let mut backoff = Backoff::new(20, 30);
+    let mut backoff = Backoff::new(3, 30);
     // Create a vector to store the join handles of the spawned tasks. We'll
     // periodically check if any of the tasks have finished and remove them.
     let mut handles = Vec::new();

@@ -12,7 +12,7 @@ impl Backoff {
     pub fn new(base_as_millis: u64, max_as_seconds: u64) -> Self {
         Self {
             base: base_as_millis,
-            exp: 1,
+            exp: 0,
             max: max_as_seconds * 1000,
         }
     }
@@ -24,14 +24,14 @@ impl Backoff {
         // Add jitter to `delay`. The jitter is a random value between 0 and
         // `delay`. This is used to provide some level of protection against
         // the thundering herd problem.
-        let jitter = rand::thread_rng().gen_range(0..=delay);
+        let jitter = rand::thread_rng().gen_range(self.base..=delay);
 
         Duration::from_millis(jitter)
     }
 
     /// Resets the backoff to it's initial state.
     pub fn reset(&mut self) {
-        self.exp = 1;
+        self.exp = 0;
     }
 
     /// Calculates and returns the next delay as `self.base * 2^(self.exp)`. If
