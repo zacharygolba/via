@@ -99,7 +99,7 @@ async fn serve_connection<State>(
         }
     }
 
-    drop(permit)
+    drop(permit);
 }
 
 /// Serves an incoming request by routing it to the corresponding middleware
