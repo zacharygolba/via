@@ -1,81 +1,102 @@
 use percent_encoding::percent_decode_str;
 use std::borrow::Cow;
-use std::iter::Peekable;
-use std::str::CharIndices;
 
-pub fn parse<'a>(
-    chars: &mut Peekable<CharIndices>,
-    query: &'a str,
-) -> Option<(Cow<'a, str>, (usize, usize))> {
-    parse_name(chars, query).zip(parse_value(chars, query))
+type QueryParserOutput<'a> = (Cow<'a, str>, Option<(usize, usize)>);
+
+pub struct QueryParser<'a> {
+    input: &'a str,
+    offset: usize,
+}
+
+impl<'a> QueryParser<'a> {
+    pub fn new(input: &'a str) -> Self {
+        Self { input, offset: 0 }
+    }
+
+    pub fn input(&self) -> &'a str {
+        self.input
+    }
+}
+
+impl<'a> Iterator for QueryParser<'a> {
+    type Item = QueryParserOutput<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (offset, param) = parse_param(self.input, self.offset);
+
+        self.offset = offset;
+        param
+    }
 }
 
 fn decode(input: &str) -> Cow<str> {
     percent_decode_str(input).decode_utf8_lossy()
 }
 
-fn parse_name<'a>(chars: &mut Peekable<CharIndices>, query: &'a str) -> Option<Cow<'a, str>> {
+fn has_latin_char_at(input: &str, at: usize) -> bool {
+    input.is_char_boundary(at) && input.is_char_boundary(at + 1)
+}
+
+fn parse_param(query: &str, from: usize) -> (usize, Option<QueryParserOutput>) {
+    let (offset, name) = parse_name(query, from);
+    let (offset, at) = parse_value(query, offset);
+    let param = name.map(|name| {
+        let (start, end) = at;
+        let at = if start < end {
+            Some((start, end))
+        } else {
+            None
+        };
+
+        (name, at)
+    });
+
+    (offset, param)
+}
+
+fn parse_name(input: &str, from: usize) -> (usize, Option<Cow<str>>) {
     // Get the start index of the name by taking the next index from input.
-    let start = take(chars)?;
+    let start = take_while(input, from, |byte| byte == b'&');
     // Continue consuming the input until we reach the terminating equal sign.
-    let end = take_until(chars, query, '=')?;
+    let end = take_while(input, start, |byte| byte != b'=');
+    // Get the decoded version of the name if the range is valid.
+    let name = if start < end {
+        Some(decode(&input[start..end]))
+    } else {
+        None
+    };
 
-    // Move past and ignore any additional occurences of the equal sign.
-    take_while(chars, query, '=');
-
-    // Eagerly decode the percent-encoded characters in the name and return
-    // an owned string.
-    //
-    // While returning an owned string can be more expensive, it simplifies the
-    // API for the caller and allows us to cache the decoded result for fast lookups.
-    Some(decode(&query[start..end]))
+    (end, name)
 }
 
-fn parse_value(chars: &mut Peekable<CharIndices>, query: &str) -> Option<(usize, usize)> {
+fn parse_value(input: &str, from: usize) -> (usize, (usize, usize)) {
     // Get the start index of the name by taking the next index from input.
-    let start = take(chars)?;
+    let start = take_while(input, from, |byte| byte == b'=');
     // Continue consuming the input until we reach the terminating ampersand.
-    let end = take_until(chars, query, '&')?;
+    let end = take_while(input, start, |byte| byte != b'&');
 
-    // Move past and ignore any additional occurences of the ampersand character.
-    take_while(chars, query, '&');
-
-    // Return the start and end index of the query param value. The raw value
-    // will be conditionally decoded by either the QueryParamValuesIter or
-    // QueryParamValue type if the value is used.
-    Some((start, end))
+    (end, (start, end))
 }
 
-fn take(chars: &mut Peekable<CharIndices>) -> Option<usize> {
-    chars.next().map(|(index, _)| index)
-}
-
-fn take_while(chars: &mut Peekable<CharIndices>, query: &str, predicate: char) -> Option<usize> {
-    while let Some((index, next)) = chars.peek() {
-        if predicate != *next {
-            return Some(*index);
-        }
-
-        chars.next();
-    }
-
-    Some(query.len())
-}
-
-fn take_until(chars: &mut Peekable<CharIndices>, query: &str, predicate: char) -> Option<usize> {
-    while let Some((index, next)) = chars.peek() {
-        if predicate == *next {
-            return Some(*index);
-        }
-
-        chars.next();
-    }
-
-    Some(query.len())
+fn take_while(input: &str, from: usize, f: impl Fn(u8) -> bool) -> usize {
+    input
+        .bytes()
+        .enumerate()
+        .skip(from)
+        .find_map(|(index, byte)| {
+            if has_latin_char_at(input, index) && f(byte) {
+                None
+            } else {
+                Some(index)
+            }
+        })
+        .unwrap_or(input.len())
 }
 
 #[cfg(test)]
 mod tests {
+    use super::QueryParser;
+
     static QUERY_STRINGS: [&str; 21] = [
         "query=books&category=fiction&sort=asc",
         "query=hello%20world&category=%E2%9C%93",
@@ -146,14 +167,19 @@ mod tests {
         let expected_results = get_expected_results();
 
         for (expected_result_index, query) in QUERY_STRINGS.iter().enumerate() {
-            let mut iter = query.char_indices().peekable();
-            let mut entry_index = 0;
             let expected_result = &expected_results[expected_result_index];
 
-            while let Some((name, at)) = super::parse(&mut iter, query) {
+            for (entry_index, (name, at)) in QueryParser::new(query).enumerate() {
+                let at = match at {
+                    Some((start, end)) => (start, end),
+                    None => continue,
+                };
+
                 let (expected_name, expected_at) = expected_result[entry_index];
-                let expected_value = &query[expected_at.0..expected_at.1];
-                let value = &query[at.0..at.1];
+                let expected_value = query
+                    .get(expected_at.0..expected_at.1)
+                    .unwrap_or_else(|| &query[expected_at.0..]);
+                let value = query.get(at.0..at.1).unwrap_or_else(|| &query[at.0..]);
 
                 assert_eq!(
                     name, expected_name,
@@ -166,8 +192,6 @@ mod tests {
                     "Expected range at index [{}, {}] to be {}. Got {} instead.",
                     expected_result_index, entry_index, expected_value, value
                 );
-
-                entry_index += 1;
             }
         }
     }
