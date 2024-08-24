@@ -1,58 +1,47 @@
-use std::str::CharIndices;
-use std::{borrow::Cow, iter::Peekable};
+use std::borrow::Cow;
 
-use super::{query_parser, DecodeParam, Param, PercentDecoder};
+use super::{query_parser::QueryParser, DecodeParam, Param, PercentDecoder};
 
 pub struct QueryParam<'a, 'b> {
     name: &'b str,
-    query: &'a str,
-    chars: Peekable<CharIndices<'a>>,
+    parser: QueryParser<'a>,
 }
 
 pub struct QueryParamIter<'a, 'b> {
     name: &'b str,
-    query: &'a str,
-    chars: Peekable<CharIndices<'a>>,
+    parser: QueryParser<'a>,
 }
 
-fn find_next(chars: &mut Peekable<CharIndices>, query: &str, name: &str) -> Option<(usize, usize)> {
-    loop {
-        let (next, at) = query_parser::parse(chars, query)?;
-
-        if name == next {
-            return Some(at);
-        }
-    }
+fn find_next(parser: &mut QueryParser, name: &str) -> Option<(usize, usize)> {
+    parser.find_map(|(n, at)| if n == name { at } else { None })
 }
 
 impl<'a, 'b> QueryParam<'a, 'b> {
-    pub fn first(mut self) -> Param<'a, 'b, PercentDecoder> {
-        let chars = &mut self.chars;
-        let query = self.query;
-        let name = self.name;
+    pub fn first(self) -> Param<'a, 'b, PercentDecoder> {
+        let QueryParam { name, mut parser } = self;
+        let query = parser.input();
+        let at = find_next(&mut parser, name);
 
-        Param::new(find_next(chars, query, name), name, query)
+        Param::new(at, name, query)
     }
 
-    pub fn last(mut self) -> Param<'a, 'b, PercentDecoder> {
-        let mut at = None;
-        let chars = &mut self.chars;
-        let query = self.query;
-        let name = self.name;
+    pub fn last(self) -> Param<'a, 'b, PercentDecoder> {
+        let QueryParam { name, parser } = self;
+        let query = parser.input();
+        let at = parser
+            .filter_map(|(n, at)| if n == name { at } else { None })
+            .last();
 
-        while let Some(next) = find_next(chars, query, name) {
-            at = Some(next);
-        }
-
-        Param::new(at, self.name, query)
+        Param::new(at, name, query)
     }
 }
 
 impl<'a, 'b> QueryParam<'a, 'b> {
     pub(crate) fn new(name: &'b str, query: &'a str) -> Self {
-        let chars = query.char_indices().peekable();
-
-        Self { name, query, chars }
+        Self {
+            name,
+            parser: QueryParser::new(query),
+        }
     }
 }
 
@@ -60,11 +49,12 @@ impl<'a> Iterator for QueryParamIter<'a, '_> {
     type Item = Cow<'a, str>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let query = self.query;
+        let parser = &mut self.parser;
+        let query = parser.input();
         let name = self.name;
-        let (start, end) = find_next(&mut self.chars, query, name)?;
+        let at = find_next(parser, name)?;
 
-        PercentDecoder::decode(&query[start..end]).ok()
+        PercentDecoder::decode(&query[at.0..at.1]).ok()
     }
 }
 
@@ -75,8 +65,7 @@ impl<'a, 'b> IntoIterator for QueryParam<'a, 'b> {
     fn into_iter(self) -> Self::IntoIter {
         QueryParamIter {
             name: self.name,
-            query: self.query,
-            chars: self.chars,
+            parser: self.parser,
         }
     }
 }
