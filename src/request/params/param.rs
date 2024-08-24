@@ -1,6 +1,7 @@
 use http::StatusCode;
+use std::borrow::Cow;
+use std::marker::PhantomData;
 use std::str::FromStr;
-use std::{borrow::Cow, marker::PhantomData};
 
 use super::{DecodeParam, NoopDecoder};
 use crate::{Error, Result};
