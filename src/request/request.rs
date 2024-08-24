@@ -52,10 +52,11 @@ impl<State> Request<State> {
     ///
     /// ```
     /// use via::{Error, Next, Request};
+    /// use std::borrow::Cow;
     ///
     /// async fn hello(request: Request, _: Next) -> Result<String, Error> {
-    ///     let required: Result<&str, Error> = request.param("name").required();
-    ///     let _optional: Option<&str> = request.param("name").ok();
+    ///     let required: Result<Cow<str>, Error> = request.param("name").required();
+    ///     let _optional: Option<Cow<str>> = request.param("name").ok();
     ///
     ///     Ok(format!("Hello, {}!", required?))
     /// }
