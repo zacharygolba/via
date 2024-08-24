@@ -1,10 +1,12 @@
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use std::time::Duration;
 
 pub struct Backoff {
     base: u64,
     exp: u64,
     max: u64,
+    rng: Box<StdRng>,
 }
 
 impl Backoff {
@@ -14,6 +16,7 @@ impl Backoff {
             base: base_as_millis,
             exp: 0,
             max: max_as_seconds * 1000,
+            rng: Box::new(StdRng::from_entropy()),
         }
     }
 
@@ -24,7 +27,7 @@ impl Backoff {
         // Add jitter to `delay`. The jitter is a random value between 0 and
         // `delay`. This is used to provide some level of protection against
         // the thundering herd problem.
-        let jitter = rand::thread_rng().gen_range(self.base..=delay);
+        let jitter = self.rng.gen_range(self.base..=delay);
 
         Duration::from_millis(jitter)
     }
