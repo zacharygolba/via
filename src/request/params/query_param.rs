@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
-use super::{query_parser::QueryParser, DecodeParam, Param, PercentDecoder};
+use super::query_parser::QueryParser;
+use super::{DecodeParam, Param, PercentDecoder};
 
 pub struct QueryParam<'a, 'b> {
     name: &'b str,
