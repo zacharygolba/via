@@ -12,11 +12,17 @@ pub struct QueryParamIter<'a, 'b> {
     parser: QueryParser<'a>,
 }
 
-fn find_next(parser: &mut QueryParser, name: &str) -> Option<(usize, usize)> {
-    parser.find_map(|(n, at)| if n == name { at } else { None })
+fn find_next(parser: &mut QueryParser, name: &str) -> Option<Option<(usize, usize)>> {
+    parser.find_map(|(n, at)| if n == name { Some(at) } else { None })
 }
 
 impl<'a, 'b> QueryParam<'a, 'b> {
+    pub fn exists(self) -> bool {
+        let QueryParam { name, mut parser } = self;
+
+        parser.any(|(n, _)| n == name)
+    }
+
     pub fn first(self) -> Param<'a, 'b, PercentDecoder> {
         let QueryParam { name, mut parser } = self;
         let query = parser.input();
@@ -29,7 +35,7 @@ impl<'a, 'b> QueryParam<'a, 'b> {
         let QueryParam { name, parser } = self;
         let query = parser.input();
         let at = parser
-            .filter_map(|(n, at)| if n == name { at } else { None })
+            .filter_map(|(n, at)| if n == name { Some(at) } else { None })
             .last();
 
         Param::new(at, name, query)
@@ -52,7 +58,7 @@ impl<'a> Iterator for QueryParamIter<'a, '_> {
         let parser = &mut self.parser;
         let query = parser.input();
         let name = self.name;
-        let at = find_next(parser, name)?;
+        let at = find_next(parser, name)??;
 
         PercentDecoder::decode(&query[at.0..at.1]).ok()
     }
