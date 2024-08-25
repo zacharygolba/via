@@ -55,12 +55,10 @@ impl<'a> Iterator for QueryParamIter<'a, '_> {
     type Item = Cow<'a, str>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let parser = &mut self.parser;
-        let query = parser.input();
-        let name = self.name;
-        let at = find_next(parser, name)??;
+        let (start, end) = find_next(&mut self.parser, self.name)??;
+        let encoded = self.parser.input().get(start..end)?;
 
-        PercentDecoder::decode(&query[at.0..at.1]).ok()
+        PercentDecoder::decode(encoded).ok()
     }
 }
 
