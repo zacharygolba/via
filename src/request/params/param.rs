@@ -13,6 +13,13 @@ pub struct Param<'a, 'b, T = NoopDecoder> {
     _decode: PhantomData<T>,
 }
 
+fn missing_required_param<'a>(name: &str) -> Result<Cow<'a, str>, Error> {
+    let message = format!("missing required parameter: \"{}\"", name);
+    let status = StatusCode::BAD_REQUEST;
+
+    Err(Error::with_status(message, status))
+}
+
 impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     pub(crate) fn new(at: Option<Option<(usize, usize)>>, name: &'b str, source: &'a str) -> Self {
         Self {
@@ -42,17 +49,14 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     }
 
     pub fn required(self) -> Result<Cow<'a, str>, Error> {
-        let name = self.name;
-        let source = self.source;
-
-        match self.at {
-            Some(Some((start, end))) => T::decode(&source[start..end]),
-            Some(None) | None => {
-                let message = format!("missing required parameter: \"{}\"", name);
-                let status = StatusCode::BAD_REQUEST;
-
-                return Err(Error::with_status(message, status));
-            }
-        }
+        self.at
+            .and_then(|at| {
+                let (start, end) = at?;
+                self.source.get(start..end)
+            })
+            .map_or_else(
+                || missing_required_param(self.name),
+                |value| T::decode(value),
+            )
     }
 }
