@@ -15,18 +15,62 @@ struct SplitPath<'a> {
     value: &'a str,
 }
 
-/// Returns an iterator that yields a `Pattern` for each segment in the url path.
-pub fn patterns(value: &'static str) -> impl Iterator<Item = Pattern> {
-    split(value).map(|(start, end)| Pattern::from(&value[start..end]))
+/// Returns an iterator that yields a `Pattern` for each segment in the uri path.
+pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
+    split(path).map(|range| {
+        let value = segment_at(path, range);
+
+        match value.chars().next() {
+            Some('*') => {
+                // Remove the leading `*` character. If we reach the end of
+                // `value`, default to an empty string.
+                let rest = value.get(1..).unwrap_or_default();
+
+                Pattern::CatchAll(rest)
+            }
+            Some(':') => {
+                // Remove the leading `:` character. If we reach the end of
+                // `value`, default to an empty string.
+                let rest = value.get(1..).unwrap_or_default();
+
+                Pattern::Dynamic(rest)
+            }
+            _ => {
+                // The value is a static segment. Keep it as is.
+                Pattern::Static(value)
+            }
+        }
+    })
 }
 
 /// Returns a collection containing the start and end offset of each segment in
-/// the url path.
-pub fn segments(value: &str) -> Vec<(usize, usize)> {
+/// the uri path.
+pub fn segments(path: &str) -> Vec<(usize, usize)> {
     let mut segments = Vec::with_capacity(12);
 
-    segments.extend(split(value));
+    segments.extend(split(path));
     segments
+}
+
+// Gets the value of the path segment at `range` from `path`.
+pub fn segment_at(path: &str, range: (usize, usize)) -> &str {
+    match path.get(range.0..range.1) {
+        Some(value) => {
+            // The `range` is valid, return it.
+            value
+        }
+        None => {
+            // The range is invalid. This should never happen..
+
+            if cfg!(debug_assertions) {
+                // Panic with a somewhat descriptive error message in debug mode.
+                panic!("invalid path segment for '{}' {:?}", path, range);
+            }
+
+            // Panic with a generic error message in release mode.
+            panic!("invalid path segment");
+        }
+    }
 }
 
 /// Returns an iterator that yields a tuple containing the start and end offset
@@ -35,16 +79,6 @@ fn split(value: &str) -> SplitPath {
     SplitPath {
         bytes: value.bytes().enumerate(),
         value,
-    }
-}
-
-impl From<&'static str> for Pattern {
-    fn from(value: &'static str) -> Pattern {
-        match value.chars().next() {
-            Some('*') => Self::CatchAll(&value[1..]),
-            Some(':') => Self::Dynamic(&value[1..]),
-            _ => Self::Static(value),
-        }
     }
 }
 
