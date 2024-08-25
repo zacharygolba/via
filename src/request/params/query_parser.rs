@@ -171,7 +171,7 @@ mod tests {
             assert_eq!(
                 actual_result.len(),
                 expected_result.len(),
-                "Expected {} to have {} entries. Got {} instead.\n\n{}\n\n",
+                "Expected {} to have {} entries. Got {} instead. Query: '{}'.",
                 expected_result_index,
                 expected_result.len(),
                 actual_result.len(),
