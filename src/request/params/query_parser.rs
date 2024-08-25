@@ -13,43 +13,57 @@ fn decode(input: &str) -> Cow<str> {
 }
 
 fn take_name(input: &str, from: usize) -> (usize, Option<Cow<str>>) {
-    // Get the start index of the name by taking the next index from input.
-    let result = take_while(input, from, |byte| byte == b'&').and_then(|start| {
-        let end = take_while(input, start, |byte| byte != b'=').unwrap_or(input.len());
-        let name = input.get(start..end).map(decode)?;
-
-        Some((end, name))
-    });
-
-    match result {
-        Some((offset, name)) => (offset, Some(name)),
-        None => (input.len(), None),
-    }
-}
-
-fn take_value(input: &str, from: usize) -> (usize, Option<(usize, usize)>) {
-    // Get the start index of the name by taking the next index from input.
-    let at = take_while(input, from, |byte| byte == b'=').map(|start| {
-        // Continue consuming the input until we reach the terminating ampersand.
-        match take_while(input, start, |byte| byte != b'&') {
-            // If we find the terminating ampersand, return the complete range.
-            Some(end) => (start, end),
+    // Get the length of the input. We'll use this value as the end index if we
+    // reach the end of the input.
+    let len = input.len();
+    // Get the start index of the name by finding the next byte that is not an
+    // `&`. Then, map the index to a tuple containing both the start and end
+    // index of the query parameter name.
+    let at = take_while(input, from, |byte| byte == b'&').and_then(|start| {
+        // Continue consuming the input until we reach the terminating `=`.
+        match take_while(input, start, |byte| byte != b'=') {
+            // If we find the terminating `=`, return the complete range.
+            Some(end) => Some((start, end)),
             // Otherwise, return the start index and the length of the input.
-            None => (start, input.len()),
+            None => Some((start, len)),
         }
     });
 
     match at {
-        Some((start, end)) => (end, Some((start, end))),
-        None => (input.len(), None),
+        Some((start, end)) => (end, input.get(start..end).map(decode)),
+        None => (len, None),
+    }
+}
+
+fn take_value(input: &str, from: usize) -> (usize, Option<(usize, usize)>) {
+    // Get the length of the input. We'll use this value as the end index if we
+    // reach the end of the input.
+    let len = input.len();
+    // Get the start index of the name by finding the next byte that is not an
+    // `=`. Then, map the index to a tuple containing both the start and end
+    // index of the query parameter value.
+    let at = take_while(input, from, |byte| byte == b'=').map(|start| {
+        // Continue consuming the input until we reach the terminating `&`.
+        match take_while(input, start, |byte| byte != b'&') {
+            // If we find the terminating `&`, return the complete range.
+            Some(end) => (start, end),
+            // Otherwise, return the start index and the length of the input.
+            None => (start, len),
+        }
+    });
+
+    match at {
+        Some((_, end)) => (end, at),
+        None => (len, None),
     }
 }
 
 fn take_while(input: &str, from: usize, f: impl Fn(u8) -> bool) -> Option<usize> {
     let rest = input.get(from..)?;
-    let to = rest.bytes().position(|byte| !f(byte))?;
 
-    Some(from + to)
+    rest.bytes()
+        .enumerate()
+        .find_map(|(to, byte)| if !f(byte) { from.checked_add(to) } else { None })
 }
 
 impl<'a> QueryParser<'a> {
