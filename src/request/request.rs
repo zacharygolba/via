@@ -69,7 +69,7 @@ impl<State> Request<State> {
         // uri.
         let at = self.data.params.get(name);
 
-        Param::new(at, name, path)
+        Param::new(Some(at), name, path)
     }
 
     /// Returns a convenient wrapper around an optional references to the query
