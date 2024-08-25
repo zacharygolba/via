@@ -79,6 +79,37 @@ impl<T> Node<T> {
     }
 }
 
+/// Like `Option::expect`, but in B minor.
+macro_rules! unwrap_node {
+    (
+        // The option that contains the `&Node<_>` or `&mut Node<_>` that we'll
+        // attempt to unwrap.
+        $option:expr,
+        // The key that was used to look up the node contained in `$option` from
+        // the route store.
+        $at:expr
+    ) => {
+        match $option {
+            Some(node) => node,
+            None => {
+                // This should never happen.
+                //
+                // The router is like the Hotel California. You can check out any
+                // time you like, but you can never leave.
+                //
+                // If you see this error, you've probably found a bug in the way
+                // that routes are added to the route store or the way the key
+                // is assigned to nodes.
+                if cfg!(debug_assertions) {
+                    panic!("unknown key: {}", $at);
+                }
+
+                panic!("unknown key");
+            }
+        }
+    };
+}
+
 impl<'a, T> RouteEntry<'a, T> {
     /// Pushes a new node into the store and associates the index of the new
     /// node to the entries of the current node. Returns the index of the
@@ -121,11 +152,11 @@ impl<T> RouteStore<T> {
 
     /// Returns a shared reference to the node at the given `key`.
     pub fn get(&self, key: usize) -> &Node<T> {
-        &self.nodes[key]
+        unwrap_node!(self.nodes.get(key), key)
     }
 
     /// Returns a mutable reference to the node at the given `key`.
     pub fn get_mut(&mut self, key: usize) -> &mut Node<T> {
-        &mut self.nodes[key]
+        unwrap_node!(self.nodes.get_mut(key), key)
     }
 }

@@ -2,7 +2,7 @@ use core::iter::Flatten;
 use core::option::IntoIter;
 use core::slice::Iter;
 
-use crate::path::Pattern;
+use crate::path::{self, Pattern};
 use crate::routes::RouteStore;
 
 /// Represents either a partial or exact match for a given path segment.
@@ -109,7 +109,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         // Get the value of the path segment at `index`. We'll eagerly borrow
         // and cache this slice from `self.path_value` to avoid having to build
         // the reference for each descendant with a `Static` pattern.
-        let path_segment = &self.path_value[range.0..range.1];
+        let path_segment = path::segment_at(self.path_value, range);
         // Eagerly calculate and store the next index to avoid having to do so
         // for each descendant with a `Dynamic` or `Static` pattern.
         let next_index = index + 1;
