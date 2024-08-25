@@ -19,13 +19,13 @@ fn take_name(input: &str, from: usize) -> (usize, Option<Cow<str>>) {
     // Get the start index of the name by finding the next byte that is not an
     // `&`. Then, map the index to a tuple containing both the start and end
     // index of the query parameter name.
-    let at = take_while(input, from, |byte| byte == b'&').and_then(|start| {
+    let at = take_while(input, from, |byte| byte == b'&').map(|start| {
         // Continue consuming the input until we reach the terminating `=`.
         match take_while(input, start, |byte| byte != b'=') {
             // If we find the terminating `=`, return the complete range.
-            Some(end) => Some((start, end)),
+            Some(end) => (start, end),
             // Otherwise, return the start index and the length of the input.
-            None => Some((start, len)),
+            None => (start, len),
         }
     });
 
