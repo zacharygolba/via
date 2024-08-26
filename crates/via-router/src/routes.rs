@@ -95,7 +95,7 @@ macro_rules! unwrap_node {
                 // This should never happen.
                 //
                 // The router is like the Hotel California. You can check out any
-                // time you like, but you can never leave.
+                // time you like, but you can never leaf.
                 //
                 // If you see this error, you've probably found a bug in the way
                 // that routes are added to the route store or the way the key
