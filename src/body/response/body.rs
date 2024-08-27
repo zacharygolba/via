@@ -11,7 +11,11 @@ pub struct ResponseBody {
 
 impl ResponseBody {
     pub fn is_empty(&self) -> bool {
-        self.len().map_or(false, |len| len == 0)
+        match &self.body {
+            Either::Left(Either::Left(buffered)) => buffered.is_empty(),
+            Either::Right(mapped) => mapped.is_empty(),
+            _ => false,
+        }
     }
 
     pub fn len(&self) -> Option<usize> {
