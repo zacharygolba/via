@@ -41,7 +41,7 @@ impl<T> Router<T> {
         self.store.shrink_to_fit();
     }
 
-    pub fn visit(&self, path: &str) -> Vec<Match<T>> {
+    pub fn visit<'a>(&'a self, path: &str) -> Vec<Match<'a, T>> {
         let mut results = Vec::with_capacity(24);
         let segments = path::segments(path);
         let visitor = Visitor::new(path, &segments, &self.store);

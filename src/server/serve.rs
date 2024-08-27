@@ -112,8 +112,12 @@ async fn serve_request<State>(
 where
     State: Send + Sync + 'static,
 {
+    // Get a Vec of routes that match the uri path.
+    let matched_routes = router.lookup(request.uri().path());
+
     // Build the middleware stack for the request.
-    let (params, next) = router.lookup(request.uri().path());
+    let (params, next) = router.resolve(&matched_routes);
+
     // Wrap the incoming request in with `via::Request`.
     let request = Request::new(request, params, Arc::clone(state));
 
