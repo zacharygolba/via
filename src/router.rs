@@ -1,20 +1,14 @@
 use std::sync::Arc;
 
+use via_router::Match;
+
 use crate::request::PathParams;
 use crate::{Middleware, Next};
-
-pub struct Endpoint<'a, State> {
-    inner: via_router::Endpoint<'a, Vec<MatchWhen<State>>>,
-}
-
-pub struct Router<State> {
-    inner: via_router::Router<Vec<MatchWhen<State>>>,
-}
 
 /// An enum that wraps middleware before it's added to the router, specifying
 /// whether the middleware should apply to partial or exact matches of a
 /// request's url path.
-enum MatchWhen<State> {
+pub enum MatchWhen<State> {
     /// Apply the middleware to exact matches of a request's url path. This
     /// variant is used when middleware is added to an `Endpoint` with the
     /// `respond` method.
@@ -24,6 +18,14 @@ enum MatchWhen<State> {
     /// variant is used when middleware is added to an `Endpoint` with the
     /// `include` method.
     Partial(Arc<dyn Middleware<State>>),
+}
+
+pub struct Endpoint<'a, State> {
+    inner: via_router::Endpoint<'a, Vec<MatchWhen<State>>>,
+}
+
+pub struct Router<State> {
+    inner: via_router::Router<Vec<MatchWhen<State>>>,
 }
 
 impl<'a, State> Endpoint<'a, State> {
@@ -86,21 +88,28 @@ where
         }
     }
 
-    pub fn lookup(&self, path: &str) -> (PathParams, Next<State>) {
+    pub fn lookup<'a>(&'a self, path: &str) -> Vec<Match<'a, Vec<MatchWhen<State>>>> {
+        self.inner.visit(path)
+    }
+
+    pub fn resolve(
+        &self,
+        matched_routes: &[Match<Vec<MatchWhen<State>>>],
+    ) -> (PathParams, Next<State>) {
         let mut params = PathParams::with_capacity(12);
         let mut stack = Vec::with_capacity(32);
 
         // Iterate over the routes that match the request's path.
-        for matched in self.inner.visit(path).into_iter().rev() {
+        for route in matched_routes.iter().rev() {
             // Extend `params` with the `matched.param()` if it is `Some`.
-            params.extend(matched.param());
+            params.extend(route.param());
 
             // Extend `stack` with middleware in `matched` depending on whether
             // or not the middleware expects a partial or exact match.
-            stack.extend(matched.iter().rev().filter_map(|when| match when {
+            stack.extend(route.iter().rev().filter_map(|when| match when {
                 // Include this middleware in `stack` because it expects an exact
                 // match and `matched.exact` is `true`.
-                MatchWhen::Exact(exact) if matched.exact => Some(Arc::clone(exact)),
+                MatchWhen::Exact(exact) if route.exact => Some(Arc::clone(exact)),
 
                 // Include this middleware in `stack` unconditionally because it
                 // targets partial matches.
