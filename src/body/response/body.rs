@@ -1,4 +1,4 @@
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use futures_core::Stream;
 use hyper::body::Frame;
 
@@ -33,8 +33,7 @@ impl ResponseBody {
     }
 
     pub(crate) fn buffer(data: Bytes) -> Self {
-        let buffer = Box::new(BytesMut::from(data));
-        let buffered = Buffered::new(buffer);
+        let buffered = Buffered::new(data.into());
 
         Self {
             body: Either::Left(Either::Left(buffered)),

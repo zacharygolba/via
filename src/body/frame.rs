@@ -19,19 +19,11 @@ impl FrameExt for Frame<Bytes> {
         F: FnOnce(Bytes) -> Result<Bytes, E>,
         E: Into<Error>,
     {
-        if self.is_trailers() {
-            // We're only interested in data frames. Return early.
-            return Ok(self);
-        }
-
-        // Unwrap the frame's data and map it using the provided closure.
-        match f(self.into_data().unwrap()) {
-            // The data was successfully mapped. Return `Ok` with a new frame
-            // containing the mapped data.
-            Ok(data) => Ok(Frame::data(data)),
-            // An error occurred while mapping the data. Convert the error into
-            // an `Error` and return.
-            Err(error) => Err(error.into()),
+        match self.into_data() {
+            // The frame contains data. Apply our map fn and return the result.
+            Ok(data) => f(data).map(Frame::data).map_err(|error| error.into()),
+            // The frame contains trailers. Do not apply the map fn.
+            Err(frame) => Ok(frame),
         }
     }
 }
