@@ -6,11 +6,14 @@ use std::task::{Context, Poll};
 
 use crate::{Error, Result};
 
+/// The maximum amount of data that can be read from a buffered body per frame.
+const MAX_FRAME_LEN: usize = 16384; // 16KB
+
 /// A buffered body that contains a `BytesMut` buffer. This variant is used
 /// when the entire body can be buffered in memory.
 pub struct Buffered {
     /// The buffer containing the body data.
-    data: Box<BytesMut>,
+    buffer: BytesMut,
 
     /// Buffered is marked as `!Unpin` because it parcitipates in an `Either`
     /// enum that contains other types that are `!Unpin`. This is a safety
@@ -20,37 +23,35 @@ pub struct Buffered {
 }
 
 impl Buffered {
-    pub fn new(data: Box<BytesMut>) -> Self {
+    pub fn new(buffer: BytesMut) -> Self {
         Self {
-            data,
+            buffer,
             _pin: PhantomPinned,
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.buffer.is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.data.len()
+        self.buffer.len()
     }
 }
 
 impl Buffered {
-    /// Returns a pinned mutable reference to the `data` field.
+    /// Returns a pinned mutable reference to the `buffer` field.
     fn project(self: Pin<&mut Self>) -> Pin<&mut BytesMut> {
         unsafe {
             //
             // Safety:
             //
-            // `BytesMut` is `Unpin`. However, it is used in the context of an
-            // `Either` enum that contain other types that are `!Unpin`. In order
-            // to prevent the accidental movement of data out of `self` or
-            // `self.data`, we mark `Buffered` as `!Unpin` and therefore need to
-            // use `Pin::map_unchecked_mut` to get a pinned reference to the
-            // `BytesMut` buffer.
+            // Data is never moved out of self or the buffer stored at `self.data`.
+            // We use `BytesMut::split_to` in combination with `BytesMut::freeze`
+            // to ensure that data is copied out of the buffer and the cursor is
+            // advanced to the offset of the next frame.
             //
-            self.map_unchecked_mut(|this| &mut *this.data)
+            self.map_unchecked_mut(|this| &mut this.buffer)
         }
     }
 }
@@ -63,14 +64,14 @@ impl Body for Buffered {
         self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        // Get a mutable reference to `self`.
+        // Get a pinned mutable reference to `self.data`.
         let mut buffer = self.project();
-        // Get the length of the buffer. This is used to determine how
-        // many bytes to copy from the buffer into the data frame.
-        let len = buffer.len();
+        // Get the number of bytes to read from `buffer` for the current frame.
+        // We read a maximum of 16KB per frame from `buffer`.
+        let frame_len = buffer.len().min(MAX_FRAME_LEN);
 
         // Check if the buffer has any data.
-        if len == 0 {
+        if frame_len == 0 {
             // The buffer is empty. Signal that the stream has ended.
             return Poll::Ready(None);
         }
@@ -78,9 +79,9 @@ impl Body for Buffered {
         // Copy the bytes from the buffer into an immutable `Bytes`. This is safe
         // because `BytesMut` is only advancing an internal pointer rather than
         // moving the bytes in memory.
-        let bytes = buffer.split_to(len).freeze();
+        let data = buffer.split_to(frame_len).freeze();
         // Wrap the bytes we copied from buffer in a data frame.
-        let frame = Frame::data(bytes);
+        let frame = Frame::data(data);
 
         // Return the data frame to the caller.
         Poll::Ready(Some(Ok(frame)))
@@ -93,7 +94,7 @@ impl Body for Buffered {
     fn size_hint(&self) -> SizeHint {
         // Get the length of the buffer and attempt to cast it to a
         // `u64`. If the cast fails, `len` will be `None`.
-        let len = u64::try_from(self.len()).ok();
+        let len = self.len().try_into().ok();
 
         // If `len` is `None`, return a size hint with no bounds. Otherwise,
         // map the remaining length to a size hint with the exact size.

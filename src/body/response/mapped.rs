@@ -42,7 +42,11 @@ impl Mapped {
 
     /// Returns `true` if `body` is buffered in memory and contains no data.
     pub fn is_empty(&self) -> bool {
-        self.len().map_or(false, |len| len == 0)
+        if let Either::Left(buffered) = &self.body {
+            buffered.is_empty()
+        } else {
+            false
+        }
     }
 
     /// Returns the byte length of the data in `body` if it is buffered in memory.
@@ -58,15 +62,33 @@ impl Mapped {
 impl Mapped {
     /// Returns a pinned mutable reference to the `body` field.
     fn project(self: Pin<&mut Self>) -> Pin<&mut Either<Buffered, Streaming>> {
+        // Get a mutable reference to `self`.
+        let this = unsafe {
+            //
+            // Safety:
+            //
+            // The `body` field may contain a `Streaming` response body which is
+            // not `Unpin`. We need to project the body field through a pinned
+            // reference to `Self` so that it can be polled in the `poll_frame`
+            // method. This is safe because no data is moved out of `self`.
+            //
+            self.get_unchecked_mut()
+        };
+        // Get a mutable reference to the `body` field.
+        let ptr = &mut this.body;
+
+        // Return the pinned mutable reference to the `Body` at `ptr`.
         unsafe {
             //
             // Safety:
             //
-            // All possible variants of the `Either` enum that compose the `body`
-            // field are `!Unpin` and do not move data out of the pinned
-            // reference from which they are polled.
+            // The `body` field may contain a `Streaming` response body which is
+            // not `Unpin`. Therefore we have to use `Pin::new_unchecked` to wrap
+            // the mutable reference to `body` in a pinned reference. This is safe
+            // because we are not moving the value or any data owned by the `body`
+            // field out of the pinned mutable reference.
             //
-            self.map_unchecked_mut(|this| &mut this.body)
+            Pin::new_unchecked(ptr)
         }
     }
 }
@@ -79,31 +101,35 @@ impl Body for Mapped {
         mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        self.as_mut().project().poll_frame(context).map(|option| {
-            let frame = match option {
-                // A frame was successfully polled from the stream. Store it
-                // at `frame`.
-                Some(Ok(value)) => value,
-                // An error occurred while polling the stream. Return early.
-                Some(error) => return Some(error),
-                // The stream has been exhausted. Return early.
-                None => return None,
-            };
+        // Poll `self.body` for the next frame.
+        let poll = self.as_mut().project().poll_frame(context);
+        // Store a reference to our queue of map functions at `queue`.
+        let queue = &self.queue;
 
-            // Return `Some` with the result of attempting to map the data at
-            // frame.
-            Some(frame.try_map_data(|input| {
-                // Attempt to fold the queue of map functions over the data
-                // in the frame if `frame.is_data()` and return the result.
-                //
-                // Due to the fact that the middleware is a stack, the map
-                // functions in `queue` are applied in reverse order.
-                self.queue
-                    .iter()
-                    .rev()
-                    .try_fold(input, |data, map| map(data))
-            }))
-        })
+        match poll {
+            // A frame was successfully polled from `self.body`. Apply our map
+            // functions to the frame if it is a data frame and return the
+            // result.
+            Poll::Ready(Some(Ok(frame))) => {
+                let result = frame.try_map_data(|input| {
+                    // Attempt to fold the queue of map functions over the data
+                    // in the frame if `frame.is_data()` and return the result.
+                    //
+                    // Due to the fact that the middleware is a stack, the map
+                    // functions in `queue` are applied in reverse order.
+                    queue.iter().rev().try_fold(input, |data, map| map(data))
+                });
+
+                Poll::Ready(Some(result))
+            }
+            // An error occurred while polling the stream. Return `Ready`
+            // with the error.
+            Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(error))),
+            // The stream has been exhausted.
+            Poll::Ready(None) => Poll::Ready(None),
+            // Wait for the next frame.
+            Poll::Pending => Poll::Pending,
+        }
     }
 
     fn is_end_stream(&self) -> bool {
