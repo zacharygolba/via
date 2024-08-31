@@ -128,13 +128,17 @@ where
     let request = Request::new(request, params, state);
 
     // Call the middleware stack and return a Future that resolves to a
-    // Result<Response, Error>.
-    let future = next.call(request);
+    // Result<Response, Error>. If the response takes longer than the
+    // configured timeout, respond with a 504 Gateway Timeout.
+    let future = time::timeout(response_timeout, next.call(request));
 
-    async move {
-        Ok(match time::timeout(response_timeout, future).await {
+    async {
+        Ok(match future.await {
+            // The response was generated successfully.
             Ok(Ok(response)) => response.into_inner(),
+            // An occurred while generating the response.
             Ok(Err(error)) => error.into_response().into_inner(),
+            // The response timed out.
             Err(_) => {
                 let error = Error::with_status(
                     "The server is taking too long to respond. Please try again later.".to_owned(),
