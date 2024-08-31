@@ -1,15 +1,21 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::{TcpListener, ToSocketAddrs};
 
 use crate::router::{Endpoint, Router};
 use crate::server::serve;
 use crate::{Error, Middleware};
 
-const DEFAULT_MAX_CONNECTIONS: usize = 248;
+/// The default value of the maximum number of concurrent connections.
+const DEFAULT_MAX_CONNECTIONS: usize = 256;
+
+/// The default value of the response timeout in seconds.
+const DEFAULT_RESPONSE_TIMEOUT: u64 = 60;
 
 pub struct App<State> {
     max_connections: usize,
+    response_timeout: Duration,
     router: Router<State>,
     state: Arc<State>,
 }
@@ -21,6 +27,7 @@ where
 {
     App {
         max_connections: DEFAULT_MAX_CONNECTIONS,
+        response_timeout: Duration::from_secs(DEFAULT_RESPONSE_TIMEOUT),
         router: Router::new(),
         state: Arc::new(state),
     }
@@ -42,8 +49,22 @@ where
         self
     }
 
-    pub fn set_max_connections(&mut self, n: usize) -> &mut Self {
+    /// Sets the maximum number of concurrent connections that the server can
+    /// accept. The default value is 256.
+    ///
+    /// We suggest not setting this value unless you know what you are doing and
+    /// have a good reason to do so. If you are unsure, it is best to leave this
+    /// value at the default.
+    pub fn max_connections(mut self, n: usize) -> Self {
         self.max_connections = n;
+        self
+    }
+
+    /// Sets the amount of time in seconds that the server will wait while
+    /// generating a response before responding with a 504 Gateway Timeout. The
+    /// default value is 1 minute.
+    pub fn response_timeout(mut self, timeout: u64) -> Self {
+        self.response_timeout = Duration::from_secs(timeout);
         self
     }
 
@@ -70,6 +91,13 @@ where
         }
 
         // Serve incoming connections from the TCP listener.
-        serve(state, router, listener, self.max_connections).await
+        serve(
+            state,
+            router,
+            listener,
+            self.max_connections,
+            self.response_timeout,
+        )
+        .await
     }
 }
