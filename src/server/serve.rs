@@ -50,6 +50,7 @@ where
         let (stream, _addr) = match listener.accept().await {
             Ok(accepted) => accepted,
             Err(_) => {
+                drop(permit);
                 //
                 // TODO:
                 //
