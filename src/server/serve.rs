@@ -1,12 +1,14 @@
+use http::StatusCode;
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tokio::task;
+use tokio::{task, time};
 
 use crate::body::Pollable;
 use crate::router::Router;
@@ -25,6 +27,7 @@ pub async fn serve<State>(
     router: Arc<Router<State>>,
     listener: TcpListener,
     max_connections: usize,
+    response_timeout: Duration,
 ) -> Result<(), Error>
 where
     State: Send + Sync + 'static,
@@ -66,7 +69,13 @@ where
             // Clone the `state` so it can be moved into the task.
             let state = Arc::clone(&state);
 
-            task::spawn(serve_connection(router, state, permit, io))
+            task::spawn(serve_connection(
+                router,
+                state,
+                permit,
+                io,
+                response_timeout,
+            ))
         });
 
         // Remove any handles that have finished.
@@ -79,11 +88,12 @@ async fn serve_connection<State>(
     state: Arc<State>,
     permit: OwnedSemaphorePermit,
     io: TokioIo<TcpStream>,
+    response_timeout: Duration,
 ) where
     State: Send + Sync + 'static,
 {
     // Create a hyper service from the `serve_request` function.
-    let service = service_fn(|request| serve_request(&router, &state, request));
+    let service = service_fn(|request| serve_request(&router, &state, request, response_timeout));
 
     // Create a new connection for the configured HTTP version. For
     // now we only support HTTP/1.1. This will be expanded to
@@ -114,6 +124,7 @@ async fn serve_request<State>(
     router: &Router<State>,
     state: &Arc<State>,
     request: HttpRequest,
+    response_timeout: Duration,
 ) -> Result<HttpResponse, Infallible>
 where
     State: Send + Sync + 'static,
@@ -132,9 +143,20 @@ where
         Request::new(request, params, state)
     };
 
-    // Call the middleware stack and return a response.
-    match next.call(request).await {
-        Ok(response) => Ok(response.into_inner()),
-        Err(error) => Ok(error.into_response().into_inner()),
-    }
+    // Call the middleware stack and return a Future that resolves to a
+    // Result<Response, Error>.
+    let future = next.call(request);
+
+    Ok(match time::timeout(response_timeout, future).await {
+        Ok(Ok(response)) => response.into_inner(),
+        Ok(Err(error)) => error.into_response().into_inner(),
+        Err(_) => {
+            let error = Error::with_status(
+                "The server is taking too long to respond. Please try again later.".to_owned(),
+                StatusCode::GATEWAY_TIMEOUT,
+            );
+
+            error.into_response().into_inner()
+        }
+    })
 }
