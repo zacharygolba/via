@@ -8,8 +8,6 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task;
 
-use super::accept;
-use super::backoff::Backoff;
 use crate::body::Pollable;
 use crate::router::Router;
 use crate::{Error, Request};
@@ -31,21 +29,31 @@ pub async fn serve<State>(
 where
     State: Send + Sync + 'static,
 {
-    // Create a new backoff strategy with a base delay of 3 milliseconds and a
-    // maximum delay of 30 seconds.
-    let mut backoff = Backoff::new(2, 30)?;
     // Create a vector to store the join handles of the spawned tasks. We'll
     // periodically check if any of the tasks have finished and remove them.
     let mut handles = Vec::new();
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
     // number of connections is reached, we'll wait until a permit is available
-    // using the `backoff` strategy before accepting a new connection.
+    // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
     loop {
-        // Accept a new connection from the TCP listener.
-        let (stream, _, permit) = accept(&mut backoff, &listener, &semaphore).await?;
+        // Acquire a permit from the semaphore.
+        let permit = semaphore.clone().acquire_many_owned(2).await?;
+        // Attempt to accept a new connection from the TCP listener.
+        let (stream, _addr) = match listener.accept().await {
+            Ok(accepted) => accepted,
+            Err(_) => {
+                //
+                // TODO:
+                //
+                // Include tracing information about why the connection could not
+                // be accepted.
+                //
+                continue;
+            }
+        };
         // Pass the returned stream to the `TokioIo` wrapper to convert
         // the stream into a tokio-compatible I/O stream.
         let io = TokioIo::new(stream);
@@ -53,14 +61,12 @@ where
         // Spawn a tokio task to serve multiple connections concurrently and push
         // the returned `JoinHandle` into the handles vector.
         handles.push({
-            // Clone the `state` so it can be moved into the task.
-            let state = Arc::clone(&state);
             // Clone the `router` so it can be moved into the task.
             let router = Arc::clone(&router);
+            // Clone the `state` so it can be moved into the task.
+            let state = Arc::clone(&state);
 
-            task::spawn(async move {
-                serve_connection(&state, &router, permit, io).await;
-            })
+            task::spawn(serve_connection(router, state, permit, io))
         });
 
         // Remove any handles that have finished.
@@ -69,15 +75,15 @@ where
 }
 
 async fn serve_connection<State>(
-    state: &Arc<State>,
-    router: &Arc<Router<State>>,
+    router: Arc<Router<State>>,
+    state: Arc<State>,
     permit: OwnedSemaphorePermit,
     io: TokioIo<TcpStream>,
 ) where
     State: Send + Sync + 'static,
 {
     // Create a hyper service from the `serve_request` function.
-    let service = service_fn(|request| serve_request(state, router, request));
+    let service = service_fn(|request| serve_request(&router, &state, request));
 
     // Create a new connection for the configured HTTP version. For
     // now we only support HTTP/1.1. This will be expanded to
@@ -105,8 +111,8 @@ async fn serve_connection<State>(
 /// Serves an incoming request by routing it to the corresponding middleware
 /// stack and returns a response.
 async fn serve_request<State>(
+    router: &Router<State>,
     state: &Arc<State>,
-    router: &Arc<Router<State>>,
     request: HttpRequest,
 ) -> Result<HttpResponse, Infallible>
 where
@@ -119,7 +125,12 @@ where
     let (params, next) = router.resolve(&matched_routes);
 
     // Wrap the incoming request in with `via::Request`.
-    let request = Request::new(request, params, Arc::clone(state));
+    let request = {
+        // Clone `state` so it can be moved into the request.
+        let state = Arc::clone(state);
+
+        Request::new(request, params, state)
+    };
 
     // Call the middleware stack and return a response.
     match next.call(request).await {
