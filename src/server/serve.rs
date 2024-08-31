@@ -9,7 +9,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
-use tokio::{task, time};
+use tokio::task::{self, JoinHandle};
+use tokio::time;
 
 use crate::body::Pollable;
 use crate::router::Router;
@@ -35,7 +36,7 @@ where
 {
     // Create a vector to store the join handles of the spawned tasks. We'll
     // periodically check if any of the tasks have finished and remove them.
-    let mut handles = Vec::new();
+    let mut handles: Vec<JoinHandle<()>> = Vec::new();
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
     // number of connections is reached, we'll wait until a permit is available
@@ -43,6 +44,9 @@ where
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
     loop {
+        // Remove any handles that have finished.
+        handles.retain(|handle| !handle.is_finished());
+
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_many_owned(2).await?;
 
@@ -102,9 +106,6 @@ where
 
             drop(permit);
         }));
-
-        // Remove any handles that have finished.
-        handles.retain(|handle| !handle.is_finished());
     }
 }
 
