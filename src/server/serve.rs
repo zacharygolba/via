@@ -4,10 +4,11 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::convert::Infallible;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 use tokio::{task, time};
 
 use crate::body::Pollable;
@@ -44,6 +45,7 @@ where
     loop {
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_many_owned(2).await?;
+
         // Attempt to accept a new connection from the TCP listener.
         let (stream, _addr) = match listener.accept().await {
             Ok(accepted) => accepted,
@@ -57,75 +59,62 @@ where
                 continue;
             }
         };
+
         // Pass the returned stream to the `TokioIo` wrapper to convert
         // the stream into a tokio-compatible I/O stream.
         let io = TokioIo::new(stream);
 
-        // Spawn a tokio task to serve multiple connections concurrently and push
-        // the returned `JoinHandle` into the handles vector.
-        handles.push({
-            // Clone the `router` so it can be moved into the task.
+        // Create a hyper service to serve the incoming connection.
+        let service = {
             let router = Arc::clone(&router);
-            // Clone the `state` so it can be moved into the task.
             let state = Arc::clone(&state);
 
-            task::spawn(serve_connection(
-                router,
-                state,
-                permit,
-                io,
-                response_timeout,
-            ))
-        });
+            service_fn(move |request| {
+                let state = Arc::clone(&state);
+
+                serve_request(&router, state, request, response_timeout)
+            })
+        };
+
+        // Create a new connection for the configured HTTP version. For
+        // now we only support HTTP/1.1. This will be expanded to
+        // support HTTP/2 in the future.
+        let connection = http1::Builder::new()
+            .timer(TokioTimer::new())
+            .serve_connection(io, service);
+
+        // Spawn a tokio task to serve multiple connections concurrently and push
+        // the returned `JoinHandle` into the handles vector.
+        handles.push(task::spawn(async move {
+            if let Err(error) = connection.await {
+                //
+                // TODO:
+                //
+                // Replace eprintln with pretty_env_logger or something similar.
+                // We should also determine if this is how we want to handle
+                // connection errors long-term.
+                //
+                if cfg!(debug_assertions) {
+                    eprintln!("Error: {}", error);
+                }
+            }
+
+            drop(permit);
+        }));
 
         // Remove any handles that have finished.
         handles.retain(|handle| !handle.is_finished());
     }
 }
 
-async fn serve_connection<State>(
-    router: Arc<Router<State>>,
-    state: Arc<State>,
-    permit: OwnedSemaphorePermit,
-    io: TokioIo<TcpStream>,
-    response_timeout: Duration,
-) where
-    State: Send + Sync + 'static,
-{
-    // Create a hyper service from the `serve_request` function.
-    let service = service_fn(|request| serve_request(&router, &state, request, response_timeout));
-
-    // Create a new connection for the configured HTTP version. For
-    // now we only support HTTP/1.1. This will be expanded to
-    // support HTTP/2 in the future.
-    let connection = http1::Builder::new()
-        .timer(TokioTimer::new())
-        .serve_connection(io, service);
-
-    if let Err(error) = connection.await {
-        //
-        // TODO:
-        //
-        // Replace eprintln with pretty_env_logger or something similar.
-        // We should also determine if this is how we want to handle
-        // connection errors long-term.
-        //
-        if cfg!(debug_assertions) {
-            eprintln!("Error: {}", error);
-        }
-    }
-
-    drop(permit);
-}
-
 /// Serves an incoming request by routing it to the corresponding middleware
 /// stack and returns a response.
-async fn serve_request<State>(
+fn serve_request<State>(
     router: &Router<State>,
-    state: &Arc<State>,
+    state: Arc<State>,
     request: HttpRequest,
     response_timeout: Duration,
-) -> Result<HttpResponse, Infallible>
+) -> impl Future<Output = Result<HttpResponse, Infallible>>
 where
     State: Send + Sync + 'static,
 {
@@ -136,27 +125,24 @@ where
     let (params, next) = router.resolve(&matched_routes);
 
     // Wrap the incoming request in with `via::Request`.
-    let request = {
-        // Clone `state` so it can be moved into the request.
-        let state = Arc::clone(state);
-
-        Request::new(request, params, state)
-    };
+    let request = Request::new(request, params, state);
 
     // Call the middleware stack and return a Future that resolves to a
     // Result<Response, Error>.
     let future = next.call(request);
 
-    Ok(match time::timeout(response_timeout, future).await {
-        Ok(Ok(response)) => response.into_inner(),
-        Ok(Err(error)) => error.into_response().into_inner(),
-        Err(_) => {
-            let error = Error::with_status(
-                "The server is taking too long to respond. Please try again later.".to_owned(),
-                StatusCode::GATEWAY_TIMEOUT,
-            );
+    async move {
+        Ok(match time::timeout(response_timeout, future).await {
+            Ok(Ok(response)) => response.into_inner(),
+            Ok(Err(error)) => error.into_response().into_inner(),
+            Err(_) => {
+                let error = Error::with_status(
+                    "The server is taking too long to respond. Please try again later.".to_owned(),
+                    StatusCode::GATEWAY_TIMEOUT,
+                );
 
-            error.into_response().into_inner()
-        }
-    })
+                error.into_response().into_inner()
+            }
+        })
+    }
 }
