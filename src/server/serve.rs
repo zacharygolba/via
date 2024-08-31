@@ -143,7 +143,7 @@ where
             // The response timed out.
             Err(_) => {
                 let error = Error::with_status(
-                    "The server is taking too long to respond. Please try again later.".to_owned(),
+                    "The server is taking too long to respond. Please try again later.".to_string(),
                     StatusCode::GATEWAY_TIMEOUT,
                 );
 
