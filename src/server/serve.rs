@@ -34,9 +34,6 @@ where
         // Remove any handles that have finished.
         handles.retain(|handle| !handle.is_finished());
 
-        // Acquire a permit from the semaphore.
-        let permit = semaphore.clone().acquire_many_owned(2).await?;
-
         // Create a hyper service to serve the incoming connection. We'll move
         // the service into a tokio task to distribute the load across multiple
         // threads.
@@ -47,9 +44,12 @@ where
             Service::new(router, state, response_timeout)
         };
 
+        // Acquire a permit from the semaphore.
+        let permit = semaphore.clone().acquire_many_owned(2).await?;
+
         // Attempt to accept a new connection from the TCP listener.
         let (stream, _addr) = match listener.accept().await {
-            Ok((stream, addr)) => (Box::pin(stream), addr),
+            Ok(accepted) => accepted,
             Err(_) => {
                 drop(permit);
                 //
