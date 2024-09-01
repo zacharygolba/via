@@ -40,18 +40,6 @@ where
         // Remove any handles that have finished.
         handles.retain(|handle| !handle.is_finished());
 
-        let mut rx = rx.clone();
-
-        // Create a hyper service to serve the incoming connection. We'll move
-        // the service into a tokio task to distribute the load across multiple
-        // threads.
-        let service = {
-            let router = Arc::clone(&router);
-            let state = Arc::clone(&state);
-
-            Service::new(router, state, response_timeout)
-        };
-
         tokio::select! {
             result = accept(&listener, &semaphore) => {
                 let (permit, (stream, _addr)) = match result {
@@ -65,6 +53,19 @@ where
                         //
                         continue;
                     }
+                };
+
+
+                let mut rx = rx.clone();
+
+                // Create a hyper service to serve the incoming connection. We'll move
+                // the service into a tokio task to distribute the load across multiple
+                // threads.
+                let service = {
+                    let router = Arc::clone(&router);
+                    let state = Arc::clone(&state);
+
+                    Service::new(router, state, response_timeout)
                 };
 
                 // Create a new connection for the configured HTTP version. For
