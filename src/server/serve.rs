@@ -1,7 +1,6 @@
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::net::SocketAddr;
-use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
@@ -17,7 +16,6 @@ pub async fn serve<State>(
     router: Arc<Router<State>>,
     listener: TcpListener,
     max_connections: usize,
-    response_timeout: Duration,
 ) -> Result<(), Error>
 where
     State: Send + Sync + 'static,
@@ -26,9 +24,13 @@ where
     // periodically check if any of the tasks have finished and remove them.
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
 
-    let mut signal = pin!(tokio::signal::ctrl_c());
+    // Get a Future that resolves when the user sends a SIGINT signal to the
+    // process.
+    let mut ctrl_c = Box::pin(tokio::signal::ctrl_c());
 
-    let (tx, rx) = watch::channel(false);
+    // Create a watch channel to notify the server to initiate a graceful
+    // shutdown.
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
@@ -55,18 +57,15 @@ where
                     }
                 };
 
-
-                let mut rx = rx.clone();
+                // Clone the watch channel so that we can notify the connection
+                // to initiate a graceful shutdown process before the server
+                // exits.
+                let mut shutdown_rx = shutdown_rx.clone();
 
                 // Create a hyper service to serve the incoming connection. We'll move
                 // the service into a tokio task to distribute the load across multiple
                 // threads.
-                let service = {
-                    let router = Arc::clone(&router);
-                    let state = Arc::clone(&state);
-
-                    Service::new(router, state, response_timeout)
-                };
+                let service = Service::new(Arc::clone(&router), Arc::clone(&state));
 
                 // Create a new connection for the configured HTTP version. For
                 // now we only support HTTP/1.1. This will be expanded to
@@ -77,12 +76,11 @@ where
 
                 // Spawn a tokio task to serve the connection in a separate thread.
                 handles.push(task::spawn(async move {
-                    let mut connection = pin!(connection);
+                    let mut connection = connection;
+                    let mut conn_mut = Pin::new(&mut connection);
 
                     tokio::select! {
-                        result = connection.as_mut() => {
-                            drop(permit);
-
+                        result = conn_mut.as_mut() => {
                             if let Err(error) = result {
                                 //
                                 // TODO:
@@ -96,15 +94,16 @@ where
                                 }
                             }
                         }
-                        _ = rx.changed() => {
-                            drop(permit);
-                            connection.graceful_shutdown();
+                        _ = shutdown_rx.changed() => {
+                            conn_mut.graceful_shutdown();
                         }
                     }
+
+                    drop(permit);
                 }));
             }
-            _ = signal.as_mut() => {
-                tx.send(true)?;
+            _ = ctrl_c.as_mut() => {
+                shutdown_tx.send(true)?;
                 break;
             }
         }
@@ -114,14 +113,16 @@ where
         while !handles.is_empty() {
             handles.retain(|handle| !handle.is_finished());
             tokio::time::sleep(Duration::from_secs(1)).await;
-            println!("Waiting for {} connections to close...", handles.len());
+            if cfg!(debug_assertions) {
+                println!("waiting for {} connections to close...", handles.len());
+            }
         }
     };
 
     tokio::select! {
         _ = shutdown => Ok(()),
         _ = tokio::time::sleep(Duration::from_secs(30)) => {
-            Err(Error::new("process exited before all connections were closed.".to_string()))
+            Err(Error::new("server exited before all connections were closed.".to_string()))
         }
     }
 }
