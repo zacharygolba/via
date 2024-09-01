@@ -49,7 +49,7 @@ where
 
         // Attempt to accept a new connection from the TCP listener.
         let (stream, _addr) = match listener.accept().await {
-            Ok(accepted) => accepted,
+            Ok((stream, addr)) => (Box::pin(stream), addr),
             Err(_) => {
                 drop(permit);
                 //
