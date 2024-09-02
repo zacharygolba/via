@@ -68,7 +68,7 @@ where
                 // Create a new connection for the configured HTTP version. For
                 // now we only support HTTP/1.1. This will be expanded to
                 // support HTTP/2 in the future.
-                let mut connection = http1::Builder::new()
+                let connection = http1::Builder::new()
                     .timer(TokioTimer::new())
                     .serve_connection(
                         // Wrap the TcpStream in a type that implements hyper's
@@ -82,11 +82,14 @@ where
 
                 // Spawn a tokio task to serve the connection in a separate thread.
                 inflight.push(task::spawn(async move {
+                    let mut connection = connection;
+                    let mut conn_mut = Pin::new(&mut connection);
+
                     tokio::select! {
                         // Wait for the connection to close. This is the typical
                         // path that the code should take while the server is
                         // running.
-                        result = &mut connection => {
+                        result = conn_mut.as_mut() => {
                             // The connection has been closed. Drop the semaphore
                             // permit to allow another connection to be accepted.
                             drop(permit);
@@ -111,7 +114,7 @@ where
                         _ = shutdown_rx.changed() => {
                             // Initiate the graceful shutdown process for the
                             // connection.
-                            Pin::new(&mut connection).graceful_shutdown();
+                            conn_mut.graceful_shutdown();
                         }
                     }
                 }));
