@@ -49,7 +49,7 @@ impl<'a, State> Endpoint<'a, State> {
 
     pub fn include<T>(&mut self, middleware: T) -> &mut Self
     where
-        T: Middleware<State>,
+        T: Middleware<State> + 'static,
     {
         let middleware = Arc::new(middleware);
 
@@ -59,7 +59,7 @@ impl<'a, State> Endpoint<'a, State> {
 
     pub fn respond<T>(&mut self, responder: T) -> &mut Self
     where
-        T: Middleware<State>,
+        T: Middleware<State> + 'static,
     {
         let responder = Arc::new(responder);
 
