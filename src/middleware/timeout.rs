@@ -1,4 +1,5 @@
 use http::StatusCode;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
 
@@ -13,7 +14,7 @@ pub struct Timeout<F> {
 }
 
 /// Create a new `Timeout` middleware with the specified duration.
-pub fn timeout(duration: Duration) -> Timeout<fn() -> Result<Response, Error>> {
+pub fn timeout<State>(duration: Duration) -> Timeout<fn(Arc<State>) -> Result<Response, Error>> {
     Timeout {
         duration,
         or_else: respond_with_timeout,
@@ -22,7 +23,7 @@ pub fn timeout(duration: Duration) -> Timeout<fn() -> Result<Response, Error>> {
 
 /// The default function to call if downstream middleware do not respond within
 /// the specified duration.
-fn respond_with_timeout() -> Result<Response, Error> {
+fn respond_with_timeout<State>(_: Arc<State>) -> Result<Response, Error> {
     let mut message = String::with_capacity(65);
     let status = StatusCode::GATEWAY_TIMEOUT;
 
@@ -36,9 +37,9 @@ impl<F> Timeout<F> {
     /// Call the specified function instead of responding with a 504 Gateway
     /// Timeout error if the downstream middleware do not respond within
     /// `self.duration`.
-    pub fn or_else<O>(self, f: O) -> Timeout<O>
+    pub fn or_else<State, O>(self, f: O) -> Timeout<O>
     where
-        O: Fn() -> Result<Response, Error> + Copy + Send + Sync + 'static,
+        O: Fn(Arc<State>) -> Result<Response, Error> + Copy + Send + Sync + 'static,
     {
         Timeout {
             duration: self.duration,
@@ -49,12 +50,14 @@ impl<F> Timeout<F> {
 
 impl<State, F> Middleware<State> for Timeout<F>
 where
-    F: Fn() -> Result<Response, Error> + Copy + Send + Sync + 'static,
+    F: Fn(Arc<State>) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+    State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
         let or_else = self.or_else;
+        let state = Arc::clone(request.state());
         let future = time::timeout(self.duration, next.call(request));
 
-        Box::pin(async move { future.await.unwrap_or_else(|_| or_else()) })
+        Box::pin(async move { future.await.unwrap_or_else(|_| or_else(state)) })
     }
 }
