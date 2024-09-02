@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::{TcpListener, ToSocketAddrs};
 
 use crate::router::{Endpoint, Router};
@@ -9,8 +10,12 @@ use crate::{Error, Middleware};
 /// The default value of the maximum number of concurrent connections.
 const DEFAULT_MAX_CONNECTIONS: usize = 256;
 
+/// The default value of the shutdown timeout in seconds.
+const DEFAULT_SHUTDOWN_TIMEOUT: u32 = 30;
+
 pub struct App<State> {
     max_connections: usize,
+    shutdown_timeout: u32,
     router: Router<State>,
     state: Arc<State>,
 }
@@ -22,6 +27,7 @@ where
 {
     App {
         max_connections: DEFAULT_MAX_CONNECTIONS,
+        shutdown_timeout: DEFAULT_SHUTDOWN_TIMEOUT,
         router: Router::new(),
         state: Arc::new(state),
     }
@@ -54,6 +60,14 @@ where
         self
     }
 
+    /// Set the amount of time in seconds that the server will wait for inflight
+    /// connections to complete before shutting down. The default value is 30
+    /// seconds.
+    pub fn shutdown_timeout(mut self, timeout: u32) -> Self {
+        self.shutdown_timeout = timeout;
+        self
+    }
+
     pub async fn listen<F, T>(self, address: T, listening: F) -> Result<(), Error>
     where
         F: FnOnce(&SocketAddr),
@@ -77,6 +91,13 @@ where
         }
 
         // Serve incoming connections from the TCP listener.
-        serve(state, router, listener, self.max_connections).await
+        serve(
+            state,
+            router,
+            listener,
+            self.max_connections,
+            Duration::from_secs(self.shutdown_timeout.into()),
+        )
+        .await
     }
 }
