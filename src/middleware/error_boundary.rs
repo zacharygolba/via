@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::middleware::BoxFuture;
 use crate::{Error, Middleware, Next, Request, Response, Result};
 
@@ -44,7 +42,7 @@ pub struct OrElseErrorBoundary<F> {
 impl ErrorBoundary {
     pub fn inspect<State, F>(inspect: F) -> InspectErrorBoundary<F>
     where
-        F: Fn(&Error, &Arc<State>) + Copy + Send + Sync + 'static,
+        F: Fn(&Error, &State) + Copy + Send + Sync + 'static,
         State: Send + Sync + 'static,
     {
         InspectErrorBoundary { inspect }
@@ -52,7 +50,7 @@ impl ErrorBoundary {
 
     pub fn map<State, F>(map: F) -> MapErrorBoundary<F>
     where
-        F: Fn(Error, &Arc<State>) -> Error + Copy + Send + Sync + 'static,
+        F: Fn(Error, &State) -> Error + Copy + Send + Sync + 'static,
         State: Send + Sync + 'static,
     {
         MapErrorBoundary { map }
@@ -60,7 +58,7 @@ impl ErrorBoundary {
 
     pub fn or_else<State, F>(or_else: F) -> OrElseErrorBoundary<F>
     where
-        F: Fn(Error, &Arc<State>) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+        F: Fn(Error, &State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
         State: Send + Sync + 'static,
     {
         OrElseErrorBoundary { or_else }
@@ -84,7 +82,7 @@ where
 
 impl<State, F> Middleware<State> for InspectErrorBoundary<F>
 where
-    F: Fn(&Error, &Arc<State>) + Copy + Send + Sync + 'static,
+    F: Fn(&Error, &State) + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
@@ -92,7 +90,7 @@ where
         let inspect = self.inspect;
         // Clone `request.state` so it can be used after ownership of `request`
         // is transfered to `next.call()`.
-        let state = Arc::clone(request.state());
+        let state = request.state().clone();
 
         Box::pin(async move {
             // Yield control to the next middleware in the stack.
@@ -113,7 +111,7 @@ where
 
 impl<State, F> Middleware<State> for MapErrorBoundary<F>
 where
-    F: Fn(Error, &Arc<State>) -> Error + Copy + Send + Sync + 'static,
+    F: Fn(Error, &State) -> Error + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
@@ -121,7 +119,7 @@ where
         let map = self.map;
         // Clone `request.state` so it can be used after ownership of `request`
         // is transfered to `next.call()`.
-        let state = Arc::clone(request.state());
+        let state = request.state().clone();
 
         Box::pin(async move {
             // Yield control to the next middleware in the stack.
@@ -143,7 +141,7 @@ where
 
 impl<State, F> Middleware<State> for OrElseErrorBoundary<F>
 where
-    F: Fn(Error, &Arc<State>) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+    F: Fn(Error, &State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
@@ -151,7 +149,7 @@ where
         let or_else = self.or_else;
         // Clone `request.state` so it can be used after ownership of `request`
         // is transfered to `next.call()`.
-        let state = Arc::clone(request.state());
+        let state = request.state().clone();
 
         Box::pin(async move {
             // Yield control to the next middleware in the stack.
