@@ -1,11 +1,9 @@
-use http::StatusCode;
 use hyper::body::Incoming;
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
 
 use crate::body::Pollable;
 use crate::middleware::BoxFuture;
@@ -22,28 +20,11 @@ type HttpResponse = http::Response<Pollable>;
 
 pub struct FutureResponse {
     future: BoxFuture<Result<Response, Error>>,
-    started: Instant,
-    timeout: Duration,
 }
 
 pub struct Service<State> {
     router: Arc<Router<State>>,
     state: Arc<State>,
-    timeout: Duration,
-}
-
-/// Returns a response with a 504 Gateway Timeout status code. This is used if
-/// `ResponseFuture` is polled for longer than the configured timeout.
-fn respond_with_timeout() -> HttpResponse {
-    let mut message = String::with_capacity(65);
-    let status = StatusCode::GATEWAY_TIMEOUT;
-
-    message.push_str("The server is taking too long to respond. ");
-    message.push_str("Please try again later.");
-
-    Error::with_status(message, status)
-        .into_response()
-        .into_inner()
 }
 
 impl Future for FutureResponse {
@@ -51,10 +32,6 @@ impl Future for FutureResponse {
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
-
-        if this.started.elapsed() >= this.timeout {
-            return Poll::Ready(Ok(respond_with_timeout()));
-        }
 
         this.future
             .as_mut()
@@ -69,12 +46,8 @@ impl Future for FutureResponse {
 }
 
 impl<State> Service<State> {
-    pub fn new(router: Arc<Router<State>>, state: Arc<State>, timeout: Duration) -> Self {
-        Self {
-            router,
-            state,
-            timeout,
-        }
+    pub fn new(router: Arc<Router<State>>, state: Arc<State>) -> Self {
+        Self { router, state }
     }
 }
 
@@ -97,13 +70,9 @@ where
         let request = Request::new(request, params, Arc::clone(&self.state));
 
         // Call the middleware stack and return a Future that resolves to
-        // `Result<Self::Response, Self::Error>`. If the Future is polled for
-        // longer than the configured timeout, we'll respond with a 504 Gateway
-        // Timeout instead.
+        // `Result<Self::Response, Self::Error>`.
         Self::Future {
             future: next.call(request),
-            started: Instant::now(),
-            timeout: self.timeout,
         }
     }
 }
