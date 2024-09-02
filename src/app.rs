@@ -43,7 +43,7 @@ where
 
     pub fn include<T>(&mut self, middleware: T) -> &mut Self
     where
-        T: Middleware<State>,
+        T: Middleware<State> + 'static,
     {
         self.at("/").include(middleware);
         self

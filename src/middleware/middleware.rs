@@ -6,7 +6,7 @@ use crate::{response::IntoResponse, Request, Response, Result};
 pub(crate) type ArcMiddleware<State> = Arc<dyn Middleware<State>>;
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
-pub trait Middleware<State>: Send + Sync + 'static {
+pub trait Middleware<State>: Send + Sync {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>>;
 }
 
