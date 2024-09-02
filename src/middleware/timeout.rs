@@ -6,6 +6,9 @@ use tokio::time;
 use super::{BoxFuture, Middleware, Next};
 use crate::{Error, Request, Response, Result};
 
+/// A type alias for the default `or_else` function.
+type RespondWithTimeout<State> = fn(Arc<State>) -> Result<Response, Error>;
+
 /// Middleware that calls a fallback function if downstream middleware do not
 /// respond within a specified duration.
 pub struct Timeout<F> {
@@ -14,7 +17,7 @@ pub struct Timeout<F> {
 }
 
 /// Create a new `Timeout` middleware with the specified duration.
-pub fn timeout<State>(duration: Duration) -> Timeout<fn(Arc<State>) -> Result<Response, Error>> {
+pub fn timeout<State>(duration: Duration) -> Timeout<RespondWithTimeout<State>> {
     Timeout {
         duration,
         or_else: respond_with_timeout,
