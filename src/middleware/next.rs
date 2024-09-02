@@ -5,10 +5,7 @@ pub struct Next<State = ()> {
     stack: Vec<ArcMiddleware<State>>,
 }
 
-impl<State> Next<State>
-where
-    State: Send + Sync + 'static,
-{
+impl<State> Next<State> {
     pub(crate) fn new(stack: Vec<ArcMiddleware<State>>) -> Self {
         Self { stack }
     }
