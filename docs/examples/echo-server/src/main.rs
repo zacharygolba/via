@@ -1,19 +1,16 @@
-use via::http::header;
+use via::http::header::CONTENT_TYPE;
 use via::{Next, Request, Response, Result};
 
 async fn echo(request: Request, _: Next) -> Result<Response> {
-    // Deconstruct the request into it's parts.
-    let (parts, body, _) = request.into_parts();
+    // Optionally get the value of the Content-Type header from `request`.
+    let content_type = request.headers().get(CONTENT_TYPE).cloned();
     // Get a stream of bytes from the body of the request.
-    let body_stream = body.into_stream();
-    // Optionally get the Content-Type header from the request.
-    let content_type = parts
-        .headers
-        .get(header::CONTENT_TYPE)
-        .map(|value| (header::CONTENT_TYPE, value.clone()));
+    let body_stream = request.into_body().into_stream();
 
     // Stream the request body back to the client.
-    Response::stream(body_stream).headers(content_type).finish()
+    Response::stream(body_stream)
+        .headers(Some(CONTENT_TYPE).zip(content_type))
+        .finish()
 }
 
 #[tokio::main]
