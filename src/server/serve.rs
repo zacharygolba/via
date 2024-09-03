@@ -1,5 +1,5 @@
 use hyper::server::conn::http1;
-use hyper_util::rt::{TokioIo, TokioTimer};
+use hyper_util::rt::TokioTimer;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,6 +8,7 @@ use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{self, JoinHandle};
 use tokio::time;
 
+use super::io_stream::IoStream;
 use super::service::Service;
 use crate::router::Router;
 use crate::Error;
@@ -74,7 +75,7 @@ where
                     .serve_connection(
                         // Wrap the TcpStream in a type that implements hyper's
                         // IO traits.
-                        TokioIo::new(stream),
+                        IoStream::new(stream),
                         // Create a hyper service to serve the incoming connection.
                         // We'll move the service into a tokio task to distribute
                         // the load across multiple threads.
@@ -121,7 +122,8 @@ where
                 }));
             }
 
-            // Otherwise, wait for a SIGINT signal to be sent to the process.
+            // Otherwise, wait for a "Ctrl-C" notification to be sent to the
+            // process.
             _ = ctrl_c.as_mut() => {
                 // Notify inflight connections to initiate a graceful shutdown.
                 shutdown_tx.send(true)?;
