@@ -26,8 +26,9 @@ where
     // periodically check if any of the tasks have finished and remove them.
     let mut inflight: Vec<JoinHandle<()>> = Vec::new();
 
-    // Get a Future that resolves when the user sends a SIGINT signal to the
-    // process.
+    // Get a Future that resolves when a "Ctrl-C" notification is sent to the
+    // process. This is used to initiate a graceful shutdown process for
+    // inflight connections.
     let mut ctrl_c = Box::pin(tokio::signal::ctrl_c());
 
     // Create a watch channel to notify the connections to initiate a graceful
