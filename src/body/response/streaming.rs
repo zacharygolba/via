@@ -39,7 +39,7 @@ impl Streaming {
             // This is safe because we do not move `stream` or any data owned by
             // the `stream` field out of the pinned mutable reference.
             //
-            self.map_unchecked_mut(|this| &mut *this.stream)
+            self.map_unchecked_mut(|this| this.stream.as_mut())
         }
     }
 }
