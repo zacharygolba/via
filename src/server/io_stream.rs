@@ -81,7 +81,7 @@ macro_rules! try_lock_write {
 
 impl<T> IoStream<T>
 where
-    T: AsyncRead + AsyncWrite + Unpin,
+    T: AsyncRead + AsyncWrite,
 {
     pub fn new(stream: T) -> Self {
         Self {
@@ -94,7 +94,7 @@ where
 
 impl<R> Read for IoStream<R>
 where
-    R: AsyncRead + Send + Sync + Unpin + 'static,
+    R: AsyncRead + Send + Sync + 'static,
 {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -147,7 +147,7 @@ where
 
 impl<W> Write for IoStream<W>
 where
-    W: AsyncWrite + Send + Sync + Unpin + 'static,
+    W: AsyncWrite + Send + Sync + 'static,
 {
     fn poll_write(
         self: Pin<&mut Self>,
