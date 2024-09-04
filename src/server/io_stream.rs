@@ -3,27 +3,23 @@ use std::io::{self, IoSlice};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::sync::Mutex;
 
 /// A wrapper around a stream that implements both `AsyncRead` and `AsyncWrite`.
 pub struct IoStream<T> {
-    stream: T,
+    is_write_vectored: bool,
+    stream: Mutex<Pin<Box<T>>>,
 }
 
-impl<T: Unpin> IoStream<T> {
+impl<T> IoStream<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
     pub fn new(stream: T) -> Self {
-        Self { stream }
-    }
-}
-
-impl<T: Unpin> IoStream<T> {
-    // Returns a pinned mutable reference to the `stream` field.
-    fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
-        // Get a mutable refence to self from Pin<&mut Self>.
-        let this = self.get_mut();
-        // Get a mutable reference to the `stream` field.
-        let ptr = &mut this.stream;
-
-        Pin::new(ptr)
+        Self {
+            is_write_vectored: stream.is_write_vectored(),
+            stream: Mutex::new(Box::pin(stream)),
+        }
     }
 }
 
@@ -36,6 +32,13 @@ where
         context: &mut Context<'_>,
         mut buf: ReadBufCursor<'_>,
     ) -> Poll<Result<(), io::Error>> {
+        let mut guard = match self.stream.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                context.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+        };
         let mut tokio_buf = unsafe {
             //
             // Safety:
@@ -50,8 +53,10 @@ where
             //
             ReadBuf::uninit(buf.as_mut())
         };
-        // Delegate the reading of bytes to `self.stream`.
-        let result = self.project().poll_read(context, &mut tokio_buf);
+        let result = {
+            let stream = &mut *guard;
+            stream.as_mut().poll_read(context, &mut tokio_buf)
+        };
 
         if let Poll::Ready(Ok(())) = &result {
             // Get the number of bytes that were read into the uninitialized
@@ -87,22 +92,45 @@ where
         context: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        self.project().poll_write(context, buf)
+        let mut guard = match self.stream.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                context.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+        };
+        let stream = &mut *guard;
+
+        stream.as_mut().poll_write(context, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        self.project().poll_flush(context)
+        let mut guard = match self.stream.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                context.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+        };
+        let stream = &mut *guard;
+
+        stream.as_mut().poll_flush(context)
     }
 
     fn poll_shutdown(
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        self.project().poll_shutdown(context)
-    }
+        let mut guard = match self.stream.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                context.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+        };
+        let stream = &mut *guard;
 
-    fn is_write_vectored(&self) -> bool {
-        self.stream.is_write_vectored()
+        stream.as_mut().poll_shutdown(context)
     }
 
     fn poll_write_vectored(
@@ -110,6 +138,19 @@ where
         context: &mut Context<'_>,
         buf_list: &[IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
-        self.project().poll_write_vectored(context, buf_list)
+        let mut guard = match self.stream.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                context.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+        };
+        let stream = &mut *guard;
+
+        stream.as_mut().poll_write_vectored(context, buf_list)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.is_write_vectored
     }
 }
