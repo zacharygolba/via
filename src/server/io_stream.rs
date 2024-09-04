@@ -60,11 +60,11 @@ impl<T> IoStream<T>
 where
     T: AsyncRead + AsyncWrite,
 {
-    pub fn new(stream: T) -> Self {
+    pub fn new(stream: Pin<Box<T>>) -> Self {
         Self {
             is_write_vectored: stream.is_write_vectored(),
             io_state: IoState::Idle,
-            stream: Arc::new(Mutex::new(Box::pin(stream))),
+            stream: Arc::new(Mutex::new(stream)),
         }
     }
 }
