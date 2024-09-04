@@ -76,10 +76,11 @@ where
     fn poll_read(
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
-        mut buf: ReadBufCursor<'_>,
+        cursor: ReadBufCursor<'_>,
     ) -> Poll<Result<(), io::Error>> {
+        let mut cursor = cursor;
         let mut guard = try_lock!(Read, self, context);
-        let mut tokio_buf = unsafe {
+        let mut buf = unsafe {
             //
             // Safety:
             //
@@ -91,15 +92,15 @@ where
             // and `Write` and we wouldn't want to uninitialized any bytes that
             // may have been initialized by a previous call to `poll_write`.
             //
-            ReadBuf::uninit(buf.as_mut())
+            ReadBuf::uninit(cursor.as_mut())
         };
 
-        let result = guard.as_mut().poll_read(context, &mut tokio_buf);
+        let result = guard.as_mut().poll_read(context, &mut buf);
 
         if let Poll::Ready(Ok(())) = &result {
             // Get the number of bytes that were read into the uninitialized
             // portion of the buffer.
-            let n = tokio_buf.filled().len();
+            let n = buf.filled().len();
 
             unsafe {
                 //
@@ -113,7 +114,7 @@ where
                 //
                 // Heads up for off-by-one errors.
                 //
-                buf.advance(n);
+                cursor.advance(n);
             }
         }
 
