@@ -29,10 +29,10 @@ macro_rules! try_lock {
         // represents the type of operation that the guard is being acquired
         // for.
         $ty:ident,
-        // Should be an identifier of type `Pin<&mut IoStream<T>>`.
-        $this:ident,
-        // Should be an identifier of type `&mut Context<'_>`.
-        $context:ident
+        // Should be an expression of type `Pin<&mut IoStream<T>>`.
+        $this:expr,
+        // Should be an expression of type `&mut Context<'_>`.
+        $context:expr
     ) => {{
         let mut this = $this;
 
