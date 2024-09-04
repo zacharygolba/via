@@ -12,27 +12,66 @@ type IoStreamGuard<T> = OwnedMutexGuard<Pin<Box<T>>>;
 /// A wrapper around a stream that implements both `AsyncRead` and `AsyncWrite`.
 pub struct IoStream<T> {
     is_write_vectored: bool,
-    guard_future: Option<Pin<Box<dyn Future<Output = IoStreamGuard<T>> + Send + Sync>>>,
+    io_state: IoState<T>,
     stream: Arc<Mutex<Pin<Box<T>>>>,
 }
 
+enum IoState<T> {
+    Idle,
+    Read(Pin<Box<dyn Future<Output = IoStreamGuard<T>> + Send + Sync>>),
+    Write(Pin<Box<dyn Future<Output = IoStreamGuard<T>> + Send + Sync>>),
+}
+
 /// Attempts to get a new or existing `IoStreamGuard` in a non-blocking manner.
-macro_rules! try_lock {
+macro_rules! try_lock_read {
     ($io:ident, $context:ident) => {{
         let mut io = $io;
 
         loop {
-            return match &mut io.guard_future {
-                Some(guard_future) => match Pin::as_mut(guard_future).poll($context) {
-                    Poll::Pending => Poll::Pending,
+            match &mut io.io_state {
+                IoState::Read(guard_future) => match Pin::as_mut(guard_future).poll($context) {
                     Poll::Ready(guard) => {
-                        io.guard_future = None;
+                        io.io_state = IoState::Idle;
                         break guard;
                     }
+                    Poll::Pending => {
+                        return Poll::Pending;
+                    }
                 },
-                None => {
+                IoState::Write(_) => {
+                    return Poll::Pending;
+                }
+                IoState::Idle => {
                     let guard_future = Arc::clone(&io.stream).lock_owned();
-                    io.guard_future = Some(Box::pin(guard_future));
+                    io.io_state = IoState::Read(Box::pin(guard_future));
+                    continue;
+                }
+            };
+        }
+    }};
+}
+
+macro_rules! try_lock_write {
+    ($io:ident, $context:ident) => {{
+        let mut io = $io;
+
+        loop {
+            match &mut io.io_state {
+                IoState::Write(guard_future) => match Pin::as_mut(guard_future).poll($context) {
+                    Poll::Ready(guard) => {
+                        io.io_state = IoState::Idle;
+                        break guard;
+                    }
+                    Poll::Pending => {
+                        return Poll::Pending;
+                    }
+                },
+                IoState::Read(_) => {
+                    return Poll::Pending;
+                }
+                IoState::Idle => {
+                    let guard_future = Arc::clone(&io.stream).lock_owned();
+                    io.io_state = IoState::Write(Box::pin(guard_future));
                     continue;
                 }
             };
@@ -47,7 +86,7 @@ where
     pub fn new(stream: T) -> Self {
         Self {
             is_write_vectored: stream.is_write_vectored(),
-            guard_future: None,
+            io_state: IoState::Idle,
             stream: Arc::new(Mutex::new(Box::pin(stream))),
         }
     }
@@ -62,7 +101,7 @@ where
         context: &mut Context<'_>,
         mut buf: ReadBufCursor<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        let mut guard = try_lock!(self, context);
+        let mut guard = try_lock_read!(self, context);
         let mut tokio_buf = unsafe {
             //
             // Safety:
@@ -115,14 +154,14 @@ where
         context: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        let mut guard = try_lock!(self, context);
+        let mut guard = try_lock_write!(self, context);
         let stream = Pin::as_mut(&mut guard);
 
         stream.poll_write(context, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        let mut guard = try_lock!(self, context);
+        let mut guard = try_lock_write!(self, context);
         let stream = Pin::as_mut(&mut guard);
 
         stream.poll_flush(context)
@@ -132,7 +171,7 @@ where
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        let mut guard = try_lock!(self, context);
+        let mut guard = try_lock_write!(self, context);
         let stream = Pin::as_mut(&mut guard);
 
         stream.poll_shutdown(context)
@@ -143,7 +182,7 @@ where
         context: &mut Context<'_>,
         buf_list: &[IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
-        let mut guard = try_lock!(self, context);
+        let mut guard = try_lock_write!(self, context);
         let stream = Pin::as_mut(&mut guard);
 
         stream.poll_write_vectored(context, buf_list)
