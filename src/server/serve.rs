@@ -43,9 +43,6 @@ where
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
     loop {
-        // Remove any handles that have finished.
-        inflight.retain(|handle| !handle.is_finished());
-
         tokio::select! {
             // Wait for a new connection to be accepted.
             result = accept(&listener, &semaphore) => {
@@ -133,6 +130,9 @@ where
                 break;
             }
         }
+
+        // Remove any handles that have finished.
+        inflight.retain(|handle| !handle.is_finished());
     }
 
     tokio::select! {
