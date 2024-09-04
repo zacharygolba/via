@@ -141,7 +141,7 @@ where
             }
         }
 
-        return result;
+        result
     }
 }
 
