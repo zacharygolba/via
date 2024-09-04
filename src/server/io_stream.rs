@@ -58,6 +58,12 @@ enum IoState<T> {
     Write(Pin<Box<dyn Future<Output = IoStreamGuard<T>> + Send + Sync>>),
 }
 
+enum IoState<T> {
+    Idle,
+    Read(Pin<Box<dyn Future<Output = IoStreamGuard<T>> + Send + Sync>>),
+    Write(Pin<Box<dyn Future<Output = IoStreamGuard<T>> + Send + Sync>>),
+}
+
 /// Attempts to get a new or existing `IoStreamGuard` in a non-blocking manner.
 macro_rules! try_lock {
     (
