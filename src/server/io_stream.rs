@@ -117,8 +117,7 @@ where
             ReadBuf::uninit(buf.as_mut())
         };
 
-        let stream = Pin::as_mut(&mut guard);
-        let result = stream.poll_read(context, &mut tokio_buf);
+        let result = guard.as_mut().poll_read(context, &mut tokio_buf);
 
         if let Poll::Ready(Ok(())) = &result {
             // Get the number of bytes that were read into the uninitialized
@@ -155,16 +154,14 @@ where
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
         let mut guard = try_lock_write!(self, context);
-        let stream = Pin::as_mut(&mut guard);
 
-        stream.poll_write(context, buf)
+        guard.as_mut().poll_write(context, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         let mut guard = try_lock_write!(self, context);
-        let stream = Pin::as_mut(&mut guard);
 
-        stream.poll_flush(context)
+        guard.as_mut().poll_flush(context)
     }
 
     fn poll_shutdown(
@@ -172,9 +169,8 @@ where
         context: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
         let mut guard = try_lock_write!(self, context);
-        let stream = Pin::as_mut(&mut guard);
 
-        stream.poll_shutdown(context)
+        guard.as_mut().poll_shutdown(context)
     }
 
     fn poll_write_vectored(
@@ -183,9 +179,8 @@ where
         buf_list: &[IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
         let mut guard = try_lock_write!(self, context);
-        let stream = Pin::as_mut(&mut guard);
 
-        stream.poll_write_vectored(context, buf_list)
+        guard.as_mut().poll_write_vectored(context, buf_list)
     }
 
     fn is_write_vectored(&self) -> bool {
