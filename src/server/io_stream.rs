@@ -208,7 +208,7 @@ where
             }
         }
 
-        return result;
+        result
     }
 }
 
