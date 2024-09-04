@@ -23,57 +23,34 @@ enum IoState<T> {
 }
 
 /// Attempts to get a new or existing `IoStreamGuard` in a non-blocking manner.
-macro_rules! try_lock_read {
-    ($io:ident, $context:ident) => {{
-        let mut io = $io;
+macro_rules! try_lock {
+    (
+        // Should be an identifier of a variant of the IoState<T> enum. This
+        // represents the type of operation that the guard is being acquired
+        // for.
+        $ty:ident,
+        // Should be an identifier of type `Pin<&mut IoStream<T>>`.
+        $this:ident,
+        // Should be an identifier of type `&mut Context<'_>`.
+        $context:ident
+    ) => {{
+        let mut this = $this;
 
         loop {
-            match &mut io.io_state {
-                IoState::Read(guard_future) => match Pin::as_mut(guard_future).poll($context) {
+            return match &mut this.io_state {
+                IoState::$ty(guard_future) => match Pin::as_mut(guard_future).poll($context) {
                     Poll::Ready(guard) => {
-                        io.io_state = IoState::Idle;
+                        this.io_state = IoState::Idle;
                         break guard;
                     }
-                    Poll::Pending => {
-                        return Poll::Pending;
-                    }
+                    Poll::Pending => Poll::Pending,
                 },
-                IoState::Write(_) => {
-                    return Poll::Pending;
-                }
                 IoState::Idle => {
-                    let guard_future = Arc::clone(&io.stream).lock_owned();
-                    io.io_state = IoState::Read(Box::pin(guard_future));
+                    let guard_future = Arc::clone(&this.stream).lock_owned();
+                    this.io_state = IoState::$ty(Box::pin(guard_future));
                     continue;
                 }
-            };
-        }
-    }};
-}
-
-macro_rules! try_lock_write {
-    ($io:ident, $context:ident) => {{
-        let mut io = $io;
-
-        loop {
-            match &mut io.io_state {
-                IoState::Write(guard_future) => match Pin::as_mut(guard_future).poll($context) {
-                    Poll::Ready(guard) => {
-                        io.io_state = IoState::Idle;
-                        break guard;
-                    }
-                    Poll::Pending => {
-                        return Poll::Pending;
-                    }
-                },
-                IoState::Read(_) => {
-                    return Poll::Pending;
-                }
-                IoState::Idle => {
-                    let guard_future = Arc::clone(&io.stream).lock_owned();
-                    io.io_state = IoState::Write(Box::pin(guard_future));
-                    continue;
-                }
+                _ => Poll::Pending,
             };
         }
     }};
@@ -101,7 +78,7 @@ where
         context: &mut Context<'_>,
         mut buf: ReadBufCursor<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        let mut guard = try_lock_read!(self, context);
+        let mut guard = try_lock!(Read, self, context);
         let mut tokio_buf = unsafe {
             //
             // Safety:
@@ -153,13 +130,13 @@ where
         context: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        let mut guard = try_lock_write!(self, context);
+        let mut guard = try_lock!(Write, self, context);
 
         guard.as_mut().poll_write(context, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        let mut guard = try_lock_write!(self, context);
+        let mut guard = try_lock!(Write, self, context);
 
         guard.as_mut().poll_flush(context)
     }
@@ -168,7 +145,7 @@ where
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        let mut guard = try_lock_write!(self, context);
+        let mut guard = try_lock!(Write, self, context);
 
         guard.as_mut().poll_shutdown(context)
     }
@@ -178,7 +155,7 @@ where
         context: &mut Context<'_>,
         buf_list: &[IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
-        let mut guard = try_lock_write!(self, context);
+        let mut guard = try_lock!(Write, self, context);
 
         guard.as_mut().poll_write_vectored(context, buf_list)
     }
