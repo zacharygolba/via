@@ -7,18 +7,48 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
+/// A type alias for the mutex guard around the stream field of IoStream.
 type IoStreamGuard<T> = OwnedMutexGuard<Pin<Box<T>>>;
 
 /// A wrapper around a stream that implements both `AsyncRead` and `AsyncWrite`.
 pub struct IoStream<T> {
+    /// A cached of whether `T` supports vectored writes. We store this value
+    /// before `T` is wrapped in a Mutex to avoid the overhead of having to
+    /// acquire a lock every time we need to check if vectored writes are
+    /// supported.
+    ///
+    /// This is safe because we only ever wrap TcpStream in an IoStream and
+    /// TcpStream returns a constant value for `is_write_vectored`. If we ever
+    /// support other types that have a dynamic value for `is_write_vectored`, we
+    /// will need to change our approach.
     is_write_vectored: bool,
-    io_state: IoState<T>,
+
+    /// The underlying I/O stream that we're wrapping. Currently, `T` is always
+    /// a `TcpStream`. When we add support HTTPS, HTTP/2, or alternative async
+    /// runtime implementations there will be additional permutations of `T`.
     stream: Arc<Mutex<Pin<Box<T>>>>,
+
+    /// Represents the pending state of an I/O operation that is waiting for a
+    /// lock to be acquired on `self.stream`.
+    io_state: IoState<T>,
 }
 
+/// A wrapper around a `Future` that resolves to an `OwnedMutexGuard` that is
+/// to ensure exclusive access to the underlying stream for a read or write
+/// operation.
 enum IoState<T> {
+    /// The stream is idle. This means that a read or write operation can be
+    /// scheduled by acquiring a lock on the stream.
     Idle,
+
+    /// The stream will be used for a read operation. Write operations will have
+    /// to wait until the read operation is complete before acquiring a lock on
+    /// the stream.
     Read(Pin<Box<dyn Future<Output = IoStreamGuard<T>> + Send + Sync>>),
+
+    /// The stream will be used for a write operation. Read operations will have
+    /// to wait until the write operation is complete before acquiring a lock on
+    /// the stream.
     Write(Pin<Box<dyn Future<Output = IoStreamGuard<T>> + Send + Sync>>),
 }
 
@@ -30,30 +60,74 @@ macro_rules! try_lock {
         // for.
         $ty:ident,
         // Should be an expression of type `Pin<&mut IoStream<T>>`.
-        $this:expr,
+        $this:ident,
         // Should be an expression of type `&mut Context<'_>`.
         $context:expr
-    ) => {{
-        let mut this = $this;
-
+    ) => {
         loop {
-            return match &mut this.io_state {
-                IoState::$ty(guard_future) => match Pin::as_mut(guard_future).poll($context) {
-                    Poll::Ready(guard) => {
-                        this.io_state = IoState::Idle;
-                        break guard;
-                    }
-                    Poll::Pending => Poll::Pending,
-                },
+            // Acquire a lock on the stream for the operation of type `$ty`.
+            return match &mut $this.io_state {
+                // The stream is idle. We can acquire a lock for the operation
+                // of type `$ty`.
                 IoState::Idle => {
-                    let guard_future = Arc::clone(&this.stream).lock_owned();
-                    this.io_state = IoState::$ty(Box::pin(guard_future));
+                    // Get a future that resolves to an `OwnedMutexGuard` that
+                    // ensures exclusive access to the underlying stream for
+                    // the operation of type `$ty`.
+                    //
+                    // We use an `Arc` to clone the stream so we can move the
+                    // stream into the future and remain compatible with multi-
+                    // threaded runtimes.
+                    let future = Box::pin(Arc::clone(&$this.stream).lock_owned());
+
+                    // Transition `io_state` to `$ty`. This indicates that we're
+                    // waiting for a lock to be acquired before we can proceed
+                    // with the intended operation.
+                    $this.io_state = IoState::$ty(future);
+
+                    // Continue to the next iteration of the loop to poll the
+                    // future we just created.
                     continue;
                 }
-                _ => Poll::Pending,
+
+                // We're currently waiting for a lock to be acquired for the
+                // operation of type `$ty`. Poll the future to see if the lock
+                // has been acquired.
+                IoState::$ty(future) => match Pin::as_mut(future).poll($context) {
+                    // The lock has been acquired.
+                    Poll::Ready(guard) => {
+                        // Transition `io_state` to `Idle`. This indicates that
+                        // we'll be ready to schedule another operation when
+                        // the guard is dropped.
+                        $this.io_state = IoState::Idle;
+
+                        // Break out of the loop and return the guard.
+                        break guard;
+                    }
+
+                    // The lock has not been acquired yet.
+                    Poll::Pending => {
+                        // Return `Poll::Pending`. We'll be woken up when the
+                        // lock is acquired.
+                        Poll::Pending
+                    }
+                },
+
+                // The stream is currently being used for a different operation.
+                // We'll have to wait until the stream is idle before we can
+                // schedule the intended read or write operation.
+                _ => {
+                    // Wake the current task so it can be scheduled again. We
+                    // do this because we don't want to poll the future and
+                    // inadvertently steal the guard from an operation that is
+                    // different from what we intended.
+                    $context.waker().wake_by_ref();
+
+                    // Return `Poll::Pending`.
+                    Poll::Pending
+                }
             };
         }
-    }};
+    };
 }
 
 impl<T> IoStream<T>
@@ -63,8 +137,8 @@ where
     pub fn new(stream: Pin<Box<T>>) -> Self {
         Self {
             is_write_vectored: stream.is_write_vectored(),
-            io_state: IoState::Idle,
             stream: Arc::new(Mutex::new(stream)),
+            io_state: IoState::Idle,
         }
     }
 }
@@ -74,11 +148,10 @@ where
     R: AsyncRead + Send + Sync + 'static,
 {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
-        cursor: ReadBufCursor<'_>,
+        mut cursor: ReadBufCursor<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        let mut cursor = cursor;
         let mut guard = try_lock!(Read, self, context);
         let mut buf = unsafe {
             //
@@ -127,7 +200,7 @@ where
     W: AsyncWrite + Send + Sync + 'static,
 {
     fn poll_write(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
@@ -136,14 +209,17 @@ where
         guard.as_mut().poll_write(context, buf)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Result<(), io::Error>> {
         let mut guard = try_lock!(Write, self, context);
 
         guard.as_mut().poll_flush(context)
     }
 
     fn poll_shutdown(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
         let mut guard = try_lock!(Write, self, context);
@@ -152,7 +228,7 @@ where
     }
 
     fn poll_write_vectored(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
         buf_list: &[IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
