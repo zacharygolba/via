@@ -1,3 +1,9 @@
+//! A wrapper around a stream that implements both `AsyncRead` and `AsyncWrite`.
+//
+// This code was originally adapted from the `hyper_util::rt::tokio::TokioIo`
+// struct in [hyper-util](https://docs.rs/hyper-util).
+//
+
 use hyper::rt::{Read, ReadBufCursor, Write};
 use std::future::Future;
 use std::io::{self, IoSlice};
