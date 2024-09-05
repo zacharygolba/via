@@ -1,42 +1,169 @@
+//! A wrapper around a stream that implements both `AsyncRead` and `AsyncWrite`.
+//
+// This code was originally adapted from the `hyper_util::rt::tokio::TokioIo`
+// struct in [hyper-util](https://docs.rs/hyper-util).
+//
+
 use hyper::rt::{Read, ReadBufCursor, Write};
+use std::future::Future;
 use std::io::{self, IoSlice};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::sync::{Mutex, OwnedMutexGuard};
+
+/// A type alias for the mutex guard around the stream field of IoStream.
+type IoStreamGuard<T> = OwnedMutexGuard<T>;
 
 /// A wrapper around a stream that implements both `AsyncRead` and `AsyncWrite`.
 pub struct IoStream<T> {
-    stream: T,
+    /// A cached of whether `T` supports vectored writes. We store this value
+    /// before `T` is wrapped in a Mutex to avoid the overhead of having to
+    /// acquire a lock every time we need to check if vectored writes are
+    /// supported.
+    ///
+    /// This is safe because we only ever wrap TcpStream in an IoStream and
+    /// TcpStream returns a constant value for `is_write_vectored`. If we ever
+    /// support other types that have a dynamic value for `is_write_vectored`, we
+    /// will need to change our approach.
+    is_write_vectored: bool,
+
+    /// The underlying I/O stream that we're wrapping. Currently, `T` is always
+    /// a `TcpStream`. When we add support HTTPS, HTTP/2, or alternative async
+    /// runtime implementations there will be additional permutations of `T`.
+    stream: Arc<Mutex<T>>,
+
+    /// Represents the pending state of an I/O operation that is waiting for a
+    /// lock to be acquired on `self.stream`.
+    io_state: IoState<T>,
 }
 
-impl<T: Unpin> IoStream<T> {
+/// A wrapper around a `Future` that resolves to an `OwnedMutexGuard` that is
+/// to ensure exclusive access to the underlying stream for a read or write
+/// operation.
+enum IoState<T> {
+    /// The stream is idle. This means that a read or write operation can be
+    /// scheduled by acquiring a lock on the stream.
+    Idle,
+
+    /// The stream will be used for a read operation. Write operations will have
+    /// to wait until the read operation is complete before acquiring a lock on
+    /// the stream.
+    Read(Pin<Box<dyn Future<Output = IoStreamGuard<T>> + Send + Sync>>),
+
+    /// The stream will be used for a write operation. Read operations will have
+    /// to wait until the write operation is complete before acquiring a lock on
+    /// the stream.
+    Write(Pin<Box<dyn Future<Output = IoStreamGuard<T>> + Send + Sync>>),
+}
+
+/// Attempts to get a new or existing `IoStreamGuard` in a non-blocking manner.
+macro_rules! try_lock {
+    (
+        // Should be an identifier of a variant of the IoState<T> enum. This
+        // represents the type of operation that the guard is being acquired
+        // for.
+        $ty:ident,
+        // Should be an expression of type `&mut IoStream<T>`.
+        $this:expr,
+        // Should be an expression of type `&mut Context<'_>`.
+        $context:expr
+    ) => {{
+        let this = $this;
+        let context = $context;
+
+        loop {
+            // Acquire a lock on the stream for the operation of type `$ty`.
+            return match &mut this.io_state {
+                // The stream is idle. We can acquire a lock for the operation
+                // of type `$ty`.
+                IoState::Idle => {
+                    // Get a future that resolves to an `OwnedMutexGuard` that
+                    // ensures exclusive access to the underlying stream for
+                    // the operation of type `$ty`.
+                    //
+                    // We use an `Arc` to clone the stream so we can move the
+                    // stream into the future and remain compatible with multi-
+                    // threaded runtimes.
+                    let future = Box::pin(Arc::clone(&this.stream).lock_owned());
+
+                    // Transition `io_state` to `$ty`. This indicates that we're
+                    // waiting for a lock to be acquired before we can proceed
+                    // with the intended operation.
+                    this.io_state = IoState::$ty(future);
+
+                    // Continue to the next iteration of the loop to poll the
+                    // future we just created.
+                    continue;
+                }
+
+                // We're currently waiting for a lock to be acquired for the
+                // operation of type `$ty`. Poll the future to see if the lock
+                // has been acquired.
+                IoState::$ty(future) => match Pin::as_mut(future).poll(context) {
+                    // The lock has been acquired.
+                    Poll::Ready(guard) => {
+                        // Transition `io_state` to `Idle`. This indicates that
+                        // we'll be ready to schedule another operation when
+                        // the guard is dropped.
+                        this.io_state = IoState::Idle;
+
+                        // Break out of the loop and return the guard.
+                        break guard;
+                    }
+
+                    // The lock has not been acquired yet.
+                    Poll::Pending => {
+                        // Return `Poll::Pending`. We'll be woken up when the
+                        // lock is acquired.
+                        Poll::Pending
+                    }
+                },
+
+                // The stream is currently being used for a different operation.
+                // We'll have to wait until the stream is idle before we can
+                // schedule the intended read or write operation. This is a
+                // very unlikely sceanrio to occur but we handle it to guarantee
+                // the API contract of the unsafe blocks in `poll_read`.
+                _ => {
+                    // Wake the current task so it can be scheduled again. We
+                    // do this because we don't want to poll the future and
+                    // inadvertently steal the guard from an operation that is
+                    // different from what we intended.
+                    context.waker().wake_by_ref();
+
+                    // Return `Poll::Pending`.
+                    Poll::Pending
+                }
+            };
+        }
+    }};
+}
+
+impl<T> IoStream<T>
+where
+    T: AsyncRead + AsyncWrite,
+{
     pub fn new(stream: T) -> Self {
-        Self { stream }
-    }
-}
-
-impl<T: Unpin> IoStream<T> {
-    // Returns a pinned mutable reference to the `stream` field.
-    fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
-        // Get a mutable refence to self from Pin<&mut Self>.
-        let this = self.get_mut();
-        // Get a mutable reference to the `stream` field.
-        let ptr = &mut this.stream;
-
-        Pin::new(ptr)
+        Self {
+            is_write_vectored: stream.is_write_vectored(),
+            stream: Arc::new(Mutex::new(stream)),
+            io_state: IoState::Idle,
+        }
     }
 }
 
 impl<R> Read for IoStream<R>
 where
-    R: AsyncRead + Unpin,
+    R: AsyncRead + Send + Sync + Unpin + 'static,
 {
     fn poll_read(
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
-        mut buf: ReadBufCursor<'_>,
+        mut cursor: ReadBufCursor<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        let mut tokio_buf = unsafe {
+        let mut buf = unsafe {
             //
             // Safety:
             //
@@ -48,29 +175,30 @@ where
             // and `Write` and we wouldn't want to uninitialized any bytes that
             // may have been initialized by a previous call to `poll_write`.
             //
-            ReadBuf::uninit(buf.as_mut())
+            ReadBuf::uninit(cursor.as_mut())
         };
-        // Delegate the reading of bytes to `self.stream`.
-        let result = self.project().poll_read(context, &mut tokio_buf);
+
+        let result = {
+            let this = self.get_mut();
+            let mut guard = try_lock!(Read, this, &mut *context);
+
+            AsyncRead::poll_read(Pin::new(&mut *guard), context, &mut buf)
+        };
 
         if let Poll::Ready(Ok(())) = &result {
             // Get the number of bytes that were read into the uninitialized
             // portion of the buffer.
-            let n = tokio_buf.filled().len();
+            let n = buf.filled().len();
 
             unsafe {
                 //
                 // Safety:
                 //
-                // This unsafe block is necessary because we need to advance
-                // the cursor of `ReadBufCursor` by the number of bytes that
-                // were read into the uninitialized portion of the buffer. We
-                // must guarentee that the length of the filled portion of
-                // `tokio_buf` is accurate to uphold the safety of `poll_read`.
+                // This unsafe block is necessary because we need to advance the
+                // cursor of `ReadBufCursor` by the number of bytes that were
+                // read into the uninitialized portion of the buffer.
                 //
-                // Heads up for off-by-one errors.
-                //
-                buf.advance(n);
+                cursor.advance(n);
             }
         }
 
@@ -80,29 +208,40 @@ where
 
 impl<W> Write for IoStream<W>
 where
-    W: AsyncWrite + Unpin,
+    W: AsyncWrite + Send + Sync + Unpin + 'static,
 {
     fn poll_write(
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        self.project().poll_write(context, buf)
+        let mut guard = {
+            let this = self.get_mut();
+            try_lock!(Write, this, &mut *context)
+        };
+
+        AsyncWrite::poll_write(Pin::new(&mut *guard), context, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        self.project().poll_flush(context)
+        let mut guard = {
+            let this = self.get_mut();
+            try_lock!(Write, this, &mut *context)
+        };
+
+        AsyncWrite::poll_flush(Pin::new(&mut *guard), context)
     }
 
     fn poll_shutdown(
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        self.project().poll_shutdown(context)
-    }
+        let mut guard = {
+            let this = self.get_mut();
+            try_lock!(Write, this, &mut *context)
+        };
 
-    fn is_write_vectored(&self) -> bool {
-        self.stream.is_write_vectored()
+        AsyncWrite::poll_shutdown(Pin::new(&mut *guard), context)
     }
 
     fn poll_write_vectored(
@@ -110,6 +249,15 @@ where
         context: &mut Context<'_>,
         buf_list: &[IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
-        self.project().poll_write_vectored(context, buf_list)
+        let mut guard = {
+            let this = self.get_mut();
+            try_lock!(Write, this, &mut *context)
+        };
+
+        AsyncWrite::poll_write_vectored(Pin::new(&mut *guard), context, buf_list)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.is_write_vectored
     }
 }
