@@ -58,7 +58,6 @@ where
                         continue;
                     }
                 };
-                let stream = Box::pin(stream);
 
                 // Clone the watch channel so that we can notify the connection
                 // to initiate a graceful shutdown process before the server
