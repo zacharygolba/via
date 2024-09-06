@@ -26,7 +26,7 @@ impl ResponseBuilder {
     pub fn finish(mut self) -> Result<Response> {
         let body = match self.body.take() {
             Some(body) => body?,
-            None => ResponseBody::empty(),
+            None => ResponseBody::new(),
         };
 
         Ok(Response::from_inner(self.inner.body(body)?))
