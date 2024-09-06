@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use futures_core::Stream;
 use hyper::body::Frame;
 
@@ -12,16 +12,16 @@ pub struct ResponseBody {
 }
 
 impl ResponseBody {
-    pub fn new(data: Bytes) -> Self {
+    pub fn new() -> Self {
+        Self::buffer(BytesMut::new())
+    }
+
+    pub fn buffer(data: BytesMut) -> Self {
         let buffered = Buffered::new(data.into());
 
         Self {
             body: Either::Left(Either::Left(buffered)),
         }
-    }
-
-    pub fn empty() -> Self {
-        Self::new(Bytes::new())
     }
 
     pub fn stream<T>(stream: T) -> Self
@@ -70,9 +70,15 @@ impl ResponseBody {
     }
 }
 
+impl Default for ResponseBody {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl From<()> for ResponseBody {
     fn from(_: ()) -> Self {
-        Self::empty()
+        Default::default()
     }
 }
 
@@ -84,32 +90,36 @@ impl From<Boxed> for ResponseBody {
     }
 }
 
-impl From<Bytes> for ResponseBody {
-    fn from(bytes: Bytes) -> Self {
-        Self::new(bytes)
-    }
-}
-
 impl From<Vec<u8>> for ResponseBody {
     fn from(vec: Vec<u8>) -> Self {
-        Self::new(Bytes::from(vec))
+        let bytes = vec.as_slice();
+        let buffer = BytesMut::from(bytes);
+
+        Self::buffer(buffer)
     }
 }
 
 impl From<&'static [u8]> for ResponseBody {
     fn from(slice: &'static [u8]) -> Self {
-        Self::new(Bytes::from_static(slice))
+        let buffer = BytesMut::from(slice);
+        Self::buffer(buffer)
     }
 }
 
 impl From<String> for ResponseBody {
     fn from(string: String) -> Self {
-        Self::new(Bytes::from(string))
+        let bytes = string.as_bytes();
+        let buffer = BytesMut::from(bytes);
+
+        Self::buffer(buffer)
     }
 }
 
 impl From<&'static str> for ResponseBody {
     fn from(slice: &'static str) -> Self {
-        Self::new(Bytes::from_static(slice.as_bytes()))
+        let bytes = slice.as_bytes();
+        let buffer = BytesMut::from(bytes);
+
+        Self::buffer(buffer)
     }
 }
