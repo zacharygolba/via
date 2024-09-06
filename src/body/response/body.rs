@@ -28,11 +28,7 @@ impl ResponseBody {
 }
 
 impl ResponseBody {
-    pub(crate) fn new() -> Self {
-        Self::buffer(Bytes::new())
-    }
-
-    pub(crate) fn buffer(data: Bytes) -> Self {
+    pub fn new(data: Bytes) -> Self {
         let buffered = Buffered::new(data.into());
 
         Self {
@@ -40,16 +36,11 @@ impl ResponseBody {
         }
     }
 
-    pub(crate) fn data_stream<S, D, E>(stream: S) -> Self
-    where
-        S: Stream<Item = Result<D, E>> + Send + 'static,
-        D: Into<Bytes> + 'static,
-        E: Into<Error> + 'static,
-    {
-        Self::stream(StreamAdapter::new(stream))
+    pub fn empty() -> Self {
+        Self::new(Bytes::new())
     }
 
-    pub(crate) fn stream<T>(stream: T) -> Self
+    pub fn stream<T>(stream: T) -> Self
     where
         T: Stream<Item = Result<Frame<Bytes>>> + Send + 'static,
     {
@@ -60,6 +51,17 @@ impl ResponseBody {
         }
     }
 
+    pub fn data_stream<S, D, E>(stream: S) -> Self
+    where
+        S: Stream<Item = Result<D, E>> + Send + 'static,
+        D: Into<Bytes> + 'static,
+        E: Into<Error> + 'static,
+    {
+        Self::stream(StreamAdapter::new(stream))
+    }
+}
+
+impl ResponseBody {
     pub(crate) fn into_pollable(self) -> Pollable {
         Pollable::new(self.body)
     }
@@ -91,36 +93,36 @@ impl ResponseBody {
 
 impl From<()> for ResponseBody {
     fn from(_: ()) -> Self {
-        Self::new()
+        Self::empty()
     }
 }
 
 impl From<Bytes> for ResponseBody {
     fn from(bytes: Bytes) -> Self {
-        Self::buffer(bytes)
+        Self::new(bytes)
     }
 }
 
 impl From<Vec<u8>> for ResponseBody {
     fn from(vec: Vec<u8>) -> Self {
-        Self::buffer(Bytes::from(vec))
+        Self::new(Bytes::from(vec))
     }
 }
 
 impl From<&'static [u8]> for ResponseBody {
     fn from(slice: &'static [u8]) -> Self {
-        Self::buffer(Bytes::from_static(slice))
+        Self::new(Bytes::from_static(slice))
     }
 }
 
 impl From<String> for ResponseBody {
     fn from(string: String) -> Self {
-        Self::buffer(Bytes::from(string))
+        Self::new(Bytes::from(string))
     }
 }
 
 impl From<&'static str> for ResponseBody {
     fn from(slice: &'static str) -> Self {
-        Self::buffer(Bytes::from_static(slice.as_bytes()))
+        Self::new(Bytes::from_static(slice.as_bytes()))
     }
 }
