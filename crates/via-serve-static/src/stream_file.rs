@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use futures_core::Stream;
 use std::{
     fs::File,
@@ -8,7 +9,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 use tokio::{runtime::Handle, sync::mpsc, task};
-use via::body::{Bytes, Frame};
+use via::body::Frame;
 use via::{Error, Result};
 
 /// The amount of `ReadChunkResult` that can be stored in the channel buffer.
