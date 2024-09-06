@@ -117,8 +117,7 @@ impl Response {
 
 impl Response {
     pub(crate) fn new() -> Self {
-        let body = ResponseBody::new();
-
+        let body = ResponseBody::empty();
         Self::from_inner(http::Response::new(body))
     }
 
