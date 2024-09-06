@@ -121,8 +121,10 @@ impl Response {
 
 impl Response {
     pub(crate) fn new() -> Self {
-        let body = ResponseBody::empty();
-        Self::from_inner(http::Response::new(body))
+        let body = ResponseBody::new();
+        let inner = http::Response::new(body);
+
+        Self::from_inner(inner)
     }
 
     pub(crate) fn from_inner(inner: http::Response<ResponseBody>) -> Self {
