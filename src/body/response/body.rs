@@ -2,18 +2,30 @@ use bytes::Bytes;
 use futures_core::Stream;
 use hyper::body::Frame;
 
-use super::{Buffered, Either, Mapped, Pollable, StreamAdapter, Streaming};
+use super::{Boxed, Buffered, Either, StreamAdapter, Streaming};
 use crate::{Error, Result};
 
+pub type AnyBody = Either<Either<Buffered, Streaming>, Boxed>;
+
 pub struct ResponseBody {
-    body: Either<Either<Buffered, Streaming>, Mapped>,
+    body: AnyBody,
 }
 
 impl ResponseBody {
+    pub fn into_boxed(self) -> Boxed {
+        match self.body {
+            Either::Left(body) => Boxed::new(Box::pin(body)),
+            Either::Right(boxed) => boxed,
+        }
+    }
+
+    pub fn into_inner(self) -> AnyBody {
+        self.body
+    }
+
     pub fn is_empty(&self) -> bool {
         match &self.body {
             Either::Left(Either::Left(buffered)) => buffered.is_empty(),
-            Either::Right(mapped) => mapped.is_empty(),
             _ => false,
         }
     }
@@ -21,7 +33,6 @@ impl ResponseBody {
     pub fn len(&self) -> Option<usize> {
         match &self.body {
             Either::Left(Either::Left(buffered)) => Some(buffered.len()),
-            Either::Right(mapped) => mapped.len(),
             _ => None,
         }
     }
@@ -44,14 +55,14 @@ impl ResponseBody {
     where
         T: Stream<Item = Result<Frame<Bytes>>> + Send + 'static,
     {
-        let stream = Streaming::new(Box::new(stream));
+        let stream = Streaming::new(Box::pin(stream));
 
         Self {
             body: Either::Left(Either::Right(stream)),
         }
     }
 
-    pub fn data_stream<S, D, E>(stream: S) -> Self
+    pub fn stream_bytes<S, D, E>(stream: S) -> Self
     where
         S: Stream<Item = Result<D, E>> + Send + 'static,
         D: Into<Bytes> + 'static,
@@ -61,39 +72,17 @@ impl ResponseBody {
     }
 }
 
-impl ResponseBody {
-    pub(crate) fn into_pollable(self) -> Pollable {
-        Pollable::new(self.body)
-    }
-
-    pub(crate) fn map<F>(self, map: Box<F>) -> Self
-    where
-        F: Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static,
-    {
-        match self.body {
-            Either::Left(source) => {
-                let mut mapped = Mapped::new(source);
-
-                mapped.push(map);
-
-                Self {
-                    body: Either::Right(mapped),
-                }
-            }
-            Either::Right(mut mapped) => {
-                mapped.push(map);
-
-                Self {
-                    body: Either::Right(mapped),
-                }
-            }
-        }
-    }
-}
-
 impl From<()> for ResponseBody {
     fn from(_: ()) -> Self {
         Self::empty()
+    }
+}
+
+impl From<Boxed> for ResponseBody {
+    fn from(boxed: Boxed) -> Self {
+        Self {
+            body: Either::Right(boxed),
+        }
     }
 }
 

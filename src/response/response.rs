@@ -2,9 +2,11 @@ use bytes::Bytes;
 use futures_core::Stream;
 use http::header::{self, HeaderMap};
 use http::{StatusCode, Version};
+use hyper::body::Body;
 
 use super::ResponseBuilder;
-use crate::body::{Frame, Pollable, ResponseBody};
+use crate::body::response::AnyBody;
+use crate::body::{Boxed, Frame, ResponseBody};
 use crate::{Error, Result};
 
 pub struct Response {
@@ -14,16 +16,6 @@ pub struct Response {
 impl Response {
     pub fn builder() -> ResponseBuilder {
         ResponseBuilder::new()
-    }
-
-    pub fn data_stream<S, D, E>(body: S) -> ResponseBuilder
-    where
-        S: Stream<Item = Result<D, E>> + Send + 'static,
-        D: Into<Bytes> + 'static,
-        E: Into<Error> + 'static,
-    {
-        ResponseBuilder::with_body(Ok(ResponseBody::data_stream(body)))
-            .header(header::TRANSFER_ENCODING, "chunked")
     }
 
     pub fn html<T>(body: T) -> ResponseBuilder
@@ -67,6 +59,19 @@ impl Response {
             .headers(len.map(|content_length| (header::CONTENT_LENGTH, content_length)))
     }
 
+    pub fn map<F, B>(self, f: F) -> Self
+    where
+        F: FnOnce(AnyBody) -> B,
+        B: Body<Data = Bytes, Error = Error> + Send + 'static,
+    {
+        Self {
+            inner: self.inner.map(|body| {
+                let mapped = f(body.into_inner());
+                Boxed::new(Box::pin(mapped)).into()
+            }),
+        }
+    }
+
     pub fn stream<T>(body: T) -> ResponseBuilder
     where
         T: Stream<Item = Result<Frame<Bytes>>> + Send + 'static,
@@ -75,15 +80,14 @@ impl Response {
             .header(header::TRANSFER_ENCODING, "chunked")
     }
 
-    pub fn map<F>(self, map: F) -> Self
+    pub fn stream_bytes<S, D, E>(body: S) -> ResponseBuilder
     where
-        F: Fn(Bytes) -> Result<Bytes> + Send + Sync + 'static,
+        S: Stream<Item = Result<D, E>> + Send + 'static,
+        D: Into<Bytes> + 'static,
+        E: Into<Error> + 'static,
     {
-        let map = Box::new(map);
-
-        Self {
-            inner: self.inner.map(|body| body.map(map)),
-        }
+        ResponseBuilder::with_body(Ok(ResponseBody::stream_bytes(body)))
+            .header(header::TRANSFER_ENCODING, "chunked")
     }
 
     pub fn body(&self) -> &ResponseBody {
@@ -125,8 +129,7 @@ impl Response {
         Self { inner }
     }
 
-    pub(crate) fn into_inner(self) -> http::Response<Pollable> {
-        // Unwrap the inner response and map the body to `Pollable`.
-        self.inner.map(ResponseBody::into_pollable)
+    pub(crate) fn into_inner(self) -> http::Response<AnyBody> {
+        self.inner.map(|body| body.into_inner())
     }
 }
