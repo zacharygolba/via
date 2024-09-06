@@ -17,7 +17,7 @@ impl ResponseBody {
     }
 
     pub fn buffer(data: BytesMut) -> Self {
-        let buffered = Buffered::new(data.into());
+        let buffered = Buffered::new(data);
 
         Self {
             body: Either::Left(Either::Left(buffered)),
