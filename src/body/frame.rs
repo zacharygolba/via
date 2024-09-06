@@ -1,6 +1,7 @@
+use bytes::Bytes;
+
 pub use hyper::body::Frame;
 
-use super::Bytes;
 use crate::Error;
 
 /// An extension trait for [`Frame`](super::Frame) that includes convenience
