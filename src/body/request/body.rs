@@ -8,7 +8,7 @@ const MAX_PREALLOC_SIZE: usize = 104857600; // 100 MB
 
 #[derive(Debug)]
 pub struct RequestBody {
-    body: Box<Incoming>,
+    body: Incoming,
     len: Option<usize>,
 }
 
@@ -22,6 +22,10 @@ fn bytes_mut_with_capacity(capacity: Option<usize>) -> BytesMut {
 }
 
 impl RequestBody {
+    pub fn into_inner(self) -> Incoming {
+        self.body
+    }
+
     pub fn into_stream(self) -> BodyStream {
         BodyStream::new(self.body)
     }
@@ -64,15 +68,12 @@ impl RequestBody {
 
 impl RequestBody {
     pub(crate) fn new(body: Incoming) -> Self {
-        Self {
-            body: Box::new(body),
-            len: None,
-        }
+        Self { body, len: None }
     }
 
     pub(crate) fn with_len(body: Incoming, len: usize) -> Self {
         Self {
-            body: Box::new(body),
+            body,
             len: Some(len),
         }
     }

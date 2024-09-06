@@ -1,4 +1,5 @@
 use super::{Response, ResponseBuilder};
+use crate::body::ResponseBody;
 use crate::{Error, Result};
 
 pub trait IntoResponse {
@@ -44,6 +45,16 @@ impl IntoResponse for Response {
 impl IntoResponse for ResponseBuilder {
     fn into_response(self) -> Result<Response> {
         self.finish()
+    }
+}
+
+impl<B> IntoResponse for http::Response<B>
+where
+    ResponseBody: From<B>,
+{
+    fn into_response(self) -> Result<Response> {
+        let inner = self.map(ResponseBody::from);
+        Ok(Response::from_inner(inner))
     }
 }
 
