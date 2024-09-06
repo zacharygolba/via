@@ -3,7 +3,8 @@ use http::response::Builder;
 use http::{StatusCode, Version};
 
 use super::Response;
-use crate::{body::ResponseBody, Error, Result};
+use crate::body::ResponseBody;
+use crate::{Error, Result};
 
 pub struct ResponseBuilder {
     body: Option<Result<ResponseBody>>,

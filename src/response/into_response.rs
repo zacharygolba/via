@@ -50,10 +50,10 @@ impl IntoResponse for ResponseBuilder {
 
 impl<B> IntoResponse for http::Response<B>
 where
-    ResponseBody: From<B>,
+    B: Into<ResponseBody>,
 {
     fn into_response(self) -> Result<Response> {
-        let inner = self.map(ResponseBody::from);
+        let inner = self.map(|body| body.into());
         Ok(Response::from_inner(inner))
     }
 }
