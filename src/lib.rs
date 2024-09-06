@@ -4,11 +4,11 @@ pub mod body;
 pub mod middleware;
 pub mod request;
 pub mod response;
+pub mod server;
 
 mod app;
 mod error;
 mod router;
-mod server;
 
 pub use http;
 

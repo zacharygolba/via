@@ -18,17 +18,6 @@ type IoStreamGuard<T> = OwnedMutexGuard<T>;
 
 /// A wrapper around a stream that implements both `AsyncRead` and `AsyncWrite`.
 pub struct IoStream<T> {
-    /// A cached of whether `T` supports vectored writes. We store this value
-    /// before `T` is wrapped in a Mutex to avoid the overhead of having to
-    /// acquire a lock every time we need to check if vectored writes are
-    /// supported.
-    ///
-    /// This is safe because we only ever wrap TcpStream in an IoStream and
-    /// TcpStream returns a constant value for `is_write_vectored`. If we ever
-    /// support other types that have a dynamic value for `is_write_vectored`, we
-    /// will need to change our approach.
-    is_write_vectored: bool,
-
     /// The underlying I/O stream that we're wrapping. Currently, `T` is always
     /// a `TcpStream`. When we add support HTTPS, HTTP/2, or alternative async
     /// runtime implementations there will be additional permutations of `T`.
@@ -143,11 +132,10 @@ macro_rules! try_lock {
 
 impl<T> IoStream<T>
 where
-    T: AsyncRead + AsyncWrite,
+    T: AsyncRead + AsyncWrite + Unpin,
 {
     pub fn new(stream: T) -> Self {
         Self {
-            is_write_vectored: stream.is_write_vectored(),
             stream: Arc::new(Mutex::new(stream)),
             io_state: IoState::Idle,
         }
@@ -258,6 +246,9 @@ where
     }
 
     fn is_write_vectored(&self) -> bool {
-        self.is_write_vectored
+        match self.stream.try_lock() {
+            Ok(guard) => AsyncWrite::is_write_vectored(&*guard),
+            Err(_) => false,
+        }
     }
 }
