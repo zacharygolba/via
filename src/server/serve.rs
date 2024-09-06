@@ -58,37 +58,43 @@ where
                         continue;
                     }
                 };
+                // Wrap the TcpStream in a type that implements hyper's I/O traits.
+                let io = IoStream::new(stream);
 
                 // Clone the watch channel so that we can notify the connection
                 // to initiate a graceful shutdown process before the server
                 // exits.
                 let mut shutdown_rx = shutdown_rx.clone();
 
-                // Create a new connection for the configured HTTP version. For
-                // now we only support HTTP/1.1. This will be expanded to
-                // support HTTP/2 in the future.
-                let connection = http1::Builder::new()
-                    .timer(TokioTimer::new())
-                    .serve_connection(
-                        // Wrap the TcpStream in a type that implements hyper's
-                        // IO traits.
-                        IoStream::new(stream),
-                        // Create a hyper service to serve the incoming connection.
-                        // We'll move the service into a tokio task to distribute
-                        // the load across multiple threads.
-                        Service::new(Arc::clone(&router), Arc::clone(&state))
-                    );
+                // Clone the router so it can be moved into the connection task.
+                // This is required to create the service that will handle the
+                // connection.
+                let router = Arc::clone(&router);
 
-                // Spawn a tokio task to serve the connection in a separate thread.
+                // Clone the state so it can be moved into the connection task.
+                // This is required to create the service that will handle the
+                // connection.
+                let state = Arc::clone(&state);
+
                 inflight.push(task::spawn(async move {
-                    let mut connection = connection;
-                    let mut conn_mut = Pin::new(&mut connection);
+                    // Create a new connection for the configured HTTP version. For
+                    // now we only support HTTP/1.1. This will be expanded to
+                    // support HTTP/2 in the future.
+                    let mut connection = http1::Builder::new()
+                        .timer(TokioTimer::new())
+                        .serve_connection(io, Service::new(router, state))
+                        .with_upgrades();
+
+                    // Pin the connection on the stack so it can be polled. This
+                    // is required by the tokio::select! macro as well as the
+                    // initiating a graceful shutdown process for the connection.
+                    let mut pinned_connection = Pin::new(&mut connection);
 
                     tokio::select! {
                         // Wait for the connection to close. This is the typical
                         // path that the code should take while the server is
                         // running.
-                        result = conn_mut.as_mut() => {
+                        result = &mut pinned_connection => {
                             // The connection has been closed. Drop the semaphore
                             // permit to allow another connection to be accepted.
                             drop(permit);
@@ -113,7 +119,7 @@ where
                         _ = shutdown_rx.changed() => {
                             // Initiate the graceful shutdown process for the
                             // connection.
-                            conn_mut.graceful_shutdown();
+                            pinned_connection.graceful_shutdown();
                         }
                     }
                 }));
