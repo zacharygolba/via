@@ -12,33 +12,6 @@ pub struct ResponseBody {
 }
 
 impl ResponseBody {
-    pub fn into_boxed(self) -> Boxed {
-        match self.body {
-            Either::Left(body) => Boxed::new(Box::pin(body)),
-            Either::Right(boxed) => boxed,
-        }
-    }
-
-    pub fn into_inner(self) -> AnyBody {
-        self.body
-    }
-
-    pub fn is_empty(&self) -> bool {
-        match &self.body {
-            Either::Left(Either::Left(buffered)) => buffered.is_empty(),
-            _ => false,
-        }
-    }
-
-    pub fn len(&self) -> Option<usize> {
-        match &self.body {
-            Either::Left(Either::Left(buffered)) => Some(buffered.len()),
-            _ => None,
-        }
-    }
-}
-
-impl ResponseBody {
     pub fn new(data: Bytes) -> Self {
         let buffered = Buffered::new(data.into());
 
@@ -69,6 +42,31 @@ impl ResponseBody {
         E: Into<Error> + 'static,
     {
         Self::stream(StreamAdapter::new(stream))
+    }
+
+    pub fn into_boxed(self) -> Boxed {
+        match self.body {
+            Either::Left(body) => Boxed::new(Box::pin(body)),
+            Either::Right(boxed) => boxed,
+        }
+    }
+
+    pub fn into_inner(self) -> AnyBody {
+        self.body
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match &self.body {
+            Either::Left(Either::Left(buffered)) => buffered.is_empty(),
+            _ => false,
+        }
+    }
+
+    pub fn len(&self) -> Option<usize> {
+        match &self.body {
+            Either::Left(Either::Left(buffered)) => Some(buffered.len()),
+            _ => None,
+        }
     }
 }
 
