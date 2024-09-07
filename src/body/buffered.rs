@@ -1,4 +1,4 @@
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use hyper::body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -12,14 +12,12 @@ const MAX_FRAME_LEN: usize = 16384; // 16KB
 #[derive(Debug)]
 pub struct Buffered {
     /// The buffer containing the body data.
-    data: BytesMut,
+    data: Bytes,
 }
 
 impl Buffered {
-    pub fn new(bytes: Bytes) -> Self {
-        Self {
-            data: BytesMut::from(bytes),
-        }
+    pub fn new(data: Bytes) -> Self {
+        Self { data }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -55,7 +53,7 @@ impl Body for Buffered {
         // Copy the bytes from the buffer into an immutable `Bytes`. This is safe
         // because `BytesMut` is only advancing an internal pointer rather than
         // moving the bytes in memory.
-        let data = this.data.split_to(len).freeze();
+        let data = this.data.split_to(len);
         // Wrap the bytes we copied from buffer in a data frame.
         let frame = Frame::data(data);
 
