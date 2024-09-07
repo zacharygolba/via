@@ -6,6 +6,7 @@ use std::task::{Context, Poll};
 use crate::Error;
 
 /// A struct that wraps a `Pin<Box<dyn Body>>`.
+#[must_use = "streams do nothing unless polled"]
 pub struct Boxed {
     body: Pin<Box<dyn Body<Data = Bytes, Error = Error> + Send>>,
 }
