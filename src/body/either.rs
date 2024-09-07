@@ -1,9 +1,10 @@
 use bytes::Bytes;
+use http_body_util::combinators::UnsyncBoxBody;
 use hyper::body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::Poll;
 
-use super::{Boxed, Buffered};
+use super::Buffered;
 use crate::{Error, Result};
 
 pub enum Either<L, R> {
@@ -104,13 +105,13 @@ where
     }
 }
 
-impl Default for Either<Buffered, Boxed> {
+impl Default for Either<Buffered, UnsyncBoxBody<Bytes, Error>> {
     fn default() -> Self {
         Either::Left(Buffered::default())
     }
 }
 
-impl<T> From<T> for Either<Buffered, Boxed>
+impl<T> From<T> for Either<Buffered, UnsyncBoxBody<Bytes, Error>>
 where
     T: Into<Buffered>,
 {
@@ -119,8 +120,8 @@ where
     }
 }
 
-impl From<Boxed> for Either<Buffered, Boxed> {
-    fn from(body: Boxed) -> Self {
+impl From<UnsyncBoxBody<Bytes, Error>> for Either<Buffered, UnsyncBoxBody<Bytes, Error>> {
+    fn from(body: UnsyncBoxBody<Bytes, Error>) -> Self {
         Either::Right(body)
     }
 }
