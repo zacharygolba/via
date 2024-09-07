@@ -1,6 +1,5 @@
 use bytes::{Bytes, BytesMut};
 use hyper::body::{Body, Frame, SizeHint};
-use std::marker::PhantomPinned;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -9,50 +8,26 @@ use crate::{Error, Result};
 /// The maximum amount of data that can be read from a buffered body per frame.
 const MAX_FRAME_LEN: usize = 16384; // 16KB
 
-/// A buffered body that contains a `BytesMut` buffer. This variant is used
-/// when the entire body can be buffered in memory.
+/// An optimized body that is used when the entire body is already in memory.
+#[derive(Debug)]
 pub struct Buffered {
     /// The buffer containing the body data.
-    buffer: BytesMut,
-
-    /// Buffered is marked as `!Unpin` because it parcitipates in an `Either`
-    /// enum that contains other types that are `!Unpin`. This is a safety
-    /// precaution to prevent the accidental movement of data out of the
-    /// `Buffered` type when it is a variant of an `Either` enum.
-    _pin: PhantomPinned,
+    data: BytesMut,
 }
 
 impl Buffered {
-    pub fn new(buffer: BytesMut) -> Self {
+    pub fn new(bytes: Bytes) -> Self {
         Self {
-            buffer,
-            _pin: PhantomPinned,
+            data: BytesMut::from(bytes),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.buffer.is_empty()
+        self.data.is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.buffer.len()
-    }
-}
-
-impl Buffered {
-    /// Returns a pinned mutable reference to the `buffer` field.
-    fn project(self: Pin<&mut Self>) -> Pin<&mut BytesMut> {
-        unsafe {
-            //
-            // Safety:
-            //
-            // Data is never moved out of self or the buffer stored at `self.data`.
-            // We use `BytesMut::split_to` in combination with `BytesMut::freeze`
-            // to ensure that data is copied out of the buffer and the cursor is
-            // advanced to the offset of the next frame.
-            //
-            self.map_unchecked_mut(|this| &mut this.buffer)
-        }
+        self.data.len()
     }
 }
 
@@ -64,14 +39,15 @@ impl Body for Buffered {
         self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        // Get a pinned mutable reference to `self.data`.
-        let mut buffer = self.project();
+        // Get a mutable reference to `self`. This is safe because `poll_frame`
+        // doesn't move any data out of `self` or it's fields.
+        let this = self.get_mut();
         // Get the number of bytes to read from `buffer` for the current frame.
         // We read a maximum of 16KB per frame from `buffer`.
-        let frame_len = buffer.len().min(MAX_FRAME_LEN);
+        let len = this.data.len().min(MAX_FRAME_LEN);
 
         // Check if the buffer has any data.
-        if frame_len == 0 {
+        if len == 0 {
             // The buffer is empty. Signal that the stream has ended.
             return Poll::Ready(None);
         }
@@ -79,7 +55,7 @@ impl Body for Buffered {
         // Copy the bytes from the buffer into an immutable `Bytes`. This is safe
         // because `BytesMut` is only advancing an internal pointer rather than
         // moving the bytes in memory.
-        let data = buffer.split_to(frame_len).freeze();
+        let data = this.data.split_to(len).freeze();
         // Wrap the bytes we copied from buffer in a data frame.
         let frame = Frame::data(data);
 
@@ -99,5 +75,51 @@ impl Body for Buffered {
         // If `len` is `None`, return a size hint with no bounds. Otherwise,
         // map the remaining length to a size hint with the exact size.
         len.map_or_else(SizeHint::new, SizeHint::with_exact)
+    }
+}
+
+impl Default for Buffered {
+    fn default() -> Self {
+        Self::new(Bytes::new())
+    }
+}
+
+impl From<()> for Buffered {
+    fn from(_: ()) -> Self {
+        Buffered::default()
+    }
+}
+
+impl From<Bytes> for Buffered {
+    fn from(bytes: Bytes) -> Self {
+        Buffered::new(bytes)
+    }
+}
+
+impl From<Vec<u8>> for Buffered {
+    fn from(vec: Vec<u8>) -> Self {
+        let data = Bytes::from(vec);
+        Buffered::new(data)
+    }
+}
+
+impl From<&'static [u8]> for Buffered {
+    fn from(slice: &'static [u8]) -> Self {
+        let data = Bytes::from_static(slice);
+        Buffered::new(data)
+    }
+}
+
+impl From<String> for Buffered {
+    fn from(string: String) -> Self {
+        // Delegate `From<String>` to `From<Vec<u8>>`.
+        string.into_bytes().into()
+    }
+}
+
+impl From<&'static str> for Buffered {
+    fn from(slice: &'static str) -> Self {
+        // Delegate `From<&'static str>` to `From<&'static [u8]>`.
+        slice.as_bytes().into()
     }
 }

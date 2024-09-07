@@ -1,5 +1,5 @@
 use super::{Response, ResponseBuilder};
-use crate::body::ResponseBody;
+use crate::body::{Boxed, Buffered, Either};
 use crate::{Error, Result};
 
 pub trait IntoResponse {
@@ -8,19 +8,19 @@ pub trait IntoResponse {
 
 impl IntoResponse for () {
     fn into_response(self) -> Result<Response> {
-        Ok(Response::new())
+        Ok(Response::default())
     }
 }
 
 impl IntoResponse for Vec<u8> {
     fn into_response(self) -> Result<Response> {
-        Response::builder().body(self).finish()
+        Response::build().body(self).finish()
     }
 }
 
 impl IntoResponse for &'static [u8] {
     fn into_response(self) -> Result<Response> {
-        Response::builder().body(self).finish()
+        Response::build().body(self).finish()
     }
 }
 
@@ -50,11 +50,10 @@ impl IntoResponse for ResponseBuilder {
 
 impl<B> IntoResponse for http::Response<B>
 where
-    B: Into<ResponseBody>,
+    B: Into<Either<Buffered, Boxed>>,
 {
     fn into_response(self) -> Result<Response> {
-        let inner = self.map(|body| body.into());
-        Ok(Response::from_inner(inner))
+        Ok(self.map(|body| body.into()).into())
     }
 }
 
