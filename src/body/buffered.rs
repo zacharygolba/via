@@ -10,6 +10,7 @@ const MAX_FRAME_LEN: usize = 16384; // 16KB
 
 /// An optimized body that is used when the entire body is already in memory.
 #[derive(Debug)]
+#[must_use = "streams do nothing unless polled"]
 pub struct Buffered {
     /// The buffer containing the body data.
     data: Pin<Box<BytesMut>>,
