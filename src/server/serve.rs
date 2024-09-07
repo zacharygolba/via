@@ -58,35 +58,35 @@ where
                         continue;
                     }
                 };
+
                 // Wrap the TcpStream in a type that implements hyper's I/O traits.
                 let io = IoStream::new(stream);
+
+                // Create a new service to handle the connection.
+                let service = Service::new(Arc::clone(&router), Arc::clone(&state));
+
+                // Create a new connection for the configured HTTP version. For
+                // now we only support HTTP/1.1. This will be expanded to
+                // support HTTP/2 in the future.
+                let connection = http1::Builder::new()
+                    .timer(TokioTimer::new())
+                    .serve_connection(io, service)
+                    .with_upgrades();
 
                 // Clone the watch channel so that we can notify the connection
                 // to initiate a graceful shutdown process before the server
                 // exits.
                 let mut shutdown_rx = shutdown_rx.clone();
 
-                // Clone the router so it can be moved into the connection task.
-                // This is required to create the service that will handle the
-                // connection.
-                let router = Arc::clone(&router);
-
-                // Clone the state so it can be moved into the connection task.
-                // This is required to create the service that will handle the
-                // connection.
-                let state = Arc::clone(&state);
-
+                // Move the connection into a spawned task and push it into the
+                // inflight connections Vec.
                 inflight.push(task::spawn(async move {
-                    // Create a new connection for the configured HTTP version. For
-                    // now we only support HTTP/1.1. This will be expanded to
-                    // support HTTP/2 in the future.
-                    let mut connection = http1::Builder::new()
-                        .timer(TokioTimer::new())
-                        .serve_connection(io, Service::new(router, state))
-                        .with_upgrades();
+                    // Define connection as mutable.
+                    let mut connection = connection;
 
-                    // Pin the connection on the stack so it can be polled. This
-                    // is required by the tokio::select! macro as well as the
+                    // Pin the connection on the stack so it can be polled.
+                    //
+                    // This is required by the tokio::select! macro as well as
                     // initiating a graceful shutdown process for the connection.
                     let mut pinned_connection = Pin::new(&mut connection);
 
