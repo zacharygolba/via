@@ -92,7 +92,8 @@ impl From<()> for Buffered {
 
 impl From<Bytes> for Buffered {
     fn from(bytes: Bytes) -> Self {
-        Buffered::new(bytes)
+        let data = Bytes::copy_from_slice(&bytes);
+        Buffered::new(data)
     }
 }
 
