@@ -13,16 +13,10 @@ const MAX_FRAME_LEN: usize = 16384; // 16KB
 #[must_use = "streams do nothing unless polled"]
 pub struct Buffered {
     /// The buffer containing the body data.
-    data: Pin<Box<BytesMut>>,
+    data: Box<BytesMut>,
 }
 
 impl Buffered {
-    pub fn new(data: Bytes) -> Self {
-        Self {
-            data: Box::pin(BytesMut::from(data)),
-        }
-    }
-
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -80,47 +74,58 @@ impl Body for Buffered {
 
 impl Default for Buffered {
     fn default() -> Self {
-        Self::new(Bytes::new())
-    }
-}
-
-impl From<()> for Buffered {
-    fn from(_: ()) -> Self {
-        Buffered::default()
+        Self {
+            data: Box::new(BytesMut::new()),
+        }
     }
 }
 
 impl From<Bytes> for Buffered {
     fn from(bytes: Bytes) -> Self {
         let data = Bytes::copy_from_slice(&bytes);
-        Buffered::new(data)
+
+        Self {
+            data: Box::new(BytesMut::from(data)),
+        }
     }
 }
 
 impl From<Vec<u8>> for Buffered {
     fn from(vec: Vec<u8>) -> Self {
-        let data = Bytes::from(vec);
-        Buffered::new(data)
+        let data = Bytes::copy_from_slice(&vec);
+
+        Self {
+            data: Box::new(BytesMut::from(data)),
+        }
     }
 }
 
 impl From<&'static [u8]> for Buffered {
     fn from(slice: &'static [u8]) -> Self {
-        let data = Bytes::from_static(slice);
-        Buffered::new(data)
+        let data = Bytes::copy_from_slice(slice);
+
+        Self {
+            data: Box::new(BytesMut::from(data)),
+        }
     }
 }
 
 impl From<String> for Buffered {
     fn from(string: String) -> Self {
-        // Delegate `From<String>` to `From<Vec<u8>>`.
-        string.into_bytes().into()
+        let data = Bytes::copy_from_slice(string.as_bytes());
+
+        Self {
+            data: Box::new(BytesMut::from(data)),
+        }
     }
 }
 
 impl From<&'static str> for Buffered {
     fn from(slice: &'static str) -> Self {
-        // Delegate `From<&'static str>` to `From<&'static [u8]>`.
-        slice.as_bytes().into()
+        let data = Bytes::copy_from_slice(slice.as_bytes());
+
+        Self {
+            data: Box::new(BytesMut::from(data)),
+        }
     }
 }
