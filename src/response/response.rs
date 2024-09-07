@@ -6,15 +6,15 @@ use hyper::body::Body;
 use serde::Serialize;
 
 use super::ResponseBuilder;
-use crate::body::{Boxed, Buffered, Either, Frame, StreamAdapter};
+use crate::body::{AnyBody, Boxed, Buffered, Frame, StreamAdapter};
 use crate::{Error, Result};
 
 pub struct Response {
-    inner: http::Response<Either<Buffered, Boxed>>,
+    inner: http::Response<AnyBody>,
 }
 
 impl Response {
-    pub fn new(body: Either<Buffered, Boxed>) -> Self {
+    pub fn new(body: AnyBody) -> Self {
         Self {
             inner: http::Response::new(body),
         }
@@ -57,27 +57,27 @@ impl Response {
         E: Into<Error>,
     {
         let body = Boxed::new(Box::pin(StreamAdapter::new(stream)));
-        let builder = ResponseBuilder::with_body(Ok(Either::Right(body)));
+        let builder = ResponseBuilder::with_body(Ok(AnyBody::Dyn(body)));
 
         builder.header(TRANSFER_ENCODING, "chunked")
     }
 
     pub fn map<F, B>(self, f: F) -> Self
     where
-        F: FnOnce(Either<Buffered, Boxed>) -> B,
+        F: FnOnce(AnyBody) -> B,
         B: Body<Data = Bytes, Error = Error> + Send + 'static,
     {
         let inner = self.inner.map(|input| {
             let output = f(input);
             let body = Boxed::new(Box::pin(output));
 
-            Either::Right(body)
+            AnyBody::Dyn(body)
         });
 
         Self { inner }
     }
 
-    pub fn body(&self) -> &Either<Buffered, Boxed> {
+    pub fn body(&self) -> &AnyBody {
         self.inner.body()
     }
 
@@ -105,17 +105,17 @@ impl Response {
 impl Default for Response {
     fn default() -> Self {
         let body = Buffered::default();
-        Self::new(Either::Left(body))
+        Self::new(AnyBody::Buf(body))
     }
 }
 
-impl From<http::Response<Either<Buffered, Boxed>>> for Response {
-    fn from(inner: http::Response<Either<Buffered, Boxed>>) -> Self {
+impl From<http::Response<AnyBody>> for Response {
+    fn from(inner: http::Response<AnyBody>) -> Self {
         Self { inner }
     }
 }
 
-impl From<Response> for http::Response<Either<Buffered, Boxed>> {
+impl From<Response> for http::Response<AnyBody> {
     fn from(response: Response) -> Self {
         response.inner
     }

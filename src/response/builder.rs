@@ -3,22 +3,22 @@ use http::response::Builder;
 use http::{StatusCode, Version};
 
 use super::Response;
-use crate::body::{Boxed, Buffered, Either};
+use crate::body::{AnyBody, Buffered};
 use crate::{Error, Result};
 
 pub struct ResponseBuilder {
-    body: Option<Result<Either<Buffered, Boxed>>>,
+    body: Option<Result<AnyBody>>,
     inner: Builder,
 }
 
 impl ResponseBuilder {
     pub fn body<T>(self, body: T) -> Self
     where
-        Either<Buffered, Boxed>: TryFrom<T>,
-        <Either<Buffered, Boxed> as TryFrom<T>>::Error: Into<Error>,
+        AnyBody: TryFrom<T>,
+        <AnyBody as TryFrom<T>>::Error: Into<Error>,
     {
         Self {
-            body: Some(Either::try_from(body).map_err(Into::into)),
+            body: Some(AnyBody::try_from(body).map_err(Into::into)),
             inner: self.inner,
         }
     }
@@ -26,7 +26,7 @@ impl ResponseBuilder {
     pub fn finish(mut self) -> Result<Response> {
         let body = match self.body.take() {
             Some(body) => body?,
-            None => Buffered::default().into(),
+            None => AnyBody::new(),
         };
 
         Ok(self.inner.body(body)?.into())
@@ -100,12 +100,12 @@ impl ResponseBuilder {
         let len = body.len();
 
         Self {
-            body: Some(Ok(Either::Left(body))),
+            body: Some(Ok(AnyBody::Buf(body))),
             inner: Builder::new().header(CONTENT_LENGTH, len),
         }
     }
 
-    pub(crate) fn with_body(body: Result<Either<Buffered, Boxed>>) -> Self {
+    pub(crate) fn with_body(body: Result<AnyBody>) -> Self {
         Self {
             body: Some(body),
             inner: Builder::new(),
