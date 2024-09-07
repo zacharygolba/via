@@ -1,24 +1,24 @@
-use http::header::{HeaderName, HeaderValue};
+use http::header::{HeaderName, HeaderValue, CONTENT_LENGTH};
 use http::response::Builder;
 use http::{StatusCode, Version};
 
 use super::Response;
-use crate::body::ResponseBody;
+use crate::body::{Boxed, Buffered, Either};
 use crate::{Error, Result};
 
 pub struct ResponseBuilder {
-    body: Option<Result<ResponseBody>>,
+    body: Option<Result<Either<Buffered, Boxed>>>,
     inner: Builder,
 }
 
 impl ResponseBuilder {
     pub fn body<T>(self, body: T) -> Self
     where
-        ResponseBody: TryFrom<T>,
-        <ResponseBody as TryFrom<T>>::Error: Into<Error>,
+        Either<Buffered, Boxed>: TryFrom<T>,
+        <Either<Buffered, Boxed> as TryFrom<T>>::Error: Into<Error>,
     {
         Self {
-            body: Some(ResponseBody::try_from(body).map_err(Into::into)),
+            body: Some(Either::try_from(body).map_err(Into::into)),
             inner: self.inner,
         }
     }
@@ -26,10 +26,10 @@ impl ResponseBuilder {
     pub fn finish(mut self) -> Result<Response> {
         let body = match self.body.take() {
             Some(body) => body?,
-            None => ResponseBody::new(),
+            None => Buffered::default().into(),
         };
 
-        Ok(Response::from_inner(self.inner.body(body)?))
+        Ok(self.inner.body(body)?.into())
     }
 
     pub fn header<K, V>(self, key: K, value: V) -> Self
@@ -92,7 +92,20 @@ impl ResponseBuilder {
         }
     }
 
-    pub(crate) fn with_body(body: Result<ResponseBody>) -> Self {
+    pub(crate) fn buffered<T>(body: T) -> Self
+    where
+        Buffered: From<T>,
+    {
+        let body = Buffered::from(body);
+        let len = body.len();
+
+        Self {
+            body: Some(Ok(Either::Left(body))),
+            inner: Builder::new().header(CONTENT_LENGTH, len),
+        }
+    }
+
+    pub(crate) fn with_body(body: Result<Either<Buffered, Boxed>>) -> Self {
         Self {
             body: Some(body),
             inner: Builder::new(),

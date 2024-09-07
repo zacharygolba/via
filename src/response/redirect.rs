@@ -64,7 +64,7 @@ impl Redirect {
         StatusCode: TryFrom<T>,
         <StatusCode as TryFrom<T>>::Error: Into<http::Error>,
     {
-        let response = Response::builder()
+        let response = Response::build()
             .header(header::LOCATION, location)
             .status(status)
             .finish()?;

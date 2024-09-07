@@ -3,6 +3,7 @@ use hyper::body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::Poll;
 
+use super::{Boxed, Buffered};
 use crate::{Error, Result};
 
 pub enum Either<L, R> {
@@ -100,5 +101,26 @@ where
             Either::Left(left) => left.size_hint(),
             Either::Right(right) => right.size_hint(),
         }
+    }
+}
+
+impl Default for Either<Buffered, Boxed> {
+    fn default() -> Self {
+        Either::Left(Buffered::default())
+    }
+}
+
+impl<T> From<T> for Either<Buffered, Boxed>
+where
+    T: Into<Buffered>,
+{
+    fn from(value: T) -> Self {
+        Either::Left(value.into())
+    }
+}
+
+impl From<Boxed> for Either<Buffered, Boxed> {
+    fn from(body: Boxed) -> Self {
+        Either::Right(body)
     }
 }
