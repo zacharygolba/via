@@ -8,6 +8,7 @@ use crate::Error;
 
 /// A sum type that representing any type of body.
 #[non_exhaustive]
+#[must_use = "streams do nothing unless polled"]
 pub enum AnyBody {
     Dyn(Boxed),
     Buf(Buffered),
