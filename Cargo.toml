@@ -7,7 +7,6 @@ license = "MIT"
 
 [features]
 default = []
-json = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
 bytes = "1.7"
@@ -16,8 +15,8 @@ http = "1"
 hyper = { features = ["http1", "server"], version = "1.4" }
 hyper-util = { version = "0.1", features = ["tokio"] }
 percent-encoding = "2.3"
-serde = { optional = true, version = "1" }
-serde_json = { optional = true, version = "1" }
+serde = "1"
+serde_json = "1"
 smallvec = "1.13"
 tokio = { version = "1", features = ["macros", "signal"] }
 via-router = { path = "./crates/via-router" }

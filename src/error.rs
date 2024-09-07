@@ -1,9 +1,9 @@
+use http::header::{HeaderValue, CONTENT_LENGTH, CONTENT_TYPE};
 use http::StatusCode;
-use std::{
-    error::Error as StdError,
-    fmt::{self, Debug, Display, Formatter},
-    io::{Error as IoError, ErrorKind as IoErrorKind},
-};
+use serde::{Serialize, Serializer};
+use std::error::Error as StdError;
+use std::fmt::{self, Debug, Display, Formatter};
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
 use crate::response::Response;
 
@@ -21,7 +21,6 @@ pub struct Error {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Format {
-    #[cfg(feature = "json")]
     Json,
 }
 
@@ -106,7 +105,6 @@ impl Error {
         &mut self.status
     }
 
-    #[cfg(feature = "json")]
     pub fn json(mut self) -> Self {
         self.format = Some(Format::Json);
         self
@@ -115,10 +113,7 @@ impl Error {
 
 impl Error {
     pub(crate) fn into_response(self) -> Response {
-        use http::header::HeaderValue;
-
         let result = match self.format {
-            #[cfg(feature = "json")]
             Some(Format::Json) => {
                 // The `serde` feature is enabled and the error format is `Json`.
                 // Attempt to serialize the error as JSON. If serialization fails,
@@ -146,25 +141,21 @@ impl Error {
                 eprintln!("Error: {}", error);
             }
 
+            let message = self.to_string();
+            let len = message.len();
+
             // An error occurred while generating the response. Generate a
             // plain text response with the original error message and
             // return it without using the `ResponseBuilder`.
-            let mut response = Response::new();
-            let message = self.to_string();
-
-            response.headers_mut().insert(
-                http::header::CONTENT_TYPE,
-                HeaderValue::from_static("text/plain; charset=utf-8"),
-            );
-
-            if let Ok(length) = HeaderValue::from_str(&message.len().to_string()) {
-                response
-                    .headers_mut()
-                    .insert(http::header::CONTENT_LENGTH, length);
-            }
+            let mut response = Response::new(message.into());
 
             *response.status_mut() = self.status;
-            *response.body_mut() = message.into();
+
+            let headers = response.headers_mut();
+            let content_type = HeaderValue::from_static("text/plain; charset=utf-8");
+
+            headers.insert(CONTENT_TYPE, content_type);
+            headers.insert(CONTENT_LENGTH, HeaderValue::from(len));
 
             response
         })
@@ -206,11 +197,10 @@ impl From<Error> for AnyError {
     }
 }
 
-#[cfg(feature = "json")]
-impl serde::Serialize for Error {
+impl Serialize for Error {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         use serde::ser::SerializeStruct;
         use std::collections::HashSet;
@@ -228,7 +218,7 @@ impl serde::Serialize for Error {
             }
         }
 
-        impl serde::Serialize for SerializedError {
+        impl Serialize for SerializedError {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
