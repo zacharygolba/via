@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use crate::body::response::AnyBody;
+use crate::body::{Boxed, Buffered, Either};
 use crate::middleware::BoxFuture;
 use crate::router::Router;
 use crate::{Error, Request, Response};
@@ -16,7 +16,7 @@ type HttpRequest = http::Request<Incoming>;
 
 /// The response type used by our hyper service. This is the type that we will
 /// unwrap from the `via::Response` returned from the middleware stack.
-type HttpResponse = http::Response<AnyBody>;
+type HttpResponse = http::Response<Either<Buffered, Boxed>>;
 
 pub struct FutureResponse {
     future: BoxFuture<Result<Response, Error>>,
@@ -38,9 +38,9 @@ impl Future for FutureResponse {
             .poll(context)
             .map(|result| match result {
                 // The response was generated successfully.
-                Ok(response) => Ok(response.into_inner()),
+                Ok(response) => Ok(response.into()),
                 // An occurred while generating the response.
-                Err(error) => Ok(error.into_response().into_inner()),
+                Err(error) => Ok(error.into_response().into()),
             })
     }
 }

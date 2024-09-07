@@ -1,15 +1,16 @@
 pub mod request;
-pub mod response;
 pub mod size_hint;
 
 mod boxed;
+mod buffered;
 mod either;
 mod frame;
-
-pub use bytes::Bytes;
+mod stream_adapter;
 
 pub use boxed::Boxed;
+pub use buffered::Buffered;
 pub use either::Either;
 pub use frame::{Frame, FrameExt};
 pub use request::RequestBody;
-pub use response::ResponseBody;
+
+pub(crate) use stream_adapter::StreamAdapter;
