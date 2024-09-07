@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use hyper::body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -12,12 +12,14 @@ const MAX_FRAME_LEN: usize = 16384; // 16KB
 #[derive(Debug)]
 pub struct Buffered {
     /// The buffer containing the body data.
-    data: Bytes,
+    data: Pin<Box<BytesMut>>,
 }
 
 impl Buffered {
     pub fn new(data: Bytes) -> Self {
-        Self { data }
+        Self {
+            data: Box::pin(BytesMut::from(data)),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -34,15 +36,14 @@ impl Body for Buffered {
     type Error = Error;
 
     fn poll_frame(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         // Get a mutable reference to `self`. This is safe because `poll_frame`
         // doesn't move any data out of `self` or it's fields.
-        let this = self.get_mut();
         // Get the number of bytes to read from `buffer` for the current frame.
         // We read a maximum of 16KB per frame from `buffer`.
-        let len = this.data.len().min(MAX_FRAME_LEN);
+        let len = self.data.len().min(MAX_FRAME_LEN);
 
         // Check if the buffer has any data.
         if len == 0 {
@@ -53,7 +54,7 @@ impl Body for Buffered {
         // Copy the bytes from the buffer into an immutable `Bytes`. This is safe
         // because `BytesMut` is only advancing an internal pointer rather than
         // moving the bytes in memory.
-        let data = this.data.split_to(len);
+        let data = self.data.split_to(len).freeze();
         // Wrap the bytes we copied from buffer in a data frame.
         let frame = Frame::data(data);
 
