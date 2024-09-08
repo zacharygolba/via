@@ -138,15 +138,14 @@ impl<State> Request<State> {
 
     /// Unwraps `self` into the Request type from the `http` crate.
     pub fn into_inner(self) -> http::Request<AnyBody<Incoming>> {
-        let (parts, body, _) = self.into_parts();
+        let (parts, body) = self.into_parts();
         http::Request::from_parts(parts, body)
     }
 
-    /// Consumes the request and returns a tuple containing the boxed component
-    /// parts of the request, the body, and an `Arc` to the shared application
-    /// state.
-    pub fn into_parts(self) -> (Parts, AnyBody<Incoming>, Arc<State>) {
-        (self.inner.parts, self.inner.body, self.inner.state)
+    /// Consumes the request and returns a tuple containing the component
+    /// parts of the request and the request body.
+    pub fn into_parts(self) -> (Parts, AnyBody<Incoming>) {
+        (self.inner.parts, self.inner.body)
     }
 }
 
