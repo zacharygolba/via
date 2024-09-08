@@ -1,3 +1,5 @@
+//! Interact with request and response bodies asynchronously.
+
 pub mod aggregate;
 pub mod stream;
 pub mod util;
