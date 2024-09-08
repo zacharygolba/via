@@ -1,4 +1,4 @@
-//! Common utilities for implementing the Body trait.
+//! Shared utilities for implementing the Body trait.
 
 use futures_core::Stream;
 use hyper::body::{Body, SizeHint};
