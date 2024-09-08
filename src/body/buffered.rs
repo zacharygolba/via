@@ -1,5 +1,6 @@
 use bytes::{Bytes, BytesMut};
 use hyper::body::{Body, Frame, SizeHint};
+use std::marker::PhantomPinned;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -13,10 +14,20 @@ const MAX_FRAME_LEN: usize = 16384; // 16KB
 #[must_use = "streams do nothing unless polled"]
 pub struct Buffered {
     /// The buffer containing the body data.
-    data: Box<BytesMut>,
+    data: BytesMut,
+
+    /// A marker indicating that the type is pinned to prevent moving the buffer.
+    _pin: PhantomPinned,
 }
 
 impl Buffered {
+    pub fn new(buffer: BytesMut) -> Self {
+        Self {
+            data: buffer,
+            _pin: PhantomPinned,
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -26,22 +37,39 @@ impl Buffered {
     }
 }
 
+impl Buffered {
+    /// Returns a pinned mutable reference to the `buffer` field.
+    fn project(self: Pin<&mut Self>) -> Pin<&mut BytesMut> {
+        unsafe {
+            //
+            // Safety:
+            //
+            // Data is never moved out of self or the buffer stored at `self.data`.
+            // We use `BytesMut::split_to` in combination with `BytesMut::freeze`
+            // to ensure that data is copied out of the buffer and the cursor is
+            // advanced to the offset of the next frame.
+            //
+            self.map_unchecked_mut(|this| &mut this.data)
+        }
+    }
+}
+
 impl Body for Buffered {
     type Data = Bytes;
     type Error = Error;
 
     fn poll_frame(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        // Get a mutable reference to `self`. This is safe because `poll_frame`
-        // doesn't move any data out of `self` or it's fields.
+        // Get a pinned mutable reference to `self.data`.
+        let mut buffer = self.project();
         // Get the number of bytes to read from `buffer` for the current frame.
         // We read a maximum of 16KB per frame from `buffer`.
-        let len = self.data.len().min(MAX_FRAME_LEN);
+        let frame_len = buffer.len().min(MAX_FRAME_LEN);
 
         // Check if the buffer has any data.
-        if len == 0 {
+        if frame_len == 0 {
             // The buffer is empty. Signal that the stream has ended.
             return Poll::Ready(None);
         }
@@ -49,7 +77,7 @@ impl Body for Buffered {
         // Copy the bytes from the buffer into an immutable `Bytes`. This is safe
         // because `BytesMut` is only advancing an internal pointer rather than
         // moving the bytes in memory.
-        let data = self.data.split_to(len).freeze();
+        let data = buffer.split_to(frame_len).freeze();
         // Wrap the bytes we copied from buffer in a data frame.
         let frame = Frame::data(data);
 
@@ -75,7 +103,8 @@ impl Body for Buffered {
 impl Default for Buffered {
     fn default() -> Self {
         Self {
-            data: Box::new(BytesMut::new()),
+            data: BytesMut::new(),
+            _pin: PhantomPinned,
         }
     }
 }
@@ -85,47 +114,52 @@ impl From<Bytes> for Buffered {
         let data = Bytes::copy_from_slice(&bytes);
 
         Self {
-            data: Box::new(BytesMut::from(data)),
+            data: BytesMut::from(data),
+            _pin: PhantomPinned,
         }
     }
 }
 
 impl From<Vec<u8>> for Buffered {
     fn from(vec: Vec<u8>) -> Self {
-        let data = Bytes::copy_from_slice(&vec);
+        let data = Bytes::from(vec);
 
         Self {
-            data: Box::new(BytesMut::from(data)),
+            data: BytesMut::from(data),
+            _pin: PhantomPinned,
         }
     }
 }
 
 impl From<&'static [u8]> for Buffered {
     fn from(slice: &'static [u8]) -> Self {
-        let data = Bytes::copy_from_slice(slice);
+        let data = Bytes::from_static(slice);
 
         Self {
-            data: Box::new(BytesMut::from(data)),
+            data: BytesMut::from(data),
+            _pin: PhantomPinned,
         }
     }
 }
 
 impl From<String> for Buffered {
     fn from(string: String) -> Self {
-        let data = Bytes::copy_from_slice(string.as_bytes());
+        let data = Bytes::from(string.into_bytes());
 
         Self {
-            data: Box::new(BytesMut::from(data)),
+            data: BytesMut::from(data),
+            _pin: PhantomPinned,
         }
     }
 }
 
 impl From<&'static str> for Buffered {
     fn from(slice: &'static str) -> Self {
-        let data = Bytes::copy_from_slice(slice.as_bytes());
+        let data = Bytes::from_static(slice.as_bytes());
 
         Self {
-            data: Box::new(BytesMut::from(data)),
+            data: BytesMut::from(data),
+            _pin: PhantomPinned,
         }
     }
 }
