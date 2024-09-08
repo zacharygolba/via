@@ -21,9 +21,9 @@ pub struct Buffered {
 }
 
 impl Buffered {
-    pub fn new(data: Box<BytesMut>) -> Self {
+    pub fn new(data: BytesMut) -> Self {
         Self {
-            data,
+            data: Box::new(data),
             _pin: PhantomPinned,
         }
     }
@@ -110,64 +110,41 @@ impl Body for Buffered {
 
 impl Default for Buffered {
     fn default() -> Self {
-        Self {
-            data: Box::new(BytesMut::new()),
-            _pin: PhantomPinned,
-        }
+        Self::new(BytesMut::new())
     }
 }
 
 impl From<Bytes> for Buffered {
     fn from(bytes: Bytes) -> Self {
         let data = Bytes::copy_from_slice(&bytes);
-
-        Self {
-            data: Box::new(BytesMut::from(data)),
-            _pin: PhantomPinned,
-        }
+        Self::new(BytesMut::from(data))
     }
 }
 
 impl From<Vec<u8>> for Buffered {
     fn from(vec: Vec<u8>) -> Self {
         let data = Bytes::from(vec);
-
-        Self {
-            data: Box::new(BytesMut::from(data)),
-            _pin: PhantomPinned,
-        }
+        Self::new(BytesMut::from(data))
     }
 }
 
 impl From<&'static [u8]> for Buffered {
     fn from(slice: &'static [u8]) -> Self {
         let data = Bytes::from_static(slice);
-
-        Self {
-            data: Box::new(BytesMut::from(data)),
-            _pin: PhantomPinned,
-        }
+        Self::new(BytesMut::from(data))
     }
 }
 
 impl From<String> for Buffered {
     fn from(string: String) -> Self {
         let data = Bytes::from(string.into_bytes());
-
-        Self {
-            data: Box::new(BytesMut::from(data)),
-            _pin: PhantomPinned,
-        }
+        Self::new(BytesMut::from(data))
     }
 }
 
 impl From<&'static str> for Buffered {
     fn from(slice: &'static str) -> Self {
         let data = Bytes::from_static(slice.as_bytes());
-
-        Self {
-            data: Box::new(BytesMut::from(data)),
-            _pin: PhantomPinned,
-        }
+        Self::new(BytesMut::from(data))
     }
 }
