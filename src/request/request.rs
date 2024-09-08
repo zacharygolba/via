@@ -1,4 +1,3 @@
-use http::header::CONTENT_LENGTH;
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
 use hyper::body::Incoming;
@@ -6,7 +5,7 @@ use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use super::params::{Param, PathParams, QueryParam};
-use crate::body::RequestBody;
+use crate::body::AnyBody;
 
 pub struct Request<State = ()> {
     data: Box<RequestData<State>>,
@@ -23,14 +22,7 @@ struct RequestData<State> {
     params: PathParams,
 
     /// The request's body.
-    body: RequestBody,
-}
-
-fn get_content_len(headers: &HeaderMap) -> Option<usize> {
-    match headers.get(CONTENT_LENGTH)?.to_str() {
-        Ok(value) => value.parse::<usize>().ok(),
-        Err(_) => None,
-    }
+    body: AnyBody<Incoming>,
 }
 
 impl<State> Request<State> {
@@ -120,22 +112,20 @@ impl<State> Request<State> {
     }
 
     /// Consumes the request and returns the body.
-    pub fn into_body(self) -> RequestBody {
+    pub fn into_body(self) -> AnyBody<Incoming> {
         self.data.body
     }
 
     /// Unwraps `self` into the Request type from the `http` crate.
-    pub fn into_inner(self) -> http::Request<Incoming> {
+    pub fn into_inner(self) -> http::Request<AnyBody<Incoming>> {
         let (parts, body, _) = self.into_parts();
-        let body = body.into_inner();
-
         http::Request::from_parts(parts, body)
     }
 
     /// Consumes the request and returns a tuple containing the boxed component
     /// parts of the request, the body, and an `Arc` to the shared application
     /// state.
-    pub fn into_parts(self) -> (Parts, RequestBody, Arc<State>) {
+    pub fn into_parts(self) -> (Parts, AnyBody<Incoming>, Arc<State>) {
         (self.data.parts, self.data.body, self.data.state)
     }
 }
@@ -151,10 +141,7 @@ impl<State> Request<State> {
         // Check if the request has a `Content-Length` header. If it does, wrap
         // the request body in a `RequestBody` with a known length. Otherwise,
         // wrap the request body in a `RequestBody` with an unknown length.
-        let body = match get_content_len(&parts.headers) {
-            Some(len) => RequestBody::with_len(body, len),
-            None => RequestBody::new(body),
-        };
+        let body = AnyBody::Inline(body);
 
         Self {
             data: Box::new(RequestData {
@@ -175,7 +162,7 @@ impl<State> Debug for Request<State> {
             .field("params", &self.data.params)
             .field("version", &self.version())
             .field("headers", self.headers())
-            .field("body", &self.data.body)
+            // .field("body", &self.data.body)
             .finish()
     }
 }

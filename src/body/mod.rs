@@ -1,16 +1,24 @@
-pub mod request;
-pub mod size_hint;
+pub mod aggregate;
+pub mod stream;
+pub mod util;
 
 mod any;
 mod boxed;
 mod buffered;
-mod frame;
+mod frame_ext;
 mod stream_adapter;
+
+/// A re-export of
+/// [`hyper::body::Frame`](https://docs.rs/hyper/latest/hyper/body/struct.Frame.html).
+pub use hyper::body::Frame;
+
+/// A re-export of
+/// [`hyper::body::Incoming`](https://docs.rs/hyper/latest/hyper/body/struct.Incoming.html).
+pub use hyper::body::Incoming;
 
 pub use any::AnyBody;
 pub use boxed::Boxed;
 pub use buffered::Buffered;
-pub use frame::{Frame, FrameExt};
-pub use request::RequestBody;
+pub use frame_ext::FrameExt;
 
 pub(crate) use stream_adapter::StreamAdapter;

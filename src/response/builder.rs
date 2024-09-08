@@ -7,15 +7,15 @@ use crate::body::{AnyBody, Buffered};
 use crate::{Error, Result};
 
 pub struct ResponseBuilder {
-    body: Option<Result<AnyBody>>,
+    body: Option<Result<AnyBody<Buffered>>>,
     inner: Builder,
 }
 
 impl ResponseBuilder {
     pub fn body<T>(self, body: T) -> Self
     where
-        AnyBody: TryFrom<T>,
-        <AnyBody as TryFrom<T>>::Error: Into<Error>,
+        AnyBody<Buffered>: TryFrom<T>,
+        <AnyBody<Buffered> as TryFrom<T>>::Error: Into<Error>,
     {
         Self {
             body: Some(AnyBody::try_from(body).map_err(Into::into)),
@@ -100,12 +100,12 @@ impl ResponseBuilder {
         let len = body.len();
 
         Self {
-            body: Some(Ok(AnyBody::Buf(body))),
+            body: Some(Ok(AnyBody::Inline(body))),
             inner: Builder::new().header(CONTENT_LENGTH, len),
         }
     }
 
-    pub(crate) fn with_body(body: Result<AnyBody>) -> Self {
+    pub(crate) fn with_body(body: Result<AnyBody<Buffered>>) -> Self {
         Self {
             body: Some(body),
             inner: Builder::new(),
