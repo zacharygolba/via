@@ -10,7 +10,8 @@ use super::stream::{BodyDataStream, BodyStream};
 use super::{Boxed, Buffered};
 use crate::Error;
 
-/// A sum type that represents any type of body.
+/// A sum type that can represent any [Request](crate::Request) or
+/// [Response](crate::Response) body.
 #[non_exhaustive]
 #[must_use = "streams do nothing unless polled"]
 pub enum AnyBody<B> {
