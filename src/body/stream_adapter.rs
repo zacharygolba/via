@@ -4,7 +4,7 @@ use hyper::body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::body::size_hint;
+use crate::body::util;
 use crate::Error;
 
 /// A stream adapter that converts a stream of `Result<D, E>` into a stream of
@@ -62,6 +62,6 @@ where
     }
 
     fn size_hint(&self) -> SizeHint {
-        size_hint::from_stream_for_body(&self.stream)
+        util::size_hint_from_stream_for_body(&self.stream)
     }
 }

@@ -4,7 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::BodyDataStream;
+use crate::body::stream::BodyDataStream;
 use crate::{Error, Result};
 
 /// The maximum amount of bytes that can be reserved during an allocation.

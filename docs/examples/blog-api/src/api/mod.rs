@@ -3,7 +3,7 @@ pub mod users;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use via::body::RequestBody;
+use via::body::{AnyBody, Incoming};
 use via::Error;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -11,7 +11,7 @@ struct Payload<T> {
     data: T,
 }
 
-async fn deserialize<D: DeserializeOwned>(body: RequestBody) -> Result<D, Error> {
+async fn deserialize<D: DeserializeOwned>(body: AnyBody<Incoming>) -> Result<D, Error> {
     // Deserialize the request body into a `Payload<D>`.
     let payload: Payload<D> = body.read_json().await?;
 
