@@ -12,11 +12,13 @@ pub struct Boxed {
 }
 
 impl Boxed {
-    pub fn new<T>(body: Pin<Box<T>>) -> Self
+    pub fn new<T>(body: Box<T>) -> Self
     where
         T: Body<Data = Bytes, Error = Error> + Send + 'static,
     {
-        Self { body }
+        Self {
+            body: Box::into_pin(body),
+        }
     }
 }
 

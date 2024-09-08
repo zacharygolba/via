@@ -40,7 +40,7 @@ impl<State> Request<State> {
 
         Self {
             inner: Box::new(RequestData {
-                body: AnyBody::Boxed(Boxed::new(Box::pin(output))),
+                body: AnyBody::Boxed(Boxed::new(Box::new(output))),
                 ..inner
             }),
         }
