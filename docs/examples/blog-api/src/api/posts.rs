@@ -17,8 +17,8 @@ pub async fn index(request: Request, _: Next) -> Result<Response> {
 }
 
 pub async fn create(request: Request, _: Next) -> Result<Response> {
-    let (_, body, state) = request.into_parts();
-    let new_post = deserialize::<NewPost>(body).await?;
+    let state = request.state().clone();
+    let new_post = deserialize::<NewPost>(request.into_body()).await?;
     let post = new_post.insert(&state.pool).await?;
 
     Response::json(&Payload { data: post }).finish()
@@ -34,8 +34,8 @@ pub async fn show(request: Request, _: Next) -> Result<Response> {
 
 pub async fn update(request: Request, _: Next) -> Result<Response> {
     let id = request.param("id").parse::<i32>()?;
-    let (_, body, state) = request.into_parts();
-    let change_set = deserialize::<ChangeSet>(body).await?;
+    let state = request.state().clone();
+    let change_set = deserialize::<ChangeSet>(request.into_body()).await?;
     let post = change_set.apply(&state.pool, id).await?;
 
     Response::json(&Payload { data: post }).finish()
