@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
-use tokio::task::{self, JoinHandle};
+use tokio::task::JoinSet;
 use tokio::time;
 
 use super::io_stream::IoStream;
@@ -23,9 +23,9 @@ pub async fn serve<State>(
 where
     State: Send + Sync + 'static,
 {
-    // Create a vector to store the join handles of the spawned tasks. We'll
-    // periodically check if any of the tasks have finished and remove them.
-    let mut inflight: Vec<JoinHandle<()>> = Vec::new();
+    // Create a join set to track inflight connections. We'll use this to wait
+    // for all connections to close before the server exits.
+    let mut connections = JoinSet::new();
 
     // Get a Future that resolves when a "Ctrl-C" notification is sent to the
     // process. This is used to initiate a graceful shutdown process for
@@ -63,7 +63,12 @@ where
                 let io = IoStream::new(stream);
 
                 // Create a new service to handle the connection.
-                let service = Service::new(Arc::clone(&router), Arc::clone(&state));
+                let service = {
+                    let router = Arc::clone(&router);
+                    let state = Arc::clone(&state);
+
+                    Service::new(router, state)
+                };
 
                 // Create a new connection for the configured HTTP version. For
                 // now we only support HTTP/1.1. This will be expanded to
@@ -78,9 +83,8 @@ where
                 // exits.
                 let mut shutdown_rx = shutdown_rx.clone();
 
-                // Move the connection into a spawned task and push it into the
-                // inflight connections Vec.
-                inflight.push(task::spawn(async move {
+                // Spawn a task to serve the connection.
+                connections.spawn(async move {
                     // Define connection as mutable.
                     let mut connection = connection;
 
@@ -90,39 +94,33 @@ where
                     // initiating a graceful shutdown process for the connection.
                     let mut pinned_connection = Pin::new(&mut connection);
 
-                    tokio::select! {
+                    // Poll the connection until it is closed or a graceful
+                    // shutdown process is initiated.
+                    let result = tokio::select! {
                         // Wait for the connection to close. This is the typical
                         // path that the code should take while the server is
                         // running.
-                        result = &mut pinned_connection => {
-                            // The connection has been closed. Drop the semaphore
-                            // permit to allow another connection to be accepted.
-                            drop(permit);
-
-                            if let Err(error) = result {
-                                //
-                                // TODO:
-                                //
-                                // Include tracing information about the connection
-                                // error that occurred. For now, we'll just print
-                                // the error to stderr if we're in debug mode.
-                                //
-                                if cfg!(debug_assertions) {
-                                    eprintln!("Error: {}", error);
-                                }
-                            }
-                        }
+                        result = &mut pinned_connection => result,
 
                         // Otherwise, wait until `shutdown_rx` is notified that
                         // the server will shutdown and initiate a graceful
-                        // shutdown process for the inflight connection.
+                        // shutdown process for the connection.
                         _ = shutdown_rx.changed() => {
                             // Initiate the graceful shutdown process for the
                             // connection.
-                            pinned_connection.graceful_shutdown();
+                            pinned_connection.as_mut().graceful_shutdown();
+
+                            // Wait for the connection to close.
+                            pinned_connection.await
                         }
-                    }
-                }));
+                    };
+
+                    // Release the permit back to the semaphore.
+                    drop(permit);
+
+                    // Return the result of the connection future.
+                    Ok(result?)
+                });
             }
 
             // Otherwise, wait for a "Ctrl-C" notification to be sent to the
@@ -136,15 +134,28 @@ where
             }
         }
 
-        // Remove any handles that have finished.
-        inflight.retain(|handle| !handle.is_finished());
+        // Remove any handles that may have finished.
+        while let Some(result) = connections.try_join_next() {
+            if let Err(error) = result {
+                //
+                // TODO:
+                //
+                // Include tracing information about the connection
+                // error that occurred. For now, we'll just print
+                // the error to stderr if we're in debug mode.
+                //
+                if cfg!(debug_assertions) {
+                    eprintln!("Error: {}", error);
+                }
+            }
+        }
     }
 
     tokio::select! {
         // Wait for all inflight connection to finish. If all connections close
         // before the graceful shutdown timeout, return without an error. For
         // unix-based systems, this translates to a 0 exit code.
-        _ = shutdown(&mut inflight) => Ok(()),
+        _ = shutdown(connections) => Ok(()),
 
         // Otherwise, return an error if we're unable to close all connections
         // before the graceful shutdown timeout, return an error. For unix-based
@@ -166,7 +177,9 @@ async fn accept(
     match listener.accept().await {
         Ok(accepted) => Ok((permit, accepted)),
         Err(error) => {
+            // Release the permit back to the semaphore.
             drop(permit);
+
             //
             // TODO:
             //
@@ -178,15 +191,19 @@ async fn accept(
     }
 }
 
-async fn shutdown(inflight: &mut Vec<JoinHandle<()>>) {
+async fn shutdown(connections: JoinSet<Result<(), Error>>) -> Result<(), Error> {
     if cfg!(debug_assertions) {
         eprintln!(
             "waiting for {} inflight connection(s) to close...",
-            inflight.len()
+            connections.len()
         );
     }
 
-    while let Some(handle) = inflight.pop() {
-        let _ = handle.await;
+    // Wait for all inflight connections to close.
+    for result in connections.join_all().await {
+        // Propagate individual connection errors that may have occurred.
+        result?;
     }
+
+    Ok(())
 }
