@@ -8,7 +8,7 @@ pub trait IntoResponse {
 
 impl IntoResponse for () {
     fn into_response(self) -> Result<Response> {
-        Ok(Response::default())
+        Ok(Default::default())
     }
 }
 
