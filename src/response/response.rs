@@ -61,7 +61,7 @@ impl Response {
         S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
         E: Into<Error>,
     {
-        let body = Boxed::new(Box::pin(StreamAdapter::new(stream)));
+        let body = Boxed::new(Box::new(StreamAdapter::new(stream)));
         let builder = ResponseBuilder::with_body(Ok(AnyBody::Boxed(body)));
 
         builder.header(TRANSFER_ENCODING, "chunked")
@@ -74,7 +74,7 @@ impl Response {
     {
         let inner = self.inner.map(|input| {
             let output = f(input);
-            let body = Boxed::new(Box::pin(output));
+            let body = Boxed::new(Box::new(output));
 
             AnyBody::Boxed(body)
         });
