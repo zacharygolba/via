@@ -14,16 +14,16 @@ const MAX_FRAME_LEN: usize = 16384; // 16KB
 #[must_use = "streams do nothing unless polled"]
 pub struct Buffered {
     /// The buffer containing the body data.
-    data: BytesMut,
+    data: Box<BytesMut>,
 
     /// A marker indicating that the type is pinned to prevent moving the buffer.
     _pin: PhantomPinned,
 }
 
 impl Buffered {
-    pub fn new(buffer: BytesMut) -> Self {
+    pub fn new(data: Box<BytesMut>) -> Self {
         Self {
-            data: buffer,
+            data,
             _pin: PhantomPinned,
         }
     }
@@ -49,7 +49,15 @@ impl Buffered {
             // to ensure that data is copied out of the buffer and the cursor is
             // advanced to the offset of the next frame.
             //
-            self.map_unchecked_mut(|this| &mut this.data)
+
+            // Get a mutable reference to `self`.
+            let this = self.get_unchecked_mut();
+
+            // Get a mutable reference to the buffer at `self.data`.
+            let ptr = &mut *this.data;
+
+            // Return a pinned mutable reference to the buffer at `self.data`.
+            Pin::new_unchecked(ptr)
         }
     }
 }
@@ -103,7 +111,7 @@ impl Body for Buffered {
 impl Default for Buffered {
     fn default() -> Self {
         Self {
-            data: BytesMut::new(),
+            data: Box::new(BytesMut::new()),
             _pin: PhantomPinned,
         }
     }
@@ -114,7 +122,7 @@ impl From<Bytes> for Buffered {
         let data = Bytes::copy_from_slice(&bytes);
 
         Self {
-            data: BytesMut::from(data),
+            data: Box::new(BytesMut::from(data)),
             _pin: PhantomPinned,
         }
     }
@@ -125,7 +133,7 @@ impl From<Vec<u8>> for Buffered {
         let data = Bytes::from(vec);
 
         Self {
-            data: BytesMut::from(data),
+            data: Box::new(BytesMut::from(data)),
             _pin: PhantomPinned,
         }
     }
@@ -136,7 +144,7 @@ impl From<&'static [u8]> for Buffered {
         let data = Bytes::from_static(slice);
 
         Self {
-            data: BytesMut::from(data),
+            data: Box::new(BytesMut::from(data)),
             _pin: PhantomPinned,
         }
     }
@@ -147,7 +155,7 @@ impl From<String> for Buffered {
         let data = Bytes::from(string.into_bytes());
 
         Self {
-            data: BytesMut::from(data),
+            data: Box::new(BytesMut::from(data)),
             _pin: PhantomPinned,
         }
     }
@@ -158,7 +166,7 @@ impl From<&'static str> for Buffered {
         let data = Bytes::from_static(slice.as_bytes());
 
         Self {
-            data: BytesMut::from(data),
+            data: Box::new(BytesMut::from(data)),
             _pin: PhantomPinned,
         }
     }
