@@ -7,18 +7,16 @@ use std::task::{Context, Poll};
 use crate::body::util;
 use crate::Error;
 
-/// A stream adapter that converts a stream of `Result<D, E>` into a stream of
-/// `Result<Frame<Bytes>>`. This adapter allows for response bodies to be built
-/// from virtually any stream that yields data that can be converted into bytes.
+/// Convert a `Stream + Send` into an `impl Body`.
 #[must_use = "streams do nothing unless polled"]
 pub struct StreamAdapter<S> {
-    /// The `Stream` that we are adapting to yield `Result<Frame<Bytes>>`.
+    /// The `Stream` that we are adapting to an `impl Body`.
     stream: S,
 }
 
 impl<S, E> StreamAdapter<S>
 where
-    S: Stream<Item = Result<Frame<Bytes>, E>> + Send,
+    S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin,
     E: Into<Error>,
 {
     pub fn new(stream: S) -> Self {
@@ -26,27 +24,9 @@ where
     }
 }
 
-impl<S, E> StreamAdapter<S>
-where
-    S: Stream<Item = Result<Frame<Bytes>, E>> + Send,
-    E: Into<Error>,
-{
-    /// Returns a pinned mutable reference to the `stream` field.
-    fn project(self: Pin<&mut Self>) -> Pin<&mut S> {
-        unsafe {
-            //
-            // Safety:
-            //
-            // TODO: Add safety comment.
-            //
-            self.map_unchecked_mut(|this| &mut this.stream)
-        }
-    }
-}
-
 impl<S, E> Body for StreamAdapter<S>
 where
-    S: Stream<Item = Result<Frame<Bytes>, E>> + Send,
+    S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin,
     E: Into<Error>,
 {
     type Data = Bytes;
@@ -56,7 +36,12 @@ where
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        self.project()
+        // Get a mutable reference to `self`.
+        let this = self.get_mut();
+        // Get a mutable reference to `self.stream`.
+        let ptr = &mut this.stream;
+
+        Pin::new(ptr)
             .poll_next(context)
             .map_err(|error| error.into())
     }
