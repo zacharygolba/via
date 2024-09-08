@@ -21,20 +21,52 @@ enum AnyBodyProjection<'a> {
 
 impl AnyBody {
     pub fn new() -> Self {
-        let buffered = Buffered::default();
-        AnyBody::Buf(buffered)
+        Self::Buf(Default::default())
     }
 }
 
 impl AnyBody {
     fn project(self: Pin<&mut Self>) -> AnyBodyProjection {
-        match self.get_mut() {
-            AnyBody::Dyn(ptr) => {
-                let pin = Pin::new(ptr);
+        let this = unsafe {
+            //
+            // Safety:
+            //
+            // We need a mutable reference to self to project the inner body type
+            // for the variant that is currently stored in the enum. The pointer
+            // is never moved or deallocated for any of the variants.
+            //
+            self.get_unchecked_mut()
+        };
+
+        match this {
+            Self::Dyn(ptr) => {
+                let pin = unsafe {
+                    //
+                    // Safety:
+                    //
+                    // The implementation of `Body::poll_frame` for `Boxed`
+                    // operates directly on a `Pin<Box<dyn Body>>` and does not
+                    // move the pointer or the boxed value out of the pinned ref.
+                    //
+                    Pin::new_unchecked(ptr)
+                };
+
                 AnyBodyProjection::Dyn(pin)
             }
-            AnyBody::Buf(ptr) => {
-                let pin = Pin::new(ptr);
+            Self::Buf(ptr) => {
+                let pin = unsafe {
+                    //
+                    // Safety:
+                    //
+                    // The implementation of `Body::poll_frame` for `Buffered`
+                    // treats the buffer as pinned and does not move data out of
+                    // the buffer or the pinned mutable reference. Instead, data
+                    // is copied out of the buffer and the cursor is advanced to
+                    // the next frame.
+                    //
+                    Pin::new_unchecked(ptr)
+                };
+
                 AnyBodyProjection::Buf(pin)
             }
         }
@@ -57,28 +89,28 @@ impl Body for AnyBody {
 
     fn is_end_stream(&self) -> bool {
         match self {
-            AnyBody::Dyn(boxed) => boxed.is_end_stream(),
-            AnyBody::Buf(buffered) => buffered.is_end_stream(),
+            Self::Dyn(boxed) => boxed.is_end_stream(),
+            Self::Buf(buffered) => buffered.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match self {
-            AnyBody::Dyn(boxed) => boxed.size_hint(),
-            AnyBody::Buf(buffered) => buffered.size_hint(),
+            Self::Dyn(boxed) => boxed.size_hint(),
+            Self::Buf(buffered) => buffered.size_hint(),
         }
     }
 }
 
 impl Default for AnyBody {
     fn default() -> Self {
-        AnyBody::new()
+        Self::new()
     }
 }
 
 impl From<Boxed> for AnyBody {
     fn from(boxed: Boxed) -> Self {
-        AnyBody::Dyn(boxed)
+        Self::Dyn(boxed)
     }
 }
 
@@ -87,6 +119,6 @@ where
     Buffered: From<T>,
 {
     fn from(body: T) -> Self {
-        AnyBody::Buf(body.into())
+        Self::Buf(body.into())
     }
 }
