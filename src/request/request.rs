@@ -1,14 +1,16 @@
+use bytes::Bytes;
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
-use hyper::body::Incoming;
+use hyper::body::{Body, Incoming};
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use super::params::{Param, PathParams, QueryParam};
-use crate::body::AnyBody;
+use crate::body::{AnyBody, Boxed};
+use crate::Error;
 
 pub struct Request<State = ()> {
-    data: Box<RequestData<State>>,
+    inner: Box<RequestData<State>>,
 }
 
 struct RequestData<State> {
@@ -26,15 +28,33 @@ struct RequestData<State> {
 }
 
 impl<State> Request<State> {
+    /// Consumes the request returning a new request with body mapped to the
+    /// return type of the passed in function.
+    pub fn map<F, B>(self, f: F) -> Self
+    where
+        F: FnOnce(AnyBody<Incoming>) -> B,
+        B: Body<Data = Bytes, Error = Error> + Send + 'static,
+    {
+        let inner = *self.inner;
+        let output = f(inner.body);
+
+        Self {
+            inner: Box::new(RequestData {
+                body: AnyBody::Boxed(Boxed::new(Box::pin(output))),
+                ..inner
+            }),
+        }
+    }
+
     /// Returns a reference to a map that contains the headers associated with
     /// the request.
     pub fn headers(&self) -> &HeaderMap {
-        &self.data.parts.headers
+        &self.inner.parts.headers
     }
 
     /// Returns a reference to the HTTP method associated with the request.
     pub fn method(&self) -> &Method {
-        &self.data.parts.method
+        &self.inner.parts.method
     }
 
     /// Returns a convenient wrapper around an optional reference to the path
@@ -55,11 +75,11 @@ impl<State> Request<State> {
     /// ```
     pub fn param<'a>(&self, name: &'a str) -> Param<'_, 'a> {
         // Get the path of the request's uri.
-        let path = self.data.parts.uri.path();
+        let path = self.inner.parts.uri.path();
         // Get an `Option<(usize, usize)>` that represents the start and end
         // offset of the path parameter with the provided `name` in the request's
         // uri.
-        let at = self.data.params.get(name);
+        let at = self.inner.params.get(name);
 
         Param::new(Some(at), name, path)
     }
@@ -89,7 +109,7 @@ impl<State> Request<State> {
     /// }
     /// ```
     pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
-        let query = self.data.parts.uri.query().unwrap_or("");
+        let query = self.inner.parts.uri.query().unwrap_or("");
 
         QueryParam::new(name, query)
     }
@@ -98,22 +118,22 @@ impl<State> Request<State> {
     /// state that was passed as an argument to the [`via::app`](crate::app::app)
     /// function.
     pub fn state(&self) -> &Arc<State> {
-        &self.data.state
+        &self.inner.state
     }
 
     /// Returns a reference to the uri associated with the request.
     pub fn uri(&self) -> &Uri {
-        &self.data.parts.uri
+        &self.inner.parts.uri
     }
 
     /// Returns the HTTP version associated with the request.
     pub fn version(&self) -> Version {
-        self.data.parts.version
+        self.inner.parts.version
     }
 
     /// Consumes the request and returns the body.
     pub fn into_body(self) -> AnyBody<Incoming> {
-        self.data.body
+        self.inner.body
     }
 
     /// Unwraps `self` into the Request type from the `http` crate.
@@ -126,7 +146,7 @@ impl<State> Request<State> {
     /// parts of the request, the body, and an `Arc` to the shared application
     /// state.
     pub fn into_parts(self) -> (Parts, AnyBody<Incoming>, Arc<State>) {
-        (self.data.parts, self.data.body, self.data.state)
+        (self.inner.parts, self.inner.body, self.inner.state)
     }
 }
 
@@ -144,7 +164,7 @@ impl<State> Request<State> {
         let body = AnyBody::Inline(body);
 
         Self {
-            data: Box::new(RequestData {
+            inner: Box::new(RequestData {
                 state,
                 params,
                 parts,
@@ -159,7 +179,7 @@ impl<State> Debug for Request<State> {
         f.debug_struct("Request")
             .field("method", self.method())
             .field("uri", self.uri())
-            .field("params", &self.data.params)
+            .field("params", &self.inner.params)
             .field("version", &self.version())
             .field("headers", self.headers())
             // .field("body", &self.data.body)
