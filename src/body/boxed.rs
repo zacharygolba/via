@@ -28,7 +28,7 @@ impl Body for Boxed {
         mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        self.body.as_mut().poll_frame(context)
+        Pin::as_mut(&mut self.body).poll_frame(context)
     }
 
     fn size_hint(&self) -> SizeHint {
