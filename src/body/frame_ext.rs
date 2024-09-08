@@ -1,6 +1,5 @@
 use bytes::Bytes;
-
-pub use hyper::body::Frame;
+use hyper::body::Frame;
 
 use crate::Error;
 

@@ -10,11 +10,11 @@ use crate::body::{AnyBody, Boxed, Buffered, Frame, StreamAdapter};
 use crate::{Error, Result};
 
 pub struct Response {
-    inner: http::Response<AnyBody>,
+    inner: http::Response<AnyBody<Buffered>>,
 }
 
 impl Response {
-    pub fn new(body: AnyBody) -> Self {
+    pub fn new(body: AnyBody<Buffered>) -> Self {
         Self {
             inner: http::Response::new(body),
         }
@@ -57,27 +57,27 @@ impl Response {
         E: Into<Error>,
     {
         let body = Boxed::new(Box::pin(StreamAdapter::new(stream)));
-        let builder = ResponseBuilder::with_body(Ok(AnyBody::Dyn(body)));
+        let builder = ResponseBuilder::with_body(Ok(AnyBody::Boxed(body)));
 
         builder.header(TRANSFER_ENCODING, "chunked")
     }
 
     pub fn map<F, B>(self, f: F) -> Self
     where
-        F: FnOnce(AnyBody) -> B,
+        F: FnOnce(AnyBody<Buffered>) -> B,
         B: Body<Data = Bytes, Error = Error> + Send + 'static,
     {
         let inner = self.inner.map(|input| {
             let output = f(input);
             let body = Boxed::new(Box::pin(output));
 
-            AnyBody::Dyn(body)
+            AnyBody::Boxed(body)
         });
 
         Self { inner }
     }
 
-    pub fn body(&self) -> &AnyBody {
+    pub fn body(&self) -> &AnyBody<Buffered> {
         self.inner.body()
     }
 
@@ -104,18 +104,17 @@ impl Response {
 
 impl Default for Response {
     fn default() -> Self {
-        let body = Buffered::default();
-        Self::new(AnyBody::Buf(body))
+        Self::new(Default::default())
     }
 }
 
-impl From<http::Response<AnyBody>> for Response {
-    fn from(inner: http::Response<AnyBody>) -> Self {
+impl From<http::Response<AnyBody<Buffered>>> for Response {
+    fn from(inner: http::Response<AnyBody<Buffered>>) -> Self {
         Self { inner }
     }
 }
 
-impl From<Response> for http::Response<AnyBody> {
+impl From<Response> for http::Response<AnyBody<Buffered>> {
     fn from(response: Response) -> Self {
         response.inner
     }

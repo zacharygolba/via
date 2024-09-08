@@ -1,32 +1,30 @@
-use bytes::Bytes;
-use hyper::body::{Body, Frame, SizeHint};
+use bytes::{Bytes, BytesMut};
+use http::StatusCode;
+use hyper::body::{Body, Frame, Incoming, SizeHint};
+use serde::de::DeserializeOwned;
 use std::pin::Pin;
 use std::task::Poll;
 
+use super::aggregate::{ReadIntoBytes, ReadIntoString};
+use super::stream::{BodyDataStream, BodyStream};
 use super::{Boxed, Buffered};
 use crate::Error;
 
-/// A sum type that representing any type of body.
+/// A sum type that represents any type of body.
 #[non_exhaustive]
 #[must_use = "streams do nothing unless polled"]
-pub enum AnyBody {
-    Dyn(Boxed),
-    Buf(Buffered),
+pub enum AnyBody<B> {
+    Boxed(Boxed),
+    Inline(B),
 }
 
-enum AnyBodyProjection<'a> {
-    Dyn(Pin<&'a mut Boxed>),
-    Buf(Pin<&'a mut Buffered>),
+enum AnyBodyProjection<'a, B> {
+    Boxed(Pin<&'a mut Boxed>),
+    Inline(Pin<&'a mut B>),
 }
 
-impl AnyBody {
-    pub fn new() -> Self {
-        Self::Buf(Default::default())
-    }
-}
-
-impl AnyBody {
-    fn project(self: Pin<&mut Self>) -> AnyBodyProjection {
+impl<B> AnyBody<B> {
+    fn project(self: Pin<&mut Self>) -> AnyBodyProjection<B> {
         let this = unsafe {
             //
             // Safety:
@@ -39,7 +37,7 @@ impl AnyBody {
         };
 
         match this {
-            Self::Dyn(ptr) => {
+            Self::Boxed(ptr) => {
                 let pin = unsafe {
                     //
                     // Safety:
@@ -51,9 +49,9 @@ impl AnyBody {
                     Pin::new_unchecked(ptr)
                 };
 
-                AnyBodyProjection::Dyn(pin)
+                AnyBodyProjection::Boxed(pin)
             }
-            Self::Buf(ptr) => {
+            Self::Inline(ptr) => {
                 let pin = unsafe {
                     //
                     // Safety:
@@ -67,13 +65,17 @@ impl AnyBody {
                     Pin::new_unchecked(ptr)
                 };
 
-                AnyBodyProjection::Buf(pin)
+                AnyBodyProjection::Inline(pin)
             }
         }
     }
 }
 
-impl Body for AnyBody {
+impl<B, E> Body for AnyBody<B>
+where
+    B: Body<Data = Bytes, Error = E>,
+    E: Into<Error>,
+{
     type Data = Bytes;
     type Error = Error;
 
@@ -82,43 +84,88 @@ impl Body for AnyBody {
         context: &mut std::task::Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.project() {
-            AnyBodyProjection::Dyn(boxed) => boxed.poll_frame(context),
-            AnyBodyProjection::Buf(buffered) => buffered.poll_frame(context),
+            AnyBodyProjection::Boxed(boxed) => boxed.poll_frame(context),
+            AnyBodyProjection::Inline(body) => {
+                body.poll_frame(context).map_err(|error| error.into())
+            }
         }
     }
 
     fn is_end_stream(&self) -> bool {
         match self {
-            Self::Dyn(boxed) => boxed.is_end_stream(),
-            Self::Buf(buffered) => buffered.is_end_stream(),
+            Self::Boxed(boxed) => boxed.is_end_stream(),
+            Self::Inline(body) => body.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match self {
-            Self::Dyn(boxed) => boxed.size_hint(),
-            Self::Buf(buffered) => buffered.size_hint(),
+            Self::Boxed(boxed) => boxed.size_hint(),
+            Self::Inline(body) => body.size_hint(),
         }
     }
 }
 
-impl Default for AnyBody {
+impl<B> From<Boxed> for AnyBody<B> {
+    fn from(boxed: Boxed) -> Self {
+        Self::Boxed(boxed)
+    }
+}
+
+impl AnyBody<Buffered> {
+    pub fn new() -> Self {
+        Self::Inline(Default::default())
+    }
+}
+
+impl Default for AnyBody<Buffered> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl From<Boxed> for AnyBody {
-    fn from(boxed: Boxed) -> Self {
-        Self::Dyn(boxed)
-    }
-}
-
-impl<T> From<T> for AnyBody
+impl<T> From<T> for AnyBody<Buffered>
 where
     Buffered: From<T>,
 {
     fn from(body: T) -> Self {
-        Self::Buf(body.into())
+        Self::Inline(body.into())
+    }
+}
+
+impl AnyBody<Incoming> {
+    pub fn into_stream(self) -> BodyStream {
+        BodyStream::new(self)
+    }
+
+    pub fn into_data_stream(self) -> BodyDataStream {
+        let stream = self.into_stream();
+        BodyDataStream::new(stream)
+    }
+
+    pub fn read_into_bytes(self) -> ReadIntoBytes {
+        let buffer = BytesMut::new();
+        let stream = self.into_data_stream();
+
+        ReadIntoBytes::new(buffer, stream)
+    }
+
+    pub fn read_into_string(self) -> ReadIntoString {
+        let future = self.read_into_bytes();
+
+        ReadIntoString::new(future)
+    }
+
+    pub async fn read_json<B>(self) -> Result<B, Error>
+    where
+        B: DeserializeOwned,
+    {
+        let buffer = self.read_into_bytes().await?;
+
+        serde_json::from_slice(&buffer).map_err(|source| {
+            let mut error = Error::from(source);
+            *error.status_mut() = StatusCode::BAD_REQUEST;
+            error
+        })
     }
 }
