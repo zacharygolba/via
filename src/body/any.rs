@@ -1,4 +1,4 @@
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use http::StatusCode;
 use hyper::body::{Body, Frame, Incoming, SizeHint};
 use serde::de::DeserializeOwned;
@@ -145,7 +145,7 @@ impl AnyBody<Incoming> {
     }
 
     pub fn read_into_bytes(self) -> ReadIntoBytes {
-        let buffer = BytesMut::new();
+        let buffer = Vec::new();
         let stream = self.into_data_stream();
 
         ReadIntoBytes::new(buffer, stream)
