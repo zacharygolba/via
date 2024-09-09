@@ -44,8 +44,8 @@ impl<State> Request<State> {
         });
 
         Self {
+            body: AnyBody::Boxed(Boxed::new(output)),
             meta: self.meta,
-            body: Boxed::new(output).into(),
             state: self.state,
         }
     }
@@ -114,7 +114,6 @@ impl<State> Request<State> {
     /// ```
     pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
         let query = self.meta.parts.uri.query().unwrap_or("");
-
         QueryParam::new(name, query)
     }
 
@@ -167,7 +166,7 @@ impl<State> Request<State> {
         // Wrap the component parts and path parameters in a boxed `RequestMeta`.
         let meta = Box::new(RequestMeta { parts, params });
 
-        Self { meta, body, state }
+        Self { body, meta, state }
     }
 }
 
