@@ -5,7 +5,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::body::util;
-use crate::Error;
 
 /// Convert a `Stream + Send` into an `impl Body`.
 #[must_use = "streams do nothing unless polled"]
@@ -17,7 +16,6 @@ pub struct StreamAdapter<S> {
 impl<S, E> StreamAdapter<S>
 where
     S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin,
-    Error: From<E>,
 {
     pub fn new(stream: S) -> Self {
         Self { stream }
@@ -38,7 +36,6 @@ impl<S: Unpin> StreamAdapter<S> {
 impl<S, E> Body for StreamAdapter<S>
 where
     S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin,
-    Error: From<E>,
 {
     type Data = Bytes;
     type Error = E;
