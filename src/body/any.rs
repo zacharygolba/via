@@ -24,6 +24,49 @@ enum AnyBodyProjection<'a, B> {
     Inline(Pin<&'a mut B>),
 }
 
+impl AnyBody<Buffered> {
+    pub fn new() -> Self {
+        Self::Inline(Default::default())
+    }
+}
+
+impl AnyBody<Box<Incoming>> {
+    pub fn into_stream(self) -> BodyStream {
+        BodyStream::new(self)
+    }
+
+    pub fn into_data_stream(self) -> BodyDataStream {
+        let stream = self.into_stream();
+        BodyDataStream::new(stream)
+    }
+
+    pub fn read_into_bytes(self) -> ReadIntoBytes {
+        let buffer = Vec::new();
+        let stream = self.into_data_stream();
+
+        ReadIntoBytes::new(buffer, stream)
+    }
+
+    pub fn read_into_string(self) -> ReadIntoString {
+        let future = self.read_into_bytes();
+
+        ReadIntoString::new(future)
+    }
+
+    pub async fn read_json<B>(self) -> Result<B, Error>
+    where
+        B: DeserializeOwned,
+    {
+        let buffer = self.read_into_bytes().await?;
+
+        serde_json::from_slice(&buffer).map_err(|source| {
+            let mut error = Error::from(source);
+            *error.status_mut() = StatusCode::BAD_REQUEST;
+            error
+        })
+    }
+}
+
 impl<B> AnyBody<B> {
     fn project(self: Pin<&mut Self>) -> AnyBodyProjection<B> {
         let this = unsafe {
@@ -113,12 +156,6 @@ impl<B> From<Boxed> for AnyBody<B> {
     }
 }
 
-impl AnyBody<Buffered> {
-    pub fn new() -> Self {
-        Self::Inline(Default::default())
-    }
-}
-
 impl Default for AnyBody<Buffered> {
     fn default() -> Self {
         Self::new()
@@ -131,42 +168,5 @@ where
 {
     fn from(body: T) -> Self {
         Self::Inline(body.into())
-    }
-}
-
-impl AnyBody<Incoming> {
-    pub fn into_stream(self) -> BodyStream {
-        BodyStream::new(self)
-    }
-
-    pub fn into_data_stream(self) -> BodyDataStream {
-        let stream = self.into_stream();
-        BodyDataStream::new(stream)
-    }
-
-    pub fn read_into_bytes(self) -> ReadIntoBytes {
-        let buffer = Vec::new();
-        let stream = self.into_data_stream();
-
-        ReadIntoBytes::new(buffer, stream)
-    }
-
-    pub fn read_into_string(self) -> ReadIntoString {
-        let future = self.read_into_bytes();
-
-        ReadIntoString::new(future)
-    }
-
-    pub async fn read_json<B>(self) -> Result<B, Error>
-    where
-        B: DeserializeOwned,
-    {
-        let buffer = self.read_into_bytes().await?;
-
-        serde_json::from_slice(&buffer).map_err(|source| {
-            let mut error = Error::from(source);
-            *error.status_mut() = StatusCode::BAD_REQUEST;
-            error
-        })
     }
 }
