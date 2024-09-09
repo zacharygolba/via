@@ -26,57 +26,18 @@ impl AnyBody<Buffered> {
     }
 }
 
-impl<B> AnyBody<B> {
+impl<B: Unpin> AnyBody<B> {
     fn project(self: Pin<&mut Self>) -> AnyBodyProjection<B> {
-        let this = unsafe {
-            //
-            // Safety:
-            //
-            // We need a mutable reference to self to project the inner body type
-            // for the variant that is currently stored in the enum. The pointer
-            // is never moved or deallocated for any of the variants.
-            //
-            self.get_unchecked_mut()
-        };
-
-        match this {
-            Self::Boxed(ptr) => {
-                let pin = unsafe {
-                    //
-                    // Safety:
-                    //
-                    // The implementation of `Body::poll_frame` for `Boxed`
-                    // operates directly on a `Pin<Box<dyn Body>>` and does not
-                    // move the pointer or the boxed value out of the pinned ref.
-                    //
-                    Pin::new_unchecked(ptr)
-                };
-
-                AnyBodyProjection::Boxed(pin)
-            }
-            Self::Inline(ptr) => {
-                let pin = unsafe {
-                    //
-                    // Safety:
-                    //
-                    // The implementation of `Body::poll_frame` for `Buffered`
-                    // treats the buffer as pinned and does not move data out of
-                    // the buffer or the pinned mutable reference. Instead, data
-                    // is copied out of the buffer and the cursor is advanced to
-                    // the next frame.
-                    //
-                    Pin::new_unchecked(ptr)
-                };
-
-                AnyBodyProjection::Inline(pin)
-            }
+        match self.get_mut() {
+            Self::Boxed(ptr) => AnyBodyProjection::Boxed(Pin::new(ptr)),
+            Self::Inline(ptr) => AnyBodyProjection::Inline(Pin::new(ptr)),
         }
     }
 }
 
 impl<B, E> Body for AnyBody<B>
 where
-    B: Body<Data = Bytes, Error = E>,
+    B: Body<Data = Bytes, Error = E> + Unpin,
     E: Into<Error>,
 {
     type Data = Bytes;
