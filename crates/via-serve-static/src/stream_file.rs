@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use futures_core::Stream;
+use http_body::Frame;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::PathBuf;
@@ -7,7 +8,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime};
 use tokio::{runtime::Handle, sync::mpsc, task};
-use via::body::Frame;
 use via::{Error, Result};
 
 /// The amount of `ReadChunkResult` that can be stored in the channel buffer.
