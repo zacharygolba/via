@@ -88,19 +88,13 @@ where
                     // Define connection as mutable.
                     let mut connection = connection;
 
-                    // Pin the connection on the stack so it can be polled.
-                    //
-                    // This is required by the tokio::select! macro as well as
-                    // initiating a graceful shutdown process for the connection.
-                    let mut pinned_connection = Pin::new(&mut connection);
-
                     // Poll the connection until it is closed or a graceful
                     // shutdown process is initiated.
                     let result = tokio::select! {
-                        // Wait for the connection to close. This is the typical
-                        // path that the code should take while the server is
-                        // running.
-                        result = &mut pinned_connection => result,
+                        // Pin the connection on the stack so it can be polled
+                        // to completion. This is the typical path that the code
+                        // should take while the server is running.
+                        result = Pin::new(&mut connection) => result,
 
                         // Otherwise, wait until `shutdown_rx` is notified that
                         // the server will shutdown and initiate a graceful
@@ -108,10 +102,10 @@ where
                         _ = shutdown_rx.changed() => {
                             // Initiate the graceful shutdown process for the
                             // connection.
-                            pinned_connection.as_mut().graceful_shutdown();
+                            Pin::new(&mut connection).graceful_shutdown();
 
                             // Wait for the connection to close.
-                            pinned_connection.await
+                            Pin::new(&mut connection).await
                         }
                     };
 
@@ -125,7 +119,7 @@ where
 
             // Otherwise, wait for a "Ctrl-C" notification to be sent to the
             // process.
-            _ = &mut ctrl_c => {
+            _ = ctrl_c.as_mut() => {
                 // Notify inflight connections to initiate a graceful shutdown.
                 shutdown_tx.send(true)?;
 
