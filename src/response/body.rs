@@ -3,44 +3,81 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::body::{AnyBody, Boxed, Buffered, Either, Pinned};
+use crate::body::{AnyBody, Boxed, Buffered, Pinned};
 use crate::Error;
 
+#[must_use = "streams do nothing unless polled"]
 pub struct ResponseBody {
-    body: Either<AnyBody<Buffered>, Pinned>,
+    body: PinRequirement,
+}
+
+enum PinRequirement {
+    Unpin(AnyBody<Buffered>),
+    Pin(Pinned),
+}
+
+enum ResponseBodyProjection<'a> {
+    Boxed(Pin<&'a mut Boxed>),
+    Pinned(Pin<&'a mut Pinned>),
+    Buffered(Pin<&'a mut Buffered>),
 }
 
 impl ResponseBody {
     /// Creates a new, empty response body.
     pub fn new() -> Self {
         Self {
-            body: Either::Left(AnyBody::new()),
+            body: PinRequirement::Unpin(AnyBody::new()),
         }
     }
 }
 
 impl ResponseBody {
-    pub(crate) fn into_inner(self) -> Either<AnyBody<Buffered>, Pinned> {
-        self.body
+    pub(crate) fn try_into_unpin(self) -> Result<AnyBody<Buffered>, Error> {
+        match self.body {
+            PinRequirement::Unpin(body) => Ok(body),
+            PinRequirement::Pin(_) => Err(Error::new(
+                "Pinned body cannot be converted to Unpin".to_string(),
+            )),
+        }
     }
 }
 
 impl ResponseBody {
-    fn project(self: Pin<&mut Self>) -> Pin<&mut Either<AnyBody<Buffered>, Pinned>> {
-        unsafe {
+    fn project(self: Pin<&mut Self>) -> ResponseBodyProjection {
+        let this = unsafe {
             //
             // Safety:
             //
-            // The `body` field is `!Unpin` because it may contain a Pinned body.
-            // While we are unable to express the negative trait bound in the
-            // Pinned::new constructor, it is the only place where a
-            // Pinned body can be created and the `!Unpin` requirement is
-            // mentioned in the documentation.
+            // The body field may contain a Pinned body, which is !Unpin. We are
+            // not moving the value out of `self`, so it is safe to project the
+            // field.
             //
-            // Regardless, we are not moving the value out of the struct, so it
-            // is safe to project the field.
-            //
-            Pin::map_unchecked_mut(self, |this| &mut this.body)
+            self.get_unchecked_mut()
+        };
+
+        match &mut this.body {
+            PinRequirement::Unpin(AnyBody::Boxed(ptr)) => {
+                // Boxed is Unpin so we can project it with using unsafe.
+                ResponseBodyProjection::Boxed(Pin::new(ptr))
+            }
+            PinRequirement::Unpin(AnyBody::Inline(ptr)) => {
+                // Buffered is Unpin so we can project it with using unsafe.
+                ResponseBodyProjection::Buffered(Pin::new(ptr))
+            }
+            PinRequirement::Pin(ptr) => {
+                let pin = unsafe {
+                    //
+                    // Safety:
+                    //
+                    // Pinned is `!Unpin` because it was created from an impl Body
+                    // that is !Unpin. We are not moving the value out of `self`,
+                    // so it is safe to project the field.
+                    //
+                    Pin::new_unchecked(ptr)
+                };
+
+                ResponseBodyProjection::Pinned(pin)
+            }
         }
     }
 }
@@ -53,15 +90,25 @@ impl Body for ResponseBody {
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        self.project().poll_frame(context)
+        match self.project() {
+            ResponseBodyProjection::Boxed(boxed) => boxed.poll_frame(context),
+            ResponseBodyProjection::Pinned(pinned) => pinned.poll_frame(context),
+            ResponseBodyProjection::Buffered(buffered) => buffered.poll_frame(context),
+        }
     }
 
     fn is_end_stream(&self) -> bool {
-        self.body.is_end_stream()
+        match &self.body {
+            PinRequirement::Unpin(body) => body.is_end_stream(),
+            PinRequirement::Pin(body) => body.is_end_stream(),
+        }
     }
 
     fn size_hint(&self) -> SizeHint {
-        self.body.size_hint()
+        match &self.body {
+            PinRequirement::Unpin(body) => body.size_hint(),
+            PinRequirement::Pin(body) => body.size_hint(),
+        }
     }
 }
 
@@ -74,7 +121,7 @@ impl Default for ResponseBody {
 impl From<Boxed> for ResponseBody {
     fn from(boxed: Boxed) -> Self {
         Self {
-            body: Either::Left(AnyBody::Boxed(boxed)),
+            body: PinRequirement::Unpin(AnyBody::Boxed(boxed)),
         }
     }
 }
@@ -82,7 +129,7 @@ impl From<Boxed> for ResponseBody {
 impl From<Pinned> for ResponseBody {
     fn from(pinned: Pinned) -> Self {
         Self {
-            body: Either::Right(pinned),
+            body: PinRequirement::Pin(pinned),
         }
     }
 }
@@ -95,7 +142,7 @@ where
         let buffered = Buffered::from(value);
 
         Self {
-            body: Either::Left(AnyBody::Inline(buffered)),
+            body: PinRequirement::Unpin(AnyBody::Inline(buffered)),
         }
     }
 }

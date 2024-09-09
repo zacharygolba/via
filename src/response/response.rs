@@ -7,7 +7,7 @@ use hyper::body::Body;
 use serde::Serialize;
 
 use super::{ResponseBody, ResponseBuilder};
-use crate::body::{AnyBody, Boxed, Buffered, Either, StreamAdapter};
+use crate::body::{AnyBody, Boxed, Buffered, StreamAdapter};
 use crate::{Error, Result};
 
 pub struct Response {
@@ -85,9 +85,9 @@ impl Response {
         Error: From<E>,
     {
         let (parts, body) = self.inner.into_parts();
-        let output = match body.into_inner() {
-            Either::Left(any) => map(any),
-            Either::Right(_) => {
+        let output = match body.try_into_unpin() {
+            Ok(any) => map(any),
+            Err(_) => {
                 if cfg!(debug_assertions) {
                     //
                     // TODO:
