@@ -27,11 +27,8 @@ impl Future for ReadIntoString {
 
         // Pin `future` on the stack and poll it.
         Pin::new(future).poll(context).map(|result| {
-            // Perform the cheap conversion from `Bytes` to `Vec<u8>`.
-            let data = Vec::from(result?);
-
-            // Convert `data` to a string if it is valid UTF-8.
-            Ok(String::from_utf8(data)?)
+            // Convert the returned bytes to a string if it is valid UTF-8.
+            Ok(String::from_utf8(result?)?)
         })
     }
 }
