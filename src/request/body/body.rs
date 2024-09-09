@@ -33,9 +33,9 @@ impl RequestBody {
         ReadIntoString::new(future)
     }
 
-    pub async fn read_json<B>(self) -> Result<B, Error>
+    pub async fn read_json<D>(self) -> Result<D, Error>
     where
-        B: DeserializeOwned,
+        D: DeserializeOwned,
     {
         let buffer = self.read_into_bytes().await?;
 
