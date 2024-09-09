@@ -1,12 +1,8 @@
 use bytes::Bytes;
-use http::StatusCode;
-use hyper::body::{Body, Frame, Incoming, SizeHint};
-use serde::de::DeserializeOwned;
+use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::Poll;
 
-use super::aggregate::{ReadIntoBytes, ReadIntoString};
-use super::stream::{BodyDataStream, BodyStream};
 use super::{Boxed, Buffered};
 use crate::Error;
 
@@ -27,43 +23,6 @@ enum AnyBodyProjection<'a, B> {
 impl AnyBody<Buffered> {
     pub fn new() -> Self {
         Self::Inline(Default::default())
-    }
-}
-
-impl AnyBody<Box<Incoming>> {
-    pub fn into_stream(self) -> BodyStream {
-        BodyStream::new(self)
-    }
-
-    pub fn into_data_stream(self) -> BodyDataStream {
-        let stream = self.into_stream();
-        BodyDataStream::new(stream)
-    }
-
-    pub fn read_into_bytes(self) -> ReadIntoBytes {
-        let buffer = Vec::new();
-        let stream = self.into_data_stream();
-
-        ReadIntoBytes::new(buffer, stream)
-    }
-
-    pub fn read_into_string(self) -> ReadIntoString {
-        let future = self.read_into_bytes();
-
-        ReadIntoString::new(future)
-    }
-
-    pub async fn read_json<B>(self) -> Result<B, Error>
-    where
-        B: DeserializeOwned,
-    {
-        let buffer = self.read_into_bytes().await?;
-
-        serde_json::from_slice(&buffer).map_err(|source| {
-            let mut error = Error::from(source);
-            *error.status_mut() = StatusCode::BAD_REQUEST;
-            error
-        })
     }
 }
 

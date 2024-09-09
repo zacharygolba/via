@@ -1,10 +1,11 @@
 use bytes::Bytes;
-use hyper::body::Frame;
+use http_body::Frame;
 
 use crate::Error;
 
-/// An extension trait for [`Frame`](super::Frame) that includes convenience
-/// methods for common operations.
+/// An extension trait for
+/// [`Frame`](https://docs.rs/http-body/latest/http_body/struct.Frame.html)
+/// that includes convenience methods for common operations.
 pub trait FrameExt {
     /// Attempts to map the frame's data using the provided closure.
     fn try_map_data<F, E>(self, f: F) -> Result<Frame<Bytes>, Error>

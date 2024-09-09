@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use futures_core::Stream;
-use hyper::body::{Body, Frame, SizeHint};
+use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -17,33 +17,37 @@ pub struct StreamAdapter<S> {
 impl<S, E> StreamAdapter<S>
 where
     S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin,
-    E: Into<Error>,
+    Error: From<E>,
 {
     pub fn new(stream: S) -> Self {
         Self { stream }
     }
 }
 
-impl<S, E> Body for StreamAdapter<S>
-where
-    S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin,
-    E: Into<Error>,
-{
-    type Data = Bytes;
-    type Error = Error;
-
-    fn poll_frame(
-        self: Pin<&mut Self>,
-        context: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+impl<S: Unpin> StreamAdapter<S> {
+    fn project(self: Pin<&mut Self>) -> Pin<&mut S> {
         // Get a mutable reference to `self`.
         let this = self.get_mut();
         // Get a mutable reference to `self.stream`.
         let ptr = &mut this.stream;
 
         Pin::new(ptr)
-            .poll_next(context)
-            .map_err(|error| error.into())
+    }
+}
+
+impl<S, E> Body for StreamAdapter<S>
+where
+    S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin,
+    Error: From<E>,
+{
+    type Data = Bytes;
+    type Error = E;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        self.project().poll_next(context)
     }
 
     fn size_hint(&self) -> SizeHint {
