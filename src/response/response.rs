@@ -76,7 +76,7 @@ impl Response {
     /// Returns an error if the response body was created with `Pinned`.
     ///
     /// If you need to map an `!Unpin` response body, you must implement the
-    /// map logic yourself and pass the result to `Pinned::new_unchecked`.
+    /// map logic yourself and pass the result to `Pinned::new`.
     ///
     pub fn map<F, B, E>(self, map: F) -> Result<Self, Error>
     where

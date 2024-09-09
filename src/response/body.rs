@@ -33,7 +33,7 @@ impl ResponseBody {
             //
             // The `body` field is `!Unpin` because it may contain a Pinned body.
             // While we are unable to express the negative trait bound in the
-            // Pinned::new_unchecked constructor, it is the only place where a
+            // Pinned::new constructor, it is the only place where a
             // Pinned body can be created and the `!Unpin` requirement is
             // mentioned in the documentation.
             //
