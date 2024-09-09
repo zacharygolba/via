@@ -3,7 +3,7 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::Poll;
 
-use super::{Boxed, Buffered};
+use super::{Boxed, Buffer};
 use crate::Error;
 
 /// A sum type that can represent any `Unpin` [Request](crate::Request) or
@@ -21,7 +21,7 @@ enum AnyBodyProjection<'a, B> {
     Inline(Pin<&'a mut B>),
 }
 
-impl AnyBody<Buffered> {
+impl AnyBody<Buffer> {
     pub fn new() -> Self {
         Self::Inline(Default::default())
     }
@@ -77,15 +77,15 @@ impl<B> From<Boxed> for AnyBody<B> {
     }
 }
 
-impl Default for AnyBody<Buffered> {
+impl Default for AnyBody<Buffer> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> From<T> for AnyBody<Buffered>
+impl<T> From<T> for AnyBody<Buffer>
 where
-    Buffered: From<T>,
+    Buffer: From<T>,
 {
     fn from(body: T) -> Self {
         Self::Inline(body.into())

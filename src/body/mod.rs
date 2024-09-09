@@ -11,6 +11,6 @@ mod pinned;
 
 pub use any::AnyBody;
 pub use boxed::Boxed;
-pub use buffered::Buffered;
+pub use buffered::Buffer;
 pub use frame_ext::FrameExt;
 pub use pinned::Pinned;

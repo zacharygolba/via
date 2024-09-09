@@ -11,12 +11,12 @@ const MAX_FRAME_LEN: usize = 16384; // 16KB
 /// An optimized body that is used when the entire body is already in memory.
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
-pub struct Buffered {
+pub struct Buffer {
     /// The buffer containing the body data.
     data: Box<Bytes>,
 }
 
-impl Buffered {
+impl Buffer {
     pub fn new(data: Bytes) -> Self {
         Self {
             data: Box::new(data),
@@ -32,7 +32,7 @@ impl Buffered {
     }
 }
 
-impl Body for Buffered {
+impl Body for Buffer {
     type Data = Bytes;
     type Error = Error;
 
@@ -80,38 +80,38 @@ impl Body for Buffered {
     }
 }
 
-impl Default for Buffered {
+impl Default for Buffer {
     fn default() -> Self {
         Self::new(Bytes::new())
     }
 }
 
-impl From<Bytes> for Buffered {
+impl From<Bytes> for Buffer {
     fn from(bytes: Bytes) -> Self {
         Self::new(Bytes::copy_from_slice(&bytes))
     }
 }
 
-impl From<Vec<u8>> for Buffered {
+impl From<Vec<u8>> for Buffer {
     fn from(vec: Vec<u8>) -> Self {
         Self::new(Bytes::from(vec))
     }
 }
 
-impl From<&'static [u8]> for Buffered {
+impl From<&'static [u8]> for Buffer {
     fn from(slice: &'static [u8]) -> Self {
         Self::new(Bytes::from_static(slice))
     }
 }
 
-impl From<String> for Buffered {
+impl From<String> for Buffer {
     fn from(string: String) -> Self {
         let vec = string.into_bytes();
         Self::new(Bytes::from(vec))
     }
 }
 
-impl From<&'static str> for Buffered {
+impl From<&'static str> for Buffer {
     fn from(slice: &'static str) -> Self {
         let slice = slice.as_bytes();
         Self::new(Bytes::from_static(slice))

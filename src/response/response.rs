@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 
 use super::{ResponseBody, ResponseBuilder, StreamAdapter};
-use crate::body::{AnyBody, Boxed, Buffered};
+use crate::body::{AnyBody, Boxed, Buffer};
 use crate::{Error, Result};
 
 pub struct Response {
@@ -28,7 +28,7 @@ impl Response {
 
     pub fn html<B>(body: B) -> ResponseBuilder
     where
-        Buffered: From<B>,
+        Buffer: From<B>,
     {
         let builder = ResponseBuilder::buffered(body);
         builder.header(CONTENT_TYPE, "text/html; charset=utf-8")
@@ -36,7 +36,7 @@ impl Response {
 
     pub fn text<B>(body: B) -> ResponseBuilder
     where
-        Buffered: From<B>,
+        Buffer: From<B>,
     {
         let builder = ResponseBuilder::buffered(body);
         builder.header(CONTENT_TYPE, "text/plain; charset=utf-8")
@@ -81,7 +81,7 @@ impl Response {
     ///
     pub fn map<F, B, E>(self, map: F) -> Result<Self, Error>
     where
-        F: FnOnce(AnyBody<Buffered>) -> B,
+        F: FnOnce(AnyBody<Buffer>) -> B,
         B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
         Error: From<E>,
     {

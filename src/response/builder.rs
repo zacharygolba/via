@@ -3,7 +3,7 @@ use http::response::Builder;
 use http::{StatusCode, Version};
 
 use super::{Response, ResponseBody};
-use crate::body::Buffered;
+use crate::body::Buffer;
 use crate::{Error, Result};
 
 pub struct ResponseBuilder {
@@ -94,9 +94,9 @@ impl ResponseBuilder {
 
     pub(crate) fn buffered<T>(body: T) -> Self
     where
-        Buffered: From<T>,
+        Buffer: From<T>,
     {
-        let buffered = Buffered::from(body);
+        let buffered = Buffer::from(body);
         let len = buffered.len();
 
         Self {
