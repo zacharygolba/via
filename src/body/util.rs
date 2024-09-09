@@ -1,7 +1,7 @@
 //! Shared utilities for implementing the Body trait.
 
 use futures_core::Stream;
-use hyper::body::{Body, SizeHint};
+use http_body::{Body, SizeHint};
 
 /// Adapts the `SizeHint` of a `Body` to a tuple containing the lower and upper
 /// bound of the stream. If the conversion of the lower bound fails, it will be

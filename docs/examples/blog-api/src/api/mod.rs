@@ -3,7 +3,7 @@ pub mod users;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use via::body::{AnyBody, Incoming};
+use via::request::RequestBody;
 use via::Error;
 
 #[derive(Debug, Deserialize, Serialize)]

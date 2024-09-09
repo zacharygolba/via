@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use hyper::body::{Body, Frame, SizeHint};
+use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -20,7 +20,7 @@ struct MapError<B> {
 impl Boxed {
     pub fn new<B, E>(body: B) -> Self
     where
-        B: Body<Data = Bytes, Error = E> + Send + 'static,
+        B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
         Error: From<E>,
     {
         Self {
@@ -45,22 +45,18 @@ impl Body for Boxed {
     }
 }
 
-impl<B> MapError<B> {
+impl<B: Unpin> MapError<B> {
     fn project(self: Pin<&mut Self>) -> Pin<&mut B> {
-        unsafe {
-            //
-            // Safety:
-            //
-            // The `body` field is never moved out of `self`.
-            //
-            Pin::map_unchecked_mut(self, |this| &mut this.body)
-        }
+        let this = self.get_mut();
+        let ptr = &mut this.body;
+
+        Pin::new(ptr)
     }
 }
 
 impl<B, E> Body for MapError<B>
 where
-    B: Body<Data = Bytes, Error = E> + Send,
+    B: Body<Data = Bytes, Error = E> + Send + Unpin,
     Error: From<E>,
 {
     type Data = Bytes;

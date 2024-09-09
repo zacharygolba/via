@@ -2,23 +2,23 @@ use http::header::{HeaderName, HeaderValue, CONTENT_LENGTH};
 use http::response::Builder;
 use http::{StatusCode, Version};
 
-use super::Response;
-use crate::body::{AnyBody, Buffered};
+use super::{Response, ResponseBody};
+use crate::body::Buffered;
 use crate::{Error, Result};
 
 pub struct ResponseBuilder {
-    body: Option<Result<AnyBody<Buffered>>>,
+    body: Option<Result<ResponseBody>>,
     inner: Builder,
 }
 
 impl ResponseBuilder {
     pub fn body<T>(self, body: T) -> Self
     where
-        AnyBody<Buffered>: TryFrom<T>,
-        <AnyBody<Buffered> as TryFrom<T>>::Error: Into<Error>,
+        ResponseBody: TryFrom<T>,
+        <ResponseBody as TryFrom<T>>::Error: Into<Error>,
     {
         Self {
-            body: Some(AnyBody::try_from(body).map_err(Into::into)),
+            body: Some(ResponseBody::try_from(body).map_err(Into::into)),
             inner: self.inner,
         }
     }
@@ -26,7 +26,7 @@ impl ResponseBuilder {
     pub fn finish(mut self) -> Result<Response> {
         let body = match self.body.take() {
             Some(body) => body?,
-            None => AnyBody::new(),
+            None => ResponseBody::new(),
         };
 
         Ok(self.inner.body(body)?.into())
@@ -96,16 +96,16 @@ impl ResponseBuilder {
     where
         Buffered: From<T>,
     {
-        let body = Buffered::from(body);
-        let len = body.len();
+        let buffered = Buffered::from(body);
+        let len = buffered.len();
 
         Self {
-            body: Some(Ok(AnyBody::Inline(body))),
+            body: Some(Ok(ResponseBody::from(buffered))),
             inner: Builder::new().header(CONTENT_LENGTH, len),
         }
     }
 
-    pub(crate) fn with_body(body: Result<AnyBody<Buffered>>) -> Self {
+    pub(crate) fn with_body(body: Result<ResponseBody>) -> Self {
         Self {
             body: Some(body),
             inner: Builder::new(),

@@ -1,5 +1,4 @@
 use super::{Response, ResponseBuilder};
-use crate::body::{AnyBody, Buffered};
 use crate::{Error, Result};
 
 pub trait IntoResponse {
@@ -45,15 +44,6 @@ impl IntoResponse for Response {
 impl IntoResponse for ResponseBuilder {
     fn into_response(self) -> Result<Response> {
         self.finish()
-    }
-}
-
-impl<B> IntoResponse for http::Response<B>
-where
-    AnyBody<Buffered>: From<B>,
-{
-    fn into_response(self) -> Result<Response> {
-        Ok(self.map(|body| body.into()).into())
     }
 }
 
