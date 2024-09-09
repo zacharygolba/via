@@ -6,8 +6,8 @@ use http_body::Frame;
 use hyper::body::Body;
 use serde::Serialize;
 
-use super::{ResponseBody, ResponseBuilder};
-use crate::body::{AnyBody, Boxed, Buffered, StreamAdapter};
+use super::{ResponseBody, ResponseBuilder, StreamAdapter};
+use crate::body::{AnyBody, Boxed, Buffered};
 use crate::{Error, Result};
 
 pub struct Response {
