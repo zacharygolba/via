@@ -29,18 +29,19 @@ struct RequestData<State> {
 
 impl<State> Request<State> {
     /// Consumes the request returning a new request with body mapped to the
-    /// return type of the passed in function.
-    pub fn map<F, B>(self, f: F) -> Self
+    /// return type of the provided closure `map`.
+    pub fn map<F, B, E>(self, map: F) -> Self
     where
         F: FnOnce(AnyBody<Incoming>) -> B,
-        B: Body<Data = Bytes, Error = Error> + Send + 'static,
+        B: Body<Data = Bytes, Error = E> + Send + 'static,
+        Error: From<E>,
     {
         let inner = *self.inner;
-        let output = f(inner.body);
+        let output = map(inner.body);
 
         Self {
             inner: Box::new(RequestData {
-                body: AnyBody::Boxed(Boxed::new(Box::new(output))),
+                body: AnyBody::Boxed(Boxed::new(output)),
                 ..inner
             }),
         }
