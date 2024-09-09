@@ -6,35 +6,10 @@ use std::task::{Context, Poll};
 use crate::body::stream::BodyDataStream;
 use crate::{Error, Result};
 
-/// The maximum amount of bytes that can be reserved during an allocation.
-const MAX_ALLOC_SIZE: usize = isize::MAX as usize;
-
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct ReadIntoBytes {
     buffer: Vec<u8>,
     stream: BodyDataStream,
-}
-
-/// Conditionally reserves `additional` capacity for `bytes` if the current
-/// capacity is less than additional. Returns an error if `capacity + additional`
-/// would overflow `isize`.
-fn try_reserve(bytes: &mut Vec<u8>, additional: usize) -> Result<()> {
-    let capacity = bytes.capacity();
-
-    if capacity >= additional {
-        // The buffer has enough capacity. Return without reallocating.
-        return Ok(());
-    }
-
-    match capacity.checked_add(additional) {
-        Some(total) if total <= MAX_ALLOC_SIZE => {
-            bytes.reserve(additional);
-            Ok(())
-        }
-        _ => Err(Error::new(
-            "failed to reserve enough capacity for the next frame.".to_owned(),
-        )),
-    }
 }
 
 impl ReadIntoBytes {
@@ -61,12 +36,12 @@ impl Future for ReadIntoBytes {
                     // Attempt to reserve enough capacity for the frame in the
                     // buffer if the current capacity is less than the frame
                     // length.
-                    if let Err(error) = try_reserve(buffer, len) {
+                    if let Err(error) = buffer.try_reserve(len) {
                         // Set the buffer's length to zero.
                         buffer.clear();
 
                         // Return ready with the error.
-                        Poll::Ready(Err(error))
+                        Poll::Ready(Err(error.into()))
                     } else {
                         // Write the frame into the buffer.
                         buffer.extend_from_slice(&frame);
