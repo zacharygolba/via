@@ -33,7 +33,7 @@ where
 
     // Spawn a task to wait for a "Ctrl-C" signal to be sent to the process.
     let shutdown_task = task::spawn(async move {
-        if let Err(_) = tokio::signal::ctrl_c().await {
+        if tokio::signal::ctrl_c().await.is_err() {
             if cfg!(debug_assertions) {
                 eprintln!("unable to register the 'Ctrl-C' signal.");
             }
