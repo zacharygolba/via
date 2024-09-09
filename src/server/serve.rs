@@ -125,7 +125,7 @@ where
 
             // Otherwise, wait for a "Ctrl-C" notification to be sent to the
             // process.
-            _ = ctrl_c.as_mut() => {
+            _ = &mut ctrl_c => {
                 // Notify inflight connections to initiate a graceful shutdown.
                 shutdown_tx.send(true)?;
 
