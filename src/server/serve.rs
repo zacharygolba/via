@@ -151,14 +151,14 @@ where
         }
     }
 
-    let start_time = Instant::now();
+    let shutdown_started_at = Instant::now();
 
     tokio::select! {
         // Wait for all inflight connection to finish. If all connections close
         // before the graceful shutdown timeout, return without an error. For
         // unix-based systems, this translates to a 0 exit code.
         _ = shutdown(connections) => {
-            let elapsed_as_seconds = start_time.elapsed().as_secs();
+            let elapsed_as_seconds = shutdown_started_at.elapsed().as_secs();
             let timeout_as_seconds = shutdown_timeout.as_secs();
             let remaining_timeout = timeout_as_seconds
                 .checked_sub(elapsed_as_seconds)
