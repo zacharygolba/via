@@ -10,21 +10,23 @@ use crate::body::{AnyBody, Boxed};
 use crate::Error;
 
 pub struct Request<State = ()> {
-    inner: Box<RequestData<State>>,
+    /// The request's body.
+    body: AnyBody<Box<Incoming>>,
+
+    /// The component parts and metadata associated with the request.
+    meta: Box<RequestMeta>,
+
+    /// The shared application state passed to the [`via::app`](crate::app::app)
+    /// function.
+    state: Arc<State>,
 }
 
-struct RequestData<State> {
+struct RequestMeta {
     /// The component parts of the underlying HTTP request.
     parts: Parts,
 
-    /// The shared application state associated with the request.
-    state: Arc<State>,
-
     /// The request's path and query parameters.
     params: PathParams,
-
-    /// The request's body.
-    body: AnyBody<Incoming>,
 }
 
 impl<State> Request<State> {
@@ -36,26 +38,27 @@ impl<State> Request<State> {
         B: Body<Data = Bytes, Error = E> + Send + 'static,
         Error: From<E>,
     {
-        let inner = *self.inner;
-        let output = map(inner.body);
+        let output = map(match self.body {
+            AnyBody::Boxed(body) => AnyBody::Boxed(body),
+            AnyBody::Inline(body) => AnyBody::Inline(*body),
+        });
 
         Self {
-            inner: Box::new(RequestData {
-                body: AnyBody::Boxed(Boxed::new(output)),
-                ..inner
-            }),
+            meta: self.meta,
+            body: Boxed::new(output).into(),
+            state: self.state,
         }
     }
 
     /// Returns a reference to a map that contains the headers associated with
     /// the request.
     pub fn headers(&self) -> &HeaderMap {
-        &self.inner.parts.headers
+        &self.meta.parts.headers
     }
 
     /// Returns a reference to the HTTP method associated with the request.
     pub fn method(&self) -> &Method {
-        &self.inner.parts.method
+        &self.meta.parts.method
     }
 
     /// Returns a convenient wrapper around an optional reference to the path
@@ -76,11 +79,11 @@ impl<State> Request<State> {
     /// ```
     pub fn param<'a>(&self, name: &'a str) -> Param<'_, 'a> {
         // Get the path of the request's uri.
-        let path = self.inner.parts.uri.path();
+        let path = self.meta.parts.uri.path();
         // Get an `Option<(usize, usize)>` that represents the start and end
         // offset of the path parameter with the provided `name` in the request's
         // uri.
-        let at = self.inner.params.get(name);
+        let at = self.meta.params.get(name);
 
         Param::new(Some(at), name, path)
     }
@@ -110,7 +113,7 @@ impl<State> Request<State> {
     /// }
     /// ```
     pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
-        let query = self.inner.parts.uri.query().unwrap_or("");
+        let query = self.meta.parts.uri.query().unwrap_or("");
 
         QueryParam::new(name, query)
     }
@@ -119,34 +122,35 @@ impl<State> Request<State> {
     /// state that was passed as an argument to the [`via::app`](crate::app::app)
     /// function.
     pub fn state(&self) -> &Arc<State> {
-        &self.inner.state
+        &self.state
     }
 
     /// Returns a reference to the uri associated with the request.
     pub fn uri(&self) -> &Uri {
-        &self.inner.parts.uri
+        &self.meta.parts.uri
     }
 
     /// Returns the HTTP version associated with the request.
     pub fn version(&self) -> Version {
-        self.inner.parts.version
+        self.meta.parts.version
     }
 
     /// Consumes the request and returns the body.
-    pub fn into_body(self) -> AnyBody<Incoming> {
-        self.inner.body
+    pub fn into_body(self) -> AnyBody<Box<Incoming>> {
+        self.body
     }
 
     /// Unwraps `self` into the Request type from the `http` crate.
-    pub fn into_inner(self) -> http::Request<AnyBody<Incoming>> {
+    pub fn into_inner(self) -> http::Request<AnyBody<Box<Incoming>>> {
         let (parts, body) = self.into_parts();
         http::Request::from_parts(parts, body)
     }
 
     /// Consumes the request and returns a tuple containing the component
     /// parts of the request and the request body.
-    pub fn into_parts(self) -> (Parts, AnyBody<Incoming>) {
-        (self.inner.parts, self.inner.body)
+    pub fn into_parts(self) -> (Parts, AnyBody<Box<Incoming>>) {
+        let meta = *self.meta;
+        (meta.parts, self.body)
     }
 }
 
@@ -158,19 +162,12 @@ impl<State> Request<State> {
     ) -> Self {
         // Destructure the `http::Request` into its component parts.
         let (parts, body) = request.into_parts();
-        // Check if the request has a `Content-Length` header. If it does, wrap
-        // the request body in a `RequestBody` with a known length. Otherwise,
-        // wrap the request body in a `RequestBody` with an unknown length.
-        let body = AnyBody::Inline(body);
+        // Box the request body and wrap it with `AnyBody`.
+        let body = AnyBody::Inline(Box::new(body));
+        // Wrap the component parts and path parameters in a boxed `RequestMeta`.
+        let meta = Box::new(RequestMeta { parts, params });
 
-        Self {
-            inner: Box::new(RequestData {
-                state,
-                params,
-                parts,
-                body,
-            }),
-        }
+        Self { meta, body, state }
     }
 }
 
@@ -179,7 +176,7 @@ impl<State> Debug for Request<State> {
         f.debug_struct("Request")
             .field("method", self.method())
             .field("uri", self.uri())
-            .field("params", &self.inner.params)
+            .field("params", &self.meta.params)
             .field("version", &self.version())
             .field("headers", self.headers())
             // .field("body", &self.data.body)
