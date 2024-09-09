@@ -2,7 +2,7 @@ use hyper::server::conn::http1;
 use hyper_util::rt::TokioTimer;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinSet;
@@ -151,12 +151,17 @@ where
         }
     }
 
+    let start_time = Instant::now();
+
     tokio::select! {
         // Wait for all inflight connection to finish. If all connections close
         // before the graceful shutdown timeout, return without an error. For
         // unix-based systems, this translates to a 0 exit code.
         _ = shutdown(connections) => {
-            shutdown_task.await?;
+            let remaining = shutdown_timeout - start_time.elapsed();
+            let remaining = remaining.max(Duration::from_secs(10));
+
+            time::timeout(remaining, shutdown_task).await??;
             Ok(())
         }
 
