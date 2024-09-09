@@ -158,10 +158,16 @@ where
         // before the graceful shutdown timeout, return without an error. For
         // unix-based systems, this translates to a 0 exit code.
         _ = shutdown(connections) => {
-            let remaining = shutdown_timeout - start_time.elapsed();
-            let remaining = remaining.max(Duration::from_secs(10));
+            let elapsed_as_seconds = start_time.elapsed().as_secs();
+            let timeout_as_seconds = shutdown_timeout.as_secs();
+            let remaining_timeout = timeout_as_seconds
+                .checked_sub(elapsed_as_seconds)
+                .map_or(Duration::from_secs(10), Duration::from_secs);
 
-            time::timeout(remaining, shutdown_task).await??;
+            // Wait for the shutdown task to complete before exiting the server.
+            time::timeout(remaining_timeout, shutdown_task).await??;
+
+            // The shutdown_task completed within the timeout.
             Ok(())
         }
 
