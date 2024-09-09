@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinSet;
-use tokio::time;
+use tokio::{task, time};
 
 use super::io_stream::IoStream;
 use super::service::Service;
@@ -27,14 +27,23 @@ where
     // for all connections to close before the server exits.
     let mut connections = JoinSet::new();
 
-    // Get a Future that resolves when a "Ctrl-C" notification is sent to the
-    // process. This is used to initiate a graceful shutdown process for
-    // inflight connections.
-    let mut ctrl_c = Box::pin(tokio::signal::ctrl_c());
-
     // Create a watch channel to notify the connections to initiate a graceful
     // shutdown when the `ctrl_c` future resolves.
-    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+
+    // Spawn a task to wait for a "Ctrl-C" signal to be sent to the process.
+    let shutdown_task = task::spawn(async move {
+        if let Err(_) = tokio::signal::ctrl_c().await {
+            if cfg!(debug_assertions) {
+                eprintln!("unable to register the 'Ctrl-C' signal.");
+            }
+
+            return;
+        }
+
+        // Notify the connections to initiate a graceful shutdown process.
+        let _ = shutdown_tx.send(true);
+    });
 
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
@@ -119,10 +128,7 @@ where
 
             // Otherwise, wait for a "Ctrl-C" notification to be sent to the
             // process.
-            _ = ctrl_c.as_mut() => {
-                // Notify inflight connections to initiate a graceful shutdown.
-                shutdown_tx.send(true)?;
-
+            _ = shutdown_rx.changed() => {
                 // Break out of the loop to stop accepting new connections.
                 break;
             }
@@ -149,7 +155,10 @@ where
         // Wait for all inflight connection to finish. If all connections close
         // before the graceful shutdown timeout, return without an error. For
         // unix-based systems, this translates to a 0 exit code.
-        _ = shutdown(connections) => Ok(()),
+        _ = shutdown(connections) => {
+            shutdown_task.await?;
+            Ok(())
+        }
 
         // Otherwise, return an error if we're unable to close all connections
         // before the graceful shutdown timeout, return an error. For unix-based
