@@ -6,11 +6,13 @@ use std::task::{Context, Poll};
 use crate::body::{AnyBody, Boxed, Buffered, Pinned};
 use crate::Error;
 
+#[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub struct ResponseBody {
     body: PinRequirement,
 }
 
+#[derive(Debug)]
 enum PinRequirement {
     Unpin(AnyBody<Buffered>),
     Pin(Pinned),

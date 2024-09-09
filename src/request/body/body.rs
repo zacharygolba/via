@@ -6,6 +6,7 @@ use super::{BodyStream, ReadIntoBytes, ReadIntoString};
 use crate::body::AnyBody;
 use crate::Error;
 
+#[derive(Debug)]
 pub struct RequestBody {
     body: AnyBody<Box<Incoming>>,
 }

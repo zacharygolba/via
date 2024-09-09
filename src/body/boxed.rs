@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
+use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -42,6 +43,12 @@ impl Body for Boxed {
 
     fn size_hint(&self) -> SizeHint {
         self.body.size_hint()
+    }
+}
+
+impl Debug for Boxed {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Boxed").finish()
     }
 }
 
