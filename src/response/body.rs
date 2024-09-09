@@ -3,7 +3,7 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::body::{AnyBody, Boxed, Buffered, Pinned};
+use crate::body::{AnyBody, Boxed, Buffer, Pinned};
 use crate::Error;
 
 #[derive(Debug)]
@@ -14,14 +14,14 @@ pub struct ResponseBody {
 
 #[derive(Debug)]
 enum PinRequirement {
-    Unpin(AnyBody<Buffered>),
+    Unpin(AnyBody<Buffer>),
     Pin(Pinned),
 }
 
 enum ResponseBodyProjection<'a> {
     Boxed(Pin<&'a mut Boxed>),
     Pinned(Pin<&'a mut Pinned>),
-    Buffered(Pin<&'a mut Buffered>),
+    Buffer(Pin<&'a mut Buffer>),
 }
 
 impl ResponseBody {
@@ -34,7 +34,7 @@ impl ResponseBody {
 }
 
 impl ResponseBody {
-    pub(crate) fn try_into_unpin(self) -> Result<AnyBody<Buffered>, Error> {
+    pub(crate) fn try_into_unpin(self) -> Result<AnyBody<Buffer>, Error> {
         match self.body {
             PinRequirement::Unpin(body) => Ok(body),
             PinRequirement::Pin(_) => Err(Error::new(
@@ -63,8 +63,8 @@ impl ResponseBody {
                 ResponseBodyProjection::Boxed(Pin::new(ptr))
             }
             PinRequirement::Unpin(AnyBody::Inline(ptr)) => {
-                // Buffered is Unpin so we can project it with using unsafe.
-                ResponseBodyProjection::Buffered(Pin::new(ptr))
+                // Buffer is Unpin so we can project it with using unsafe.
+                ResponseBodyProjection::Buffer(Pin::new(ptr))
             }
             PinRequirement::Pin(ptr) => {
                 let pin = unsafe {
@@ -95,7 +95,7 @@ impl Body for ResponseBody {
         match self.project() {
             ResponseBodyProjection::Boxed(boxed) => boxed.poll_frame(context),
             ResponseBodyProjection::Pinned(pinned) => pinned.poll_frame(context),
-            ResponseBodyProjection::Buffered(buffered) => buffered.poll_frame(context),
+            ResponseBodyProjection::Buffer(buffered) => buffered.poll_frame(context),
         }
     }
 
@@ -138,10 +138,10 @@ impl From<Pinned> for ResponseBody {
 
 impl<T> From<T> for ResponseBody
 where
-    Buffered: From<T>,
+    Buffer: From<T>,
 {
     fn from(value: T) -> Self {
-        let buffered = Buffered::from(value);
+        let buffered = Buffer::from(value);
 
         Self {
             body: PinRequirement::Unpin(AnyBody::Inline(buffered)),
