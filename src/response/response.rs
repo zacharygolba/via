@@ -2,19 +2,20 @@ use bytes::Bytes;
 use futures_core::Stream;
 use http::header::{HeaderMap, CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::{StatusCode, Version};
+use http_body::Frame;
 use hyper::body::Body;
 use serde::Serialize;
 
-use super::ResponseBuilder;
-use crate::body::{AnyBody, Boxed, Buffered, Frame, StreamAdapter};
+use super::{ResponseBody, ResponseBuilder};
+use crate::body::{AnyBody, Boxed, Buffered, Either, StreamAdapter};
 use crate::{Error, Result};
 
 pub struct Response {
-    inner: http::Response<AnyBody<Buffered>>,
+    inner: http::Response<ResponseBody>,
 }
 
 impl Response {
-    pub fn new(body: AnyBody<Buffered>) -> Self {
+    pub fn new(body: ResponseBody) -> Self {
         Self {
             inner: http::Response::new(body),
         }
@@ -54,39 +55,64 @@ impl Response {
     /// Build a response from a stream of `Result<Frame<Bytes>, Error>`.
     ///
     /// If you want to use a stream that is `!Unpin`, you can use the [`Boxed`]
-    /// body in combination with a [`ResponseBuilder`].
+    /// body in combination with a [`ResponseBuilder`]. However, you must ensure
     ///
     pub fn stream<S, E>(stream: S) -> ResponseBuilder
     where
         S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
-        E: Into<Error>,
+        Error: From<E>,
     {
-        let body = Boxed::new(Box::new(StreamAdapter::new(stream)));
-        let builder = ResponseBuilder::with_body(Ok(AnyBody::Boxed(body)));
+        let body = Boxed::new(StreamAdapter::new(stream));
+        let builder = ResponseBuilder::with_body(Ok(body.into()));
 
         builder.header(TRANSFER_ENCODING, "chunked")
     }
 
     /// Consumes the response returning a new response with body mapped to the
     /// return type of the provided closure `map`.
-    pub fn map<F, B, E>(self, map: F) -> Self
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the response body was created with `Pinned`.
+    ///
+    /// If you need to map an `!Unpin` response body, you must implement the
+    /// map logic yourself and pass the result to `Pinned::new_unchecked`.
+    ///
+    pub fn map<F, B, E>(self, map: F) -> Result<Self, Error>
     where
         F: FnOnce(AnyBody<Buffered>) -> B,
-        B: Body<Data = Bytes, Error = E> + Send + 'static,
+        B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
         Error: From<E>,
     {
-        let inner = self.inner.map(|input| {
-            let output = map(input);
-            let body = Boxed::new(output);
+        let (parts, body) = self.inner.into_parts();
+        let output = match body.into_inner() {
+            Either::Left(any) => map(any),
+            Either::Right(_) => {
+                if cfg!(debug_assertions) {
+                    //
+                    // TODO:
+                    //
+                    // Replace this with tracing.
+                    //
+                    eprintln!("mapping a pinned response body is not supported");
+                }
 
-            AnyBody::Boxed(body)
-        });
+                return Err(Error::new("Internal Server Error".to_string()));
+            }
+        };
+        let body = ResponseBody::from(Boxed::new(output));
 
-        Self { inner }
+        Ok(Self {
+            inner: http::Response::from_parts(parts, body),
+        })
     }
 
-    pub fn body(&self) -> &AnyBody<Buffered> {
+    pub fn body(&self) -> &ResponseBody {
         self.inner.body()
+    }
+
+    pub fn body_mut(&mut self) -> &mut ResponseBody {
+        self.inner.body_mut()
     }
 
     pub fn headers(&self) -> &HeaderMap {
@@ -116,13 +142,13 @@ impl Default for Response {
     }
 }
 
-impl From<http::Response<AnyBody<Buffered>>> for Response {
-    fn from(inner: http::Response<AnyBody<Buffered>>) -> Self {
+impl From<http::Response<ResponseBody>> for Response {
+    fn from(inner: http::Response<ResponseBody>) -> Self {
         Self { inner }
     }
 }
 
-impl From<Response> for http::Response<AnyBody<Buffered>> {
+impl From<Response> for http::Response<ResponseBody> {
     fn from(response: Response) -> Self {
         response.inner
     }

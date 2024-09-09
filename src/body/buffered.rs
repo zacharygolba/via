@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use hyper::body::{Body, Frame, SizeHint};
+use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
