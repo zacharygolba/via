@@ -5,6 +5,7 @@ use http::{StatusCode, Version};
 use http_body::Frame;
 use hyper::body::Body;
 use serde::Serialize;
+use std::fmt::{self, Debug, Formatter};
 
 use super::{ResponseBody, ResponseBuilder, StreamAdapter};
 use crate::body::{AnyBody, Boxed, Buffered};
@@ -139,6 +140,12 @@ impl Response {
 impl Default for Response {
     fn default() -> Self {
         Self::new(Default::default())
+    }
+}
+
+impl Debug for Response {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Debug::fmt(&self.inner, f)
     }
 }
 
