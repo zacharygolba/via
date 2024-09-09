@@ -21,7 +21,7 @@ impl Pinned {
     /// This method is marked as unsafe because the caller must ensure that the
     /// provided body is `!Unpin` and properly remains pinned in memory while the
     /// body is polled.
-    pub unsafe fn new_unchecked<B>(body: Box<B>) -> Self
+    pub fn new<B>(body: Box<B>) -> Self
     where
         B: Body<Data = Bytes, Error = Error> + Send + 'static,
     {
