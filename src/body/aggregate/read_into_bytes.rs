@@ -1,4 +1,3 @@
-use bytes::{Bytes, BytesMut};
 use futures_core::Stream;
 use std::future::Future;
 use std::pin::Pin;
@@ -12,14 +11,14 @@ const MAX_ALLOC_SIZE: usize = isize::MAX as usize;
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct ReadIntoBytes {
-    buffer: BytesMut,
+    buffer: Vec<u8>,
     stream: BodyDataStream,
 }
 
 /// Conditionally reserves `additional` capacity for `bytes` if the current
 /// capacity is less than additional. Returns an error if `capacity + additional`
 /// would overflow `isize`.
-fn try_reserve(bytes: &mut BytesMut, additional: usize) -> Result<()> {
+fn try_reserve(bytes: &mut Vec<u8>, additional: usize) -> Result<()> {
     let capacity = bytes.capacity();
 
     if capacity >= additional {
@@ -39,13 +38,13 @@ fn try_reserve(bytes: &mut BytesMut, additional: usize) -> Result<()> {
 }
 
 impl ReadIntoBytes {
-    pub(crate) fn new(buffer: BytesMut, stream: BodyDataStream) -> Self {
+    pub(crate) fn new(buffer: Vec<u8>, stream: BodyDataStream) -> Self {
         Self { buffer, stream }
     }
 }
 
 impl Future for ReadIntoBytes {
-    type Output = Result<Bytes>;
+    type Output = Result<Vec<u8>, Error>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -63,9 +62,6 @@ impl Future for ReadIntoBytes {
                     // buffer if the current capacity is less than the frame
                     // length.
                     if let Err(error) = try_reserve(buffer, len) {
-                        // Zero out the buffer.
-                        buffer.fill(0);
-
                         // Set the buffer's length to zero.
                         buffer.clear();
 
@@ -80,9 +76,6 @@ impl Future for ReadIntoBytes {
                     }
                 }
                 Poll::Ready(Some(Err(error))) => {
-                    // Zero out the buffer.
-                    buffer.fill(0);
-
                     // Set the buffer's length to zero.
                     buffer.clear();
 
@@ -90,12 +83,8 @@ impl Future for ReadIntoBytes {
                     Poll::Ready(Err(error))
                 }
                 Poll::Ready(None) => {
-                    // Get the number of bytes to read from the buffer.
-                    let len = buffer.len();
-                    // Read `len` bytes from `buffer` into an immutable `Bytes`.
-                    let bytes = buffer.split_to(len).freeze();
+                    let bytes = buffer.split_off(0);
 
-                    // Return the immutable, contents of buffer.
                     Poll::Ready(Ok(bytes))
                 }
                 Poll::Pending => {
