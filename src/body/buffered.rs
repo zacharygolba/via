@@ -1,6 +1,5 @@
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use hyper::body::{Body, Frame, SizeHint};
-use std::marker::PhantomPinned;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -14,17 +13,13 @@ const MAX_FRAME_LEN: usize = 16384; // 16KB
 #[must_use = "streams do nothing unless polled"]
 pub struct Buffered {
     /// The buffer containing the body data.
-    data: Box<BytesMut>,
-
-    /// A marker indicating that the type is pinned to prevent moving the buffer.
-    _pin: PhantomPinned,
+    data: Box<Bytes>,
 }
 
 impl Buffered {
-    pub fn new(data: BytesMut) -> Self {
+    pub fn new(data: Bytes) -> Self {
         Self {
             data: Box::new(data),
-            _pin: PhantomPinned,
         }
     }
 
@@ -37,31 +32,6 @@ impl Buffered {
     }
 }
 
-impl Buffered {
-    /// Returns a pinned mutable reference to the `buffer` field.
-    fn project(self: Pin<&mut Self>) -> Pin<&mut BytesMut> {
-        unsafe {
-            //
-            // Safety:
-            //
-            // Data is never moved out of self or the buffer stored at `self.data`.
-            // We use `BytesMut::split_to` in combination with `BytesMut::freeze`
-            // to ensure that data is copied out of the buffer and the cursor is
-            // advanced to the offset of the next frame.
-            //
-
-            // Get a mutable reference to `self`.
-            let this = self.get_unchecked_mut();
-
-            // Get a mutable reference to the buffer at `self.data`.
-            let ptr = &mut *this.data;
-
-            // Return a pinned mutable reference to the buffer at `self.data`.
-            Pin::new_unchecked(ptr)
-        }
-    }
-}
-
 impl Body for Buffered {
     type Data = Bytes;
     type Error = Error;
@@ -70,8 +40,10 @@ impl Body for Buffered {
         self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        // Get a pinned mutable reference to `self.data`.
-        let mut buffer = self.project();
+        // Get a mutable reference to `self`.
+        let this = self.get_mut();
+        // Get a mutable reference to `self.data`.
+        let buffer = &mut *this.data;
         // Get the number of bytes to read from `buffer` for the current frame.
         // We read a maximum of 16KB per frame from `buffer`.
         let frame_len = buffer.len().min(MAX_FRAME_LEN);
@@ -85,7 +57,7 @@ impl Body for Buffered {
         // Copy the bytes from the buffer into an immutable `Bytes`. This is safe
         // because `BytesMut` is only advancing an internal pointer rather than
         // moving the bytes in memory.
-        let data = buffer.split_to(frame_len).freeze();
+        let data = buffer.split_to(frame_len);
         // Wrap the bytes we copied from buffer in a data frame.
         let frame = Frame::data(data);
 
@@ -110,41 +82,38 @@ impl Body for Buffered {
 
 impl Default for Buffered {
     fn default() -> Self {
-        Self::new(BytesMut::new())
+        Self::new(Bytes::new())
     }
 }
 
 impl From<Bytes> for Buffered {
     fn from(bytes: Bytes) -> Self {
-        let data = Bytes::copy_from_slice(&bytes);
-        Self::new(BytesMut::from(data))
+        Self::new(Bytes::copy_from_slice(&bytes))
     }
 }
 
 impl From<Vec<u8>> for Buffered {
     fn from(vec: Vec<u8>) -> Self {
-        let data = Bytes::from(vec);
-        Self::new(BytesMut::from(data))
+        Self::new(Bytes::from(vec))
     }
 }
 
 impl From<&'static [u8]> for Buffered {
     fn from(slice: &'static [u8]) -> Self {
-        let data = Bytes::from_static(slice);
-        Self::new(BytesMut::from(data))
+        Self::new(Bytes::from_static(slice))
     }
 }
 
 impl From<String> for Buffered {
     fn from(string: String) -> Self {
-        let data = Bytes::from(string.into_bytes());
-        Self::new(BytesMut::from(data))
+        let vec = string.into_bytes();
+        Self::new(Bytes::from(vec))
     }
 }
 
 impl From<&'static str> for Buffered {
     fn from(slice: &'static str) -> Self {
-        let data = Bytes::from_static(slice.as_bytes());
-        Self::new(BytesMut::from(data))
+        let slice = slice.as_bytes();
+        Self::new(Bytes::from_static(slice))
     }
 }
