@@ -67,14 +67,17 @@ impl Response {
         builder.header(TRANSFER_ENCODING, "chunked")
     }
 
-    pub fn map<F, B>(self, f: F) -> Self
+    /// Consumes the response returning a new response with body mapped to the
+    /// return type of the provided closure `map`.
+    pub fn map<F, B, E>(self, map: F) -> Self
     where
         F: FnOnce(AnyBody<Buffered>) -> B,
-        B: Body<Data = Bytes, Error = Error> + Send + 'static,
+        B: Body<Data = Bytes, Error = E> + Send + 'static,
+        Error: From<E>,
     {
         let inner = self.inner.map(|input| {
-            let output = f(input);
-            let body = Boxed::new(Box::new(output));
+            let output = map(input);
+            let body = Boxed::new(output);
 
             AnyBody::Boxed(body)
         });
