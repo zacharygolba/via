@@ -54,9 +54,9 @@ impl Body for Buffered {
             return Poll::Ready(None);
         }
 
-        // Copy the bytes from the buffer into an immutable `Bytes`. This is safe
-        // because `BytesMut` is only advancing an internal pointer rather than
-        // moving the bytes in memory.
+        // Split the buffer at the frame length. This will give us an owned
+        // view of the frame at 0..frame_len and advance the buffer to the
+        // offset of the next frame.
         let data = buffer.split_to(frame_len);
         // Wrap the bytes we copied from buffer in a data frame.
         let frame = Frame::data(data);
