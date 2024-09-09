@@ -109,12 +109,14 @@ where
                         // the server will shutdown and initiate a graceful
                         // shutdown process for the connection.
                         _ = shutdown_rx.changed() => {
+                            let mut connection = Pin::new(&mut connection);
+
                             // Initiate the graceful shutdown process for the
                             // connection.
-                            Pin::new(&mut connection).graceful_shutdown();
+                            connection.as_mut().graceful_shutdown();
 
                             // Wait for the connection to close.
-                            Pin::new(&mut connection).await
+                            connection.await
                         }
                     };
 
