@@ -6,7 +6,7 @@ use std::task::Poll;
 use super::{Boxed, Buffered};
 use crate::Error;
 
-/// A sum type that can represent any [Request](crate::Request) or
+/// A sum type that can represent any `Unpin` [Request](crate::Request) or
 /// [Response](crate::Response) body.
 #[non_exhaustive]
 #[must_use = "streams do nothing unless polled"]
