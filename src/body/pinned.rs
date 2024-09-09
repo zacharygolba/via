@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
+use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomPinned;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -65,5 +66,11 @@ impl Body for Pinned {
 
     fn size_hint(&self) -> SizeHint {
         self.body.size_hint()
+    }
+}
+
+impl Debug for Pinned {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Pinned").finish()
     }
 }

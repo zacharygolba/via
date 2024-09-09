@@ -180,7 +180,7 @@ impl<State> Debug for Request<State> {
             .field("params", &self.meta.params)
             .field("version", &self.version())
             .field("headers", self.headers())
-            // .field("body", &self.data.body)
+            .field("body", &self.body)
             .finish()
     }
 }
