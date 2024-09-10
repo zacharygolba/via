@@ -7,14 +7,14 @@ use std::task::{Context, Poll};
 
 use crate::Error;
 
-/// A struct that wraps a `dyn` Body + Send + Unpin.
+/// A struct that wraps a `dyn Body + Send + Unpin`.
 #[must_use = "streams do nothing unless polled"]
 pub struct NotUnpinBoxBody {
     body: Box<dyn Body<Data = Bytes, Error = Error> + Send>,
     _pin: PhantomPinned,
 }
 
-/// A struct that wraps a `dyn` Body + Send + Unpin.
+/// A struct that wraps a `dyn Body + Send + Unpin`.
 #[must_use = "streams do nothing unless polled"]
 pub struct UnpinBoxBody {
     body: Pin<Box<dyn Body<Data = Bytes, Error = Error> + Send + Unpin>>,
