@@ -89,7 +89,7 @@ impl ResponseBody {
 
         match &mut this.body {
             PinRequirement::Unpin(ptr) => {
-                // The body field is Unpin. Therfore, we can project it with
+                // The body field is Unpin. Therefore, we can project it with
                 // Pin::new without any unsafe blocks.
                 BodyProjection::Unpin(Pin::new(ptr))
             }
