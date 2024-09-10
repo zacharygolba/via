@@ -9,7 +9,6 @@ use serde::Serialize;
 use super::stream_adapter::StreamAdapter;
 use super::{Response, ResponseBody};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
-use crate::body::UnpinBoxBody;
 use crate::{Error, Result};
 
 pub struct ResponseBuilder {
@@ -95,12 +94,12 @@ impl ResponseBuilder {
         Error: From<E>,
     {
         let mut builder = self.inner;
-        let stream_body = UnpinBoxBody::new(StreamAdapter::new(stream));
+        let stream_body = StreamAdapter::new(stream);
 
         builder = builder.header(TRANSFER_ENCODING, CHUNKED_ENCODING);
 
         Self {
-            body: Some(Ok(ResponseBody::from_boxed(stream_body))),
+            body: Some(Ok(ResponseBody::boxed(stream_body))),
             inner: builder,
         }
     }

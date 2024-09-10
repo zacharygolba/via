@@ -7,67 +7,18 @@ use std::task::{Context, Poll};
 
 use crate::Error;
 
-/// A struct that wraps a `dyn Body + Send + Unpin`.
+/// A struct that turns an `impl Body + Send + !Unpin` into a type erased body.
+///
+/// This struct should only be used with `!Unpin` bodies.
+///
 #[must_use = "streams do nothing unless polled"]
 pub struct NotUnpinBoxBody {
     body: Box<dyn Body<Data = Bytes, Error = Error> + Send>,
     _pin: PhantomPinned,
 }
 
-/// A struct that wraps a `dyn Body + Send + Unpin`.
-#[must_use = "streams do nothing unless polled"]
-pub struct UnpinBoxBody {
-    body: Pin<Box<dyn Body<Data = Bytes, Error = Error> + Send + Unpin>>,
-}
-
-/// Maps the error type of a body to [Error].
-///
-/// This struct can only be used with [UnpinBoxBody].
-///
-#[must_use = "streams do nothing unless polled"]
-struct MapError<B> {
-    body: B,
-}
-
-impl<B: Unpin> MapError<B> {
-    fn project(self: Pin<&mut Self>) -> Pin<&mut B> {
-        let this = self.get_mut();
-        let ptr = &mut this.body;
-
-        Pin::new(ptr)
-    }
-}
-
-impl<B, E> Body for MapError<B>
-where
-    B: Body<Data = Bytes, Error = E> + Send + Unpin,
-    Error: From<E>,
-{
-    type Data = Bytes;
-    type Error = Error;
-
-    fn poll_frame(
-        self: Pin<&mut Self>,
-        context: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        self.project()
-            .poll_frame(context)
-            .map_err(|error| error.into())
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.body.is_end_stream()
-    }
-
-    fn size_hint(&self) -> SizeHint {
-        self.body.size_hint()
-    }
-}
-
 impl NotUnpinBoxBody {
-    /// Creates a new body from a dyn Body + !Unpin body.
-    ///
-    /// If the body is Unpin, use [UnpinBoxBody] instead.
+    /// Creates a new body from a `dyn Body + Send + !Unpin`.
     ///
     pub fn new<B>(body: Box<B>) -> Self
     where
@@ -119,39 +70,5 @@ impl Body for NotUnpinBoxBody {
 impl Debug for NotUnpinBoxBody {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("NotUnpinBoxBody").finish()
-    }
-}
-
-impl UnpinBoxBody {
-    pub fn new<B, E>(body: B) -> Self
-    where
-        B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
-        Error: From<E>,
-    {
-        Self {
-            body: Box::pin(MapError { body }),
-        }
-    }
-}
-
-impl Body for UnpinBoxBody {
-    type Data = Bytes;
-    type Error = Error;
-
-    fn poll_frame(
-        mut self: Pin<&mut Self>,
-        context: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        Pin::as_mut(&mut self.body).poll_frame(context)
-    }
-
-    fn size_hint(&self) -> SizeHint {
-        self.body.size_hint()
-    }
-}
-
-impl Debug for UnpinBoxBody {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("UnpinBoxBody").finish()
     }
 }
