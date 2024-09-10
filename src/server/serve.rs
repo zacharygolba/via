@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinSet;
-use tokio::{task, time};
+use tokio::{signal, task, time};
 
 use super::io_stream::IoStream;
 use super::service::Service;
@@ -33,7 +33,7 @@ where
 
     // Spawn a task to wait for a "Ctrl-C" signal to be sent to the process.
     let shutdown_task = task::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_err() {
+        if signal::ctrl_c().await.is_err() {
             if cfg!(debug_assertions) {
                 eprintln!("unable to register the 'Ctrl-C' signal.");
             }
