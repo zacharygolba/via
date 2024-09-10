@@ -10,7 +10,7 @@ use std::fmt::{self, Debug, Formatter};
 
 use super::{ResponseBody, ResponseBuilder, StreamAdapter};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
-use crate::body::{AnyBody, BufferedBody, UnpinBoxBody};
+use crate::body::{AnyBody, BufferedBody};
 use crate::{Error, Result};
 
 pub struct Response {
@@ -68,8 +68,8 @@ impl Response {
         S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
         Error: From<E>,
     {
-        let stream_body = UnpinBoxBody::new(StreamAdapter::new(stream));
-        let mut response = Self::new(ResponseBody::from_boxed(stream_body));
+        let stream_body = StreamAdapter::new(stream);
+        let mut response = Self::new(ResponseBody::boxed(stream_body));
 
         response.set_header(TRANSFER_ENCODING, CHUNKED_ENCODING);
         response
@@ -108,7 +108,7 @@ impl Response {
     ///
     pub fn map<F, B, E>(self, map: F) -> Result<Self, Error>
     where
-        F: FnOnce(AnyBody<Box<BufferedBody>>) -> B,
+        F: FnOnce(AnyBody<BufferedBody>) -> B,
         B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
         Error: From<E>,
     {
@@ -128,7 +128,7 @@ impl Response {
                 return Err(Error::new("Internal Server Error".to_string()));
             }
         };
-        let body = ResponseBody::from_boxed(UnpinBoxBody::new(output));
+        let body = ResponseBody::boxed(output);
 
         Ok(Self::from_parts(parts, body))
     }

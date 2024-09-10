@@ -3,7 +3,7 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::body::{AnyBody, BufferedBody, NotUnpinBoxBody, UnpinBoxBody};
+use crate::body::{AnyBody, BufferedBody, NotUnpinBoxBody};
 use crate::Error;
 
 #[derive(Debug)]
@@ -12,23 +12,34 @@ pub struct ResponseBody {
     body: PinRequirement,
 }
 
-#[derive(Debug)]
-enum PinRequirement {
-    Unpin(AnyBody<Box<BufferedBody>>),
-    Pin(NotUnpinBoxBody),
+enum BodyProjection<'a> {
+    Unpin(Pin<&'a mut AnyBody<BufferedBody>>),
+    Pin(Pin<&'a mut NotUnpinBoxBody>),
 }
 
-enum ResponseBodyProjection<'a> {
-    Boxed(Pin<&'a mut UnpinBoxBody>),
-    Pinned(Pin<&'a mut NotUnpinBoxBody>),
-    Buffer(Pin<&'a mut Box<BufferedBody>>),
+#[derive(Debug)]
+enum PinRequirement {
+    Unpin(AnyBody<BufferedBody>),
+    Pin(NotUnpinBoxBody),
 }
 
 impl ResponseBody {
     /// Creates a new, empty response body.
     pub fn new() -> Self {
-        let buffer = Box::new(BufferedBody::new(Bytes::new()));
+        let buffer = BufferedBody::new(Bytes::new());
         let body = AnyBody::Inline(buffer);
+
+        Self {
+            body: PinRequirement::Unpin(body),
+        }
+    }
+
+    pub fn boxed<B, E>(body: B) -> Self
+    where
+        B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
+        Error: From<E>,
+    {
+        let body = AnyBody::boxed(body);
 
         Self {
             body: PinRequirement::Unpin(body),
@@ -37,14 +48,8 @@ impl ResponseBody {
 }
 
 impl ResponseBody {
-    pub(super) fn from_boxed(body: UnpinBoxBody) -> Self {
-        Self {
-            body: PinRequirement::Unpin(AnyBody::Boxed(body)),
-        }
-    }
-
     pub(super) fn from_string(string: String) -> Self {
-        let body = Box::new(BufferedBody::from(string));
+        let body = BufferedBody::from(string);
 
         Self {
             body: PinRequirement::Unpin(AnyBody::Inline(body)),
@@ -52,14 +57,14 @@ impl ResponseBody {
     }
 
     pub(super) fn from_vec(bytes: Vec<u8>) -> Self {
-        let body = Box::new(BufferedBody::from(bytes));
+        let body = BufferedBody::from(bytes);
 
         Self {
             body: PinRequirement::Unpin(AnyBody::Inline(body)),
         }
     }
 
-    pub(super) fn try_into_unpin(self) -> Result<AnyBody<Box<BufferedBody>>, Error> {
+    pub(super) fn try_into_unpin(self) -> Result<AnyBody<BufferedBody>, Error> {
         match self.body {
             PinRequirement::Unpin(body) => Ok(body),
             PinRequirement::Pin(_) => Err(Error::new(
@@ -70,7 +75,7 @@ impl ResponseBody {
 }
 
 impl ResponseBody {
-    fn project(self: Pin<&mut Self>) -> ResponseBodyProjection {
+    fn project(self: Pin<&mut Self>) -> BodyProjection {
         let this = unsafe {
             //
             // Safety:
@@ -83,13 +88,10 @@ impl ResponseBody {
         };
 
         match &mut this.body {
-            PinRequirement::Unpin(AnyBody::Boxed(ptr)) => {
-                // Boxed is Unpin so we can project it without using unsafe.
-                ResponseBodyProjection::Boxed(Pin::new(ptr))
-            }
-            PinRequirement::Unpin(AnyBody::Inline(ptr)) => {
-                // Buffered is Unpin so we can project it without using unsafe.
-                ResponseBodyProjection::Buffer(Pin::new(ptr))
+            PinRequirement::Unpin(ptr) => {
+                // The body field is Unpin. Therfore, we can project it with
+                // Pin::new without any unsafe blocks.
+                BodyProjection::Unpin(Pin::new(ptr))
             }
             PinRequirement::Pin(ptr) => {
                 let pin = unsafe {
@@ -103,7 +105,7 @@ impl ResponseBody {
                     Pin::new_unchecked(ptr)
                 };
 
-                ResponseBodyProjection::Pinned(pin)
+                BodyProjection::Pin(pin)
             }
         }
     }
@@ -118,23 +120,22 @@ impl Body for ResponseBody {
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.project() {
-            ResponseBodyProjection::Boxed(boxed) => boxed.poll_frame(context),
-            ResponseBodyProjection::Pinned(pinned) => pinned.poll_frame(context),
-            ResponseBodyProjection::Buffer(buffered) => buffered.poll_frame(context),
+            BodyProjection::Unpin(unpin) => unpin.poll_frame(context),
+            BodyProjection::Pin(pin) => pin.poll_frame(context),
         }
     }
 
     fn is_end_stream(&self) -> bool {
         match &self.body {
-            PinRequirement::Unpin(body) => body.is_end_stream(),
-            PinRequirement::Pin(body) => body.is_end_stream(),
+            PinRequirement::Unpin(unpin) => unpin.is_end_stream(),
+            PinRequirement::Pin(pin) => pin.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match &self.body {
-            PinRequirement::Unpin(body) => body.size_hint(),
-            PinRequirement::Pin(body) => body.size_hint(),
+            PinRequirement::Unpin(unpin) => unpin.size_hint(),
+            PinRequirement::Pin(pin) => pin.size_hint(),
         }
     }
 }
@@ -142,12 +143,6 @@ impl Body for ResponseBody {
 impl Default for ResponseBody {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl From<UnpinBoxBody> for ResponseBody {
-    fn from(boxed: UnpinBoxBody) -> Self {
-        Self::from_boxed(boxed)
     }
 }
 
@@ -164,7 +159,7 @@ where
     BufferedBody: From<T>,
 {
     fn from(value: T) -> Self {
-        let buffered = Box::new(BufferedBody::from(value));
+        let buffered = BufferedBody::from(value);
 
         Self {
             body: PinRequirement::Unpin(AnyBody::Inline(buffered)),
