@@ -131,8 +131,7 @@ where
                 });
             }
 
-            // Otherwise, wait for a "Ctrl-C" notification to be sent to the
-            // process.
+            // Otherwise, wait for a "Ctrl-C" signal to be sent to the process.
             _ = shutdown_rx.changed() => {
                 // Break out of the loop to stop accepting new connections.
                 break;
