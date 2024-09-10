@@ -3,12 +3,11 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::Poll;
 
-use super::{UnpinBoxBody, BufferedBody};
+use super::{BufferedBody, UnpinBoxBody};
 use crate::Error;
 
 /// A sum type that can represent any `Unpin` [Request](crate::Request) or
 /// [Response](crate::Response) body.
-#[non_exhaustive]
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub enum AnyBody<B> {
