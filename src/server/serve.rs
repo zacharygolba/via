@@ -53,10 +53,6 @@ where
 
     loop {
         tokio::select! {
-            // A connection being accepted is more likely to occur than the
-            // server shutting down.
-            biased;
-
             // Wait for a new connection to be accepted.
             result = accept(&listener, &semaphore) => {
                 let (permit, (stream, _addr)) = match result {
@@ -99,10 +95,6 @@ where
                     // Poll the connection until it is closed or a graceful
                     // shutdown process is initiated.
                     let result = tokio::select! {
-                        // The connection closing is more likely to occur than
-                        // the server shutting down.
-                        biased;
-
                         // Pin the connection on the stack so it can be polled
                         // to completion. This is the typical path that the code
                         // should take while the server is running.
