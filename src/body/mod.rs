@@ -9,6 +9,6 @@ mod buffered;
 mod frame_ext;
 
 pub use any::AnyBody;
-pub use boxed::{NotUnpinBoxBody, UnpinBoxBody};
+pub use boxed::NotUnpinBoxBody;
 pub use buffered::BufferedBody;
 pub use frame_ext::FrameExt;

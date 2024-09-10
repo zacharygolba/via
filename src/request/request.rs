@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use super::body::RequestBody;
 use super::params::{Param, PathParams, QueryParam};
-use crate::body::{AnyBody, UnpinBoxBody};
+use crate::body::AnyBody;
 use crate::Error;
 
 pub struct Request<State = ()> {
@@ -39,14 +39,12 @@ impl<State> Request<State> {
         B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
         Error: From<E>,
     {
-        let output = map(match self.body.into_inner() {
-            AnyBody::Boxed(body) => AnyBody::Boxed(body),
-            AnyBody::Inline(body) => AnyBody::Inline(*body),
-        });
-        let body = AnyBody::Boxed(UnpinBoxBody::new(output));
+        let input = self.body.into_inner();
+        let output = map(input);
+        let box_body = AnyBody::boxed(output);
 
         Self {
-            body: RequestBody::new(body),
+            body: RequestBody::new(box_body),
             meta: self.meta,
             state: self.state,
         }
@@ -164,7 +162,7 @@ impl<State> Request<State> {
         // Destructure the `http::Request` into its component parts.
         let (parts, body) = request.into_parts();
         // Box the request body and wrap it in a `RequestBody`.
-        let body = RequestBody::new(AnyBody::Inline(Box::new(body)));
+        let body = RequestBody::new(AnyBody::Inline(body));
         // Wrap the component parts and path parameters in a boxed `RequestMeta`.
         let meta = Box::new(RequestMeta { parts, params });
 
