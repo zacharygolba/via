@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use http_body::{Body, Frame, SizeHint};
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
@@ -11,12 +11,12 @@ const MAX_FRAME_LEN: usize = 16384; // 16KB
 
 /// An optimized body that is used when the entire body is already in memory.
 #[must_use = "streams do nothing unless polled"]
-pub struct Buffer {
+pub struct BufferedBody {
     /// The buffer containing the body data.
     buf: Bytes,
 }
 
-impl Buffer {
+impl BufferedBody {
     pub fn new(buf: Bytes) -> Self {
         Self { buf }
     }
@@ -30,26 +30,22 @@ impl Buffer {
     }
 }
 
-impl Buffer {
-    pub fn buf_mut(&mut self) -> &mut Bytes {
-        &mut self.buf
-    }
-}
-
-impl Body for Buffer {
+impl Body for BufferedBody {
     type Data = Bytes;
     type Error = Error;
 
     fn poll_frame(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        // Get a mutable reference to `self.buf`.
-        let buf = self.buf_mut();
+        // Get a mutable reference to `self`.
+        let this = self.get_mut();
+        // Get a mutable reference to the `buf` field.
+        let buf = &mut this.buf;
 
         // Get the number of bytes to read from `buffer` for the current frame.
         // We read a maximum of 16KB per frame from `buffer`.
-        let len = buf.len().min(MAX_FRAME_LEN);
+        let len = buf.remaining().min(MAX_FRAME_LEN);
 
         // Check if the buffer has any data.
         if len == 0 {
@@ -83,45 +79,45 @@ impl Body for Buffer {
     }
 }
 
-impl Debug for Buffer {
+impl Debug for BufferedBody {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let len = self.buf.len();
         f.debug_struct("Buffer").field("len", &len).finish()
     }
 }
 
-impl Default for Buffer {
+impl Default for BufferedBody {
     fn default() -> Self {
         Self::new(Bytes::new())
     }
 }
 
-impl From<Bytes> for Buffer {
+impl From<Bytes> for BufferedBody {
     fn from(bytes: Bytes) -> Self {
         Self::new(Bytes::copy_from_slice(&bytes))
     }
 }
 
-impl From<Vec<u8>> for Buffer {
+impl From<Vec<u8>> for BufferedBody {
     fn from(vec: Vec<u8>) -> Self {
         Self::new(Bytes::from(vec))
     }
 }
 
-impl From<&'static [u8]> for Buffer {
+impl From<&'static [u8]> for BufferedBody {
     fn from(slice: &'static [u8]) -> Self {
         Self::new(Bytes::from_static(slice))
     }
 }
 
-impl From<String> for Buffer {
+impl From<String> for BufferedBody {
     fn from(string: String) -> Self {
         let vec = string.into_bytes();
         Self::new(Bytes::from(vec))
     }
 }
 
-impl From<&'static str> for Buffer {
+impl From<&'static str> for BufferedBody {
     fn from(slice: &'static str) -> Self {
         let slice = slice.as_bytes();
         Self::new(Bytes::from_static(slice))

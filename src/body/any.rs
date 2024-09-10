@@ -3,7 +3,7 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::Poll;
 
-use super::{Boxed, Buffer};
+use super::{UnpinBoxBody, BufferedBody};
 use crate::Error;
 
 /// A sum type that can represent any `Unpin` [Request](crate::Request) or
@@ -12,16 +12,16 @@ use crate::Error;
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub enum AnyBody<B> {
-    Boxed(Boxed),
+    Boxed(UnpinBoxBody),
     Inline(B),
 }
 
 enum AnyBodyProjection<'a, B> {
-    Boxed(Pin<&'a mut Boxed>),
+    Boxed(Pin<&'a mut UnpinBoxBody>),
     Inline(Pin<&'a mut B>),
 }
 
-impl AnyBody<Buffer> {
+impl AnyBody<BufferedBody> {
     pub fn new() -> Self {
         Self::Inline(Default::default())
     }
@@ -71,21 +71,21 @@ where
     }
 }
 
-impl<B> From<Boxed> for AnyBody<B> {
-    fn from(boxed: Boxed) -> Self {
+impl<B> From<UnpinBoxBody> for AnyBody<B> {
+    fn from(boxed: UnpinBoxBody) -> Self {
         Self::Boxed(boxed)
     }
 }
 
-impl Default for AnyBody<Buffer> {
+impl Default for AnyBody<BufferedBody> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> From<T> for AnyBody<Buffer>
+impl<T> From<T> for AnyBody<BufferedBody>
 where
-    Buffer: From<T>,
+    BufferedBody: From<T>,
 {
     fn from(body: T) -> Self {
         Self::Inline(body.into())

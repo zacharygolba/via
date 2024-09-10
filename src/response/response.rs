@@ -10,7 +10,7 @@ use std::fmt::{self, Debug, Formatter};
 
 use super::{ResponseBody, ResponseBuilder, StreamAdapter};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
-use crate::body::{AnyBody, Boxed, Buffer};
+use crate::body::{AnyBody, BufferedBody, UnpinBoxBody};
 use crate::{Error, Result};
 
 pub struct Response {
@@ -65,15 +65,12 @@ impl Response {
 
     /// Create a response from a stream of `Result<Frame<Bytes>, Error>`.
     ///
-    /// If you want to use a stream that is `!Unpin`, you can use the [`Boxed`]
-    /// body in combination with a [`ResponseBuilder`]. However, you must ensure
-    ///
     pub fn stream<S, E>(stream: S) -> Self
     where
         S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
         Error: From<E>,
     {
-        let stream_body = Boxed::new(StreamAdapter::new(stream));
+        let stream_body = UnpinBoxBody::new(StreamAdapter::new(stream));
         let mut response = Self::new(ResponseBody::from_boxed(stream_body));
 
         response.set_header(TRANSFER_ENCODING, CHUNKED_ENCODING);
@@ -113,7 +110,7 @@ impl Response {
     ///
     pub fn map<F, B, E>(self, map: F) -> Result<Self, Error>
     where
-        F: FnOnce(AnyBody<Box<Buffer>>) -> B,
+        F: FnOnce(AnyBody<Box<BufferedBody>>) -> B,
         B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
         Error: From<E>,
     {
@@ -133,7 +130,7 @@ impl Response {
                 return Err(Error::new("Internal Server Error".to_string()));
             }
         };
-        let body = ResponseBody::from_boxed(Boxed::new(output));
+        let body = ResponseBody::from_boxed(UnpinBoxBody::new(output));
 
         Ok(Self::from_parts(parts, body))
     }
