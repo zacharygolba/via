@@ -30,16 +30,16 @@ struct MapError<B> {
     body: B,
 }
 
-impl AnyBody<BufferedBody> {
+impl AnyBody<Box<BufferedBody>> {
     pub fn new() -> Self {
         Self::Inline(Default::default())
     }
 }
 
-impl<I> AnyBody<I> {
-    pub fn boxed<B, E>(body: B) -> Self
+impl<B: Unpin> AnyBody<B> {
+    pub fn boxed<U, E>(body: U) -> Self
     where
-        B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
+        U: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
         Error: From<E>,
     {
         Self::Boxed(Box::pin(MapError { body }))
@@ -99,18 +99,9 @@ impl<B: Debug> Debug for AnyBody<B> {
     }
 }
 
-impl Default for AnyBody<BufferedBody> {
+impl Default for AnyBody<Box<BufferedBody>> {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl<T> From<T> for AnyBody<BufferedBody>
-where
-    BufferedBody: From<T>,
-{
-    fn from(body: T) -> Self {
-        Self::Inline(body.into())
     }
 }
 

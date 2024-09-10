@@ -108,7 +108,7 @@ impl Response {
     ///
     pub fn map<F, B, E>(self, map: F) -> Result<Self, Error>
     where
-        F: FnOnce(AnyBody<BufferedBody>) -> B,
+        F: FnOnce(AnyBody<Box<BufferedBody>>) -> B,
         B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
         Error: From<E>,
     {

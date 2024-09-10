@@ -8,11 +8,11 @@ use crate::Error;
 
 #[derive(Debug)]
 pub struct RequestBody {
-    body: AnyBody<Incoming>,
+    body: AnyBody<Box<Incoming>>,
 }
 
 impl RequestBody {
-    pub fn into_inner(self) -> AnyBody<Incoming> {
+    pub fn into_inner(self) -> AnyBody<Box<Incoming>> {
         self.body
     }
 
@@ -48,7 +48,7 @@ impl RequestBody {
 }
 
 impl RequestBody {
-    pub(crate) fn new(body: AnyBody<Incoming>) -> Self {
+    pub(crate) fn new(body: AnyBody<Box<Incoming>>) -> Self {
         Self { body }
     }
 }
