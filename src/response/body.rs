@@ -13,21 +13,21 @@ pub struct ResponseBody {
 }
 
 enum BodyProjection<'a> {
-    Unpin(Pin<&'a mut AnyBody<BufferedBody>>),
+    Unpin(Pin<&'a mut AnyBody<Box<BufferedBody>>>),
     Pin(Pin<&'a mut NotUnpinBoxBody>),
 }
 
 #[derive(Debug)]
 enum PinRequirement {
-    Unpin(AnyBody<BufferedBody>),
+    Unpin(AnyBody<Box<BufferedBody>>),
     Pin(NotUnpinBoxBody),
 }
 
 impl ResponseBody {
     /// Creates a new, empty response body.
     pub fn new() -> Self {
-        let buffer = BufferedBody::new(Bytes::new());
-        let body = AnyBody::Inline(buffer);
+        let buffered = BufferedBody::new(Bytes::new());
+        let body = AnyBody::Inline(Box::new(buffered));
 
         Self {
             body: PinRequirement::Unpin(body),
@@ -49,22 +49,24 @@ impl ResponseBody {
 
 impl ResponseBody {
     pub(super) fn from_string(string: String) -> Self {
-        let body = BufferedBody::from(string);
+        let buffered = BufferedBody::from(string);
+        let body = AnyBody::Inline(Box::new(buffered));
 
         Self {
-            body: PinRequirement::Unpin(AnyBody::Inline(body)),
+            body: PinRequirement::Unpin(body),
         }
     }
 
     pub(super) fn from_vec(bytes: Vec<u8>) -> Self {
-        let body = BufferedBody::from(bytes);
+        let buffered = BufferedBody::from(bytes);
+        let body = AnyBody::Inline(Box::new(buffered));
 
         Self {
-            body: PinRequirement::Unpin(AnyBody::Inline(body)),
+            body: PinRequirement::Unpin(body),
         }
     }
 
-    pub(super) fn try_into_unpin(self) -> Result<AnyBody<BufferedBody>, Error> {
+    pub(super) fn try_into_unpin(self) -> Result<AnyBody<Box<BufferedBody>>, Error> {
         match self.body {
             PinRequirement::Unpin(body) => Ok(body),
             PinRequirement::Pin(_) => Err(Error::new(
@@ -160,9 +162,10 @@ where
 {
     fn from(value: T) -> Self {
         let buffered = BufferedBody::from(value);
+        let body = AnyBody::Inline(Box::new(buffered));
 
         Self {
-            body: PinRequirement::Unpin(AnyBody::Inline(buffered)),
+            body: PinRequirement::Unpin(body),
         }
     }
 }

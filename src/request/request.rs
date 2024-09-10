@@ -35,7 +35,7 @@ impl<State> Request<State> {
     /// return type of the provided closure `map`.
     pub fn map<F, B, E>(self, map: F) -> Self
     where
-        F: FnOnce(AnyBody<Incoming>) -> B,
+        F: FnOnce(AnyBody<Box<Incoming>>) -> B,
         B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
         Error: From<E>,
     {
@@ -162,7 +162,7 @@ impl<State> Request<State> {
         // Destructure the `http::Request` into its component parts.
         let (parts, body) = request.into_parts();
         // Box the request body and wrap it in a `RequestBody`.
-        let body = RequestBody::new(AnyBody::Inline(body));
+        let body = RequestBody::new(AnyBody::Inline(Box::new(body)));
         // Wrap the component parts and path parameters in a boxed `RequestMeta`.
         let meta = Box::new(RequestMeta { parts, params });
 
