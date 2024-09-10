@@ -8,6 +8,7 @@ use crate::Error;
 
 /// A sum type that can represent any `Unpin` [Request](crate::Request) or
 /// [Response](crate::Response) body.
+///
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub enum AnyBody<B> {
