@@ -102,7 +102,8 @@ where
             // file data from disk into the response body.
             let stream = StreamFile::new(file.path, config.read_stream_timeout);
 
-            Response::stream(stream)
+            Response::build()
+                .stream(stream)
                 .header(header::CONTENT_TYPE, file.mime_type)
                 .headers(optional_headers)
                 .finish()

@@ -1,13 +1,15 @@
 use bytes::Bytes;
 use futures_core::Stream;
-use http::header::{HeaderMap, CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
-use http::{StatusCode, Version};
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
+use http::response::Parts;
+use http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Version};
 use http_body::Frame;
 use hyper::body::Body;
 use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 
 use super::{ResponseBody, ResponseBuilder, StreamAdapter};
+use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
 use crate::body::{AnyBody, Boxed, Buffer};
 use crate::{Error, Result};
 
@@ -22,51 +24,81 @@ impl Response {
         }
     }
 
-    pub fn build() -> ResponseBuilder {
-        ResponseBuilder::new()
+    pub fn html(body: String) -> Self {
+        let buf = body.into_bytes();
+        let len = buf.len();
+
+        let mut response = Self::new(ResponseBody::from_vec(buf));
+        let headers = response.headers_mut();
+
+        headers.insert(CONTENT_TYPE, TEXT_HTML);
+        headers.insert(CONTENT_LENGTH, len.into());
+
+        response
     }
 
-    pub fn html<B>(body: B) -> ResponseBuilder
-    where
-        Buffer: From<B>,
-    {
-        let builder = ResponseBuilder::buffered(body);
-        builder.header(CONTENT_TYPE, "text/html; charset=utf-8")
+    pub fn text(body: String) -> Self {
+        let buf = body.into_bytes();
+        let len = buf.len();
+
+        let mut response = Self::new(ResponseBody::from_vec(buf));
+        let headers = response.headers_mut();
+
+        headers.insert(CONTENT_TYPE, TEXT_PLAIN);
+        headers.insert(CONTENT_LENGTH, len.into());
+
+        response
     }
 
-    pub fn text<B>(body: B) -> ResponseBuilder
-    where
-        Buffer: From<B>,
-    {
-        let builder = ResponseBuilder::buffered(body);
-        builder.header(CONTENT_TYPE, "text/plain; charset=utf-8")
+    pub fn json<B: Serialize>(body: &B) -> Result<Response, Error> {
+        let buf = serde_json::to_vec(body)?;
+        let len = buf.len();
+
+        let mut response = Self::new(ResponseBody::from_vec(buf));
+        let headers = response.headers_mut();
+
+        headers.insert(CONTENT_TYPE, APPLICATION_JSON);
+        headers.insert(CONTENT_LENGTH, len.into());
+
+        Ok(response)
     }
 
-    pub fn json<B: Serialize>(body: &B) -> ResponseBuilder {
-        let (len, body) = match serde_json::to_vec(body) {
-            Ok(data) => (Some(data.len()), Ok(data.into())),
-            Err(error) => (None, Err(error.into())),
-        };
-
-        ResponseBuilder::with_body(body)
-            .header(CONTENT_TYPE, "application/json; charset=utf-8")
-            .headers(Some(CONTENT_LENGTH).zip(len))
-    }
-
-    /// Build a response from a stream of `Result<Frame<Bytes>, Error>`.
+    /// Create a response from a stream of `Result<Frame<Bytes>, Error>`.
     ///
     /// If you want to use a stream that is `!Unpin`, you can use the [`Boxed`]
     /// body in combination with a [`ResponseBuilder`]. However, you must ensure
     ///
-    pub fn stream<S, E>(stream: S) -> ResponseBuilder
+    pub fn stream<S, E>(stream: S) -> Self
     where
         S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
         Error: From<E>,
     {
-        let body = Boxed::new(StreamAdapter::new(stream));
-        let builder = ResponseBuilder::with_body(Ok(body.into()));
+        let stream_body = Boxed::new(StreamAdapter::new(stream));
+        let mut response = Self::new(ResponseBody::from_boxed(stream_body));
 
-        builder.header(TRANSFER_ENCODING, "chunked")
+        response.set_header(TRANSFER_ENCODING, CHUNKED_ENCODING);
+        response
+    }
+
+    pub fn not_found() -> Self {
+        let mut response = Response::text("Not Found".to_string());
+
+        *response.status_mut() = StatusCode::NOT_FOUND;
+        response
+    }
+
+    pub fn build() -> ResponseBuilder {
+        ResponseBuilder::new()
+    }
+
+    pub fn from_parts(parts: Parts, body: ResponseBody) -> Self {
+        Self {
+            inner: http::Response::from_parts(parts, body),
+        }
+    }
+
+    pub fn into_parts(self) -> (Parts, ResponseBody) {
+        self.inner.into_parts()
     }
 
     /// Consumes the response returning a new response with body mapped to the
@@ -81,7 +113,7 @@ impl Response {
     ///
     pub fn map<F, B, E>(self, map: F) -> Result<Self, Error>
     where
-        F: FnOnce(AnyBody<Buffer>) -> B,
+        F: FnOnce(AnyBody<Box<Buffer>>) -> B,
         B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
         Error: From<E>,
     {
@@ -101,11 +133,9 @@ impl Response {
                 return Err(Error::new("Internal Server Error".to_string()));
             }
         };
-        let body = ResponseBody::from(Boxed::new(output));
+        let body = ResponseBody::from_boxed(Boxed::new(output));
 
-        Ok(Self {
-            inner: http::Response::from_parts(parts, body),
-        })
+        Ok(Self::from_parts(parts, body))
     }
 
     pub fn body(&self) -> &ResponseBody {
@@ -122,6 +152,18 @@ impl Response {
 
     pub fn headers_mut(&mut self) -> &mut HeaderMap {
         self.inner.headers_mut()
+    }
+
+    /// A shorthand method for `self.headers_mut().insert(name, value)`.
+    ///
+    pub fn set_header(&mut self, name: HeaderName, value: HeaderValue) {
+        self.headers_mut().insert(name, value);
+    }
+
+    /// A shorthand method for `*self.status_mut() = status`.
+    ///
+    pub fn set_status(&mut self, status: StatusCode) {
+        *self.inner.status_mut() = status;
     }
 
     pub fn status(&self) -> StatusCode {
