@@ -10,12 +10,12 @@ use crate::Result;
 /// A stream of frames that compose the body and trailers of a request.
 #[must_use = "streams do nothing unless polled"]
 pub struct BodyStream {
-    body: AnyBody<Incoming>,
+    body: AnyBody<Box<Incoming>>,
 }
 
 impl BodyStream {
     /// Creates a new `BodyStream` with the provided request body.
-    pub(crate) fn new(body: AnyBody<Incoming>) -> Self {
+    pub(crate) fn new(body: AnyBody<Box<Incoming>>) -> Self {
         Self { body }
     }
 }
