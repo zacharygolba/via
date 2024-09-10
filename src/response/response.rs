@@ -25,10 +25,9 @@ impl Response {
     }
 
     pub fn html(body: String) -> Self {
-        let buf = body.into_bytes();
-        let len = buf.len();
+        let len = body.len();
 
-        let mut response = Self::new(ResponseBody::from_vec(buf));
+        let mut response = Self::new(ResponseBody::from_string(body));
         let headers = response.headers_mut();
 
         headers.insert(CONTENT_TYPE, TEXT_HTML);
@@ -38,10 +37,9 @@ impl Response {
     }
 
     pub fn text(body: String) -> Self {
-        let buf = body.into_bytes();
-        let len = buf.len();
+        let len = body.len();
 
-        let mut response = Self::new(ResponseBody::from_vec(buf));
+        let mut response = Self::new(ResponseBody::from_string(body));
         let headers = response.headers_mut();
 
         headers.insert(CONTENT_TYPE, TEXT_PLAIN);

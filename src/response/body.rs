@@ -43,9 +43,16 @@ impl ResponseBody {
         }
     }
 
+    pub(super) fn from_string(string: String) -> Self {
+        let body = Box::new(BufferedBody::from(string));
+
+        Self {
+            body: PinRequirement::Unpin(AnyBody::Inline(body)),
+        }
+    }
+
     pub(super) fn from_vec(bytes: Vec<u8>) -> Self {
-        let buf = Bytes::from(bytes);
-        let body = Box::new(BufferedBody::new(buf));
+        let body = Box::new(BufferedBody::from(bytes));
 
         Self {
             body: PinRequirement::Unpin(AnyBody::Inline(body)),

@@ -30,34 +30,34 @@ impl ResponseBuilder {
         ResponseBody: TryFrom<T>,
         <ResponseBody as TryFrom<T>>::Error: Into<Error>,
     {
+        let result = ResponseBody::try_from(body).map_err(|error| error.into());
+
         Self {
-            body: Some(ResponseBody::try_from(body).map_err(Into::into)),
+            body: Some(result),
             inner: self.inner,
         }
     }
 
-    pub fn html(self, body: String) -> Self {
+    pub fn html(self, string: String) -> Self {
         let mut builder = self.inner;
-        let buf = body.into_bytes();
 
         builder = builder.header(CONTENT_TYPE, TEXT_HTML);
-        builder = builder.header(CONTENT_LENGTH, buf.len());
+        builder = builder.header(CONTENT_LENGTH, string.len());
 
         Self {
-            body: Some(Ok(ResponseBody::from_vec(buf))),
+            body: Some(Ok(ResponseBody::from_string(string))),
             inner: builder,
         }
     }
 
-    pub fn text(self, body: String) -> Self {
+    pub fn text(self, string: String) -> Self {
         let mut builder = self.inner;
-        let buf = body.into_bytes();
 
         builder = builder.header(CONTENT_TYPE, TEXT_PLAIN);
-        builder = builder.header(CONTENT_LENGTH, buf.len());
+        builder = builder.header(CONTENT_LENGTH, string.len());
 
         Self {
-            body: Some(Ok(ResponseBody::from_vec(buf))),
+            body: Some(Ok(ResponseBody::from_string(string))),
             inner: builder,
         }
     }
