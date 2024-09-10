@@ -1,9 +1,15 @@
-use http::header::{HeaderName, HeaderValue, CONTENT_LENGTH};
+use bytes::Bytes;
+use futures_core::Stream;
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::response::Builder;
-use http::{StatusCode, Version};
+use http::{HeaderName, HeaderValue, StatusCode, Version};
+use http_body::Frame;
+use serde::Serialize;
 
+use super::stream_adapter::StreamAdapter;
 use super::{Response, ResponseBody};
-use crate::body::Buffer;
+use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
+use crate::body::Boxed;
 use crate::{Error, Result};
 
 pub struct ResponseBuilder {
@@ -12,6 +18,13 @@ pub struct ResponseBuilder {
 }
 
 impl ResponseBuilder {
+    pub fn new() -> Self {
+        Self {
+            body: None,
+            inner: Builder::new(),
+        }
+    }
+
     pub fn body<T>(self, body: T) -> Self
     where
         ResponseBody: TryFrom<T>,
@@ -23,8 +36,76 @@ impl ResponseBuilder {
         }
     }
 
-    pub fn finish(mut self) -> Result<Response> {
-        let body = match self.body.take() {
+    pub fn html(self, body: String) -> Self {
+        let mut builder = self.inner;
+        let buf = body.into_bytes();
+
+        builder = builder.header(CONTENT_TYPE, TEXT_HTML);
+        builder = builder.header(CONTENT_LENGTH, buf.len());
+
+        Self {
+            body: Some(Ok(ResponseBody::from_vec(buf))),
+            inner: builder,
+        }
+    }
+
+    pub fn text(self, body: String) -> Self {
+        let mut builder = self.inner;
+        let buf = body.into_bytes();
+
+        builder = builder.header(CONTENT_TYPE, TEXT_PLAIN);
+        builder = builder.header(CONTENT_LENGTH, buf.len());
+
+        Self {
+            body: Some(Ok(ResponseBody::from_vec(buf))),
+            inner: builder,
+        }
+    }
+
+    pub fn json<B: Serialize>(self, body: &B) -> Self {
+        let mut builder = self.inner;
+        let buf = match serde_json::to_vec(body) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                return Self {
+                    body: Some(Err(error.into())),
+                    inner: builder,
+                }
+            }
+        };
+
+        builder = builder.header(CONTENT_TYPE, APPLICATION_JSON);
+        builder = builder.header(CONTENT_LENGTH, buf.len());
+
+        Self {
+            body: Some(Ok(ResponseBody::from_vec(buf))),
+            inner: builder,
+        }
+    }
+
+    /// Build a response from a stream of `Result<Frame<Bytes>, Error>`.
+    ///
+    /// If you want to use a stream that is `!Unpin`, you can use the [`Boxed`]
+    /// body in combination with a [`ResponseBuilder`]. However, you must ensure
+    ///
+    pub fn stream<S, E>(self, stream: S) -> Self
+    where
+        S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
+        Error: From<E>,
+    {
+        let mut builder = self.inner;
+        let stream_body = Boxed::new(StreamAdapter::new(stream));
+
+        builder = builder.header(TRANSFER_ENCODING, CHUNKED_ENCODING);
+
+        Self {
+            body: Some(Ok(ResponseBody::from_boxed(stream_body))),
+            inner: builder,
+        }
+    }
+
+    pub fn finish(self) -> Result<Response, Error> {
+        let body = match self.body {
             Some(body) => body?,
             None => ResponseBody::new(),
         };
@@ -84,31 +165,8 @@ impl ResponseBuilder {
     }
 }
 
-impl ResponseBuilder {
-    pub(crate) fn new() -> Self {
-        Self {
-            body: None,
-            inner: Builder::new(),
-        }
-    }
-
-    pub(crate) fn buffered<T>(body: T) -> Self
-    where
-        Buffer: From<T>,
-    {
-        let buffered = Buffer::from(body);
-        let len = buffered.len();
-
-        Self {
-            body: Some(Ok(ResponseBody::from(buffered))),
-            inner: Builder::new().header(CONTENT_LENGTH, len),
-        }
-    }
-
-    pub(crate) fn with_body(body: Result<ResponseBody>) -> Self {
-        Self {
-            body: Some(body),
-            inner: Builder::new(),
-        }
+impl Default for ResponseBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }

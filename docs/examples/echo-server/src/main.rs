@@ -8,7 +8,8 @@ async fn echo(request: Request, _: Next) -> Result<Response> {
     let body_stream = request.into_body().into_stream();
 
     // Stream the request body back to the client.
-    Response::stream(body_stream)
+    Response::build()
+        .stream(body_stream)
         .headers(Some(CONTENT_TYPE).zip(content_type))
         .finish()
 }

@@ -1,4 +1,3 @@
-use http::header::{HeaderValue, CONTENT_LENGTH, CONTENT_TYPE};
 use http::StatusCode;
 use serde::{Serialize, Serializer};
 use std::error::Error as StdError;
@@ -112,53 +111,27 @@ impl Error {
 }
 
 impl Error {
-    pub(crate) fn into_response(self) -> Response {
-        let result = match self.format {
-            Some(Format::Json) => {
-                // The `serde` feature is enabled and the error format is `Json`.
-                // Attempt to serialize the error as JSON. If serialization fails,
-                // fallback to a plain text response.
-                let status = self.status;
-                Response::json(&self).status(status).finish()
-            }
-            _ => {
-                // The `serde` feature is disabled or the error format is not `Json`.
-                // Generate a plain text response by converting the error to a string.
-                let message = self.to_string();
-                let status = self.status;
-                Response::text(message).status(status).finish()
-            }
+    pub(crate) fn into_response(mut self) -> Response {
+        let mut response = loop {
+            let result = match self.format {
+                Some(Format::Json) => Response::json(&self),
+                None => Ok(Response::text(self.to_string())),
+            };
+
+            match result {
+                Ok(response) => break response,
+                Err(error) => {
+                    self.format = None;
+                    if cfg!(debug_assertions) {
+                        // TODO: Replace this with tracing.
+                        eprintln!("Error: {}", error);
+                    }
+                }
+            };
         };
 
-        result.unwrap_or_else(|error| {
-            if cfg!(debug_assertions) {
-                //
-                // TODO:
-                //
-                // Replace eprintln with pretty_env_logger or something
-                // similar.
-                //
-                eprintln!("Error: {}", error);
-            }
-
-            let message = self.to_string();
-            let len = message.len();
-
-            // An error occurred while generating the response. Generate a
-            // plain text response with the original error message and
-            // return it without using the `ResponseBuilder`.
-            let mut response = Response::new(message.into());
-
-            *response.status_mut() = self.status;
-
-            let headers = response.headers_mut();
-            let content_type = HeaderValue::from_static("text/plain; charset=utf-8");
-
-            headers.insert(CONTENT_TYPE, content_type);
-            headers.insert(CONTENT_LENGTH, HeaderValue::from(len));
-
-            response
-        })
+        response.set_status(self.status);
+        response
     }
 }
 

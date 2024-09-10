@@ -14,27 +14,45 @@ pub struct ResponseBody {
 
 #[derive(Debug)]
 enum PinRequirement {
-    Unpin(AnyBody<Buffer>),
+    Unpin(AnyBody<Box<Buffer>>),
     Pin(Pinned),
 }
 
 enum ResponseBodyProjection<'a> {
     Boxed(Pin<&'a mut Boxed>),
     Pinned(Pin<&'a mut Pinned>),
-    Buffer(Pin<&'a mut Buffer>),
+    Buffer(Pin<&'a mut Box<Buffer>>),
 }
 
 impl ResponseBody {
     /// Creates a new, empty response body.
     pub fn new() -> Self {
+        let buffer = Box::new(Buffer::new(Bytes::new()));
+        let body = AnyBody::Inline(buffer);
+
         Self {
-            body: PinRequirement::Unpin(AnyBody::new()),
+            body: PinRequirement::Unpin(body),
         }
     }
 }
 
 impl ResponseBody {
-    pub(crate) fn try_into_unpin(self) -> Result<AnyBody<Buffer>, Error> {
+    pub(super) fn from_boxed(body: Boxed) -> Self {
+        Self {
+            body: PinRequirement::Unpin(AnyBody::Boxed(body)),
+        }
+    }
+
+    pub(super) fn from_vec(bytes: Vec<u8>) -> Self {
+        let buf = Bytes::from(bytes);
+        let body = Box::new(Buffer::new(buf));
+
+        Self {
+            body: PinRequirement::Unpin(AnyBody::Inline(body)),
+        }
+    }
+
+    pub(super) fn try_into_unpin(self) -> Result<AnyBody<Box<Buffer>>, Error> {
         match self.body {
             PinRequirement::Unpin(body) => Ok(body),
             PinRequirement::Pin(_) => Err(Error::new(
@@ -59,11 +77,11 @@ impl ResponseBody {
 
         match &mut this.body {
             PinRequirement::Unpin(AnyBody::Boxed(ptr)) => {
-                // Boxed is Unpin so we can project it with using unsafe.
+                // Boxed is Unpin so we can project it without using unsafe.
                 ResponseBodyProjection::Boxed(Pin::new(ptr))
             }
             PinRequirement::Unpin(AnyBody::Inline(ptr)) => {
-                // Buffer is Unpin so we can project it with using unsafe.
+                // Buffered is Unpin so we can project it without using unsafe.
                 ResponseBodyProjection::Buffer(Pin::new(ptr))
             }
             PinRequirement::Pin(ptr) => {
@@ -122,9 +140,7 @@ impl Default for ResponseBody {
 
 impl From<Boxed> for ResponseBody {
     fn from(boxed: Boxed) -> Self {
-        Self {
-            body: PinRequirement::Unpin(AnyBody::Boxed(boxed)),
-        }
+        Self::from_boxed(boxed)
     }
 }
 
@@ -141,7 +157,7 @@ where
     Buffer: From<T>,
 {
     fn from(value: T) -> Self {
-        let buffered = Buffer::from(value);
+        let buffered = Box::new(Buffer::from(value));
 
         Self {
             body: PinRequirement::Unpin(AnyBody::Inline(buffered)),
