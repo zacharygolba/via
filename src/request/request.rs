@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use super::body::RequestBody;
 use super::params::{Param, PathParams, QueryParam};
-use crate::body::{AnyBody, Boxed};
+use crate::body::{AnyBody, UnpinBoxBody};
 use crate::Error;
 
 pub struct Request<State = ()> {
@@ -43,7 +43,7 @@ impl<State> Request<State> {
             AnyBody::Boxed(body) => AnyBody::Boxed(body),
             AnyBody::Inline(body) => AnyBody::Inline(*body),
         });
-        let body = AnyBody::Boxed(Boxed::new(output));
+        let body = AnyBody::Boxed(UnpinBoxBody::new(output));
 
         Self {
             body: RequestBody::new(body),

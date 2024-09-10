@@ -7,10 +7,8 @@ mod any;
 mod boxed;
 mod buffered;
 mod frame_ext;
-mod pinned;
 
 pub use any::AnyBody;
-pub use boxed::Boxed;
-pub use buffered::Buffer;
+pub use boxed::{NotUnpinBoxBody, UnpinBoxBody};
+pub use buffered::BufferedBody;
 pub use frame_ext::FrameExt;
-pub use pinned::Pinned;
