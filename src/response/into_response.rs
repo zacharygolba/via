@@ -25,13 +25,13 @@ impl IntoResponse for &'static [u8] {
 
 impl IntoResponse for String {
     fn into_response(self) -> Result<Response> {
-        Response::text(self).finish()
+        Ok(Response::text(self))
     }
 }
 
 impl IntoResponse for &'static str {
     fn into_response(self) -> Result<Response> {
-        Response::text(self).finish()
+        self.to_string().into_response()
     }
 }
 

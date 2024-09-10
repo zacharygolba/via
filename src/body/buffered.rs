@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
+use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -9,26 +10,29 @@ use crate::{Error, Result};
 const MAX_FRAME_LEN: usize = 16384; // 16KB
 
 /// An optimized body that is used when the entire body is already in memory.
-#[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub struct Buffer {
     /// The buffer containing the body data.
-    data: Box<Bytes>,
+    buf: Bytes,
 }
 
 impl Buffer {
-    pub fn new(data: Bytes) -> Self {
-        Self {
-            data: Box::new(data),
-        }
+    pub fn new(buf: Bytes) -> Self {
+        Self { buf }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+        self.buf.is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.data.len()
+        self.buf.len()
+    }
+}
+
+impl Buffer {
+    pub fn buf_mut(&mut self) -> &mut Bytes {
+        &mut self.buf
     }
 }
 
@@ -37,19 +41,18 @@ impl Body for Buffer {
     type Error = Error;
 
     fn poll_frame(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        // Get a mutable reference to `self`.
-        let this = self.get_mut();
-        // Get a mutable reference to `self.data`.
-        let buffer = &mut *this.data;
+        // Get a mutable reference to `self.buf`.
+        let buf = self.buf_mut();
+
         // Get the number of bytes to read from `buffer` for the current frame.
         // We read a maximum of 16KB per frame from `buffer`.
-        let frame_len = buffer.len().min(MAX_FRAME_LEN);
+        let len = buf.len().min(MAX_FRAME_LEN);
 
         // Check if the buffer has any data.
-        if frame_len == 0 {
+        if len == 0 {
             // The buffer is empty. Signal that the stream has ended.
             return Poll::Ready(None);
         }
@@ -57,7 +60,7 @@ impl Body for Buffer {
         // Split the buffer at the frame length. This will give us an owned
         // view of the frame at 0..frame_len and advance the buffer to the
         // offset of the next frame.
-        let data = buffer.split_to(frame_len);
+        let data = buf.split_to(len);
         // Wrap the bytes we copied from buffer in a data frame.
         let frame = Frame::data(data);
 
@@ -77,6 +80,13 @@ impl Body for Buffer {
         // If `len` is `None`, return a size hint with no bounds. Otherwise,
         // map the remaining length to a size hint with the exact size.
         len.map_or_else(SizeHint::new, SizeHint::with_exact)
+    }
+}
+
+impl Debug for Buffer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let len = self.buf.len();
+        f.debug_struct("Buffer").field("len", &len).finish()
     }
 }
 
