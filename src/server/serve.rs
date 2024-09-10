@@ -68,24 +68,14 @@ where
                     }
                 };
 
-                // Wrap the TcpStream in a type that implements hyper's I/O traits.
-                let io = IoStream::new(stream);
-
-                // Create a new service to handle the connection.
+                // Create a new service to handle the connection. We'll move
+                // this into the task so we can serve the connection.
                 let service = {
                     let router = Arc::clone(&router);
                     let state = Arc::clone(&state);
 
                     Service::new(router, state)
                 };
-
-                // Create a new connection for the configured HTTP version. For
-                // now we only support HTTP/1.1. This will be expanded to
-                // support HTTP/2 in the future.
-                let connection = http1::Builder::new()
-                    .timer(TokioTimer::new())
-                    .serve_connection(io, service)
-                    .with_upgrades();
 
                 // Clone the watch channel so that we can notify the connection
                 // to initiate a graceful shutdown process before the server
@@ -94,8 +84,13 @@ where
 
                 // Spawn a task to serve the connection.
                 connections.spawn(async move {
-                    // Define connection as mutable.
-                    let mut connection = connection;
+                    // Create a new connection for the configured HTTP version.
+                    // For now we only support HTTP/1.1. This will be expanded to
+                    // support HTTP/2 in the future.
+                    let mut connection = http1::Builder::new()
+                        .timer(TokioTimer::new())
+                        .serve_connection(IoStream::new(stream), service)
+                        .with_upgrades();
 
                     // Poll the connection until it is closed or a graceful
                     // shutdown process is initiated.
