@@ -3,8 +3,7 @@ use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::response::Parts;
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Version};
-use http_body::Frame;
-use hyper::body::Body;
+use http_body::{Body, Frame};
 use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 

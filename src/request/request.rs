@@ -1,7 +1,8 @@
 use bytes::Bytes;
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
-use hyper::body::{Body, Incoming};
+use http_body::Body;
+use hyper::body::Incoming;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
