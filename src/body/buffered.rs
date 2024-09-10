@@ -1,4 +1,4 @@
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
@@ -45,7 +45,7 @@ impl Body for BufferedBody {
 
         // Get the number of bytes to read from `buffer` for the current frame.
         // We read a maximum of 16KB per frame from `buffer`.
-        let len = buf.remaining().min(MAX_FRAME_LEN);
+        let len = buf.len().min(MAX_FRAME_LEN);
 
         // Check if the buffer has any data.
         if len == 0 {
@@ -94,32 +94,41 @@ impl Default for BufferedBody {
 
 impl From<Bytes> for BufferedBody {
     fn from(bytes: Bytes) -> Self {
-        Self::new(Bytes::copy_from_slice(&bytes))
+        let buf = Bytes::copy_from_slice(&bytes);
+        Self { buf }
     }
 }
 
 impl From<Vec<u8>> for BufferedBody {
     fn from(vec: Vec<u8>) -> Self {
-        Self::new(Bytes::from(vec))
+        let slice = vec.as_slice();
+        let buf = Bytes::copy_from_slice(slice);
+
+        Self { buf }
     }
 }
 
 impl From<&'static [u8]> for BufferedBody {
     fn from(slice: &'static [u8]) -> Self {
-        Self::new(Bytes::from_static(slice))
+        let buf = Bytes::copy_from_slice(slice);
+        Self { buf }
     }
 }
 
 impl From<String> for BufferedBody {
     fn from(string: String) -> Self {
-        let vec = string.into_bytes();
-        Self::new(Bytes::from(vec))
+        let slice = string.as_bytes();
+        let buf = Bytes::copy_from_slice(slice);
+
+        Self { buf }
     }
 }
 
 impl From<&'static str> for BufferedBody {
     fn from(slice: &'static str) -> Self {
         let slice = slice.as_bytes();
-        Self::new(Bytes::from_static(slice))
+        let buf = Bytes::copy_from_slice(slice);
+
+        Self { buf }
     }
 }
