@@ -9,7 +9,7 @@ use serde::Serialize;
 use super::stream_adapter::StreamAdapter;
 use super::{Response, ResponseBody};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
-use crate::body::Boxed;
+use crate::body::UnpinBoxBody;
 use crate::{Error, Result};
 
 pub struct ResponseBuilder {
@@ -85,8 +85,9 @@ impl ResponseBuilder {
 
     /// Build a response from a stream of `Result<Frame<Bytes>, Error>`.
     ///
-    /// If you want to use a stream that is `!Unpin`, you can use the [`Boxed`]
-    /// body in combination with a [`ResponseBuilder`]. However, you must ensure
+    /// If you want to use a stream that is !Unpin, you can pass a
+    /// [NotUnpinBoxBody](crate::body::NotUnpinBoxBody)
+    /// to the body method of [ResponseBuilder].
     ///
     pub fn stream<S, E>(self, stream: S) -> Self
     where
@@ -94,7 +95,7 @@ impl ResponseBuilder {
         Error: From<E>,
     {
         let mut builder = self.inner;
-        let stream_body = Boxed::new(StreamAdapter::new(stream));
+        let stream_body = UnpinBoxBody::new(StreamAdapter::new(stream));
 
         builder = builder.header(TRANSFER_ENCODING, CHUNKED_ENCODING);
 

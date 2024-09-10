@@ -3,7 +3,7 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::body::{AnyBody, Boxed, Buffer, Pinned};
+use crate::body::{AnyBody, BufferedBody, NotUnpinBoxBody, UnpinBoxBody};
 use crate::Error;
 
 #[derive(Debug)]
@@ -14,20 +14,20 @@ pub struct ResponseBody {
 
 #[derive(Debug)]
 enum PinRequirement {
-    Unpin(AnyBody<Box<Buffer>>),
-    Pin(Pinned),
+    Unpin(AnyBody<Box<BufferedBody>>),
+    Pin(NotUnpinBoxBody),
 }
 
 enum ResponseBodyProjection<'a> {
-    Boxed(Pin<&'a mut Boxed>),
-    Pinned(Pin<&'a mut Pinned>),
-    Buffer(Pin<&'a mut Box<Buffer>>),
+    Boxed(Pin<&'a mut UnpinBoxBody>),
+    Pinned(Pin<&'a mut NotUnpinBoxBody>),
+    Buffer(Pin<&'a mut Box<BufferedBody>>),
 }
 
 impl ResponseBody {
     /// Creates a new, empty response body.
     pub fn new() -> Self {
-        let buffer = Box::new(Buffer::new(Bytes::new()));
+        let buffer = Box::new(BufferedBody::new(Bytes::new()));
         let body = AnyBody::Inline(buffer);
 
         Self {
@@ -37,7 +37,7 @@ impl ResponseBody {
 }
 
 impl ResponseBody {
-    pub(super) fn from_boxed(body: Boxed) -> Self {
+    pub(super) fn from_boxed(body: UnpinBoxBody) -> Self {
         Self {
             body: PinRequirement::Unpin(AnyBody::Boxed(body)),
         }
@@ -45,14 +45,14 @@ impl ResponseBody {
 
     pub(super) fn from_vec(bytes: Vec<u8>) -> Self {
         let buf = Bytes::from(bytes);
-        let body = Box::new(Buffer::new(buf));
+        let body = Box::new(BufferedBody::new(buf));
 
         Self {
             body: PinRequirement::Unpin(AnyBody::Inline(body)),
         }
     }
 
-    pub(super) fn try_into_unpin(self) -> Result<AnyBody<Box<Buffer>>, Error> {
+    pub(super) fn try_into_unpin(self) -> Result<AnyBody<Box<BufferedBody>>, Error> {
         match self.body {
             PinRequirement::Unpin(body) => Ok(body),
             PinRequirement::Pin(_) => Err(Error::new(
@@ -138,14 +138,14 @@ impl Default for ResponseBody {
     }
 }
 
-impl From<Boxed> for ResponseBody {
-    fn from(boxed: Boxed) -> Self {
+impl From<UnpinBoxBody> for ResponseBody {
+    fn from(boxed: UnpinBoxBody) -> Self {
         Self::from_boxed(boxed)
     }
 }
 
-impl From<Pinned> for ResponseBody {
-    fn from(pinned: Pinned) -> Self {
+impl From<NotUnpinBoxBody> for ResponseBody {
+    fn from(pinned: NotUnpinBoxBody) -> Self {
         Self {
             body: PinRequirement::Pin(pinned),
         }
@@ -154,10 +154,10 @@ impl From<Pinned> for ResponseBody {
 
 impl<T> From<T> for ResponseBody
 where
-    Buffer: From<T>,
+    BufferedBody: From<T>,
 {
     fn from(value: T) -> Self {
-        let buffered = Box::new(Buffer::from(value));
+        let buffered = Box::new(BufferedBody::from(value));
 
         Self {
             body: PinRequirement::Unpin(AnyBody::Inline(buffered)),
