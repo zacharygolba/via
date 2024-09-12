@@ -9,7 +9,7 @@ license = "MIT"
 default = []
 
 [dependencies]
-bytes = "1.7"
+bytes = "1.7.1"
 futures-core = { version = "0.3", default-features = false }
 http = "1"
 http-body = "1"
