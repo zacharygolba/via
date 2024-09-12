@@ -12,9 +12,6 @@ use crate::body::AnyBody;
 use crate::Error;
 
 pub struct Request<State = ()> {
-    /// The request's body.
-    body: Box<RequestBody>,
-
     /// The component parts and metadata associated with the request.
     meta: Box<RequestMeta>,
 
@@ -24,6 +21,10 @@ pub struct Request<State = ()> {
 }
 
 struct RequestMeta {
+    /// A wrappr around the body of the request. This is used to provide
+    /// convient methods for reading the request body.
+    body: RequestBody,
+
     /// The component parts of the underlying HTTP request.
     parts: Parts,
 
@@ -40,13 +41,15 @@ impl<State> Request<State> {
         B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
         Error: From<E>,
     {
-        let input = self.body.into_inner();
-        let output = map(input);
-        let box_body = AnyBody::boxed(output);
+        let input = self.meta.body.into_inner();
+        let output = AnyBody::boxed(map(input));
 
         Self {
-            body: Box::new(RequestBody::new(box_body)),
-            meta: self.meta,
+            meta: Box::new(RequestMeta {
+                body: RequestBody::new(output),
+                parts: self.meta.parts,
+                params: self.meta.params,
+            }),
             state: self.state,
         }
     }
@@ -137,7 +140,7 @@ impl<State> Request<State> {
 
     /// Consumes the request and returns the body.
     pub fn into_body(self) -> RequestBody {
-        *self.body
+        self.meta.body
     }
 
     /// Unwraps `self` into the Request type from the `http` crate.
@@ -149,10 +152,7 @@ impl<State> Request<State> {
     /// Consumes the request and returns a tuple containing the component
     /// parts of the request and the request body.
     pub fn into_parts(self) -> (Parts, RequestBody) {
-        let meta = *self.meta;
-        let body = *self.body;
-
-        (meta.parts, body)
+        (self.meta.parts, self.meta.body)
     }
 }
 
@@ -165,14 +165,18 @@ impl<State> Request<State> {
         // Destructure the `http::Request` into its component parts.
         let (parts, body) = request.into_parts();
 
-        // Convert the request body into a RequestBody and store it on the heap.
-        let body = Box::new(RequestBody::new(AnyBody::Inline(body)));
+        // Convert the request body into a RequestBody.
+        let body = RequestBody::new(AnyBody::Inline(body));
 
         // Wrap the component parts and path parameters with RequestMeta and
         // store it on the heap.
-        let meta = Box::new(RequestMeta { parts, params });
+        let meta = Box::new(RequestMeta {
+            body,
+            parts,
+            params,
+        });
 
-        Self { body, meta, state }
+        Self { meta, state }
     }
 }
 
@@ -184,7 +188,7 @@ impl<State> Debug for Request<State> {
             .field("params", &self.meta.params)
             .field("version", &self.version())
             .field("headers", self.headers())
-            .field("body", &self.body)
+            .field("body", &self.meta.body)
             .finish()
     }
 }
