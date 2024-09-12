@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use smallvec::SmallVec;
 use via_router::Match;
 
 use crate::request::PathParams;
@@ -97,7 +98,7 @@ where
         matched_routes: &[Match<Vec<MatchWhen<State>>>],
     ) -> (PathParams, Next<State>) {
         let mut params = PathParams::with_capacity(12);
-        let mut stack = Box::new(Vec::with_capacity(32));
+        let mut stack = SmallVec::new();
 
         // Iterate over the routes that match the request's path.
         for route in matched_routes.iter().rev() {
