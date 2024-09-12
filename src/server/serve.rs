@@ -23,27 +23,9 @@ pub async fn serve<State>(
 where
     State: Send + Sync + 'static,
 {
-    // Create a join set to track inflight connections. We'll use this to wait
-    // for all connections to close before the server exits.
+    // Create a JoinSet to track inflight connections. We'll use this to wait for
+    // all connections to close before the server exits.
     let mut connections = JoinSet::new();
-
-    // Create a watch channel to notify the connections to initiate a graceful
-    // shutdown when the `ctrl_c` future resolves.
-    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-
-    // Spawn a task to wait for a "Ctrl-C" signal to be sent to the process.
-    let shutdown_task = task::spawn(async move {
-        if signal::ctrl_c().await.is_err() {
-            if cfg!(debug_assertions) {
-                eprintln!("unable to register the 'Ctrl-C' signal.");
-            }
-
-            return;
-        }
-
-        // Notify the connections to initiate a graceful shutdown process.
-        let _ = shutdown_tx.send(true);
-    });
 
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
@@ -51,7 +33,40 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
+    let (shutdown_task, shutdown_rx) = {
+        // Create a watch channel to notify the connections to initiate a
+        // graceful shutdown process when the `ctrl_c` future resolves.
+        let (tx, rx) = watch::channel(false);
+
+        // Spawn a task to wait for a "Ctrl-C" signal to be sent to the process.
+        let task = task::spawn(async move {
+            match signal::ctrl_c().await {
+                Ok(_) => tx.send(true).map_err(|_| {
+                    let message = "unable to notify connections to shutdown.";
+                    Error::new(message.to_string())
+                }),
+                Err(error) => {
+                    if cfg!(debug_assertions) {
+                        eprintln!("unable to register the 'Ctrl-C' signal.");
+                    }
+
+                    Err(error.into())
+                }
+            }
+        });
+
+        (task, rx)
+    };
+
     loop {
+        // Create a new Service. We'll move this into the task when a new
+        // connection is accepted.
+        let service = Service::new(Arc::clone(&router), Arc::clone(&state));
+
+        // Clone the watch channel so that we can notify the connection when
+        // initiate a graceful shutdown process before the server exits.
+        let mut shutdown_rx = shutdown_rx.clone();
+
         tokio::select! {
             // Wait for a new connection to be accepted.
             result = accept(&listener, &semaphore) => {
@@ -68,19 +83,8 @@ where
                     }
                 };
 
-                // Create a new service to handle the connection. We'll move
-                // this into the task so we can serve the connection.
-                let service = {
-                    let router = Arc::clone(&router);
-                    let state = Arc::clone(&state);
-
-                    Service::new(router, state)
-                };
-
-                // Clone the watch channel so that we can notify the connection
-                // to initiate a graceful shutdown process before the server
-                // exits.
-                let mut shutdown_rx = shutdown_rx.clone();
+                // Wrap stream in a type that implements hyper's I/O traits.
+                let io = IoStream::new(stream);
 
                 // Spawn a task to serve the connection.
                 connections.spawn(async move {
@@ -89,7 +93,7 @@ where
                     // support HTTP/2 in the future.
                     let mut connection = http1::Builder::new()
                         .timer(TokioTimer::new())
-                        .serve_connection(IoStream::new(stream), service)
+                        .serve_connection(io, service)
                         .with_upgrades();
 
                     // Poll the connection until it is closed or a graceful
@@ -161,7 +165,7 @@ where
                 .map_or(Duration::from_secs(10), Duration::from_secs);
 
             // Wait for the shutdown task to complete before exiting the server.
-            time::timeout(remaining_timeout, shutdown_task).await??;
+            time::timeout(remaining_timeout, shutdown_task).await???;
 
             // The shutdown_task completed within the timeout.
             Ok(())
