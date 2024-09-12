@@ -1,4 +1,5 @@
-//! Shared utilities for implementing the Body trait.
+//! Conversion methods to go to and from the size hint of a body or stream.
+//!
 
 use futures_core::Stream;
 use http_body::{Body, SizeHint};
@@ -7,7 +8,7 @@ use http_body::{Body, SizeHint};
 /// bound of the stream. If the conversion of the lower bound fails, it will be
 /// considered to be `0`. If the conversion of the upper bound fails, it will
 /// be considered to be `None`.
-pub fn size_hint_from_body_for_stream(body: &impl Body) -> (usize, Option<usize>) {
+pub fn from_body_for_stream(body: &impl Body) -> (usize, Option<usize>) {
     // Get the size hint from the body stream. We'll use this convert the
     // `SizeHint` type to a tuple containing the upper and lower bound of
     // the stream.
@@ -27,7 +28,7 @@ pub fn size_hint_from_body_for_stream(body: &impl Body) -> (usize, Option<usize>
 /// compatible with the `Body` trait. If the conversion of the lower bound fails,
 /// it will be considered to be `0`. If the conversion of the upper bound fails,
 /// it will be considered to be `None`.
-pub fn size_hint_from_stream_for_body(stream: &(impl Stream + ?Sized)) -> SizeHint {
+pub fn from_stream_for_body(stream: &(impl Stream + ?Sized)) -> SizeHint {
     // Create a new `SizeHint` with the default values. We will set
     // the lower and upper bounds individually since we don't know
     // if the stream has an upper bound.

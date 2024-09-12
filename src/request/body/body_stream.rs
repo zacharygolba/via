@@ -5,18 +5,19 @@ use hyper::body::Incoming;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::body::{util, AnyBody};
+use crate::body::util::size_hint;
+use crate::body::EveryBody;
 use crate::Result;
 
 /// A stream of frames that compose the body and trailers of a request.
 #[must_use = "streams do nothing unless polled"]
 pub struct BodyStream {
-    body: AnyBody<Incoming>,
+    body: EveryBody<Incoming>,
 }
 
 impl BodyStream {
     /// Creates a new `BodyStream` with the provided request body.
-    pub(crate) fn new(body: AnyBody<Incoming>) -> Self {
+    pub(crate) fn new(body: EveryBody<Incoming>) -> Self {
         Self { body }
     }
 }
@@ -37,6 +38,6 @@ impl Stream for BodyStream {
         // Delegate the call to `self.body` to get a `SizeHint` and use the
         // helper function to adapt the returned `SizeHint` to a tuple that
         // contains the lower and upper bound of the stream.
-        util::size_hint_from_body_for_stream(&self.body)
+        size_hint::from_body_for_stream(&self.body)
     }
 }
