@@ -7,57 +7,79 @@ use std::task::{Context, Poll};
 use super::BufferedBody;
 use crate::Error;
 
-/// A sum type that can represent any `Unpin` [Request](crate::Request) or
-/// [Response](crate::Response) body.
+/// A sum type that can represent any
+/// [Request](crate::Request)
+/// or
+/// [Response](crate::Response)
+/// body.
 ///
 #[must_use = "streams do nothing unless polled"]
 pub enum AnyBody<B> {
-    Boxed(Pin<Box<dyn Body<Data = Bytes, Error = Error> + Send + Unpin>>),
+    Dyn(Pin<Box<dyn Body<Data = Bytes, Error = Error> + Send>>),
     Inline(B),
 }
 
 enum AnyBodyProjection<'a, B> {
-    Boxed(Pin<&'a mut (dyn Body<Data = Bytes, Error = Error> + Send + Unpin)>),
+    Dyn(Pin<&'a mut (dyn Body<Data = Bytes, Error = Error> + Send)>),
     Inline(Pin<&'a mut B>),
 }
 
 /// Maps the error type of a body to [Error].
-///
-/// This struct can only be used with [UnpinBoxBody].
 ///
 #[must_use = "streams do nothing unless polled"]
 struct MapError<B> {
     body: B,
 }
 
-impl AnyBody<Box<BufferedBody>> {
+impl AnyBody<BufferedBody> {
     pub fn new() -> Self {
         Self::Inline(Default::default())
     }
 }
 
-impl<B: Unpin> AnyBody<B> {
+impl<B> AnyBody<B> {
     pub fn boxed<U, E>(body: U) -> Self
     where
-        U: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
+        U: Body<Data = Bytes, Error = E> + Send + 'static,
         Error: From<E>,
     {
-        Self::Boxed(Box::pin(MapError { body }))
+        Self::Dyn(Box::pin(MapError { body }))
     }
 }
 
-impl<B: Unpin> AnyBody<B> {
+impl<B> AnyBody<B> {
     fn project(self: Pin<&mut Self>) -> AnyBodyProjection<B> {
-        match self.get_mut() {
-            Self::Boxed(ptr) => AnyBodyProjection::Boxed(Pin::new(ptr)),
-            Self::Inline(ptr) => AnyBodyProjection::Inline(Pin::new(ptr)),
+        //
+        // Safety:
+        //
+        // We need to match self in order to project the pinned reference for
+        // the respective variant. This is safe because we do not move the
+        // value out of self in any of the subsequent match arms.
+        //
+        match unsafe { self.get_unchecked_mut() } {
+            //
+            // Safety:
+            //
+            // The Dyn variant is always pinned. We are simply reborrowing the
+            // pinned reference as we would in the body of poll_frame if this
+            // type simply wrapped a Pin<Box<dyn Body + Send>>.
+            //
+            Self::Dyn(pin) => AnyBodyProjection::Dyn(Pin::as_mut(pin)),
+
+            //
+            // Safety:
+            //
+            // The Inline variant may contain a type that is !Unpin. We are not
+            // moving the value out of self, so it is safe to project it.
+            //
+            Self::Inline(ptr) => AnyBodyProjection::Inline(unsafe { Pin::new_unchecked(ptr) }),
         }
     }
 }
 
 impl<B, E> Body for AnyBody<B>
 where
-    B: Body<Data = Bytes, Error = E> + Unpin,
+    B: Body<Data = Bytes, Error = E>,
     Error: From<E>,
 {
     type Data = Bytes;
@@ -68,24 +90,24 @@ where
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.project() {
-            AnyBodyProjection::Boxed(boxed) => boxed.poll_frame(context),
-            AnyBodyProjection::Inline(inline) => {
-                inline.poll_frame(context).map_err(|error| error.into())
+            AnyBodyProjection::Dyn(body) => body.poll_frame(context),
+            AnyBodyProjection::Inline(body) => {
+                body.poll_frame(context).map_err(|error| error.into())
             }
         }
     }
 
     fn is_end_stream(&self) -> bool {
         match self {
-            Self::Boxed(boxed) => boxed.is_end_stream(),
-            Self::Inline(inline) => inline.is_end_stream(),
+            Self::Dyn(body) => body.is_end_stream(),
+            Self::Inline(body) => body.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match self {
-            Self::Boxed(boxed) => boxed.size_hint(),
-            Self::Inline(inline) => inline.size_hint(),
+            Self::Dyn(body) => body.size_hint(),
+            Self::Inline(body) => body.size_hint(),
         }
     }
 }
@@ -93,30 +115,34 @@ where
 impl<B: Debug> Debug for AnyBody<B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Boxed(_) => f.debug_struct("BoxBody").finish(),
-            Self::Inline(inline) => Debug::fmt(inline, f),
+            Self::Dyn(_) => f.debug_struct("BoxBody").finish(),
+            Self::Inline(body) => Debug::fmt(body, f),
         }
     }
 }
 
-impl Default for AnyBody<Box<BufferedBody>> {
+impl Default for AnyBody<BufferedBody> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<B: Unpin> MapError<B> {
+impl<B> MapError<B> {
     fn project(self: Pin<&mut Self>) -> Pin<&mut B> {
-        let this = self.get_mut();
-        let ptr = &mut this.body;
-
-        Pin::new(ptr)
+        //
+        // Safety:
+        //
+        // The body field may contain a type that is !Unpin. We need a pinned
+        // reference to the body field in order to call poll_frame. This is
+        // safe because the body field is never moved out of self.
+        //
+        unsafe { Pin::map_unchecked_mut(self, |this| &mut this.body) }
     }
 }
 
 impl<B, E> Body for MapError<B>
 where
-    B: Body<Data = Bytes, Error = E> + Send + Unpin,
+    B: Body<Data = Bytes, Error = E> + Send,
     Error: From<E>,
 {
     type Data = Bytes;

@@ -84,10 +84,6 @@ impl ResponseBuilder {
 
     /// Build a response from a stream of `Result<Frame<Bytes>, Error>`.
     ///
-    /// If you want to use a stream that is !Unpin, you can pass a
-    /// [NotUnpinBoxBody](crate::body::NotUnpinBoxBody)
-    /// to the body method of [ResponseBuilder].
-    ///
     pub fn stream<S, E>(self, stream: S) -> Self
     where
         S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
