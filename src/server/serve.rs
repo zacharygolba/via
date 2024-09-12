@@ -1,10 +1,9 @@
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioTimer;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
+use tokio::net::TcpListener;
+use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinSet;
 use tokio::{signal, task, time};
 
@@ -59,6 +58,9 @@ where
     };
 
     loop {
+        // Acquire a permit from the semaphore.
+        let permit = semaphore.clone().acquire_many_owned(2).await?;
+
         // Create a new Service. We'll move this into the task when a new
         // connection is accepted.
         let service = Service::new(Arc::clone(&router), Arc::clone(&state));
@@ -69,22 +71,14 @@ where
 
         tokio::select! {
             // Wait for a new connection to be accepted.
-            result = accept(&listener, &semaphore) => {
-                let (permit, (stream, _addr)) = match result {
+            result = listener.accept() => {
+                let (stream, _addr) = match result {
                     Ok(accepted) => accepted,
                     Err(_) => {
-                        //
-                        // TODO:
-                        //
-                        // Include tracing information about why the connection
-                        // could not be accepted.
-                        //
+                        // Placeholder for tracing...
                         continue;
                     }
                 };
-
-                // Wrap stream in a type that implements hyper's I/O traits.
-                let io = IoStream::new(stream);
 
                 // Spawn a task to serve the connection.
                 connections.spawn(async move {
@@ -93,7 +87,7 @@ where
                     // support HTTP/2 in the future.
                     let mut connection = http1::Builder::new()
                         .timer(TokioTimer::new())
-                        .serve_connection(io, service)
+                        .serve_connection(IoStream::new(stream), service)
                         .with_upgrades();
 
                     // Poll the connection until it is closed or a graceful
@@ -122,8 +116,9 @@ where
                     // Release the permit back to the semaphore.
                     drop(permit);
 
-                    // Return the result of the connection future.
-                    Ok(result?)
+                    if let Err(_) = result {
+                        // Placeholder for tracing..
+                    }
                 });
             }
 
@@ -137,13 +132,8 @@ where
         // Remove any handles that may have finished.
         while let Some(result) = connections.try_join_next() {
             if let Err(error) = result {
-                //
-                // TODO:
-                //
-                // Include tracing information about the connection
-                // error that occurred. For now, we'll just print
-                // the error to stderr if we're in debug mode.
-                //
+                // Placeholder for tracing...
+
                 if cfg!(debug_assertions) {
                     eprintln!("Error: {}", error);
                 }
@@ -180,32 +170,7 @@ where
     }
 }
 
-async fn accept(
-    listener: &TcpListener,
-    semaphore: &Arc<Semaphore>,
-) -> Result<(OwnedSemaphorePermit, (TcpStream, SocketAddr)), Error> {
-    // Acquire a permit from the semaphore.
-    let permit = semaphore.clone().acquire_many_owned(2).await?;
-
-    // Attempt to accept a new connection from the TCP listener.
-    match listener.accept().await {
-        Ok(accepted) => Ok((permit, accepted)),
-        Err(error) => {
-            // Release the permit back to the semaphore.
-            drop(permit);
-
-            //
-            // TODO:
-            //
-            // Include tracing information about why the connection could not
-            // be accepted.
-            //
-            Err(error.into())
-        }
-    }
-}
-
-async fn shutdown(connections: JoinSet<Result<(), Error>>) -> Result<(), Error> {
+async fn shutdown(connections: JoinSet<()>) -> Result<(), Error> {
     if cfg!(debug_assertions) {
         eprintln!(
             "waiting for {} inflight connection(s) to close...",
@@ -214,10 +179,7 @@ async fn shutdown(connections: JoinSet<Result<(), Error>>) -> Result<(), Error> 
     }
 
     // Wait for all inflight connections to close.
-    for result in connections.join_all().await {
-        // Propagate individual connection errors that may have occurred.
-        result?;
-    }
+    connections.join_all().await;
 
     Ok(())
 }
