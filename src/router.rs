@@ -97,7 +97,7 @@ where
         matched_routes: &[Match<Vec<MatchWhen<State>>>],
     ) -> (PathParams, Next<State>) {
         let mut params = PathParams::with_capacity(12);
-        let mut stack = Vec::with_capacity(32);
+        let mut stack = Box::new(Vec::with_capacity(32));
 
         // Iterate over the routes that match the request's path.
         for route in matched_routes.iter().rev() {
