@@ -1,14 +1,14 @@
+use smallvec::SmallVec;
+
 use super::ArcMiddleware;
 use crate::{BoxFuture, Error, Request, Response, Result};
 
 pub struct Next<State = ()> {
-    #[allow(clippy::box_collection)]
-    stack: Box<Vec<ArcMiddleware<State>>>,
+    stack: SmallVec<[ArcMiddleware<State>; 1]>,
 }
 
 impl<State> Next<State> {
-    #[allow(clippy::box_collection)]
-    pub(crate) fn new(stack: Box<Vec<ArcMiddleware<State>>>) -> Self {
+    pub(crate) fn new(stack: SmallVec<[ArcMiddleware<State>; 1]>) -> Self {
         Self { stack }
     }
 
