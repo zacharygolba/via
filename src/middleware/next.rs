@@ -2,11 +2,13 @@ use super::ArcMiddleware;
 use crate::{BoxFuture, Error, Request, Response, Result};
 
 pub struct Next<State = ()> {
-    stack: Vec<ArcMiddleware<State>>,
+    #[allow(clippy::box_collection)]
+    stack: Box<Vec<ArcMiddleware<State>>>,
 }
 
 impl<State> Next<State> {
-    pub(crate) fn new(stack: Vec<ArcMiddleware<State>>) -> Self {
+    #[allow(clippy::box_collection)]
+    pub(crate) fn new(stack: Box<Vec<ArcMiddleware<State>>>) -> Self {
         Self { stack }
     }
 
