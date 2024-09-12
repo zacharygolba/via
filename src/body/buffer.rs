@@ -8,9 +8,9 @@ use std::task::{Context, Poll};
 use crate::{Error, Result};
 
 /// The maximum amount of data that can be read from a buffered body per frame.
-const MAX_FRAME_LEN: usize = 16384; // 16KB
+const MAX_FRAME_LEN: usize = 8192; // 8KB
 
-/// An optimized body that is used when the entire body is already in memory.
+/// An in-memory byte buffer that is read in 8KB chunks.
 #[must_use = "streams do nothing unless polled"]
 pub struct Buffer {
     /// The buffer containing the body data.
