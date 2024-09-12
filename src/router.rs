@@ -97,13 +97,14 @@ where
         &self,
         matched_routes: &[Match<Vec<MatchWhen<State>>>],
     ) -> (PathParams, Next<State>) {
-        let mut params = PathParams::with_capacity(12);
+        let mut params = PathParams::new();
         let mut stack = SmallVec::new();
 
         // Iterate over the routes that match the request's path.
         for route in matched_routes.iter().rev() {
-            // Extend `params` with the `matched.param()` if it is `Some`.
-            params.extend(route.param());
+            if let Some(param) = route.param() {
+                params.push(param);
+            }
 
             // Extend `stack` with middleware in `matched` depending on whether
             // or not the middleware expects a partial or exact match.
