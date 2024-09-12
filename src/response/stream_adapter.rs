@@ -4,7 +4,7 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::body::util;
+use crate::body::util::size_hint;
 
 /// Convert a `Stream + Send` into an `impl Body`.
 #[must_use = "streams do nothing unless polled"]
@@ -38,7 +38,7 @@ impl<S> StreamAdapter<S> {
 
 impl<S, E> Body for StreamAdapter<S>
 where
-    S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin,
+    S: Stream<Item = Result<Frame<Bytes>, E>> + Send,
 {
     type Data = Bytes;
     type Error = E;
@@ -51,6 +51,6 @@ where
     }
 
     fn size_hint(&self) -> SizeHint {
-        util::size_hint_from_stream_for_body(&self.stream)
+        size_hint::from_stream_for_body(&self.stream)
     }
 }

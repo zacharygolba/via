@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use super::body::RequestBody;
 use super::params::{Param, PathParams, QueryParam};
-use crate::body::AnyBody;
+use crate::body::EveryBody;
 use crate::Error;
 
 pub struct Request<State = ()> {
@@ -37,16 +37,17 @@ impl<State> Request<State> {
     /// return type of the provided closure `map`.
     pub fn map<F, B, E>(self, map: F) -> Self
     where
-        F: FnOnce(AnyBody<Incoming>) -> B,
-        B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
+        F: FnOnce(EveryBody<Incoming>) -> B,
+        B: Body<Data = Bytes, Error = E> + Send + 'static,
         Error: From<E>,
     {
         let input = self.meta.body.into_inner();
-        let output = AnyBody::boxed(map(input));
+        let output = map(input);
+        let box_body = EveryBody::from_dyn(output);
 
         Self {
             meta: Box::new(RequestMeta {
-                body: RequestBody::new(output),
+                body: RequestBody::new(box_body),
                 parts: self.meta.parts,
                 params: self.meta.params,
             }),
@@ -166,7 +167,7 @@ impl<State> Request<State> {
         let (parts, body) = request.into_parts();
 
         // Convert the request body into a RequestBody.
-        let body = RequestBody::new(AnyBody::Inline(body));
+        let body = RequestBody::new(EveryBody::Inline(body));
 
         // Wrap the component parts and path parameters with RequestMeta and
         // store it on the heap.

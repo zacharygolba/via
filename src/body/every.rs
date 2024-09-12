@@ -4,22 +4,22 @@ use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::BufferedBody;
+use super::Buffer;
 use crate::Error;
 
-/// A sum type that can represent any
+/// A sum type that can represent every
 /// [Request](crate::Request)
 /// or
 /// [Response](crate::Response)
 /// body.
 ///
 #[must_use = "streams do nothing unless polled"]
-pub enum AnyBody<B> {
+pub enum EveryBody<B> {
     Dyn(Pin<Box<dyn Body<Data = Bytes, Error = Error> + Send>>),
     Inline(B),
 }
 
-enum AnyBodyProjection<'a, B> {
+enum EveryBodyProjection<'a, B> {
     Dyn(Pin<&'a mut (dyn Body<Data = Bytes, Error = Error> + Send)>),
     Inline(Pin<&'a mut B>),
 }
@@ -31,14 +31,14 @@ struct MapError<B> {
     body: B,
 }
 
-impl AnyBody<BufferedBody> {
+impl<B: Default> EveryBody<B> {
     pub fn new() -> Self {
         Self::Inline(Default::default())
     }
 }
 
-impl<B> AnyBody<B> {
-    pub fn boxed<U, E>(body: U) -> Self
+impl<B> EveryBody<B> {
+    pub fn from_dyn<U, E>(body: U) -> Self
     where
         U: Body<Data = Bytes, Error = E> + Send + 'static,
         Error: From<E>,
@@ -47,8 +47,8 @@ impl<B> AnyBody<B> {
     }
 }
 
-impl<B> AnyBody<B> {
-    fn project(self: Pin<&mut Self>) -> AnyBodyProjection<B> {
+impl<B> EveryBody<B> {
+    fn project(self: Pin<&mut Self>) -> EveryBodyProjection<B> {
         //
         // Safety:
         //
@@ -64,7 +64,7 @@ impl<B> AnyBody<B> {
             // pinned reference as we would in the body of poll_frame if this
             // type simply wrapped a Pin<Box<dyn Body + Send>>.
             //
-            Self::Dyn(pin) => AnyBodyProjection::Dyn(Pin::as_mut(pin)),
+            Self::Dyn(pin) => EveryBodyProjection::Dyn(Pin::as_mut(pin)),
 
             //
             // Safety:
@@ -72,12 +72,12 @@ impl<B> AnyBody<B> {
             // The Inline variant may contain a type that is !Unpin. We are not
             // moving the value out of self, so it is safe to project it.
             //
-            Self::Inline(ptr) => AnyBodyProjection::Inline(unsafe { Pin::new_unchecked(ptr) }),
+            Self::Inline(ptr) => EveryBodyProjection::Inline(unsafe { Pin::new_unchecked(ptr) }),
         }
     }
 }
 
-impl<B, E> Body for AnyBody<B>
+impl<B, E> Body for EveryBody<B>
 where
     B: Body<Data = Bytes, Error = E>,
     Error: From<E>,
@@ -90,8 +90,8 @@ where
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.project() {
-            AnyBodyProjection::Dyn(body) => body.poll_frame(context),
-            AnyBodyProjection::Inline(body) => {
+            EveryBodyProjection::Dyn(body) => body.poll_frame(context),
+            EveryBodyProjection::Inline(body) => {
                 body.poll_frame(context).map_err(|error| error.into())
             }
         }
@@ -112,7 +112,7 @@ where
     }
 }
 
-impl<B: Debug> Debug for AnyBody<B> {
+impl<B: Debug> Debug for EveryBody<B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Dyn(_) => f.debug_struct("BoxBody").finish(),
@@ -121,7 +121,7 @@ impl<B: Debug> Debug for AnyBody<B> {
     }
 }
 
-impl Default for AnyBody<BufferedBody> {
+impl Default for EveryBody<Buffer> {
     fn default() -> Self {
         Self::new()
     }
