@@ -86,7 +86,7 @@ impl ResponseBuilder {
     ///
     pub fn stream<S, E>(self, stream: S) -> Self
     where
-        S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
+        S: Stream<Item = Result<Frame<Bytes>, E>> + Send + 'static,
         Error: From<E>,
     {
         let mut builder = self.inner;
@@ -95,7 +95,7 @@ impl ResponseBuilder {
         builder = builder.header(TRANSFER_ENCODING, CHUNKED_ENCODING);
 
         Self {
-            body: Some(Ok(ResponseBody::boxed(stream_body))),
+            body: Some(Ok(ResponseBody::from_dyn(stream_body))),
             inner: builder,
         }
     }

@@ -12,7 +12,7 @@ const MAX_FRAME_LEN: usize = 16384; // 16KB
 
 /// An optimized body that is used when the entire body is already in memory.
 #[must_use = "streams do nothing unless polled"]
-pub struct BufferedBody {
+pub struct Buffer {
     /// The buffer containing the body data.
     buf: BytesMut,
 
@@ -20,7 +20,7 @@ pub struct BufferedBody {
     _pin: PhantomPinned,
 }
 
-impl BufferedBody {
+impl Buffer {
     pub fn new(data: &[u8]) -> Self {
         let unique = Bytes::copy_from_slice(data);
 
@@ -39,7 +39,7 @@ impl BufferedBody {
     }
 }
 
-impl BufferedBody {
+impl Buffer {
     fn project(self: Pin<&mut Self>) -> Pin<&mut BytesMut> {
         //
         // Safety:
@@ -58,7 +58,7 @@ impl BufferedBody {
     }
 }
 
-impl Body for BufferedBody {
+impl Body for Buffer {
     type Data = Bytes;
     type Error = Error;
 
@@ -105,43 +105,43 @@ impl Body for BufferedBody {
     }
 }
 
-impl Debug for BufferedBody {
+impl Debug for Buffer {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("BufferedBody").finish()
     }
 }
 
-impl Default for BufferedBody {
+impl Default for Buffer {
     fn default() -> Self {
         Self::new(&[])
     }
 }
 
-impl From<Bytes> for BufferedBody {
+impl From<Bytes> for Buffer {
     fn from(bytes: Bytes) -> Self {
         Self::new(&bytes)
     }
 }
 
-impl From<Vec<u8>> for BufferedBody {
+impl From<Vec<u8>> for Buffer {
     fn from(vec: Vec<u8>) -> Self {
         Self::new(vec.as_slice())
     }
 }
 
-impl From<&'static [u8]> for BufferedBody {
+impl From<&'static [u8]> for Buffer {
     fn from(slice: &'static [u8]) -> Self {
         Self::new(slice)
     }
 }
 
-impl From<String> for BufferedBody {
+impl From<String> for Buffer {
     fn from(string: String) -> Self {
         Self::new(string.as_bytes())
     }
 }
 
-impl From<&'static str> for BufferedBody {
+impl From<&'static str> for Buffer {
     fn from(slice: &'static str) -> Self {
         Self::new(slice.as_bytes())
     }

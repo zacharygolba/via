@@ -3,16 +3,16 @@ use hyper::body::Incoming;
 use serde::de::DeserializeOwned;
 
 use super::{BodyStream, ReadIntoBytes, ReadIntoString};
-use crate::body::AnyBody;
+use crate::body::EveryBody;
 use crate::Error;
 
 #[derive(Debug)]
 pub struct RequestBody {
-    body: AnyBody<Incoming>,
+    body: EveryBody<Incoming>,
 }
 
 impl RequestBody {
-    pub fn into_inner(self) -> AnyBody<Incoming> {
+    pub fn into_inner(self) -> EveryBody<Incoming> {
         self.body
     }
 
@@ -48,7 +48,7 @@ impl RequestBody {
 }
 
 impl RequestBody {
-    pub(crate) fn new(body: AnyBody<Incoming>) -> Self {
+    pub(crate) fn new(body: EveryBody<Incoming>) -> Self {
         Self { body }
     }
 }
