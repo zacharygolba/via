@@ -77,7 +77,7 @@ impl Response {
     pub fn not_found() -> Self {
         let mut response = Response::text("Not Found".to_string());
 
-        *response.status_mut() = StatusCode::NOT_FOUND;
+        response.set_status(StatusCode::NOT_FOUND);
         response
     }
 
@@ -97,39 +97,17 @@ impl Response {
 
     /// Consumes the response returning a new response with body mapped to the
     /// return type of the provided closure `map`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the response body was created with `Pinned`.
-    ///
-    /// If you need to map an `!Unpin` response body, you must implement the
-    /// map logic yourself and pass the result to `Pinned::new`.
-    ///
-    pub fn map<F, B, E>(self, map: F) -> Result<Self, Error>
+    pub fn map<F, B, E>(self, map: F) -> Self
     where
-        F: FnOnce(AnyBody<Box<BufferedBody>>) -> B,
-        B: Body<Data = Bytes, Error = E> + Send + Unpin + 'static,
+        F: FnOnce(AnyBody<BufferedBody>) -> B,
+        B: Body<Data = Bytes, Error = E> + Send + 'static,
         Error: From<E>,
     {
         let (parts, body) = self.inner.into_parts();
-        let output = match body.try_into_unpin() {
-            Ok(any) => map(any),
-            Err(_) => {
-                if cfg!(debug_assertions) {
-                    //
-                    // TODO:
-                    //
-                    // Replace this with tracing.
-                    //
-                    eprintln!("mapping a pinned response body is not supported");
-                }
-
-                return Err(Error::new("Internal Server Error".to_string()));
-            }
-        };
+        let output = map(body.into_inner());
         let body = ResponseBody::boxed(output);
 
-        Ok(Self::from_parts(parts, body))
+        Self::from_parts(parts, body)
     }
 
     pub fn body(&self) -> &ResponseBody {
@@ -191,8 +169,8 @@ impl From<http::Response<ResponseBody>> for Response {
     }
 }
 
-impl From<Response> for http::Response<ResponseBody> {
+impl From<Response> for http::Response<AnyBody<BufferedBody>> {
     fn from(response: Response) -> Self {
-        response.inner
+        response.inner.map(ResponseBody::into_inner)
     }
 }

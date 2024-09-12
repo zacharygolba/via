@@ -15,21 +15,24 @@ pub struct StreamAdapter<S> {
 
 impl<S, E> StreamAdapter<S>
 where
-    S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin,
+    S: Stream<Item = Result<Frame<Bytes>, E>> + Send,
 {
     pub fn new(stream: S) -> Self {
         Self { stream }
     }
 }
 
-impl<S: Unpin> StreamAdapter<S> {
+impl<S> StreamAdapter<S> {
     fn project(self: Pin<&mut Self>) -> Pin<&mut S> {
-        // Get a mutable reference to `self`.
-        let this = self.get_mut();
-        // Get a mutable reference to `self.stream`.
-        let ptr = &mut this.stream;
-
-        Pin::new(ptr)
+        //
+        // Safety:
+        //
+        // The stream field may contain a type that is !Unpin. We need a pinned
+        // reference to the stream field in order to call poll_next in the
+        // implementation of Body::poll_frame. This is safe because the stream
+        // field is never moved out of self.
+        //
+        unsafe { Pin::map_unchecked_mut(self, |this| &mut this.stream) }
     }
 }
 
