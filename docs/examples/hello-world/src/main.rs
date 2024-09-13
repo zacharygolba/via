@@ -1,4 +1,4 @@
-use via::{Error, Next, Request, Result};
+use via::{Next, Request, Result};
 
 async fn hello(request: Request, _: Next) -> Result<String> {
     // Get a reference to the path parameter `name` from the request uri.
@@ -16,14 +16,6 @@ async fn main() -> Result<()> {
     // Shared state can be passed to the app by passing a value to the
     // `via::app` function. Check out the shared-state example for more
     // information.
-
-    app.include(|request, next: Next| async move {
-        println!("{:#?}", request);
-        let response = next.call(request).await?;
-
-        println!("{:#?}", response);
-        Ok::<_, Error>(response)
-    });
 
     // Add our hello responder to the endpoint /hello/:name. Middleware that is
     // added to an endpoint with `.respond()` will only run if a request's path
