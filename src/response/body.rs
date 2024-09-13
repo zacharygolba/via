@@ -1,55 +1,61 @@
 use bytes::Bytes;
 use http_body::Body;
+use std::fmt::{self, Debug, Formatter};
 
-use crate::body::{Buffer, EveryBody};
+use crate::body::{AnyBody, BoxBody, ByteBuffer};
 use crate::Error;
 
-#[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub struct ResponseBody {
-    body: EveryBody<Buffer>,
+    body: AnyBody<ByteBuffer>,
 }
 
 impl ResponseBody {
     /// Creates a new, empty response body.
     pub fn new() -> Self {
-        let buffered = Buffer::new(&[]);
+        let buffered = ByteBuffer::new(&[]);
 
         Self {
-            body: EveryBody::Inline(buffered),
+            body: AnyBody::Inline(buffered),
         }
     }
 
-    pub fn from_dyn<B, E>(body: B) -> Self
+    pub fn from_dyn<T, E>(body: T) -> Self
     where
-        B: Body<Data = Bytes, Error = E> + Send + 'static,
+        T: Body<Data = Bytes, Error = E> + Send + 'static,
         Error: From<E>,
     {
         Self {
-            body: EveryBody::from_dyn(body),
+            body: AnyBody::Dyn(BoxBody::new(body)),
         }
     }
 }
 
 impl ResponseBody {
     pub(super) fn from_string(string: String) -> Self {
-        let buffered = Buffer::from(string);
+        let buffered = ByteBuffer::from(string);
 
         Self {
-            body: EveryBody::Inline(buffered),
+            body: AnyBody::Inline(buffered),
         }
     }
 
     pub(super) fn from_vec(bytes: Vec<u8>) -> Self {
-        let buffered = Buffer::from(bytes);
+        let buffered = ByteBuffer::from(bytes);
 
         Self {
-            body: EveryBody::Inline(buffered),
+            body: AnyBody::Inline(buffered),
         }
     }
 
-    pub(super) fn into_inner(self) -> EveryBody<Buffer> {
+    pub(super) fn into_inner(self) -> AnyBody<ByteBuffer> {
         self.body
+    }
+}
+
+impl Debug for ResponseBody {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Debug::fmt(&self.body, f)
     }
 }
 
@@ -59,15 +65,23 @@ impl Default for ResponseBody {
     }
 }
 
+impl From<BoxBody> for ResponseBody {
+    fn from(body: BoxBody) -> Self {
+        Self {
+            body: AnyBody::Dyn(body),
+        }
+    }
+}
+
 impl<T> From<T> for ResponseBody
 where
-    Buffer: From<T>,
+    ByteBuffer: From<T>,
 {
-    fn from(value: T) -> Self {
-        let buffered = Buffer::from(value);
+    fn from(body: T) -> Self {
+        let buffered = ByteBuffer::from(body);
 
         Self {
-            body: EveryBody::Inline(buffered),
+            body: AnyBody::Inline(buffered),
         }
     }
 }

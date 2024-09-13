@@ -8,22 +8,22 @@ use crate::body::util::size_hint;
 
 /// Convert a `Stream + Send` into an `impl Body`.
 #[must_use = "streams do nothing unless polled"]
-pub struct StreamAdapter<S> {
+pub struct StreamAdapter<T> {
     /// The `Stream` that we are adapting to an `impl Body`.
-    stream: S,
+    stream: T,
 }
 
-impl<S, E> StreamAdapter<S>
+impl<T, E> StreamAdapter<T>
 where
-    S: Stream<Item = Result<Frame<Bytes>, E>> + Send,
+    T: Stream<Item = Result<Frame<Bytes>, E>> + Send,
 {
-    pub fn new(stream: S) -> Self {
+    pub fn new(stream: T) -> Self {
         Self { stream }
     }
 }
 
-impl<S> StreamAdapter<S> {
-    fn project(self: Pin<&mut Self>) -> Pin<&mut S> {
+impl<T> StreamAdapter<T> {
+    fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
         //
         // Safety:
         //
@@ -36,9 +36,9 @@ impl<S> StreamAdapter<S> {
     }
 }
 
-impl<S, E> Body for StreamAdapter<S>
+impl<T, E> Body for StreamAdapter<T>
 where
-    S: Stream<Item = Result<Frame<Bytes>, E>> + Send,
+    T: Stream<Item = Result<Frame<Bytes>, E>> + Send,
 {
     type Data = Bytes;
     type Error = E;
