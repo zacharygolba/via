@@ -47,7 +47,7 @@ impl Response {
         response
     }
 
-    pub fn json<B: Serialize>(body: &B) -> Result<Response, Error> {
+    pub fn json<T: Serialize>(body: &T) -> Result<Response, Error> {
         let buf = serde_json::to_vec(body)?;
         let len = buf.len();
 
