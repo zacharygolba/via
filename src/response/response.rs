@@ -9,7 +9,7 @@ use std::fmt::{self, Debug, Formatter};
 
 use super::{ResponseBody, ResponseBuilder, StreamAdapter};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
-use crate::body::{Buffer, EveryBody};
+use crate::body::{AnyBody, ByteBuffer};
 use crate::{Error, Result};
 
 pub struct Response {
@@ -62,9 +62,9 @@ impl Response {
 
     /// Create a response from a stream of `Result<Frame<Bytes>, Error>`.
     ///
-    pub fn stream<S, E>(stream: S) -> Self
+    pub fn stream<T, E>(stream: T) -> Self
     where
-        S: Stream<Item = Result<Frame<Bytes>, E>> + Send + 'static,
+        T: Stream<Item = Result<Frame<Bytes>, E>> + Send + 'static,
         Error: From<E>,
     {
         let stream_body = StreamAdapter::new(stream);
@@ -97,10 +97,10 @@ impl Response {
 
     /// Consumes the response returning a new response with body mapped to the
     /// return type of the provided closure `map`.
-    pub fn map<F, B, E>(self, map: F) -> Self
+    pub fn map<F, T, E>(self, map: F) -> Self
     where
-        F: FnOnce(EveryBody<Buffer>) -> B,
-        B: Body<Data = Bytes, Error = E> + Send + 'static,
+        F: FnOnce(AnyBody<ByteBuffer>) -> T,
+        T: Body<Data = Bytes, Error = E> + Send + 'static,
         Error: From<E>,
     {
         let (parts, body) = self.inner.into_parts();
@@ -169,7 +169,7 @@ impl From<http::Response<ResponseBody>> for Response {
     }
 }
 
-impl From<Response> for http::Response<EveryBody<Buffer>> {
+impl From<Response> for http::Response<AnyBody<ByteBuffer>> {
     fn from(response: Response) -> Self {
         response.inner.map(ResponseBody::into_inner)
     }

@@ -1,18 +1,18 @@
 use http::StatusCode;
 use hyper::body::Incoming;
 use serde::de::DeserializeOwned;
+use std::fmt::{self, Debug, Formatter};
 
 use super::{BodyStream, ReadIntoBytes, ReadIntoString};
-use crate::body::EveryBody;
+use crate::body::AnyBody;
 use crate::Error;
 
-#[derive(Debug)]
 pub struct RequestBody {
-    body: EveryBody<Incoming>,
+    body: AnyBody<Incoming>,
 }
 
 impl RequestBody {
-    pub fn into_inner(self) -> EveryBody<Incoming> {
+    pub fn into_inner(self) -> AnyBody<Incoming> {
         self.body
     }
 
@@ -48,7 +48,13 @@ impl RequestBody {
 }
 
 impl RequestBody {
-    pub(crate) fn new(body: EveryBody<Incoming>) -> Self {
+    pub(crate) fn new(body: AnyBody<Incoming>) -> Self {
         Self { body }
+    }
+}
+
+impl Debug for RequestBody {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Debug::fmt(&self.body, f)
     }
 }

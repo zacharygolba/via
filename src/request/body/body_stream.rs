@@ -6,18 +6,18 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::body::util::size_hint;
-use crate::body::EveryBody;
+use crate::body::AnyBody;
 use crate::Result;
 
 /// A stream of frames that compose the body and trailers of a request.
 #[must_use = "streams do nothing unless polled"]
 pub struct BodyStream {
-    body: EveryBody<Incoming>,
+    body: AnyBody<Incoming>,
 }
 
 impl BodyStream {
     /// Creates a new `BodyStream` with the provided request body.
-    pub(crate) fn new(body: EveryBody<Incoming>) -> Self {
+    pub(crate) fn new(body: AnyBody<Incoming>) -> Self {
         Self { body }
     }
 }

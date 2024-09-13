@@ -12,15 +12,15 @@ const MAX_FRAME_LEN: usize = 8192; // 8KB
 
 /// An in-memory byte buffer that is read in 8KB chunks.
 #[must_use = "streams do nothing unless polled"]
-pub struct Buffer {
+pub struct ByteBuffer {
     /// The buffer containing the body data.
     buf: BytesMut,
 
-    /// A marker type indicating that the `BufferedBody` is pinned in memory.
+    /// A marker type indicating that self is !Unpin.
     _pin: PhantomPinned,
 }
 
-impl Buffer {
+impl ByteBuffer {
     pub fn new(data: &[u8]) -> Self {
         let unique = Bytes::copy_from_slice(data);
 
@@ -39,13 +39,13 @@ impl Buffer {
     }
 }
 
-impl Buffer {
+impl ByteBuffer {
     fn project(self: Pin<&mut Self>) -> Pin<&mut BytesMut> {
         //
         // Safety:
         //
         // No data is moved out of self or the `buf` field in the APIs that
-        // we use in the implementation of Body::poll_frame for BufferedBody.
+        // we use in the implementation of Body::poll_frame for ByteBuffer.
         // Furthermore, the bytes crate is frozen to a version that we know does
         // not move the buffer in any of it's APIs.
         //
@@ -58,7 +58,7 @@ impl Buffer {
     }
 }
 
-impl Body for Buffer {
+impl Body for ByteBuffer {
     type Data = Bytes;
     type Error = Error;
 
@@ -105,43 +105,43 @@ impl Body for Buffer {
     }
 }
 
-impl Debug for Buffer {
+impl Debug for ByteBuffer {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BufferedBody").finish()
+        f.debug_struct("ByteBuffer").finish()
     }
 }
 
-impl Default for Buffer {
+impl Default for ByteBuffer {
     fn default() -> Self {
         Self::new(&[])
     }
 }
 
-impl From<Bytes> for Buffer {
+impl From<Bytes> for ByteBuffer {
     fn from(bytes: Bytes) -> Self {
         Self::new(&bytes)
     }
 }
 
-impl From<Vec<u8>> for Buffer {
+impl From<Vec<u8>> for ByteBuffer {
     fn from(vec: Vec<u8>) -> Self {
         Self::new(vec.as_slice())
     }
 }
 
-impl From<&'static [u8]> for Buffer {
+impl From<&'static [u8]> for ByteBuffer {
     fn from(slice: &'static [u8]) -> Self {
         Self::new(slice)
     }
 }
 
-impl From<String> for Buffer {
+impl From<String> for ByteBuffer {
     fn from(string: String) -> Self {
         Self::new(string.as_bytes())
     }
 }
 
-impl From<&'static str> for Buffer {
+impl From<&'static str> for ByteBuffer {
     fn from(slice: &'static str) -> Self {
         Self::new(slice.as_bytes())
     }
