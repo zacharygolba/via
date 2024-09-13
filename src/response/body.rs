@@ -16,7 +16,7 @@ impl ResponseBody {
         let buffered = ByteBuffer::new(&[]);
 
         Self {
-            body: AnyBody::Inline(buffered),
+            body: AnyBody::Const(buffered),
         }
     }
 
@@ -36,7 +36,7 @@ impl ResponseBody {
         let buffered = ByteBuffer::from(string);
 
         Self {
-            body: AnyBody::Inline(buffered),
+            body: AnyBody::Const(buffered),
         }
     }
 
@@ -44,7 +44,7 @@ impl ResponseBody {
         let buffered = ByteBuffer::from(bytes);
 
         Self {
-            body: AnyBody::Inline(buffered),
+            body: AnyBody::Const(buffered),
         }
     }
 
@@ -81,7 +81,7 @@ where
         let buffered = ByteBuffer::from(body);
 
         Self {
-            body: AnyBody::Inline(buffered),
+            body: AnyBody::Const(buffered),
         }
     }
 }

@@ -15,13 +15,18 @@ use crate::Error;
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub enum AnyBody<T> {
+    /// A dynamically dispatched `dyn Body + Send`.
+    ///
     Dyn(BoxBody),
-    Inline(T),
+
+    /// A statically dispatched `impl Body + Send`.
+    ///
+    Const(T),
 }
 
 enum AnyBodyProjection<'a, T> {
     Dyn(Pin<&'a mut BoxBody>),
-    Inline(Pin<&'a mut T>),
+    Const(Pin<&'a mut T>),
 }
 
 impl<T> AnyBody<T> {
@@ -50,7 +55,7 @@ impl<T> AnyBody<T> {
             // The Inline variant may contain a type that is !Unpin. We are not
             // moving the value out of self, so it is safe to project it.
             //
-            Self::Inline(ptr) => AnyBodyProjection::Inline(unsafe { Pin::new_unchecked(ptr) }),
+            Self::Const(ptr) => AnyBodyProjection::Const(unsafe { Pin::new_unchecked(ptr) }),
         }
     }
 }
@@ -69,7 +74,7 @@ where
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.project() {
             AnyBodyProjection::Dyn(body) => body.poll_frame(context),
-            AnyBodyProjection::Inline(body) => {
+            AnyBodyProjection::Const(body) => {
                 body.poll_frame(context).map_err(|error| error.into())
             }
         }
@@ -78,14 +83,14 @@ where
     fn is_end_stream(&self) -> bool {
         match self {
             Self::Dyn(body) => body.is_end_stream(),
-            Self::Inline(body) => body.is_end_stream(),
+            Self::Const(body) => body.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match self {
             Self::Dyn(body) => body.size_hint(),
-            Self::Inline(body) => body.size_hint(),
+            Self::Const(body) => body.size_hint(),
         }
     }
 }
