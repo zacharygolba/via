@@ -116,8 +116,9 @@ where
                     // Release the permit back to the semaphore.
                     drop(permit);
 
-                    if let Err(_) = result {
+                    if let Err(error) = result {
                         // Placeholder for tracing..
+                        let _ = error;
                     }
                 });
             }
