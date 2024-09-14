@@ -57,7 +57,7 @@ macro_rules! try_lock {
         // represents the type of operation that the guard is being acquired
         // for.
         $ty:ident,
-        // Should be an expression of type `&mut IoStream<T>`.
+        // Should be an expression of type `&mut Pin<&mut IoStream<T>>`.
         $self:expr,
         // Should be an expression of type `&mut Context<'_>`.
         $context:expr
@@ -196,12 +196,18 @@ where
             ReadBuf::uninit(cursor.as_mut())
         };
 
-        let result = match try_lock!(Read, self, &mut *context) {
+        let result = match try_lock!(Read, &mut self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
-                AsyncRead::poll_read(Pin::new(&mut *guard), context, &mut buf)
+                let ptr = &mut *guard;
+                let stream = Pin::new(ptr);
+
+                stream.poll_read(context, &mut buf)
             }
             IoStreamGuard::Owned(mut guard) => {
-                AsyncRead::poll_read(Pin::new(&mut *guard), context, &mut buf)
+                let ptr = &mut *guard;
+                let stream = Pin::new(ptr);
+
+                stream.poll_read(context, &mut buf)
             }
         };
 
@@ -235,12 +241,18 @@ where
         context: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        match try_lock!(Write, self, &mut *context) {
+        match try_lock!(Write, &mut self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
-                AsyncWrite::poll_write(Pin::new(&mut *guard), context, buf)
+                let ptr = &mut *guard;
+                let stream = Pin::new(ptr);
+
+                stream.poll_write(context, buf)
             }
             IoStreamGuard::Owned(mut guard) => {
-                AsyncWrite::poll_write(Pin::new(&mut *guard), context, buf)
+                let ptr = &mut *guard;
+                let stream = Pin::new(ptr);
+
+                stream.poll_write(context, buf)
             }
         }
     }
@@ -249,12 +261,18 @@ where
         mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        match try_lock!(Write, self, &mut *context) {
+        match try_lock!(Write, &mut self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
-                AsyncWrite::poll_flush(Pin::new(&mut *guard), context)
+                let ptr = &mut *guard;
+                let stream = Pin::new(ptr);
+
+                stream.poll_flush(context)
             }
             IoStreamGuard::Owned(mut guard) => {
-                AsyncWrite::poll_flush(Pin::new(&mut *guard), context)
+                let ptr = &mut *guard;
+                let stream = Pin::new(ptr);
+
+                stream.poll_flush(context)
             }
         }
     }
@@ -263,12 +281,18 @@ where
         mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        match try_lock!(Write, self, &mut *context) {
+        match try_lock!(Write, &mut self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
-                AsyncWrite::poll_shutdown(Pin::new(&mut *guard), context)
+                let ptr = &mut *guard;
+                let stream = Pin::new(ptr);
+
+                stream.poll_shutdown(context)
             }
             IoStreamGuard::Owned(mut guard) => {
-                AsyncWrite::poll_shutdown(Pin::new(&mut *guard), context)
+                let ptr = &mut *guard;
+                let stream = Pin::new(ptr);
+
+                stream.poll_shutdown(context)
             }
         }
     }
@@ -278,19 +302,25 @@ where
         context: &mut Context<'_>,
         buf_list: &[IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
-        match try_lock!(Write, self, &mut *context) {
+        match try_lock!(Write, &mut self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
-                AsyncWrite::poll_write_vectored(Pin::new(&mut *guard), context, buf_list)
+                let ptr = &mut *guard;
+                let stream = Pin::new(ptr);
+
+                stream.poll_write_vectored(context, buf_list)
             }
             IoStreamGuard::Owned(mut guard) => {
-                AsyncWrite::poll_write_vectored(Pin::new(&mut *guard), context, buf_list)
+                let ptr = &mut *guard;
+                let stream = Pin::new(ptr);
+
+                stream.poll_write_vectored(context, buf_list)
             }
         }
     }
 
     fn is_write_vectored(&self) -> bool {
         match self.stream.try_lock() {
-            Ok(guard) => AsyncWrite::is_write_vectored(&*guard),
+            Ok(guard) => guard.is_write_vectored(),
             Err(_) => false,
         }
     }
