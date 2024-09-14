@@ -43,7 +43,7 @@ impl<State> Request<State> {
     {
         let input = self.meta.body.into_inner();
         let output = map(input);
-        let box_body = AnyBody::Dyn(BoxBody::new(output));
+        let box_body = AnyBody::Box(BoxBody::new(output));
 
         Self {
             meta: Box::new(RequestMeta {
