@@ -145,16 +145,7 @@ macro_rules! try_lock {
                 // schedule the intended read or write operation. This is a
                 // very unlikely sceanrio to occur but we handle it to guarantee
                 // the API contract of the unsafe blocks in `poll_read`.
-                _ => {
-                    // Wake the current task so it can be scheduled again. We
-                    // do this because we don't want to poll the future and
-                    // inadvertently steal the guard from an operation that is
-                    // different from what we intended.
-                    context.waker().wake_by_ref();
-
-                    // Return `Poll::Pending`.
-                    Poll::Pending
-                }
+                _ => Poll::Pending,
             };
         }
     }};
