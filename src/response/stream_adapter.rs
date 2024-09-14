@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures_core::Stream;
+use futures::Stream;
 use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};

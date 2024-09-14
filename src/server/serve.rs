@@ -1,10 +1,11 @@
+use futures::future::try_join_all;
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioTimer;
+use slab::Slab;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
-use tokio::task::JoinSet;
 use tokio::{signal, task, time};
 
 use super::io_stream::IoStream;
@@ -24,7 +25,7 @@ where
 {
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
-    let mut connections = JoinSet::new();
+    let mut connections = Slab::new();
 
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
@@ -87,7 +88,7 @@ where
                 };
 
                 // Spawn a task to serve the connection.
-                connections.spawn(async move {
+                connections.insert(task::spawn(async move {
                     // Create a new connection for the configured HTTP version.
                     // For now we only support HTTP/1.1. This will be expanded to
                     // support HTTP/2 in the future.
@@ -126,7 +127,7 @@ where
                         // Placeholder for tracing..
                         let _ = error;
                     }
-                });
+                }));
             }
 
             // Otherwise, wait for a "Ctrl-C" signal to be sent to the process.
@@ -137,24 +138,26 @@ where
         }
 
         // Remove any handles that may have finished.
-        while let Some(result) = connections.try_join_next() {
-            if let Err(error) = result {
-                // Placeholder for tracing...
-
-                if cfg!(debug_assertions) {
-                    eprintln!("Error: {}", error);
-                }
-            }
-        }
+        connections.retain(|_, handle| !handle.is_finished());
     }
 
     let shutdown_started_at = Instant::now();
+
+    let n_connections = connections.len();
+    let connection_handles = connections.into_iter().map(|(_, handle)| handle);
+
+    if cfg!(debug_assertions) {
+        eprintln!(
+            "waiting for {} inflight connection(s) to close...",
+            n_connections
+        );
+    }
 
     tokio::select! {
         // Wait for all inflight connection to finish. If all connections close
         // before the graceful shutdown timeout, return without an error. For
         // unix-based systems, this translates to a 0 exit code.
-        _ = shutdown(connections) => {
+        _ = try_join_all(connection_handles) => {
             let elapsed_as_seconds = shutdown_started_at.elapsed().as_secs();
             let timeout_as_seconds = shutdown_timeout.as_secs();
             let remaining_timeout = timeout_as_seconds
@@ -175,18 +178,4 @@ where
             Err(Error::new("server exited before all connections were closed.".to_string()))
         }
     }
-}
-
-async fn shutdown(connections: JoinSet<()>) -> Result<(), Error> {
-    if cfg!(debug_assertions) {
-        eprintln!(
-            "waiting for {} inflight connection(s) to close...",
-            connections.len()
-        );
-    }
-
-    // Wait for all inflight connections to close.
-    connections.join_all().await;
-
-    Ok(())
 }

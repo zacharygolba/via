@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures_core::Stream;
+use futures::Stream;
 use http_body::Frame;
 use std::fs::File;
 use std::io::{self, Read};

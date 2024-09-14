@@ -13,7 +13,7 @@ etag-sha256 = ["dep:sha2"]
 [dependencies]
 bitflags = "2.6"
 bytes = "1.7"
-futures-core = { version = "0.3", default-features = false }
+futures = "0.3"
 http-body = "1"
 httpdate = "1.0"
 md-5 = { version = "0.10", optional = true }
