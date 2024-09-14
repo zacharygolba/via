@@ -26,7 +26,7 @@ impl ResponseBody {
         Error: From<E>,
     {
         Self {
-            body: AnyBody::Dyn(BoxBody::new(body)),
+            body: AnyBody::Box(BoxBody::new(body)),
         }
     }
 }
@@ -68,7 +68,7 @@ impl Default for ResponseBody {
 impl From<BoxBody> for ResponseBody {
     fn from(body: BoxBody) -> Self {
         Self {
-            body: AnyBody::Dyn(body),
+            body: AnyBody::Box(body),
         }
     }
 }

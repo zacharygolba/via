@@ -17,7 +17,7 @@ use crate::Error;
 pub enum AnyBody<T> {
     /// A dynamically dispatched `dyn Body + Send`.
     ///
-    Dyn(BoxBody),
+    Box(BoxBody),
 
     /// A statically dispatched `impl Body + Send`.
     ///
@@ -47,7 +47,7 @@ impl<T> AnyBody<T> {
             // the trait object is wrapped in a Pin<Box<...>>. We also do not
             // move the value out of self, so it is safe to project it.
             //
-            Self::Dyn(ptr) => AnyBodyProjection::Dyn(Pin::new(ptr)),
+            Self::Box(ptr) => AnyBodyProjection::Dyn(Pin::new(ptr)),
 
             //
             // Safety:
@@ -82,14 +82,14 @@ where
 
     fn is_end_stream(&self) -> bool {
         match self {
-            Self::Dyn(body) => body.is_end_stream(),
+            Self::Box(body) => body.is_end_stream(),
             Self::Const(body) => body.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match self {
-            Self::Dyn(body) => body.size_hint(),
+            Self::Box(body) => body.size_hint(),
             Self::Const(body) => body.size_hint(),
         }
     }
