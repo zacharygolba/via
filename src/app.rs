@@ -54,7 +54,19 @@ where
     ///
     /// We suggest not setting this value unless you know what you are doing and
     /// have a good reason to do so. If you are unsure, it is best to leave this
-    /// value at the default.
+    /// value at the default and scale horizontally.
+    ///
+    /// If you do set this value, we suggest doing so by profiling the stack size
+    /// of your application when it's under load and incrementally increasing
+    /// this value until you find a balance between performance and worry-free
+    /// programming. In other words, the closer this value is to the limit based
+    /// on your application's stack consumption and the stack size of your server,
+    /// the more careful you will need to be when allocating values on the stack
+    /// (i.e dereferencing a heap pointer). Otherwise, you may encounter a stack
+    /// overflow. In addition to the stack size, you should also consider not
+    /// setting this value higher than the number of available file descriptors
+    /// (or `ulimit -n`) on POSIX systems.
+    ///
     pub fn max_connections(mut self, n: usize) -> Self {
         self.max_connections = n;
         self

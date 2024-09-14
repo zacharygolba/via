@@ -59,6 +59,12 @@ where
 
     loop {
         // Acquire a permit from the semaphore.
+        //
+        // We allocate 2 permits per connection as a form of backpressure. This
+        // also gives users of Via more space on the stack to do what they need
+        // to do. In addition to leaving room on the stack for application code,
+        // this also enables users of Via to write a proxy server without having
+        // to worry about running into file descriptor limits.
         let permit = semaphore.clone().acquire_many_owned(2).await?;
 
         // Create a new Service. We'll move this into the task when a new
