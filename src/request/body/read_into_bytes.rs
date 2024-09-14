@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use super::BodyStream;
-use crate::{Error, Result};
+use crate::Error;
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct ReadIntoBytes {
@@ -21,10 +21,9 @@ impl ReadIntoBytes {
 impl ReadIntoBytes {
     fn project(self: Pin<&mut Self>) -> (Pin<&mut BodyStream>, &mut Vec<u8>) {
         let this = self.get_mut();
-        let stream = &mut this.stream;
-        let buffer = &mut this.buffer;
+        let ptr = &mut this.stream;
 
-        (Pin::new(stream), buffer)
+        (Pin::new(ptr), &mut this.buffer)
     }
 }
 
