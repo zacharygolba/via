@@ -58,22 +58,20 @@ macro_rules! try_lock {
         // for.
         $ty:ident,
         // Should be an expression of type `&mut IoStream<T>`.
-        $this:expr,
+        $self:expr,
         // Should be an expression of type `&mut Context<'_>`.
         $context:expr
     ) => {{
-        use std::pin::Pin;
         use std::sync::Arc;
         use std::task::Poll;
 
         use self::{IoState, IoStreamGuard};
 
-        let this = $this;
         let context = $context;
 
         loop {
             // Acquire a lock on the stream for the operation of type `$ty`.
-            return match &mut this.io_state {
+            return match &mut $self.io_state {
                 // The stream is idle. We can acquire a lock for the operation
                 // of type `$ty`.
                 IoState::Idle => {
@@ -84,7 +82,7 @@ macro_rules! try_lock {
                     // time. We're able to acquire the lock without incrementing
                     // the reference count of the `Arc` that wraps the stream or
                     // performing any heap allocations.
-                    if let Ok(guard) = this.stream.try_lock() {
+                    if let Ok(guard) = $self.stream.try_lock() {
                         break IoStreamGuard::Borrowed(guard);
                     }
 
@@ -107,12 +105,12 @@ macro_rules! try_lock {
                     // We use an `Arc` to clone the stream so we can move the
                     // stream into the future and remain compatible with multi-
                     // threaded runtimes.
-                    let future = Box::pin(Arc::clone(&this.stream).lock_owned());
+                    let future = Box::pin(Arc::clone(&$self.stream).lock_owned());
 
                     // Transition `io_state` to `$ty`. This indicates that we're
                     // waiting for a lock to be acquired before we can proceed
                     // with the intended operation.
-                    this.io_state = IoState::$ty(future);
+                    $self.io_state = IoState::$ty(future);
 
                     // Continue to the next iteration of the loop to poll the
                     // future we just created.
@@ -122,13 +120,13 @@ macro_rules! try_lock {
                 // We're currently waiting for a lock to be acquired for the
                 // operation of type `$ty`. Poll the future to see if the lock
                 // has been acquired.
-                IoState::$ty(future) => match Pin::as_mut(future).poll(context) {
+                IoState::$ty(future) => match future.as_mut().poll(context) {
                     // The lock has been acquired.
                     Poll::Ready(guard) => {
                         // Transition `io_state` to `Idle`. This indicates that
                         // we'll be ready to schedule another operation when
                         // the guard is dropped.
-                        this.io_state = IoState::Idle;
+                        $self.io_state = IoState::Idle;
 
                         // Break out of the loop and return the guard.
                         break IoStreamGuard::Owned(guard);
@@ -179,7 +177,7 @@ where
     R: AsyncRead + Send + Sync + Unpin + 'static,
 {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
         mut cursor: ReadBufCursor<'_>,
     ) -> Poll<Result<(), io::Error>> {
@@ -198,16 +196,12 @@ where
             ReadBuf::uninit(cursor.as_mut())
         };
 
-        let result = {
-            let this = self.get_mut();
-
-            match try_lock!(Read, this, &mut *context) {
-                IoStreamGuard::Borrowed(mut guard) => {
-                    AsyncRead::poll_read(Pin::new(&mut *guard), context, &mut buf)
-                }
-                IoStreamGuard::Owned(mut guard) => {
-                    AsyncRead::poll_read(Pin::new(&mut *guard), context, &mut buf)
-                }
+        let result = match try_lock!(Read, self, &mut *context) {
+            IoStreamGuard::Borrowed(mut guard) => {
+                AsyncRead::poll_read(Pin::new(&mut *guard), context, &mut buf)
+            }
+            IoStreamGuard::Owned(mut guard) => {
+                AsyncRead::poll_read(Pin::new(&mut *guard), context, &mut buf)
             }
         };
 
@@ -237,13 +231,11 @@ where
     W: AsyncWrite + Send + Sync + Unpin + 'static,
 {
     fn poll_write(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        let this = self.get_mut();
-
-        match try_lock!(Write, this, &mut *context) {
+        match try_lock!(Write, self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
                 AsyncWrite::poll_write(Pin::new(&mut *guard), context, buf)
             }
@@ -253,10 +245,11 @@ where
         }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        let this = self.get_mut();
-
-        match try_lock!(Write, this, &mut *context) {
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Result<(), io::Error>> {
+        match try_lock!(Write, self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
                 AsyncWrite::poll_flush(Pin::new(&mut *guard), context)
             }
@@ -267,12 +260,10 @@ where
     }
 
     fn poll_shutdown(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        let this = self.get_mut();
-
-        match try_lock!(Write, this, &mut *context) {
+        match try_lock!(Write, self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
                 AsyncWrite::poll_shutdown(Pin::new(&mut *guard), context)
             }
@@ -283,13 +274,11 @@ where
     }
 
     fn poll_write_vectored(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
         buf_list: &[IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
-        let this = self.get_mut();
-
-        match try_lock!(Write, this, &mut *context) {
+        match try_lock!(Write, self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
                 AsyncWrite::poll_write_vectored(Pin::new(&mut *guard), context, buf_list)
             }
