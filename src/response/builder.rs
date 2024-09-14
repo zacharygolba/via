@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures_core::Stream;
+use futures::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::response::Builder;
 use http::{HeaderName, HeaderValue, StatusCode, Version};

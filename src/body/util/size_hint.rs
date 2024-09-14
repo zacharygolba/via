@@ -1,7 +1,7 @@
 //! Conversion methods to go to and from the size hint of a body or stream.
 //!
 
-use futures_core::Stream;
+use futures::Stream;
 use http_body::{Body, SizeHint};
 
 /// Adapts the `SizeHint` of a `Body` to a tuple containing the lower and upper
