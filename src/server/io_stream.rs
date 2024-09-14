@@ -57,7 +57,7 @@ macro_rules! try_lock {
         // represents the type of operation that the guard is being acquired
         // for.
         $ty:ident,
-        // Should be an expression of type `&mut Pin<&mut IoStream<T>>`.
+        // Should be an expression of type `Pin<&mut IoStream<T>>`.
         $self:expr,
         // Should be an expression of type `&mut Context<'_>`.
         $context:expr
@@ -187,7 +187,7 @@ where
             ReadBuf::uninit(cursor.as_mut())
         };
 
-        let result = match try_lock!(Read, &mut self, &mut *context) {
+        let result = match try_lock!(Read, self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
                 let ptr = &mut *guard;
                 let stream = Pin::new(ptr);
@@ -232,7 +232,7 @@ where
         context: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        match try_lock!(Write, &mut self, &mut *context) {
+        match try_lock!(Write, self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
                 let ptr = &mut *guard;
                 let stream = Pin::new(ptr);
@@ -252,7 +252,7 @@ where
         mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        match try_lock!(Write, &mut self, &mut *context) {
+        match try_lock!(Write, self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
                 let ptr = &mut *guard;
                 let stream = Pin::new(ptr);
@@ -272,7 +272,7 @@ where
         mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        match try_lock!(Write, &mut self, &mut *context) {
+        match try_lock!(Write, self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
                 let ptr = &mut *guard;
                 let stream = Pin::new(ptr);
@@ -293,7 +293,7 @@ where
         context: &mut Context<'_>,
         buf_list: &[IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
-        match try_lock!(Write, &mut self, &mut *context) {
+        match try_lock!(Write, self, &mut *context) {
             IoStreamGuard::Borrowed(mut guard) => {
                 let ptr = &mut *guard;
                 let stream = Pin::new(ptr);
