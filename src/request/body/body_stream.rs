@@ -7,7 +7,7 @@ use std::task::{Context, Poll};
 
 use crate::body::util::size_hint;
 use crate::body::AnyBody;
-use crate::Result;
+use crate::Error;
 
 /// A stream of frames that compose the body and trailers of a request.
 #[must_use = "streams do nothing unless polled"]
@@ -22,16 +22,22 @@ impl BodyStream {
     }
 }
 
-impl Stream for BodyStream {
-    type Item = Result<Frame<Bytes>>;
-
-    fn poll_next(self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {
+impl BodyStream {
+    fn project(self: Pin<&mut Self>) -> Pin<&mut AnyBody<Incoming>> {
         // Get a mutable reference to `Self`.
         let this = self.get_mut();
         // Get a mutable reference to the `body` field.
-        let body = &mut this.body;
+        let ptr = &mut this.body;
 
-        Pin::new(body).poll_frame(context)
+        Pin::new(ptr)
+    }
+}
+
+impl Stream for BodyStream {
+    type Item = Result<Frame<Bytes>, Error>;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {
+        self.project().poll_frame(context)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
