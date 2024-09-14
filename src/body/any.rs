@@ -25,7 +25,7 @@ pub enum AnyBody<T> {
 }
 
 enum AnyBodyProjection<'a, T> {
-    Dyn(Pin<&'a mut BoxBody>),
+    Box(Pin<&'a mut BoxBody>),
     Const(Pin<&'a mut T>),
 }
 
@@ -47,7 +47,7 @@ impl<T> AnyBody<T> {
             // the trait object is wrapped in a Pin<Box<...>>. We also do not
             // move the value out of self, so it is safe to project it.
             //
-            Self::Box(ptr) => AnyBodyProjection::Dyn(Pin::new(ptr)),
+            Self::Box(ptr) => AnyBodyProjection::Box(Pin::new(ptr)),
 
             //
             // Safety:
@@ -73,7 +73,7 @@ where
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.project() {
-            AnyBodyProjection::Dyn(body) => body.poll_frame(context),
+            AnyBodyProjection::Box(body) => body.poll_frame(context),
             AnyBodyProjection::Const(body) => {
                 body.poll_frame(context).map_err(|error| error.into())
             }
