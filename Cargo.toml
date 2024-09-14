@@ -10,7 +10,7 @@ default = []
 
 [dependencies]
 bytes = "1.7.1"
-futures-core = { version = "0.3", default-features = false }
+futures = "0.3"
 http = "1"
 http-body = "1"
 hyper = { features = ["http1", "server"], version = "1.4" }
@@ -18,6 +18,7 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 percent-encoding = "2.3"
 serde = "1"
 serde_json = "1"
+slab = "0.4"
 smallvec = "1.13"
 tokio = { version = "1", features = ["macros", "signal"] }
 via-router = { path = "./crates/via-router" }
