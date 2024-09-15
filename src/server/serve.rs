@@ -1,4 +1,3 @@
-use futures::future::try_join_all;
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioTimer;
 use slab::Slab;
@@ -6,7 +5,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
-use tokio::{signal, task, time};
+use tokio::task::{self, JoinHandle};
+use tokio::{signal, time};
 
 use super::io_stream::IoStream;
 use super::service::Service;
@@ -143,13 +143,10 @@ where
 
     let shutdown_started_at = Instant::now();
 
-    let n_connections = connections.len();
-    let connection_handles = connections.into_iter().map(|(_, handle)| handle);
-
     if cfg!(debug_assertions) {
         eprintln!(
             "waiting for {} inflight connection(s) to close...",
-            n_connections
+            connections.len()
         );
     }
 
@@ -157,7 +154,7 @@ where
         // Wait for all inflight connection to finish. If all connections close
         // before the graceful shutdown timeout, return without an error. For
         // unix-based systems, this translates to a 0 exit code.
-        _ = try_join_all(connection_handles) => {
+        _ = graceful_shutdown(connections) => {
             let elapsed_as_seconds = shutdown_started_at.elapsed().as_secs();
             let timeout_as_seconds = shutdown_timeout.as_secs();
             let remaining_timeout = timeout_as_seconds
@@ -176,6 +173,15 @@ where
         // systems, this translates to a 1 exit code.
         _ = time::sleep(shutdown_timeout) => {
             Err(Error::new("server exited before all connections were closed.".to_string()))
+        }
+    }
+}
+
+async fn graceful_shutdown(connections: Slab<JoinHandle<()>>) {
+    for (_, handle) in connections.into_iter() {
+        if let Err(error) = handle.await {
+            // Placeholder for tracing...
+            let _ = error;
         }
     }
 }
