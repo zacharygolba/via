@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::Stream;
+use futures_core::Stream;
 use http_body::{Body, Frame};
 use hyper::body::Incoming;
 use std::pin::Pin;
