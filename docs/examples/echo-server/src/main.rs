@@ -1,7 +1,7 @@
 use via::http::header::CONTENT_TYPE;
-use via::{Next, Request, Response, Result};
+use via::{Error, Next, Request, Response, Server};
 
-async fn echo(request: Request, _: Next) -> Result<Response> {
+async fn echo(request: Request, _: Next) -> Result<Response, Error> {
     // Optionally get the value of the Content-Type header from `request`.
     let content_type = request.headers().get(CONTENT_TYPE).cloned();
     // Get a stream of bytes from the body of the request.
@@ -15,8 +15,8 @@ async fn echo(request: Request, _: Next) -> Result<Response> {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let mut app = via::app(());
+async fn main() -> Result<(), Error> {
+    let mut app = via::new(());
 
     // Add our echo responder to the endpoint /echo.
     app.at("/echo").respond(via::post(echo));
@@ -26,8 +26,9 @@ async fn main() -> Result<()> {
     // `via::post` function is used to specify that the `echo` middleware should
     // only accept POST requests.
 
-    app.listen(("127.0.0.1", 8080), |address| {
-        println!("Server listening at http://{}", address);
-    })
-    .await
+    Server::new(app)
+        .listen(("127.0.0.1", 8080), |address| {
+            println!("Server listening at http://{}", address);
+        })
+        .await
 }

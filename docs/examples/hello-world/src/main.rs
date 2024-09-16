@@ -1,6 +1,6 @@
-use via::{Next, Request, Result};
+use via::{Error, Next, Request, Server};
 
-async fn hello(request: Request, _: Next) -> Result<String> {
+async fn hello(request: Request, _: Next) -> Result<String, Error> {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").required()?;
 
@@ -9,9 +9,9 @@ async fn hello(request: Request, _: Next) -> Result<String> {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Error> {
     // Create a new app by calling the `via::app` function.
-    let mut app = via::app(());
+    let mut app = via::new(());
     //                     ^^
     // Shared state can be passed to the app by passing a value to the
     // `via::app` function. Check out the shared-state example for more
@@ -31,8 +31,9 @@ async fn main() -> Result<()> {
     // You can specify the HTTP method that middleware should accept with the
     // helper functions at the top-level of the `via` crate.
 
-    app.listen(("127.0.0.1", 8080), |address| {
-        println!("Server listening at http://{}", address);
-    })
-    .await
+    Server::new(app)
+        .listen(("127.0.0.1", 8080), |address| {
+            println!("Server listening at http://{}", address);
+        })
+        .await
 }

@@ -2,7 +2,7 @@ mod api;
 mod database;
 
 use via::http::StatusCode;
-use via::{ErrorBoundary, Result};
+use via::{Error, ErrorBoundary, Server};
 
 use database::Pool;
 
@@ -14,10 +14,10 @@ struct State {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Error> {
     dotenvy::dotenv()?;
 
-    let mut app = via::app(State {
+    let mut app = via::new(State {
         pool: database::pool().await?,
     });
 
@@ -85,8 +85,9 @@ async fn main() -> Result<()> {
         });
     });
 
-    app.listen(("127.0.0.1", 8080), |address| {
-        println!("Server listening at http://{}", address);
-    })
-    .await
+    Server::new(app)
+        .listen(("127.0.0.1", 8080), |address| {
+            println!("Server listening at http://{}", address);
+        })
+        .await
 }

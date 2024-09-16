@@ -1,28 +1,32 @@
-use hyper::server::conn::http1;
 use hyper_util::rt::TokioTimer;
 use slab::Slab;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
-use tokio::sync::{watch, Semaphore};
-use tokio::task::{self, JoinHandle};
-use tokio::{signal, time};
+use tokio::sync::Semaphore;
+use tokio::{task, time};
 
+use super::acceptor::Acceptor;
 use super::io_stream::IoStream;
 use super::service::Service;
+use super::shutdown::{graceful_shutdown, wait_for_shutdown};
 use crate::router::Router;
 use crate::Error;
 
-pub async fn serve<State>(
+pub async fn serve<T, State>(
     state: Arc<State>,
     router: Arc<Router<State>>,
     listener: TcpListener,
+    acceptor: T,
     max_connections: usize,
     shutdown_timeout: Duration,
 ) -> Result<(), Error>
 where
+    T: Acceptor + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
+    let (shutdown_task, shutdown_rx) = wait_for_shutdown();
+
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
     let mut connections = Slab::new();
@@ -32,31 +36,6 @@ where
     // number of connections is reached, we'll wait until a permit is available
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
-
-    let (shutdown_task, shutdown_rx) = {
-        // Create a watch channel to notify the connections to initiate a
-        // graceful shutdown process when the `ctrl_c` future resolves.
-        let (tx, rx) = watch::channel(false);
-
-        // Spawn a task to wait for a "Ctrl-C" signal to be sent to the process.
-        let task = task::spawn(async move {
-            match signal::ctrl_c().await {
-                Ok(_) => tx.send(true).map_err(|_| {
-                    let message = "unable to notify connections to shutdown.";
-                    Error::new(message.to_string())
-                }),
-                Err(error) => {
-                    if cfg!(debug_assertions) {
-                        eprintln!("unable to register the 'Ctrl-C' signal.");
-                    }
-
-                    Err(error.into())
-                }
-            }
-        });
-
-        (task, rx)
-    };
 
     loop {
         // Acquire a permit from the semaphore.
@@ -68,11 +47,15 @@ where
         // to worry about running into file descriptor limits.
         let permit = semaphore.clone().acquire_many_owned(2).await?;
 
-        // Create a new Service. We'll move this into the task when a new
-        // connection is accepted.
+        // Create a new Service. We'll move this into the connection task when a
+        // new connection is accepted from the listener.
         let service = Service::new(Arc::clone(&router), Arc::clone(&state));
 
-        // Clone the watch channel so that we can notify the connection when
+        // Clone the acceptor so it can be moved into the task responsible for
+        // serving individual connections.
+        let acceptor = acceptor.clone();
+
+        // Clone the watch channel so that we can notify the connection task when
         // initiate a graceful shutdown process before the server exits.
         let mut shutdown_rx = shutdown_rx.clone();
 
@@ -89,13 +72,45 @@ where
 
                 // Spawn a task to serve the connection.
                 connections.insert(task::spawn(async move {
-                    // Create a new connection for the configured HTTP version.
-                    // For now we only support HTTP/1.1. This will be expanded to
-                    // support HTTP/2 in the future.
-                    let mut connection = http1::Builder::new()
-                        .timer(TokioTimer::new())
-                        .serve_connection(IoStream::new(stream), service)
-                        .with_upgrades();
+                    // Define the acceptor as mutable. We do this so we can be
+                    // confident that accept is only called within the connection
+                    // task.
+                    let mut acceptor = acceptor;
+
+                    // Accept the stream from the acceptor. This is where the
+                    // TLS handshake would occur if the acceptor is a TlsAcceptor.
+                    let stream = match acceptor.accept(stream).await {
+                        Ok(accepted) => accepted,
+                        Err(_) => {
+                            // Placeholder for tracing...
+                            return;
+                        }
+                    };
+
+                    // Wrap the stream in a type that implements hyper's I/O
+                    // traits.
+                    let io = IoStream::new(stream);
+
+                    // Create a new HTTP/2 connection.
+                    #[cfg(feature = "http2")]
+                    let mut connection = {
+                        use hyper::server::conn::http2;
+
+                        http2::Builder::new()
+                            .timer(TokioTimer::new())
+                            .serve_connection(io, service)
+                    };
+
+                    // Create a new HTTP/1.1 connection.
+                    #[cfg(feature = "http1")]
+                    let mut connection = {
+                        use hyper::server::conn::http1;
+
+                        http1::Builder::new()
+                            .timer(TokioTimer::new())
+                            .serve_connection(io, service)
+                            .with_upgrades()
+                    };
 
                     // Poll the connection until it is closed or a graceful
                     // shutdown process is initiated.
@@ -120,11 +135,11 @@ where
                         }
                     };
 
-                    // Release the permit back to the semaphore.
+                    // Return the permits back to the semaphore.
                     drop(permit);
 
                     if let Err(error) = result {
-                        // Placeholder for tracing..
+                        // Placeholder for tracing...
                         let _ = error;
                     }
                 }));
@@ -173,15 +188,6 @@ where
         // systems, this translates to a 1 exit code.
         _ = time::sleep(shutdown_timeout) => {
             Err(Error::new("server exited before all connections were closed.".to_string()))
-        }
-    }
-}
-
-async fn graceful_shutdown(connections: Slab<JoinHandle<()>>) {
-    for (_, handle) in connections.into_iter() {
-        if let Err(error) = handle.await {
-            // Placeholder for tracing...
-            let _ = error;
         }
     }
 }
