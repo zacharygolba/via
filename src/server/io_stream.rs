@@ -15,6 +15,9 @@ use tokio::sync::{Mutex, MutexGuard, OwnedMutexGuard};
 
 /// A wrapper around a stream that implements both `AsyncRead` and `AsyncWrite`.
 pub struct IoStream<T> {
+    /// A flag indicating whether the underlying stream supports vectored writes.
+    is_write_vectored: bool,
+
     /// The underlying I/O stream that we're wrapping. Currently, `T` is always
     /// a `TcpStream`. When we add support HTTPS, HTTP/2, or alternative async
     /// runtime implementations there will be additional permutations of `T`.
@@ -156,9 +159,12 @@ where
     T: AsyncRead + AsyncWrite + Unpin,
 {
     pub fn new(stream: T) -> Self {
+        let is_write_vectored = stream.is_write_vectored();
+
         Self {
             stream: Arc::new(Mutex::new(stream)),
             io_state: IoState::Idle,
+            is_write_vectored,
         }
     }
 }
@@ -310,9 +316,6 @@ where
     }
 
     fn is_write_vectored(&self) -> bool {
-        match self.stream.try_lock() {
-            Ok(guard) => guard.is_write_vectored(),
-            Err(_) => false,
-        }
+        self.is_write_vectored
     }
 }
