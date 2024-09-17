@@ -59,7 +59,7 @@ async fn main() -> Result<(), Error> {
             .with_no_client_auth()
             // We're only using a single cert for this example.
             .with_single_cert(cert, key)
-            .map_err(|error| error)?
+            .map_err(Error::from)?
     };
 
     // Add our hello responder to the endpoint /hello/:name. Middleware that is
