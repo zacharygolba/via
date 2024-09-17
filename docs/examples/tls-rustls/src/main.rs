@@ -16,9 +16,9 @@ async fn hello(request: Request, _: Next) -> Result<String, Error> {
 
 fn load_certs(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, Error> {
     let path = path.as_ref();
-    let file = File::open(path).or_else(|_| {
+    let file = File::open(path).map_err(|_| {
         let message = format!("failed to open cert file at: {:?}", path);
-        Err(Error::new(message))
+        Error::new(message)
     })?;
 
     certs(&mut BufReader::new(file))
@@ -28,9 +28,9 @@ fn load_certs(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, Er
 
 fn load_key(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>, Error> {
     let path = path.as_ref();
-    let file = File::open(path).or_else(|_| {
+    let file = File::open(path).map_err(|_| {
         let message = format!("failed to open key file at: {:?}", path);
-        Err(Error::new(message))
+        Error::new(message)
     })?;
 
     private_key(&mut BufReader::new(file))
