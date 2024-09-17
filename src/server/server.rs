@@ -102,6 +102,8 @@ where
 
         let state = self.state;
         let router = self.router;
+        #[cfg(feature = "rustls")]
+        let rustls_config = self.rustls_config;
         let max_connections = self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS);
         let shutdown_timeout = self.shutdown_timeout.map_or_else(
             || Duration::from_secs(DEFAULT_SHUTDOWN_TIMEOUT),
@@ -113,6 +115,7 @@ where
             listener_future,
             state,
             router,
+            rustls_config,
             max_connections,
             shutdown_timeout,
         );

@@ -1,3 +1,5 @@
+#[cfg(feature = "http2")]
+use hyper_util::rt::TokioExecutor;
 use hyper_util::rt::TokioTimer;
 use slab::Slab;
 use std::sync::Arc;
@@ -96,13 +98,15 @@ where
                     let mut connection = {
                         use hyper::server::conn::http2;
 
-                        http2::Builder::new()
+                        let exec = TokioExecutor::new();
+
+                        http2::Builder::new(exec)
                             .timer(TokioTimer::new())
                             .serve_connection(io, service)
                     };
 
                     // Create a new HTTP/1.1 connection.
-                    #[cfg(feature = "http1")]
+                    #[cfg(all(feature = "http1", not(feature = "http2")))]
                     let mut connection = {
                         use hyper::server::conn::http1;
 
