@@ -62,10 +62,8 @@ macro_rules! try_lock {
         // Should be an expression of type `&mut Context<'_>`.
         $context:expr
     ) => {{
-        use std::sync::Arc;
-        use std::task::Poll;
-
         use self::{IoState, IoStreamGuard};
+        use std::task::Poll;
 
         let context = $context;
 
@@ -75,6 +73,8 @@ macro_rules! try_lock {
                 // The stream is idle. We can acquire a lock for the operation
                 // of type `$ty`.
                 IoState::Idle => {
+                    let stream = &mut $self.stream;
+
                     // Attempt to acquire a lock on the stream. If the lock is
                     // immediately available, we'll get the guard and return it.
                     //
@@ -82,7 +82,7 @@ macro_rules! try_lock {
                     // time. We're able to acquire the lock without incrementing
                     // the reference count of the `Arc` that wraps the stream or
                     // performing any heap allocations.
-                    if let Ok(guard) = $self.stream.try_lock() {
+                    if let Ok(guard) = stream.try_lock() {
                         break IoStreamGuard::Borrowed(guard);
                     }
 
@@ -105,7 +105,7 @@ macro_rules! try_lock {
                     // We use an `Arc` to clone the stream so we can move the
                     // stream into the future and remain compatible with multi-
                     // threaded runtimes.
-                    let future = Box::pin(Arc::clone(&$self.stream).lock_owned());
+                    let future = Box::pin(stream.clone().lock_owned());
 
                     // Transition `io_state` to `$ty`. This indicates that we're
                     // waiting for a lock to be acquired before we can proceed
