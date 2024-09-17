@@ -1,12 +1,16 @@
-use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{future::Future, net::SocketAddr};
 use tokio::net::{TcpListener, ToSocketAddrs};
+#[cfg(feature = "rustls")]
 use tokio_rustls::rustls;
+#[cfg(feature = "rustls")]
+use tokio_rustls::TlsAcceptor;
 
+#[cfg(not(feature = "rustls"))]
+use super::acceptor::HttpAcceptor;
 use super::serve;
-use crate::{server::acceptor::HttpAcceptor, App, Error, Router};
+use crate::{App, Error, Router};
 
 /// The default value of the maximum number of concurrent connections.
 const DEFAULT_MAX_CONNECTIONS: usize = 256;
@@ -14,48 +18,35 @@ const DEFAULT_MAX_CONNECTIONS: usize = 256;
 /// The default value of the shutdown timeout in seconds.
 const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
 
-pub struct Server<T> {
-    state: Arc<T>,
-    router: Arc<Router<T>>,
+pub struct Server<State> {
+    state: Arc<State>,
+    router: Arc<Router<State>>,
     #[cfg(feature = "rustls")]
-    key_path: Option<PathBuf>,
-    #[cfg(feature = "rustls")]
-    cert_path: Option<PathBuf>,
+    rustls_config: Option<rustls::ServerConfig>,
     max_connections: Option<usize>,
     shutdown_timeout: Option<u64>,
 }
 
-impl<T: Send + Sync + 'static> Server<T> {
-    pub fn new(app: App<T>) -> Self {
+impl<State> Server<State>
+where
+    State: Send + Sync + 'static,
+{
+    pub fn new(app: App<State>) -> Self {
         let (state, router) = app.into_parts();
 
         Self {
             state,
             router: Arc::new(router),
             #[cfg(feature = "rustls")]
-            key_path: None,
-            #[cfg(feature = "rustls")]
-            cert_path: None,
+            rustls_config: None,
             max_connections: None,
             shutdown_timeout: None,
         }
     }
 
     #[cfg(feature = "rustls")]
-    pub fn key_path(mut self, path: P) -> Self
-    where
-        P: AsRef<std::path::Path>,
-    {
-        self.key_path = Some(path.as_ref().to_path_buf());
-        self
-    }
-
-    #[cfg(feature = "rustls")]
-    pub fn cert_path<P>(mut self, path: P) -> Self
-    where
-        P: AsRef<std::path::Path>,
-    {
-        self.cert_path = Some(path.as_ref().to_path_buf());
+    pub fn rustls_config(mut self, server_config: rustls::ServerConfig) -> Self {
+        self.rustls_config = Some(server_config);
         self
     }
 
@@ -90,11 +81,27 @@ impl<T: Send + Sync + 'static> Server<T> {
         self
     }
 
-    pub async fn listen<A, R>(self, address: A, on_ready: R) -> Result<(), Error>
+    pub fn listen<A, R>(self, address: A, on_ready: R) -> impl Future<Output = Result<(), Error>>
     where
         A: ToSocketAddrs,
         R: FnOnce(&SocketAddr),
     {
+        let listener_future = async {
+            let listener = TcpListener::bind(address).await?;
+
+            if let Ok(address) = listener.local_addr() {
+                // Call the listening callback with the address to which the TCP
+                // listener is bound.
+                on_ready(&address);
+            } else {
+                // Placeholder for tracing...
+            }
+
+            Ok(listener)
+        };
+
+        let state = self.state;
+        let router = self.router;
         let max_connections = self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS);
         let shutdown_timeout = self.shutdown_timeout.map_or_else(
             || Duration::from_secs(DEFAULT_SHUTDOWN_TIMEOUT),
@@ -102,129 +109,85 @@ impl<T: Send + Sync + 'static> Server<T> {
         );
 
         #[cfg(feature = "rustls")]
-        let future = listen_rustls(
-            self.state,
-            self.router,
-            self.key_path,
-            self.cert_path,
+        let future = serve_rustls(
+            listener_future,
+            state,
+            router,
             max_connections,
             shutdown_timeout,
-            address,
-            on_ready,
         );
 
         #[cfg(not(feature = "rustls"))]
-        let future = listen(
-            self.state,
-            self.router,
+        let future = serve_http(
+            listener_future,
+            state,
+            router,
             max_connections,
             shutdown_timeout,
-            address,
-            on_ready,
         );
 
-        future.await
+        future
     }
 }
 
-async fn listen<State>(
+#[cfg(feature = "rustls")]
+pub async fn serve_rustls<State, F>(
+    listener_future: F,
+    state: Arc<State>,
+    router: Arc<Router<State>>,
+    rustls_config: Option<rustls::ServerConfig>,
+    max_connections: usize,
+    shutdown_timeout: Duration,
+) -> Result<(), Error>
+where
+    State: Send + Sync + 'static,
+    F: Future<Output = Result<TcpListener, Error>>,
+{
+    let listener = listener_future.await?;
+
+    let acceptor = {
+        let rustls_config = rustls_config.ok_or_else(|| {
+            let message = "rustls_config is required to use the 'rustls' feature";
+            Error::new(message.to_string())
+        })?;
+
+        TlsAcceptor::from(Arc::new(rustls_config))
+    };
+
+    let shutdown = serve(
+        state,
+        router,
+        listener,
+        acceptor,
+        max_connections,
+        shutdown_timeout,
+    );
+
+    shutdown.await
+}
+
+#[cfg(not(feature = "rustls"))]
+pub async fn serve_http<State, F>(
+    listener_future: F,
     state: Arc<State>,
     router: Arc<Router<State>>,
     max_connections: usize,
     shutdown_timeout: Duration,
-    address: impl ToSocketAddrs,
-    on_ready: impl FnOnce(&SocketAddr),
 ) -> Result<(), Error>
 where
     State: Send + Sync + 'static,
+    F: Future<Output = Result<TcpListener, Error>>,
 {
-    let listener = TcpListener::bind(address).await?;
+    let listener = listener_future.await?;
     let acceptor = HttpAcceptor;
-
-    if let Ok(address) = listener.local_addr() {
-        // Call the listening callback with the address to which the TCP
-        // listener is bound.
-        on_ready(&address);
-    } else {
-        // Placeholder for tracing...
-    }
-
-    // Serve incoming connections from the TCP listener.
-    serve(
+    let shutdown = serve(
         state,
         router,
         listener,
         acceptor,
         max_connections,
         shutdown_timeout,
-    )
-    .await
-}
+    );
 
-async fn listen_rustls<State>(
-    state: Arc<State>,
-    router: Arc<Router<State>>,
-    key_path: Option<PathBuf>,
-    cert_path: Option<PathBuf>,
-    max_connections: usize,
-    shutdown_timeout: Duration,
-    address: impl ToSocketAddrs,
-    on_ready: impl FnOnce(&SocketAddr),
-) -> Result<(), Error>
-where
-    State: Send + Sync + 'static,
-{
-    use tokio_rustls::TlsAcceptor;
-
-    let (key_path, cert_path) = require_key_and_cert(key_path, cert_path)?;
-    let listener = TcpListener::bind(address).await?;
-    let tls_config = build_rustls_config(key_path, cert_path)?;
-    let acceptor = TlsAcceptor::from(Arc::new(tls_config));
-
-    if let Ok(address) = listener.local_addr() {
-        // Call the listening callback with the address to which the TCP
-        // listener is bound.
-        on_ready(&address);
-    } else {
-        // Placeholder for tracing...
-    }
-
-    // Serve incoming connections from the TCP listener.
-    serve(
-        state,
-        router,
-        listener,
-        acceptor,
-        max_connections,
-        shutdown_timeout,
-    )
-    .await
-}
-
-fn build_rustls_config(
-    key_path: PathBuf,
-    cert_path: PathBuf,
-) -> Result<rustls::ServerConfig, Error> {
-    todo!()
-    // rustls::ServerConfig::builder()
-    //     .with_no_client_auth()
-    //     .with_single_cert(cert_chain, key_der)
-    //     .map_err(|error| error.into())
-}
-
-fn require_key_and_cert(
-    key_path: Option<PathBuf>,
-    cert_path: Option<PathBuf>,
-) -> Result<(PathBuf, PathBuf), Error> {
-    let key_path = key_path.ok_or_else(|| {
-        let message = "key_path is required to use tls";
-        Error::new(message.to_string())
-    })?;
-
-    let cert_path = cert_path.ok_or_else(|| {
-        let message = "cert_path is required to use tls";
-        Error::new(message.to_string())
-    })?;
-
-    Ok((key_path, cert_path))
+    shutdown.await
 }

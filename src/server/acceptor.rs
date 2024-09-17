@@ -3,6 +3,10 @@ use std::error::Error;
 use std::future::{self, Future, Ready};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
+#[cfg(feature = "rustls")]
+use tokio_rustls::server::TlsStream;
+#[cfg(feature = "rustls")]
+use tokio_rustls::{Accept, TlsAcceptor};
 
 pub trait Acceptor: Clone {
     type Accepted: Future<Output = Result<Self::Stream, Self::Error>> + Send + Sync + 'static;
@@ -25,12 +29,13 @@ impl Acceptor for HttpAcceptor {
     }
 }
 
-impl Acceptor for tokio_rustls::TlsAcceptor {
-    type Accepted = tokio_rustls::Accept<TcpStream>;
-    type Stream = tokio_rustls::server::TlsStream<TcpStream>;
+#[cfg(feature = "rustls")]
+impl Acceptor for TlsAcceptor {
+    type Accepted = Accept<TcpStream>;
+    type Stream = TlsStream<TcpStream>;
     type Error = std::io::Error;
 
     fn accept(&mut self, stream: TcpStream) -> Self::Accepted {
-        Self::accept(&self, stream)
+        Self::accept(self, stream)
     }
 }
