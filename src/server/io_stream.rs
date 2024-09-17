@@ -89,12 +89,9 @@ macro_rules! try_lock {
                         break IoStreamGuard::Borrowed(guard);
                     }
 
+                    // TODO: Replace this with tracing.
+                    //
                     if cfg!(debug_assertions) {
-                        //
-                        // TODO:
-                        //
-                        // Replace this with tracing.
-                        //
                         eprintln!(
                             "Lock on IoStream was not immediately available. {}",
                             "Falling back to a future."
