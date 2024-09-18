@@ -21,12 +21,12 @@ pub enum AnyBody<T> {
 
     /// A statically dispatched `impl Body + Send`.
     ///
-    Const(T),
+    Inline(T),
 }
 
 enum AnyBodyProjection<'a, T> {
     Box(Pin<&'a mut BoxBody>),
-    Const(Pin<&'a mut T>),
+    Inline(Pin<&'a mut T>),
 }
 
 impl<T> AnyBody<T> {
@@ -55,7 +55,7 @@ impl<T> AnyBody<T> {
             // The Inline variant may contain a type that is !Unpin. We are not
             // moving the value out of self, so it is safe to project it.
             //
-            Self::Const(ptr) => AnyBodyProjection::Const(unsafe { Pin::new_unchecked(ptr) }),
+            Self::Inline(ptr) => AnyBodyProjection::Inline(unsafe { Pin::new_unchecked(ptr) }),
         }
     }
 }
@@ -74,7 +74,7 @@ where
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.project() {
             AnyBodyProjection::Box(body) => body.poll_frame(context),
-            AnyBodyProjection::Const(body) => {
+            AnyBodyProjection::Inline(body) => {
                 body.poll_frame(context).map_err(|error| error.into())
             }
         }
@@ -83,14 +83,14 @@ where
     fn is_end_stream(&self) -> bool {
         match self {
             Self::Box(body) => body.is_end_stream(),
-            Self::Const(body) => body.is_end_stream(),
+            Self::Inline(body) => body.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match self {
             Self::Box(body) => body.size_hint(),
-            Self::Const(body) => body.size_hint(),
+            Self::Inline(body) => body.size_hint(),
         }
     }
 }

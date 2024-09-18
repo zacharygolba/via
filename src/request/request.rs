@@ -165,7 +165,7 @@ impl<State> Request<State> {
         let (parts, body) = request.into_parts();
 
         // Convert the request body into a RequestBody.
-        let body = RequestBody::new(AnyBody::Const(body));
+        let body = RequestBody::new(AnyBody::Inline(body));
 
         // Wrap the component parts and path parameters with RequestMeta and
         // store it on the heap.
