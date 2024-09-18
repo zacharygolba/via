@@ -5,7 +5,7 @@ async fn hello(request: Request, _: Next) -> Result<String> {
     let name = request.param("name").required()?;
 
     // Send a plain text response with our greeting message.
-    Ok(format!("Hello, {}!\n", name))
+    Ok(format!("Hello, {}!", name))
 }
 
 #[tokio::main]
