@@ -4,7 +4,7 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::body::util::size_hint;
+use crate::body::size_hint;
 
 /// Convert a `Stream + Send` into an `impl Body`.
 #[must_use = "streams do nothing unless polled"]
@@ -51,6 +51,7 @@ where
     }
 
     fn size_hint(&self) -> SizeHint {
-        size_hint::from_stream_for_body(&self.stream)
+        let hint = self.stream.size_hint();
+        size_hint::from_stream_for_body(hint)
     }
 }
