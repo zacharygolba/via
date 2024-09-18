@@ -5,7 +5,7 @@ use hyper::body::Incoming;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::body::util::size_hint;
+use crate::body::size_hint;
 use crate::body::AnyBody;
 use crate::Error;
 
@@ -41,9 +41,7 @@ impl Stream for BodyStream {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // Delegate the call to `self.body` to get a `SizeHint` and use the
-        // helper function to adapt the returned `SizeHint` to a tuple that
-        // contains the lower and upper bound of the stream.
-        size_hint::from_body_for_stream(&self.body)
+        let hint = self.body.size_hint();
+        size_hint::from_body_for_stream(hint)
     }
 }

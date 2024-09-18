@@ -2,7 +2,7 @@
 //! [Response](crate::Response) bodies.
 //!
 
-pub mod util;
+pub mod size_hint;
 
 mod any;
 mod boxed;
