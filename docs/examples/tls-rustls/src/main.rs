@@ -69,7 +69,7 @@ async fn main() -> Result<(), Error> {
 
     Server::new(app)
         .rustls_config(rustls_config)
-        .listen(("127.0.0.1", 9433), |address| {
+        .listen(("127.0.0.1", 6443), |address| {
             println!("Server listening at http://{}", address);
         })
         .await
