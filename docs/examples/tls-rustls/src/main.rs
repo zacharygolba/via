@@ -25,7 +25,7 @@ async fn main() -> Result<(), Error> {
     Server::new(app)
         // Pass tls_config to the server.
         .rustls_config(tls_config)
-        .listen(("127.0.0.1", 6443), |address| {
+        .listen(("127.0.0.1", 8080), |address| {
             println!("Server listening at https://{}", address);
         })
         .await
