@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use super::{DecodeParam, NoopDecoder};
+use super::{DecodeParam, NoopDecoder, PercentDecoder};
 use crate::{Error, Result};
 
 pub struct Param<'a, 'b, T = NoopDecoder> {
@@ -30,10 +30,25 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
         }
     }
 
-    pub fn parse<F>(self) -> Result<F>
+    /// Returns a new `Param` that will percent-decode the parameter value
+    /// before it is used.
+    ///
+    pub fn encoded(self) -> Param<'a, 'b, PercentDecoder> {
+        Param {
+            at: self.at,
+            name: self.name,
+            source: self.source,
+            _decode: PhantomData,
+        }
+    }
+
+    /// Calls [`str::parse`] on the parameter value if it exists and returns the
+    /// result. If the param is encoded, it will be decoded before it is parsed.
+    ///
+    pub fn parse<U>(self) -> Result<U, Error>
     where
-        Error: From<<F as FromStr>::Err>,
-        F: FromStr,
+        Error: From<<U as FromStr>::Err>,
+        U: FromStr,
     {
         self.required()?.parse().map_err(|error| {
             let mut error = Error::from(error);
@@ -44,10 +59,23 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
         })
     }
 
+    /// Converts the param into an optional `Cow<'a, str>` if it exists and was
+    /// able to be decoded (if encoded). If the param does not exist or could not
+    /// be decoded, `None` is returned.
+    ///
     pub fn ok(self) -> Option<Cow<'a, str>> {
         self.required().ok()
     }
 
+    /// Returns a result with the parameter value if it exists. If the param is
+    /// encoded, it will be decoded before it is returned.
+    ///
+    /// # Errors
+    ///
+    /// If the parameter does not exist or could not be decoded with the
+    /// implementation of `T::decode`, an error is returned with a
+    /// `400 Bad Request` status code.
+    ///
     pub fn required(self) -> Result<Cow<'a, str>, Error> {
         self.at
             .and_then(|at| {
