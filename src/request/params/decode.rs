@@ -3,26 +3,28 @@ use std::borrow::Cow;
 
 use crate::error::Error;
 
-/// A trait that defines how to decode the value of a `Param`.
+/// A trait that defines how to decode the value of a parameter.
+///
 pub trait DecodeParam {
     fn decode(encoded: &str) -> Result<Cow<str>, Error>;
 }
 
-/// A decoder that does nothing. This is used in cases where we know the value
-/// of a `Param` is already in the correct format.
-pub struct NoopDecoder;
+/// The default decoder used for unencoded path and query params.
+///
+pub struct NoopDecode;
 
-/// A decoder that decodes a percent-encoded `&str`.
-pub struct PercentDecoder;
+/// The decoder used for percent-encoded path and query params.
+///
+pub struct PercentDecode;
 
-impl DecodeParam for NoopDecoder {
+impl DecodeParam for NoopDecode {
     #[inline]
     fn decode(encoded: &str) -> Result<Cow<str>, Error> {
         Ok(Cow::Borrowed(encoded))
     }
 }
 
-impl DecodeParam for PercentDecoder {
+impl DecodeParam for PercentDecode {
     fn decode(encoded: &str) -> Result<Cow<str>, Error> {
         Ok(percent_decode_str(encoded).decode_utf8()?)
     }

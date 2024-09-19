@@ -3,10 +3,10 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use super::{DecodeParam, NoopDecoder, PercentDecoder};
+use super::{DecodeParam, NoopDecode, PercentDecode};
 use crate::{Error, Result};
 
-pub struct Param<'a, 'b, T = NoopDecoder> {
+pub struct Param<'a, 'b, T = NoopDecode> {
     at: Option<Option<(usize, usize)>>,
     name: &'b str,
     source: &'a str,
@@ -33,7 +33,7 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     /// Returns a new `Param` that will percent-decode the parameter value
     /// before it is used.
     ///
-    pub fn encoded(self) -> Param<'a, 'b, PercentDecoder> {
+    pub fn decode(self) -> Param<'a, 'b, PercentDecode> {
         Param {
             at: self.at,
             name: self.name,

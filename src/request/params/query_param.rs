@@ -2,9 +2,9 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use super::query_parser::QueryParser;
-use super::{DecodeParam, NoopDecoder, Param};
+use super::{DecodeParam, NoopDecode, Param, PercentDecode};
 
-pub struct QueryParam<'a, 'b, T = NoopDecoder> {
+pub struct QueryParam<'a, 'b, T = NoopDecode> {
     name: &'b str,
     parser: QueryParser<'a>,
     _decode: PhantomData<T>,
@@ -21,6 +21,14 @@ fn find_next(parser: &mut QueryParser, name: &str) -> Option<Option<(usize, usiz
 }
 
 impl<'a, 'b, T: DecodeParam> QueryParam<'a, 'b, T> {
+    pub fn decode(self) -> QueryParam<'a, 'b, PercentDecode> {
+        QueryParam {
+            name: self.name,
+            parser: self.parser,
+            _decode: PhantomData,
+        }
+    }
+
     pub fn exists(mut self) -> bool {
         self.parser.any(|(n, _)| n == self.name)
     }
@@ -33,7 +41,7 @@ impl<'a, 'b, T: DecodeParam> QueryParam<'a, 'b, T> {
         Param::new(at, name, query)
     }
 
-    pub fn last(self) -> Param<'a, 'b> {
+    pub fn last(self) -> Param<'a, 'b, T> {
         let query = self.parser.input();
         let name = self.name;
         let at = self
