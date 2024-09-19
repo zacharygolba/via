@@ -1,34 +1,43 @@
 use std::sync::Arc;
 
-use crate::router::{Endpoint, Router};
 use crate::Middleware;
+use crate::{Endpoint, Router};
 
-pub struct App<T> {
-    state: Arc<T>,
-    router: Router<T>,
+pub struct App<State> {
+    state: Arc<State>,
+    router: Router<State>,
 }
 
 /// Constructs a new `App` with the provided `state`.
-pub fn new<T: Send + Sync + 'static>(state: T) -> App<T> {
+pub fn new<State>(state: State) -> App<State>
+where
+    State: Send + Sync + 'static,
+{
     App {
         state: Arc::new(state),
         router: Router::new(),
     }
 }
 
-impl<T: Send + Sync + 'static> App<T> {
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint<T> {
+impl<State> App<State>
+where
+    State: Send + Sync + 'static,
+{
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint<State> {
         self.router.at(pattern)
     }
 
-    pub fn include(&mut self, middleware: impl Middleware<T> + 'static) -> &mut Self {
+    pub fn include(&mut self, middleware: impl Middleware<State> + 'static) -> &mut Self {
         self.at("/").include(middleware);
         self
     }
 }
 
-impl<T: Send + Sync + 'static> App<T> {
-    pub(crate) fn into_parts(self) -> (Arc<T>, Router<T>) {
+impl<State> App<State>
+where
+    State: Send + Sync + 'static,
+{
+    pub(crate) fn into_parts(self) -> (Arc<State>, Router<State>) {
         (self.state, self.router)
     }
 }
