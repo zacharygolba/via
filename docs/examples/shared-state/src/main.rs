@@ -34,7 +34,8 @@ async fn counter(request: Request, next: Next) -> Result<Response, Error> {
     // Clone the `Counter` state by incrementing the reference count of the
     // outer `Arc`. This will allow us to modify the `state` after we pass
     // ownership of `request` to the `next` middleware.
-    let state = Arc::clone(request.state());
+    let state = request.state().clone();
+
     // Call the next middleware in the app and await the response.
     let response = next.call(request).await?;
 
