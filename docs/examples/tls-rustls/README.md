@@ -17,8 +17,8 @@ week by running the following command.
 
 ```
 cargo run --release
-# => Server listening at https://127.0.0.1:6443
+# => Server listening at https://127.0.0.1:8080
 
-curl -k https://127.0.0.1:6443/hello/<Your Name Here>
+curl -k https://127.0.0.1:8080/hello/<Your Name Here>
 # => Hello, <Your Name Here> (via TLS)
 ```
