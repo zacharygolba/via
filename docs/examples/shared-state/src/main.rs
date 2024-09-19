@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use via::http::StatusCode;
@@ -55,13 +56,22 @@ async fn totals(request: Request, _: Next) -> Result<String, Error> {
     // to clone the state since we are consuming the request rather than
     // passing it as an argument to `next.call`.
     let state = request.state();
+
     // Load the current value of `errors` from the atomic integer.
     let errors = state.errors.load(Ordering::Relaxed);
+
     // Load the current value of `successes` from the atomic integer.
     let successes = state.sucesses.load(Ordering::Relaxed);
 
+    // Create a new string to hold the message. Since we want the message
+    // to be multiple lines, we'll use `writeln!` instead of `format!`.
+    let mut message = String::new();
+
+    writeln!(&mut message, "Errors: {}", errors)?;
+    writeln!(&mut message, "Sucesses: {}", successes)?;
+
     // Return a string with the total number of `errors` and `successes`.
-    Ok(format!("Errors: {}\nSucesses: {}", errors, successes))
+    Ok(message)
 }
 
 #[tokio::main]
