@@ -2,7 +2,7 @@ use via::{Error, Next, Request, Response, Server};
 use via_serve_static::serve_static;
 
 async fn not_found(request: Request, _: Next) -> Result<Response, Error> {
-    let path = request.param("path").required()?;
+    let path = request.param("path").into_result()?;
     let html = format!(
         "
         <!DOCTYPE html>

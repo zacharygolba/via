@@ -2,7 +2,7 @@ use via::{Error, Next, Request, Server};
 
 async fn hello(request: Request, _: Next) -> Result<String, Error> {
     // Get a reference to the path parameter `name` from the request uri.
-    let name = request.param("name").required()?;
+    let name = request.param("name").percent_decode().into_result()?;
 
     // Send a plain text response with our greeting message.
     Ok(format!("Hello, {}!", name))
