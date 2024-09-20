@@ -50,7 +50,7 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
         Error: From<<U as FromStr>::Err>,
         U: FromStr,
     {
-        self.required()?.parse().map_err(|error| {
+        self.into_result()?.parse().map_err(|error| {
             let mut error = Error::from(error);
             let status = StatusCode::BAD_REQUEST;
 
@@ -64,7 +64,7 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     /// be decoded, `None` is returned.
     ///
     pub fn ok(self) -> Option<Cow<'a, str>> {
-        self.required().ok()
+        self.into_result().ok()
     }
 
     /// Returns a result with the parameter value if it exists. If the param is
@@ -73,10 +73,10 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     /// # Errors
     ///
     /// If the parameter does not exist or could not be decoded with the
-    /// implementation of `T::decode`, an error is returned with a
-    /// `400 Bad Request` status code.
+    /// implementation of `T::decode`, an error is returned with a 400 Bad
+    /// Request status code.
     ///
-    pub fn required(self) -> Result<Cow<'a, str>, Error> {
+    pub fn into_result(self) -> Result<Cow<'a, str>, Error> {
         self.at
             .and_then(|at| {
                 let (start, end) = at?;
