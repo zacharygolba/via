@@ -21,12 +21,22 @@ fn find_next(parser: &mut QueryParser, name: &str) -> Option<Option<(usize, usiz
 }
 
 impl<'a, 'b, T: DecodeParam> QueryParam<'a, 'b, T> {
-    pub fn decode(self) -> QueryParam<'a, 'b, PercentDecode> {
+    /// Returns a new `QueryParam` that will decode parameter values with
+    /// `U::decode` when an individual parameter is converted to a result.
+    ///
+    pub fn decode<U: DecodeParam>(self) -> QueryParam<'a, 'b, U> {
         QueryParam {
             name: self.name,
             parser: self.parser,
             _decode: PhantomData,
         }
+    }
+
+    /// Returns a new `QueryParam` that will percent-decode parameter values
+    /// when an individual parameter is converted to a result.
+    ///
+    pub fn percent_decode(self) -> QueryParam<'a, 'b, PercentDecode> {
+        self.decode()
     }
 
     pub fn exists(mut self) -> bool {

@@ -30,16 +30,23 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
         }
     }
 
-    /// Returns a new `Param` that will percent-decode the parameter value
-    /// before it is used.
+    /// Returns a new `Param` that will decode the parameter value with
+    /// `U::decode` when the parameter is converted to a result.
     ///
-    pub fn decode(self) -> Param<'a, 'b, PercentDecode> {
+    pub fn decode<U: DecodeParam>(self) -> Param<'a, 'b, U> {
         Param {
             at: self.at,
             name: self.name,
             source: self.source,
             _decode: PhantomData,
         }
+    }
+
+    /// Returns a new `Param` that will percent-decode the parameter value with
+    /// when the parameter is converted to a result.
+    ///
+    pub fn percent_decode(self) -> Param<'a, 'b, PercentDecode> {
+        self.decode()
     }
 
     /// Calls [`str::parse`] on the parameter value if it exists and returns the
