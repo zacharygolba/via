@@ -61,9 +61,5 @@ async fn main() -> Result<(), Error> {
     // behavior of via and the via_serve_static middleware.
     app.at("/*path").respond(via::get(not_found));
 
-    Server::new(app)
-        .listen(("127.0.0.1", 8080), |address| {
-            println!("Server listening at http://{}", address);
-        })
-        .await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

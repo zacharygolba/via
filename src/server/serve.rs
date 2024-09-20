@@ -13,17 +13,17 @@ use super::IoStream;
 use crate::router::Router;
 use crate::Error;
 
-pub async fn serve<T, State>(
+pub async fn serve<State, A>(
     listener: TcpListener,
-    acceptor: T,
+    acceptor: A,
     state: Arc<State>,
     router: Arc<Router<State>>,
     max_connections: usize,
     shutdown_timeout: Duration,
 ) -> Result<(), Error>
 where
-    T: Acceptor + Send + Sync + 'static,
     State: Send + Sync + 'static,
+    A: Acceptor + Send + Sync + 'static,
 {
     let (shutdown_task, shutdown_rx) = wait_for_shutdown();
 

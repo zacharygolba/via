@@ -26,9 +26,5 @@ async fn main() -> Result<(), Error> {
     // `via::post` function is used to specify that the `echo` middleware should
     // only accept POST requests.
 
-    Server::new(app)
-        .listen(("127.0.0.1", 8080), |address| {
-            println!("Server listening at http://{}", address);
-        })
-        .await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

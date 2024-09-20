@@ -31,9 +31,5 @@ async fn main() -> Result<(), Error> {
     // You can specify the HTTP method that middleware should accept with the
     // helper functions at the top-level of the `via` crate.
 
-    Server::new(app)
-        .listen(("127.0.0.1", 8080), |address| {
-            println!("Server listening at http://{}", address);
-        })
-        .await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

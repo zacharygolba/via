@@ -1,9 +1,13 @@
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{future::Future, net::SocketAddr};
 use tokio::net::{TcpListener, ToSocketAddrs};
 
-use super::serve;
+#[cfg(feature = "rustls")]
+use tokio_rustls::rustls;
+
+use super::acceptor::{self, Acceptor};
+use super::serve::serve;
 use crate::{App, Error, Router};
 
 /// The default value of the maximum number of concurrent connections.
@@ -16,9 +20,46 @@ pub struct Server<State> {
     state: Arc<State>,
     router: Arc<Router<State>>,
     #[cfg(feature = "rustls")]
-    rustls_config: Option<tokio_rustls::rustls::ServerConfig>,
+    rustls_config: Option<rustls::ServerConfig>,
     max_connections: Option<usize>,
     shutdown_timeout: Option<u64>,
+}
+
+async fn listen<State, A>(
+    acceptor: A,
+    address: impl ToSocketAddrs,
+    state: Arc<State>,
+    router: Arc<Router<State>>,
+    max_connections: Option<usize>,
+    shutdown_timeout: Option<u64>,
+) -> Result<(), Error>
+where
+    State: Send + Sync + 'static,
+    A: Acceptor + Send + Sync + 'static,
+{
+    let listener = TcpListener::bind(address).await?;
+    let max_connections = max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS);
+    let shutdown_timeout = shutdown_timeout.map_or_else(
+        || Duration::from_secs(DEFAULT_SHUTDOWN_TIMEOUT),
+        Duration::from_secs,
+    );
+
+    if let Err(error) = listener.local_addr() {
+        let _ = error;
+        // Placeholder for tracing...
+    }
+
+    // Serve incoming connections until shutdown is requested.
+    let server = serve(
+        listener,
+        acceptor,
+        state,
+        router,
+        max_connections,
+        shutdown_timeout,
+    );
+
+    server.await
 }
 
 impl<State> Server<State>
@@ -37,9 +78,11 @@ where
     }
 
     #[cfg(feature = "rustls")]
-    pub fn rustls_config(mut self, server_config: tokio_rustls::rustls::ServerConfig) -> Self {
-        self.rustls_config = Some(server_config);
-        self
+    pub fn rustls_config(self, server_config: rustls::ServerConfig) -> Self {
+        Self {
+            rustls_config: Some(server_config),
+            ..self
+        }
     }
 
     /// Sets the maximum number of concurrent connections that the server can
@@ -60,78 +103,68 @@ where
     /// setting this value higher than the number of available file descriptors
     /// (or `ulimit -n`) on POSIX systems.
     ///
-    pub fn max_connections(mut self, n: usize) -> Self {
-        self.max_connections = Some(n);
-        self
+    pub fn max_connections(self, n: usize) -> Self {
+        Self {
+            max_connections: Some(n),
+            ..self
+        }
     }
 
     /// Set the amount of time in seconds that the server will wait for inflight
     /// connections to complete before shutting down. The default value is 30
     /// seconds.
-    pub fn shutdown_timeout(mut self, timeout: u64) -> Self {
-        self.shutdown_timeout = Some(timeout);
-        self
+    pub fn shutdown_timeout(self, timeout: u64) -> Self {
+        Self {
+            shutdown_timeout: Some(timeout),
+            ..self
+        }
     }
 
-    pub fn listen<A, R>(self, address: A, on_ready: R) -> impl Future<Output = Result<(), Error>>
-    where
-        A: ToSocketAddrs,
-        R: FnOnce(&SocketAddr),
-    {
-        listen(self, address, on_ready)
-    }
-}
-
-async fn listen<State, A, R>(server: Server<State>, address: A, on_ready: R) -> Result<(), Error>
-where
-    State: Send + Sync + 'static,
-    A: ToSocketAddrs,
-    R: FnOnce(&SocketAddr),
-{
-    // Create a new TcpListener and bind to the specified address.
-    let listener = TcpListener::bind(address).await?;
-
-    // Create a RustlsAcceptor to serve connections over HTTPS.
     #[cfg(feature = "rustls")]
-    let acceptor = {
-        let rustls_config = server.rustls_config.map(Arc::new).ok_or_else(|| {
-            let message = "rustls_config is required to use the 'rustls' feature";
-            Error::new(message.to_string())
-        })?;
+    pub fn listen<A: ToSocketAddrs>(self, address: A) -> impl Future<Output = Result<(), Error>> {
+        // Confirm that rustls_config exists before proceeding.
+        let tls_config = match self.rustls_config {
+            Some(config) => Arc::new(config),
+            None => panic!("rustls_config is required to use the 'rustls' feature"),
+        };
 
-        super::RustlsAcceptor::new(rustls_config)
-    };
+        // Create the RustlsAcceptor to serve connections over HTTPS.
+        let acceptor = acceptor::rustls::RustlsAcceptor::new(tls_config);
 
-    // If the 'rustls' feature is not enabled, create a HttpAcceptor to serve
-    // connections over HTTP.
-    #[cfg(not(feature = "rustls"))]
-    let acceptor = super::HttpAcceptor;
+        // Deconstruct self into the arguments needed to call listen.
+        let state = self.state;
+        let router = self.router;
+        let max_connections = self.max_connections;
+        let shutdown_timeout = self.shutdown_timeout;
 
-    let state = server.state;
-    let router = server.router;
-    let max_connections = server.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS);
-    let shutdown_timeout = server.shutdown_timeout.map_or_else(
-        || Duration::from_secs(DEFAULT_SHUTDOWN_TIMEOUT),
-        Duration::from_secs,
-    );
-
-    if let Ok(address) = listener.local_addr() {
-        // Call the listening callback with the address to which the TCP
-        // listener is bound.
-        on_ready(&address);
-    } else {
-        // Placeholder for tracing...
+        listen(
+            acceptor,
+            address,
+            state,
+            router,
+            max_connections,
+            shutdown_timeout,
+        )
     }
 
-    // Serve incoming connections until shutdown is requested.
-    let future = serve::serve(
-        listener,
-        acceptor,
-        state,
-        router,
-        max_connections,
-        shutdown_timeout,
-    );
+    #[cfg(not(feature = "rustls"))]
+    pub fn listen<A: ToSocketAddrs>(self, address: A) -> impl Future<Output = Result<(), Error>> {
+        // Create a HttpAcceptor to serve connections over HTTP.
+        let acceptor = acceptor::http::HttpAcceptor;
 
-    future.await
+        // Deconstruct self into the arguments needed to call listen.
+        let state = self.state;
+        let router = self.router;
+        let max_connections = self.max_connections;
+        let shutdown_timeout = self.shutdown_timeout;
+
+        listen(
+            acceptor,
+            address,
+            state,
+            router,
+            max_connections,
+            shutdown_timeout,
+        )
+    }
 }

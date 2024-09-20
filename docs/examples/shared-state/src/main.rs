@@ -92,9 +92,5 @@ async fn main() -> Result<(), Error> {
     app.at("/totals").respond(via::get(totals));
 
     // Start the server.
-    Server::new(app)
-        .listen(("127.0.0.1", 8080), |address| {
-            println!("Server listening at http://{}", address);
-        })
-        .await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }
