@@ -3,10 +3,10 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use super::{DecodeParam, NoopDecoder};
+use super::{DecodeParam, NoopDecode, PercentDecode};
 use crate::{Error, Result};
 
-pub struct Param<'a, 'b, T = NoopDecoder> {
+pub struct Param<'a, 'b, T = NoopDecode> {
     at: Option<Option<(usize, usize)>>,
     name: &'b str,
     source: &'a str,
@@ -30,12 +30,34 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
         }
     }
 
-    pub fn parse<F>(self) -> Result<F>
+    /// Returns a new `Param` that will decode the parameter value with
+    /// `U::decode` when the parameter is converted to a result.
+    ///
+    pub fn decode<U: DecodeParam>(self) -> Param<'a, 'b, U> {
+        Param {
+            at: self.at,
+            name: self.name,
+            source: self.source,
+            _decode: PhantomData,
+        }
+    }
+
+    /// Returns a new `Param` that will percent-decode the parameter value with
+    /// when the parameter is converted to a result.
+    ///
+    pub fn percent_decode(self) -> Param<'a, 'b, PercentDecode> {
+        self.decode()
+    }
+
+    /// Calls [`str::parse`] on the parameter value if it exists and returns the
+    /// result. If the param is encoded, it will be decoded before it is parsed.
+    ///
+    pub fn parse<U>(self) -> Result<U, Error>
     where
-        Error: From<<F as FromStr>::Err>,
-        F: FromStr,
+        Error: From<<U as FromStr>::Err>,
+        U: FromStr,
     {
-        self.required()?.parse().map_err(|error| {
+        self.into_result()?.parse().map_err(|error| {
             let mut error = Error::from(error);
             let status = StatusCode::BAD_REQUEST;
 
@@ -44,11 +66,16 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
         })
     }
 
-    pub fn ok(self) -> Option<Cow<'a, str>> {
-        self.required().ok()
-    }
-
-    pub fn required(self) -> Result<Cow<'a, str>, Error> {
+    /// Returns a result with the parameter value if it exists. If the param is
+    /// encoded, it will be decoded before it is returned.
+    ///
+    /// # Errors
+    ///
+    /// If the parameter does not exist or could not be decoded with the
+    /// implementation of `T::decode`, an error is returned with a 400 Bad
+    /// Request status code.
+    ///
+    pub fn into_result(self) -> Result<Cow<'a, str>, Error> {
         self.at
             .and_then(|at| {
                 let (start, end) = at?;
