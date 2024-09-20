@@ -59,14 +59,6 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
         })
     }
 
-    /// Converts the param into an optional `Cow<'a, str>` if it exists and was
-    /// able to be decoded (if encoded). If the param does not exist or could not
-    /// be decoded, `None` is returned.
-    ///
-    pub fn ok(self) -> Option<Cow<'a, str>> {
-        self.into_result().ok()
-    }
-
     /// Returns a result with the parameter value if it exists. If the param is
     /// encoded, it will be decoded before it is returned.
     ///
