@@ -2,13 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{future::Future, net::SocketAddr};
 use tokio::net::{TcpListener, ToSocketAddrs};
-#[cfg(feature = "rustls")]
-use tokio_rustls::rustls;
-#[cfg(feature = "rustls")]
-use tokio_rustls::TlsAcceptor;
 
-#[cfg(not(feature = "rustls"))]
-use super::acceptor::HttpAcceptor;
 use super::serve;
 use crate::{App, Error, Router};
 
@@ -22,7 +16,7 @@ pub struct Server<State> {
     state: Arc<State>,
     router: Arc<Router<State>>,
     #[cfg(feature = "rustls")]
-    rustls_config: Option<rustls::ServerConfig>,
+    rustls_config: Option<tokio_rustls::rustls::ServerConfig>,
     max_connections: Option<usize>,
     shutdown_timeout: Option<u64>,
 }
@@ -32,11 +26,9 @@ where
     State: Send + Sync + 'static,
 {
     pub fn new(app: App<State>) -> Self {
-        let (state, router) = app.into_parts();
-
         Self {
-            state,
-            router: Arc::new(router),
+            state: app.state,
+            router: Arc::new(app.router),
             #[cfg(feature = "rustls")]
             rustls_config: None,
             max_connections: None,
@@ -45,7 +37,7 @@ where
     }
 
     #[cfg(feature = "rustls")]
-    pub fn rustls_config(mut self, server_config: rustls::ServerConfig) -> Self {
+    pub fn rustls_config(mut self, server_config: tokio_rustls::rustls::ServerConfig) -> Self {
         self.rustls_config = Some(server_config);
         self
     }
@@ -86,111 +78,60 @@ where
         A: ToSocketAddrs,
         R: FnOnce(&SocketAddr),
     {
-        let listener_future = async {
-            let listener = TcpListener::bind(address).await?;
-
-            if let Ok(address) = listener.local_addr() {
-                // Call the listening callback with the address to which the TCP
-                // listener is bound.
-                on_ready(&address);
-            } else {
-                // Placeholder for tracing...
-            }
-
-            Ok(listener)
-        };
-
-        let state = self.state;
-        let router = self.router;
-        #[cfg(feature = "rustls")]
-        let rustls_config = self.rustls_config;
-        let max_connections = self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS);
-        let shutdown_timeout = self.shutdown_timeout.map_or_else(
-            || Duration::from_secs(DEFAULT_SHUTDOWN_TIMEOUT),
-            Duration::from_secs,
-        );
-
-        #[cfg(feature = "rustls")]
-        let future = serve_rustls(
-            listener_future,
-            state,
-            router,
-            rustls_config,
-            max_connections,
-            shutdown_timeout,
-        );
-
-        #[cfg(not(feature = "rustls"))]
-        let future = serve_http(
-            listener_future,
-            state,
-            router,
-            max_connections,
-            shutdown_timeout,
-        );
-
-        future
+        listen(self, address, on_ready)
     }
 }
 
-#[cfg(feature = "rustls")]
-pub async fn serve_rustls<State, F>(
-    listener_future: F,
-    state: Arc<State>,
-    router: Arc<Router<State>>,
-    rustls_config: Option<rustls::ServerConfig>,
-    max_connections: usize,
-    shutdown_timeout: Duration,
-) -> Result<(), Error>
+async fn listen<State, A, R>(server: Server<State>, address: A, on_ready: R) -> Result<(), Error>
 where
     State: Send + Sync + 'static,
-    F: Future<Output = Result<TcpListener, Error>>,
+    A: ToSocketAddrs,
+    R: FnOnce(&SocketAddr),
 {
-    let listener = listener_future.await?;
+    // Create a new TcpListener and bind to the specified address.
+    let listener = TcpListener::bind(address).await?;
 
+    // Create a RustlsAcceptor to serve connections over HTTPS.
+    #[cfg(feature = "rustls")]
     let acceptor = {
-        let rustls_config = rustls_config.ok_or_else(|| {
+        let rustls_config = server.rustls_config.map(Arc::new).ok_or_else(|| {
             let message = "rustls_config is required to use the 'rustls' feature";
             Error::new(message.to_string())
         })?;
 
-        TlsAcceptor::from(Arc::new(rustls_config))
+        super::RustlsAcceptor::new(rustls_config)
     };
 
-    let shutdown = serve(
-        state,
-        router,
+    // If the 'rustls' feature is not enabled, create a HttpAcceptor to serve
+    // connections over HTTP.
+    #[cfg(not(feature = "rustls"))]
+    let acceptor = super::HttpAcceptor;
+
+    let state = server.state;
+    let router = server.router;
+    let max_connections = server.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS);
+    let shutdown_timeout = server.shutdown_timeout.map_or_else(
+        || Duration::from_secs(DEFAULT_SHUTDOWN_TIMEOUT),
+        Duration::from_secs,
+    );
+
+    if let Ok(address) = listener.local_addr() {
+        // Call the listening callback with the address to which the TCP
+        // listener is bound.
+        on_ready(&address);
+    } else {
+        // Placeholder for tracing...
+    }
+
+    // Serve incoming connections until shutdown is requested.
+    let future = serve::serve(
         listener,
         acceptor,
+        state,
+        router,
         max_connections,
         shutdown_timeout,
     );
 
-    shutdown.await
-}
-
-#[cfg(not(feature = "rustls"))]
-pub async fn serve_http<State, F>(
-    listener_future: F,
-    state: Arc<State>,
-    router: Arc<Router<State>>,
-    max_connections: usize,
-    shutdown_timeout: Duration,
-) -> Result<(), Error>
-where
-    State: Send + Sync + 'static,
-    F: Future<Output = Result<TcpListener, Error>>,
-{
-    let listener = listener_future.await?;
-    let acceptor = HttpAcceptor;
-    let shutdown = serve(
-        state,
-        router,
-        listener,
-        acceptor,
-        max_connections,
-        shutdown_timeout,
-    );
-
-    shutdown.await
+    future.await
 }

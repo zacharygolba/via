@@ -4,8 +4,8 @@ use crate::Middleware;
 use crate::{Endpoint, Router};
 
 pub struct App<State> {
-    state: Arc<State>,
-    router: Router<State>,
+    pub(crate) state: Arc<State>,
+    pub(crate) router: Router<State>,
 }
 
 /// Constructs a new `App` with the provided `state`.
@@ -30,14 +30,5 @@ where
     pub fn include(&mut self, middleware: impl Middleware<State> + 'static) -> &mut Self {
         self.at("/").include(middleware);
         self
-    }
-}
-
-impl<State> App<State>
-where
-    State: Send + Sync + 'static,
-{
-    pub(crate) fn into_parts(self) -> (Arc<State>, Router<State>) {
-        (self.state, self.router)
     }
 }

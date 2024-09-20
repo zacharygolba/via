@@ -1,5 +1,3 @@
-#[cfg(feature = "http2")]
-use hyper_util::rt::TokioExecutor;
 use hyper_util::rt::TokioTimer;
 use slab::Slab;
 use std::sync::Arc;
@@ -9,17 +7,17 @@ use tokio::sync::Semaphore;
 use tokio::{task, time};
 
 use super::acceptor::Acceptor;
-use super::io_stream::IoStream;
 use super::service::Service;
 use super::shutdown::{graceful_shutdown, wait_for_shutdown};
+use super::IoStream;
 use crate::router::Router;
 use crate::Error;
 
 pub async fn serve<T, State>(
-    state: Arc<State>,
-    router: Arc<Router<State>>,
     listener: TcpListener,
     acceptor: T,
+    state: Arc<State>,
+    router: Arc<Router<State>>,
     max_connections: usize,
     shutdown_timeout: Duration,
 ) -> Result<(), Error>
@@ -96,25 +94,19 @@ where
                     // Create a new HTTP/2 connection.
                     #[cfg(feature = "http2")]
                     let mut connection = {
-                        use hyper::server::conn::http2;
+                        let exec = hyper_util::rt::TokioExecutor::new();
 
-                        let exec = TokioExecutor::new();
-
-                        http2::Builder::new(exec)
+                        hyper::server::conn::http2::Builder::new(exec)
                             .timer(TokioTimer::new())
                             .serve_connection(io, service)
                     };
 
                     // Create a new HTTP/1.1 connection.
                     #[cfg(all(feature = "http1", not(feature = "http2")))]
-                    let mut connection = {
-                        use hyper::server::conn::http1;
-
-                        http1::Builder::new()
-                            .timer(TokioTimer::new())
-                            .serve_connection(io, service)
-                            .with_upgrades()
-                    };
+                    let mut connection = hyper::server::conn::http1::Builder::new()
+                        .timer(TokioTimer::new())
+                        .serve_connection(io, service)
+                        .with_upgrades();
 
                     // Poll the connection until it is closed or a graceful
                     // shutdown process is initiated.
