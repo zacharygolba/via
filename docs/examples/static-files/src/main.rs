@@ -1,7 +1,7 @@
-use via::{Next, Request, Response, Result};
+use via::{Error, Next, Request, Response, Server};
 use via_serve_static::serve_static;
 
-async fn not_found(request: Request, _: Next) -> Result<Response> {
+async fn not_found(request: Request, _: Next) -> Result<Response, Error> {
     let path = request.param("path").required()?;
     let html = format!(
         "
@@ -27,8 +27,8 @@ async fn not_found(request: Request, _: Next) -> Result<Response> {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let mut app = via::app(());
+async fn main() -> Result<(), Error> {
+    let mut app = via::new(());
 
     // Add the serve_static middleware to the endpoint /*path.
     //
@@ -61,8 +61,6 @@ async fn main() -> Result<()> {
     // behavior of via and the via_serve_static middleware.
     app.at("/*path").respond(via::get(not_found));
 
-    app.listen(("127.0.0.1", 8080), |address| {
-        println!("Server listening at http://{}", address);
-    })
-    .await
+    // Start the server.
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

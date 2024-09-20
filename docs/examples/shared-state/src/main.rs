@@ -1,7 +1,8 @@
+use std::fmt::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use via::http::StatusCode;
-use via::{Response, Result};
+use via::{Error, Response, Server};
 
 // Define a type alias for the `via::Request` to include the `Counter` state.
 // This is a convenience to avoid having to write out the full type signature.
@@ -29,11 +30,12 @@ fn status_is_error(status: StatusCode) -> bool {
 
 /// A middleware function that will either increment the `successes` or
 /// `errors` field of the `Counter` state based on the response status.
-async fn counter(request: Request, next: Next) -> Result<Response> {
+async fn counter(request: Request, next: Next) -> Result<Response, Error> {
     // Clone the `Counter` state by incrementing the reference count of the
     // outer `Arc`. This will allow us to modify the `state` after we pass
     // ownership of `request` to the `next` middleware.
-    let state = Arc::clone(request.state());
+    let state = request.state().clone();
+
     // Call the next middleware in the app and await the response.
     let response = next.call(request).await?;
 
@@ -50,24 +52,33 @@ async fn counter(request: Request, next: Next) -> Result<Response> {
 
 /// A responder that will return the total number of `successes` and `errors`
 /// in the `Counter` state.
-async fn totals(request: Request, _: Next) -> Result<String> {
+async fn totals(request: Request, _: Next) -> Result<String, Error> {
     // Get a reference to the `Counter` state from the request. We don't need
     // to clone the state since we are consuming the request rather than
     // passing it as an argument to `next.call`.
     let state = request.state();
+
     // Load the current value of `errors` from the atomic integer.
     let errors = state.errors.load(Ordering::Relaxed);
+
     // Load the current value of `successes` from the atomic integer.
     let successes = state.sucesses.load(Ordering::Relaxed);
 
+    // Create a new string to hold the message. Since we want the message
+    // to be multiple lines, we'll use `writeln!` instead of `format!`.
+    let mut message = String::new();
+
+    writeln!(&mut message, "Errors: {}", errors)?;
+    writeln!(&mut message, "Sucesses: {}", successes)?;
+
     // Return a string with the total number of `errors` and `successes`.
-    Ok(format!("Errors: {}\nSucesses: {}", errors, successes))
+    Ok(message)
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Error> {
     // Create a new application with a `Counter` as state.
-    let mut app = via::app(Counter {
+    let mut app = via::new(Counter {
         errors: Arc::new(AtomicU32::new(0)),
         sucesses: Arc::new(AtomicU32::new(0)),
     });
@@ -81,8 +92,5 @@ async fn main() -> Result<()> {
     app.at("/totals").respond(via::get(totals));
 
     // Start the server.
-    app.listen(("127.0.0.1", 8080), |address| {
-        println!("Server listening at http://{}", address);
-    })
-    .await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

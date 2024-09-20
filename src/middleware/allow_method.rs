@@ -1,10 +1,74 @@
 use http::Method;
 
-use crate::{BoxFuture, Middleware, Next, Request, Response, Result};
+use super::{BoxFuture, Middleware, Next};
+use crate::{Request, Response, Result};
 
 pub struct AllowMethod<T> {
     middleware: T,
     predicate: Method,
+}
+
+pub fn connect<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
+    AllowMethod::new(Method::CONNECT, middleware)
+}
+
+pub fn delete<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
+    AllowMethod::new(Method::DELETE, middleware)
+}
+
+pub fn get<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
+    AllowMethod::new(Method::GET, middleware)
+}
+
+pub fn head<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
+    AllowMethod::new(Method::HEAD, middleware)
+}
+
+pub fn options<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
+    AllowMethod::new(Method::OPTIONS, middleware)
+}
+
+pub fn patch<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
+    AllowMethod::new(Method::PATCH, middleware)
+}
+
+pub fn post<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
+    AllowMethod::new(Method::POST, middleware)
+}
+
+pub fn put<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
+    AllowMethod::new(Method::PUT, middleware)
+}
+
+pub fn trace<State, T>(middleware: T) -> AllowMethod<T>
+where
+    T: Middleware<State>,
+{
+    AllowMethod::new(Method::TRACE, middleware)
 }
 
 impl<T> AllowMethod<T> {

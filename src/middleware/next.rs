@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
-use super::ArcMiddleware;
-use crate::{BoxFuture, Error, Request, Response, Result};
+use super::{ArcMiddleware, BoxFuture};
+use crate::{Error, Request, Response, Result};
 
 pub struct Next<State = ()> {
     stack: SmallVec<[ArcMiddleware<State>; 1]>,

@@ -19,7 +19,7 @@ pub struct Request<State = ()> {
     /// The component parts and metadata associated with the request.
     meta: Box<RequestMeta>,
 
-    /// The shared application state passed to the [`via::app`](crate::app::app)
+    /// The shared application state passed to the [`via::new`](crate::app::new)
     /// function.
     state: Arc<State>,
 }
@@ -120,7 +120,7 @@ impl<State> Request<State> {
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
-    /// state that was passed as an argument to the [`via::app`](crate::app::app)
+    /// state that was passed as an argument to the [`via::new`](crate::app::new)
     /// function.
     pub fn state(&self) -> &Arc<State> {
         &self.state
