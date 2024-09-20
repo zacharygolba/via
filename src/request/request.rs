@@ -73,10 +73,8 @@ impl<State> Request<State> {
     /// use std::borrow::Cow;
     ///
     /// async fn hello(request: Request, _: Next) -> Result<String, Error> {
-    ///     let required: Result<Cow<str>, Error> = request.param("name").required();
-    ///     let _optional: Option<Cow<str>> = request.param("name").ok();
-    ///
-    ///     Ok(format!("Hello, {}!", required?))
+    ///     let name: Result<Cow<str>, Error> = request.param("name").into_result();
+    ///     Ok(format!("Hello, {}!", name?))
     /// }
     /// ```
     pub fn param<'a>(&self, name: &'a str) -> Param<'_, 'a> {
@@ -105,7 +103,7 @@ impl<State> Request<State> {
     ///     let n = request.query("n").first().parse().unwrap_or(1).min(1000);
     ///
     ///     // Get a reference to the path parameter `name` from the request uri.
-    ///     let name = request.param("name").required()?;
+    ///     let name = request.param("name").into_result()?;
     ///
     ///     // Create a greeting message with the provided `name`.
     ///     let message = format!("Hello, {}!\n", name);
