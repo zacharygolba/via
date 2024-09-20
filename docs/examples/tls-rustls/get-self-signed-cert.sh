@@ -7,7 +7,7 @@
 set -ex
 
 # Remove any existing certificate and private key.
-rm -r localhost.cert localhost.key || true
+rm localhost.cert localhost.key || true
 
 # Request a new certificate and private key.
 openssl req \
