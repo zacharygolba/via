@@ -6,14 +6,17 @@ edition = "2021"
 license = "MIT"
 
 [features]
-default = []
+default = ["http1"]
+http1 = ["hyper/http1"]
+http2 = ["hyper/http2"]
+rustls = ["dep:tokio-rustls"]
 
 [dependencies]
 bytes = "1.7.1"
 futures-core = { version = "0.3", default-features = false }
 http = "1"
 http-body = "1"
-hyper = { features = ["http1", "server"], version = "1.4" }
+hyper = { version = "1.4", features = ["server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 percent-encoding = "2.3"
 serde = "1"
@@ -22,6 +25,11 @@ slab = "0.4"
 smallvec = "1.13"
 tokio = { version = "1", features = ["macros", "signal"] }
 via-router = { path = "./crates/via-router" }
+
+[dependencies.tokio-rustls]
+version = "0.26"
+optional = true
+default-features = false
 
 [workspace]
 members = ["crates/*", "docs/examples/*"]

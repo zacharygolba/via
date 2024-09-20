@@ -1,6 +1,7 @@
+#[doc(hidden)]
+pub mod allow_method;
 pub mod error_boundary;
 
-mod allow_method;
 mod middleware;
 mod next;
 mod timeout;

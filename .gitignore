@@ -1,3 +1,5 @@
 /target
 **/*.rs.bk
 Cargo.lock
+docs/examples/*/*.cert
+docs/examples/*/*.key
