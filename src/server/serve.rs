@@ -7,9 +7,9 @@ use tokio::sync::Semaphore;
 use tokio::{task, time};
 
 use super::acceptor::Acceptor;
+use super::io_stream::IoStream;
 use super::service::Service;
 use super::shutdown::{graceful_shutdown, wait_for_shutdown};
-use super::IoStream;
 use crate::router::Router;
 use crate::Error;
 

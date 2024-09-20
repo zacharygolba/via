@@ -26,5 +26,6 @@ async fn main() -> Result<(), Error> {
     // `via::post` function is used to specify that the `echo` middleware should
     // only accept POST requests.
 
+    // Start the server.
     Server::new(app).listen(("127.0.0.1", 8080)).await
 }

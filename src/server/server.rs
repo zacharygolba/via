@@ -16,13 +16,16 @@ const DEFAULT_MAX_CONNECTIONS: usize = 256;
 /// The default value of the shutdown timeout in seconds.
 const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
 
+/// Serve an [App] over HTTP or HTTPS.
+///
 pub struct Server<State> {
     state: Arc<State>,
     router: Arc<Router<State>>,
-    #[cfg(feature = "rustls")]
-    rustls_config: Option<rustls::ServerConfig>,
     max_connections: Option<usize>,
     shutdown_timeout: Option<u64>,
+
+    #[cfg(feature = "rustls")]
+    rustls_config: Option<rustls::ServerConfig>,
 }
 
 async fn listen<State, A>(
@@ -66,6 +69,8 @@ impl<State> Server<State>
 where
     State: Send + Sync + 'static,
 {
+    /// Creates a new server for the provided app.
+    ///
     pub fn new(app: App<State>) -> Self {
         Self {
             state: app.state,
@@ -77,10 +82,84 @@ where
         }
     }
 
+    /// Starts the server and listens for incoming connections at the provided
+    /// address. Returns a future that resolves when the server is shutdown.
+    ///
+    /// # Errors
+    ///
+    /// If the server fails to bind to the provided address or is unable to
+    /// finish serving all of the inflight connections within the specified
+    /// [shutdown timeout](Self::shutdown_timeout)
+    /// when a shutdown signal is received.
+    ///
+    /// # Panics
+    ///
+    /// If [`rustls_config`](Self::rustls_config)
+    /// was not provided prior to calling this method.
+    ///
     #[cfg(feature = "rustls")]
-    pub fn rustls_config(self, server_config: rustls::ServerConfig) -> Self {
+    pub fn listen<A: ToSocketAddrs>(self, address: A) -> impl Future<Output = Result<(), Error>> {
+        // Confirm that rustls_config exists before proceeding.
+        let tls_config = match self.rustls_config {
+            Some(config) => Arc::new(config),
+            None => panic!("rustls_config is required to use the 'rustls' feature"),
+        };
+
+        // Create the RustlsAcceptor to serve connections over HTTPS.
+        let acceptor = acceptor::rustls::RustlsAcceptor::new(tls_config);
+
+        let state = self.state;
+        let router = self.router;
+        let max_connections = self.max_connections;
+        let shutdown_timeout = self.shutdown_timeout;
+
+        listen(
+            acceptor,
+            address,
+            state,
+            router,
+            max_connections,
+            shutdown_timeout,
+        )
+    }
+
+    /// Starts the server and listens for incoming connections at the provided
+    /// address. Returns a future that resolves when the server is shutdown.
+    ///
+    /// # Errors
+    ///
+    /// If the server fails to bind to the provided address or is unable to
+    /// finish serving all of the inflight connections within the specified
+    /// [shutdown timeout](Self::shutdown_timeout)
+    /// when a shutdown signal is received.
+    ///
+    #[cfg(not(feature = "rustls"))]
+    pub fn listen<A: ToSocketAddrs>(self, address: A) -> impl Future<Output = Result<(), Error>> {
+        // Create a HttpAcceptor to serve connections over HTTP.
+        let acceptor = acceptor::http::HttpAcceptor;
+
+        let state = self.state;
+        let router = self.router;
+        let max_connections = self.max_connections;
+        let shutdown_timeout = self.shutdown_timeout;
+
+        listen(
+            acceptor,
+            address,
+            state,
+            router,
+            max_connections,
+            shutdown_timeout,
+        )
+    }
+
+    /// Set the amount of time in seconds that the server will wait for inflight
+    /// connections to complete before shutting down. The default value is 30
+    /// seconds.
+    ///
+    pub fn shutdown_timeout(self, timeout: u64) -> Self {
         Self {
-            rustls_config: Some(server_config),
+            shutdown_timeout: Some(timeout),
             ..self
         }
     }
@@ -110,61 +189,13 @@ where
         }
     }
 
-    /// Set the amount of time in seconds that the server will wait for inflight
-    /// connections to complete before shutting down. The default value is 30
-    /// seconds.
-    pub fn shutdown_timeout(self, timeout: u64) -> Self {
+    /// Sets the TLS configuration for the server.
+    ///
+    #[cfg(feature = "rustls")]
+    pub fn rustls_config(self, server_config: rustls::ServerConfig) -> Self {
         Self {
-            shutdown_timeout: Some(timeout),
+            rustls_config: Some(server_config),
             ..self
         }
-    }
-
-    #[cfg(feature = "rustls")]
-    pub fn listen<A: ToSocketAddrs>(self, address: A) -> impl Future<Output = Result<(), Error>> {
-        // Confirm that rustls_config exists before proceeding.
-        let tls_config = match self.rustls_config {
-            Some(config) => Arc::new(config),
-            None => panic!("rustls_config is required to use the 'rustls' feature"),
-        };
-
-        // Create the RustlsAcceptor to serve connections over HTTPS.
-        let acceptor = acceptor::rustls::RustlsAcceptor::new(tls_config);
-
-        // Deconstruct self into the arguments needed to call listen.
-        let state = self.state;
-        let router = self.router;
-        let max_connections = self.max_connections;
-        let shutdown_timeout = self.shutdown_timeout;
-
-        listen(
-            acceptor,
-            address,
-            state,
-            router,
-            max_connections,
-            shutdown_timeout,
-        )
-    }
-
-    #[cfg(not(feature = "rustls"))]
-    pub fn listen<A: ToSocketAddrs>(self, address: A) -> impl Future<Output = Result<(), Error>> {
-        // Create a HttpAcceptor to serve connections over HTTP.
-        let acceptor = acceptor::http::HttpAcceptor;
-
-        // Deconstruct self into the arguments needed to call listen.
-        let state = self.state;
-        let router = self.router;
-        let max_connections = self.max_connections;
-        let shutdown_timeout = self.shutdown_timeout;
-
-        listen(
-            acceptor,
-            address,
-            state,
-            router,
-            max_connections,
-            shutdown_timeout,
-        )
     }
 }

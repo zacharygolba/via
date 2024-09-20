@@ -22,8 +22,8 @@ async fn main() -> Result<(), Error> {
     // Add our hello responder to the endpoint /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
+    // Start the server.
     Server::new(app)
-        // Pass tls_config to the server.
         .rustls_config(tls_config)
         .listen(("127.0.0.1", 8080))
         .await
