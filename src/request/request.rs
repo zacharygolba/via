@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use cookie::CookieJar;
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
 use http_body::Body;
@@ -25,14 +26,35 @@ pub struct Request<State = ()> {
 }
 
 struct RequestMeta {
-    /// The component parts of the underlying HTTP request.
-    parts: Parts,
+    /// The cookies associated with the request.
+    cookies: CookieJar,
 
     /// The request's path and query parameters.
     params: PathParams,
+
+    /// The component parts of the underlying HTTP request.
+    parts: Parts,
 }
 
 impl<State> Request<State> {
+    /// Consumes the request and returns the body.
+    pub fn into_body(self) -> RequestBody {
+        self.body
+    }
+
+    /// Unwraps `self` into the Request type from the `http` crate.
+    pub fn into_inner(self) -> http::Request<RequestBody> {
+        let (parts, body) = self.into_parts();
+        http::Request::from_parts(parts, body)
+    }
+
+    /// Consumes the request and returns a tuple containing the component
+    /// parts of the request and the request body.
+    pub fn into_parts(self) -> (Parts, RequestBody) {
+        let meta = *self.meta;
+        (meta.parts, self.body)
+    }
+
     /// Consumes the request returning a new request with body mapped to the
     /// return type of the provided closure `map`.
     pub fn map<F, T, E>(self, map: F) -> Self
@@ -50,6 +72,11 @@ impl<State> Request<State> {
             meta: self.meta,
             state: self.state,
         }
+    }
+
+    /// Returns a reference to the cookies associated with the request.
+    pub fn cookies(&self) -> &CookieJar {
+        &self.meta.cookies
     }
 
     /// Returns a reference to a map that contains the headers associated with
@@ -133,24 +160,6 @@ impl<State> Request<State> {
     pub fn version(&self) -> Version {
         self.meta.parts.version
     }
-
-    /// Consumes the request and returns the body.
-    pub fn into_body(self) -> RequestBody {
-        self.body
-    }
-
-    /// Unwraps `self` into the Request type from the `http` crate.
-    pub fn into_inner(self) -> http::Request<RequestBody> {
-        let (parts, body) = self.into_parts();
-        http::Request::from_parts(parts, body)
-    }
-
-    /// Consumes the request and returns a tuple containing the component
-    /// parts of the request and the request body.
-    pub fn into_parts(self) -> (Parts, RequestBody) {
-        let meta = *self.meta;
-        (meta.parts, self.body)
-    }
 }
 
 impl<State> Request<State> {
@@ -167,9 +176,18 @@ impl<State> Request<State> {
 
         // Wrap the component parts and path parameters with RequestMeta and
         // store it on the heap.
-        let meta = Box::new(RequestMeta { parts, params });
+        let meta = Box::new(RequestMeta {
+            cookies: CookieJar::new(),
+            params,
+            parts,
+        });
 
         Self { body, meta, state }
+    }
+
+    /// Returns a mutable reference to the cookies associated with the request.
+    pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
+        &mut self.meta.cookies
     }
 }
 
@@ -181,6 +199,7 @@ impl<State> Debug for Request<State> {
             .field("params", &self.meta.params)
             .field("version", &self.version())
             .field("headers", self.headers())
+            .field("cookies", self.cookies())
             .field("body", &self.body)
             .finish()
     }

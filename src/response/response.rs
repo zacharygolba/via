@@ -1,6 +1,7 @@
 use bytes::Bytes;
+use cookie::CookieJar;
 use futures_core::Stream;
-use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE, SET_COOKIE, TRANSFER_ENCODING};
 use http::response::Parts;
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Version};
 use http_body::{Body, Frame};
@@ -13,13 +14,15 @@ use crate::body::{AnyBody, ByteBuffer};
 use crate::{Error, Result};
 
 pub struct Response {
-    inner: http::Response<ResponseBody>,
+    cookies: Box<CookieJar>,
+    response: http::Response<ResponseBody>,
 }
 
 impl Response {
     pub fn new(body: ResponseBody) -> Self {
         Self {
-            inner: http::Response::new(body),
+            cookies: Box::new(CookieJar::new()),
+            response: http::Response::new(body),
         }
     }
 
@@ -87,12 +90,16 @@ impl Response {
 
     pub fn from_parts(parts: Parts, body: ResponseBody) -> Self {
         Self {
-            inner: http::Response::from_parts(parts, body),
+            cookies: Box::new(CookieJar::new()),
+            response: http::Response::from_parts(parts, body),
         }
     }
 
+    /// Consumes the response and returns a tuple containing the component
+    /// parts of the response and the response body.
+    ///
     pub fn into_parts(self) -> (Parts, ResponseBody) {
-        self.inner.into_parts()
+        self.response.into_parts()
     }
 
     /// Consumes the response returning a new response with body mapped to the
@@ -103,7 +110,7 @@ impl Response {
         T: Body<Data = Bytes, Error = E> + Send + 'static,
         Error: From<E>,
     {
-        let (parts, body) = self.inner.into_parts();
+        let (parts, body) = self.response.into_parts();
         let output = map(body.into_inner());
         let body = ResponseBody::from_dyn(output);
 
@@ -111,19 +118,31 @@ impl Response {
     }
 
     pub fn body(&self) -> &ResponseBody {
-        self.inner.body()
+        self.response.body()
     }
 
     pub fn body_mut(&mut self) -> &mut ResponseBody {
-        self.inner.body_mut()
+        self.response.body_mut()
+    }
+
+    /// Returns a reference to the response cookies.
+    ///
+    pub fn cookies(&self) -> &CookieJar {
+        &self.cookies
+    }
+
+    /// Returns a mutable reference to the response cookies.
+    ///
+    pub fn cookies_mut(&mut self) -> &mut CookieJar {
+        &mut self.cookies
     }
 
     pub fn headers(&self) -> &HeaderMap {
-        self.inner.headers()
+        self.response.headers()
     }
 
     pub fn headers_mut(&mut self) -> &mut HeaderMap {
-        self.inner.headers_mut()
+        self.response.headers_mut()
     }
 
     /// A shorthand method for `self.headers_mut().insert(name, value)`.
@@ -135,19 +154,53 @@ impl Response {
     /// A shorthand method for `*self.status_mut() = status`.
     ///
     pub fn set_status(&mut self, status: StatusCode) {
-        *self.inner.status_mut() = status;
+        *self.response.status_mut() = status;
     }
 
     pub fn status(&self) -> StatusCode {
-        self.inner.status()
+        self.response.status()
     }
 
     pub fn status_mut(&mut self) -> &mut StatusCode {
-        self.inner.status_mut()
+        self.response.status_mut()
     }
 
     pub fn version(&self) -> Version {
-        self.inner.version()
+        self.response.version()
+    }
+}
+
+impl Response {
+    /// Consumes the response and returns the inner value after performing any
+    /// final processing that may be required before the response is sent to the
+    /// client.
+    ///
+    pub(crate) fn into_outgoing_response(self) -> http::Response<AnyBody<ByteBuffer>> {
+        // Extract the component parts of the inner response.
+        let (mut parts, body) = self.response.into_parts();
+
+        // Unwrap the impl Body from the ResponseBody.
+        let body = body.into_inner();
+
+        // Map any cookies that have changed into a "Set-Cookie" header.
+        let set_cookies = self.cookies.delta().filter_map(|cookie| {
+            match cookie.encoded().to_string().parse() {
+                Ok(header) => Some((SET_COOKIE, header)),
+                Err(error) => {
+                    let _ = error;
+                    // Placeholder for tracing...
+                    None
+                }
+            }
+        });
+
+        // Extend the response headers with the "Set-Cookie" headers.
+        parts.headers.extend(set_cookies);
+
+        // Reconstruct a http::Response from the component parts and response
+        // body.
+        //
+        http::Response::from_parts(parts, body)
     }
 }
 
@@ -159,18 +212,24 @@ impl Default for Response {
 
 impl Debug for Response {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Debug::fmt(&self.inner, f)
+        Debug::fmt(&self.response, f)
     }
 }
 
 impl From<http::Response<ResponseBody>> for Response {
-    fn from(inner: http::Response<ResponseBody>) -> Self {
-        Self { inner }
+    fn from(response: http::Response<ResponseBody>) -> Self {
+        Self {
+            response,
+            cookies: Box::new(CookieJar::new()),
+        }
     }
 }
 
 impl From<Response> for http::Response<AnyBody<ByteBuffer>> {
-    fn from(response: Response) -> Self {
-        response.inner.map(ResponseBody::into_inner)
+    fn from(from: Response) -> Self {
+        let (parts, body) = from.into_parts();
+        let body = body.into_inner();
+
+        Self::from_parts(parts, body)
     }
 }

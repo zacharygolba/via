@@ -17,10 +17,7 @@ pub struct Timeout<F> {
 
 /// Create a new `Timeout` middleware with the specified duration.
 pub fn timeout<State>(duration: Duration) -> Timeout<RespondWithTimeout<State>> {
-    Timeout {
-        duration,
-        or_else: respond_with_timeout,
-    }
+    Timeout::new(duration)
 }
 
 /// The default function to call if downstream middleware do not respond within
@@ -33,6 +30,16 @@ fn respond_with_timeout<State>(_: &State) -> Result<Response, Error> {
     message.push_str("Please try again later.");
 
     Ok(Error::with_status(message, status).into_response())
+}
+
+impl<State> Timeout<RespondWithTimeout<State>> {
+    /// Create a new `Timeout` middleware with the specified duration.
+    pub fn new(duration: Duration) -> Self {
+        Self {
+            duration,
+            or_else: respond_with_timeout,
+        }
+    }
 }
 
 impl<F> Timeout<F> {

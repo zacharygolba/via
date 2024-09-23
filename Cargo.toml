@@ -26,6 +26,10 @@ smallvec = "1.13"
 tokio = { version = "1", features = ["macros", "signal"] }
 via-router = { path = "./crates/via-router" }
 
+[dependencies.cookie]
+version = "0.18"
+features = ["percent-encode"]
+
 [dependencies.tokio-rustls]
 version = "0.26"
 optional = true
