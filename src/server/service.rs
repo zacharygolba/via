@@ -38,9 +38,9 @@ impl Future for FutureResponse {
             .poll(context)
             .map(|result| match result {
                 // The response was generated successfully.
-                Ok(response) => Ok(response.into()),
+                Ok(response) => Ok(response.into_outgoing_response()),
                 // An occurred while generating the response.
-                Err(error) => Ok(error.into_response().into()),
+                Err(error) => Ok(error.into_response().into_outgoing_response()),
             })
     }
 }

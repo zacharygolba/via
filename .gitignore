@@ -3,3 +3,4 @@
 Cargo.lock
 docs/examples/*/*.cert
 docs/examples/*/*.key
+docs/examples/cookies/.env
