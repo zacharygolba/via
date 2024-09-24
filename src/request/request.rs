@@ -13,36 +13,40 @@ use crate::body::{AnyBody, BoxBody};
 use crate::Error;
 
 pub struct Request<State = ()> {
-    /// A wrappr around the body of the request. This is used to provide
-    /// convient methods for reading the request body.
-    body: RequestBody,
+    /// The component parts of the underlying HTTP request.
+    ///
+    parts: Parts,
 
-    /// The component parts and metadata associated with the request.
-    meta: Box<RequestMeta>,
+    /// A wrapper around the body of the request. This provides callers with
+    /// convienent methods for reading the request body.
+    ///
+    body: RequestBody,
 
     /// The shared application state passed to the [`via::new`](crate::app::new)
     /// function.
+    ///
     state: Arc<State>,
-}
 
-struct RequestMeta {
-    /// The cookies associated with the request.
-    cookies: CookieJar,
+    /// The cookies associated with the request. If there is not a
+    /// [CookieParser](crate::middleware::CookieParser)
+    /// middleware in the middleware stack for the request, this will be empty.
+    ///
+    cookies: Option<Box<CookieJar>>,
 
     /// The request's path and query parameters.
+    ///
     params: PathParams,
-
-    /// The component parts of the underlying HTTP request.
-    parts: Parts,
 }
 
 impl<State> Request<State> {
     /// Consumes the request and returns the body.
+    ///
     pub fn into_body(self) -> RequestBody {
         self.body
     }
 
     /// Unwraps `self` into the Request type from the `http` crate.
+    ///
     pub fn into_inner(self) -> http::Request<RequestBody> {
         let (parts, body) = self.into_parts();
         http::Request::from_parts(parts, body)
@@ -50,13 +54,14 @@ impl<State> Request<State> {
 
     /// Consumes the request and returns a tuple containing the component
     /// parts of the request and the request body.
+    ///
     pub fn into_parts(self) -> (Parts, RequestBody) {
-        let meta = *self.meta;
-        (meta.parts, self.body)
+        (self.parts, self.body)
     }
 
     /// Consumes the request returning a new request with body mapped to the
     /// return type of the provided closure `map`.
+    ///
     pub fn map<F, T, E>(self, map: F) -> Self
     where
         F: FnOnce(AnyBody<Incoming>) -> T,
@@ -69,25 +74,27 @@ impl<State> Request<State> {
 
         Self {
             body: RequestBody::new(box_body),
-            meta: self.meta,
-            state: self.state,
+            ..self
         }
     }
 
     /// Returns a reference to the cookies associated with the request.
-    pub fn cookies(&self) -> &CookieJar {
-        &self.meta.cookies
+    ///
+    pub fn cookies(&self) -> Option<&CookieJar> {
+        self.cookies.as_deref()
     }
 
     /// Returns a reference to a map that contains the headers associated with
     /// the request.
+    ///
     pub fn headers(&self) -> &HeaderMap {
-        &self.meta.parts.headers
+        &self.parts.headers
     }
 
     /// Returns a reference to the HTTP method associated with the request.
+    ///
     pub fn method(&self) -> &Method {
-        &self.meta.parts.method
+        &self.parts.method
     }
 
     /// Returns a convenient wrapper around an optional reference to the path
@@ -106,11 +113,11 @@ impl<State> Request<State> {
     /// ```
     pub fn param<'a>(&self, name: &'a str) -> Param<'_, 'a> {
         // Get the path of the request's uri.
-        let path = self.meta.parts.uri.path();
+        let path = self.parts.uri.path();
         // Get an `Option<(usize, usize)>` that represents the start and end
         // offset of the path parameter with the provided `name` in the request's
         // uri.
-        let at = self.meta.params.get(name);
+        let at = self.params.get(name);
 
         Param::new(Some(at), name, path)
     }
@@ -140,7 +147,7 @@ impl<State> Request<State> {
     /// }
     /// ```
     pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
-        let query = self.meta.parts.uri.query().unwrap_or("");
+        let query = self.parts.uri.query().unwrap_or("");
         QueryParam::new(name, query)
     }
 
@@ -153,12 +160,12 @@ impl<State> Request<State> {
 
     /// Returns a reference to the uri associated with the request.
     pub fn uri(&self) -> &Uri {
-        &self.meta.parts.uri
+        &self.parts.uri
     }
 
     /// Returns the HTTP version associated with the request.
     pub fn version(&self) -> Version {
-        self.meta.parts.version
+        self.parts.version
     }
 }
 
@@ -171,23 +178,28 @@ impl<State> Request<State> {
         // Destructure the `http::Request` into its component parts.
         let (parts, body) = request.into_parts();
 
-        // Convert the request body into a RequestBody.
+        // Store the component parts of the request on the heap. This reduces the
+        // overhead of passing the request around by value.
+        // let parts = Box::new(parts);
+
+        // Convert the Incoming body into a RequestBody.
         let body = RequestBody::new(AnyBody::Inline(body));
 
-        // Wrap the component parts and path parameters with RequestMeta and
-        // store it on the heap.
-        let meta = Box::new(RequestMeta {
-            cookies: CookieJar::new(),
-            params,
-            parts,
-        });
+        // A placeholder for the cookies associated with the request.
+        let cookies = None;
 
-        Self { body, meta, state }
+        Self {
+            parts,
+            body,
+            state,
+            cookies,
+            params,
+        }
     }
 
     /// Returns a mutable reference to the cookies associated with the request.
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
-        &mut self.meta.cookies
+        self.cookies.get_or_insert_with(Default::default)
     }
 }
 
@@ -196,10 +208,10 @@ impl<State> Debug for Request<State> {
         f.debug_struct("Request")
             .field("method", self.method())
             .field("uri", self.uri())
-            .field("params", &self.meta.params)
+            .field("params", &self.params)
             .field("version", &self.version())
             .field("headers", self.headers())
-            .field("cookies", self.cookies())
+            .field("cookies", &self.cookies)
             .field("body", &self.body)
             .finish()
     }
