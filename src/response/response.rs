@@ -14,14 +14,14 @@ use crate::body::{AnyBody, ByteBuffer};
 use crate::{Error, Result};
 
 pub struct Response {
-    cookies: Box<CookieJar>,
+    cookies: Option<Box<CookieJar>>,
     response: http::Response<ResponseBody>,
 }
 
 impl Response {
     pub fn new(body: ResponseBody) -> Self {
         Self {
-            cookies: Box::new(CookieJar::new()),
+            cookies: None,
             response: http::Response::new(body),
         }
     }
@@ -90,7 +90,7 @@ impl Response {
 
     pub fn from_parts(parts: Parts, body: ResponseBody) -> Self {
         Self {
-            cookies: Box::new(CookieJar::new()),
+            cookies: None,
             response: http::Response::from_parts(parts, body),
         }
     }
@@ -127,14 +127,14 @@ impl Response {
 
     /// Returns a reference to the response cookies.
     ///
-    pub fn cookies(&self) -> &CookieJar {
-        &self.cookies
+    pub fn cookies(&self) -> Option<&CookieJar> {
+        self.cookies.as_deref()
     }
 
     /// Returns a mutable reference to the response cookies.
     ///
     pub fn cookies_mut(&mut self) -> &mut CookieJar {
-        &mut self.cookies
+        self.cookies.get_or_insert_with(Default::default)
     }
 
     pub fn headers(&self) -> &HeaderMap {
@@ -179,28 +179,33 @@ impl Response {
         // Extract the component parts of the inner response.
         let (mut parts, body) = self.response.into_parts();
 
-        // Unwrap the impl Body from the ResponseBody.
-        let body = body.into_inner();
-
-        // Map any cookies that have changed into a "Set-Cookie" header.
-        let set_cookies = self.cookies.delta().filter_map(|cookie| {
-            match cookie.encoded().to_string().parse() {
-                Ok(header) => Some((SET_COOKIE, header)),
-                Err(error) => {
-                    let _ = error;
-                    // Placeholder for tracing...
-                    None
+        // Map any cookies that have changed to an iter of "Set-Cookie" headers.
+        let set_cookie_headers = self.cookies.as_ref().map(|cookies| {
+            cookies.delta().filter_map(|cookie| {
+                match cookie.encoded().to_string().parse() {
+                    Ok(header) => Some((SET_COOKIE, header)),
+                    Err(error) => {
+                        let _ = error;
+                        // Placeholder for tracing...
+                        None
+                    }
                 }
-            }
+            })
         });
 
         // Extend the response headers with the "Set-Cookie" headers.
-        parts.headers.extend(set_cookies);
+        if let Some(headers) = set_cookie_headers {
+            parts.headers.extend(headers);
+        }
 
         // Reconstruct a http::Response from the component parts and response
         // body.
         //
-        http::Response::from_parts(parts, body)
+        http::Response::from_parts(parts, body.into_inner())
+    }
+
+    pub(crate) fn set_cookies(&mut self, cookies: Box<CookieJar>) {
+        self.cookies = Some(cookies);
     }
 }
 
@@ -220,7 +225,7 @@ impl From<http::Response<ResponseBody>> for Response {
     fn from(response: http::Response<ResponseBody>) -> Self {
         Self {
             response,
-            cookies: Box::new(CookieJar::new()),
+            cookies: None,
         }
     }
 }
