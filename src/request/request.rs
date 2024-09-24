@@ -178,10 +178,6 @@ impl<State> Request<State> {
         // Destructure the `http::Request` into its component parts.
         let (parts, body) = request.into_parts();
 
-        // Store the component parts of the request on the heap. This reduces the
-        // overhead of passing the request around by value.
-        // let parts = Box::new(parts);
-
         // Convert the Incoming body into a RequestBody.
         let body = RequestBody::new(AnyBody::Inline(body));
 
