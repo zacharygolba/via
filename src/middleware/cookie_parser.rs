@@ -1,4 +1,4 @@
-use cookie::{Cookie, CookieJar, SplitCookies};
+use cookie::{Cookie, SplitCookies};
 use http::header::COOKIE;
 use std::marker::PhantomData;
 
@@ -122,7 +122,7 @@ where
             // Call the next middleware to get a response.
             let mut response = next.call(request).await?;
 
-            if let Some(cookies) = response.cookies().map(CookieJar::iter) {
+            if let Some(cookies) = response.cookies().map(|jar| jar.iter()) {
                 cookies.cloned().for_each(|cookie| {
                     merged_cookies.add(cookie);
                 });
