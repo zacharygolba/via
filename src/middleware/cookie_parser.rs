@@ -1,4 +1,4 @@
-use cookie::{Cookie, SplitCookies};
+use cookie::{Cookie, CookieJar, SplitCookies};
 use http::header::COOKIE;
 use std::marker::PhantomData;
 
@@ -67,38 +67,54 @@ where
 
         // Attempt to parse the value of the `Cookie` header if it exists and
         // contains a valid cookie string.
-        let parser_output = match cookie_header.map(|value| value.to_str()) {
+        //
+        let (parser_output, request_cookies) = match cookie_header.map(|value| value.to_str()) {
+            // There are no cookies to parse.
             None => {
-                // There are no cookies to parse.
                 return next.call(request);
             }
+
+            // The cookie header contains characters that are not visible ASCII.
             Some(Err(error)) => {
-                let _ = error;
-                // Placeholder for tracing...
+                let _ = error; // Placeholder for tracing...
                 return next.call(request);
             }
+
+            // The cookie header contains a valid cookie string. Parse it.
             Some(Ok(cookie_str)) => {
+                // Get an owned String from cookie_str.
                 let input = cookie_str.to_string();
-                T::parse_cookies(input)
+
+                // Parse the cookie string into an iter of results.
+                let mut output = T::parse_cookies(input).peekable();
+
+                // Get a mutable reference to the request cookies.
+                let cookies = if output.peek().is_some() {
+                    // The parser parsed some cookies. Allocate a new
+                    // `Box<CookieJar>` and get a mutable reference to it.
+                    request.cookies_mut()
+                } else {
+                    // The parser did not parse any cookies.
+                    return next.call(request);
+                };
+
+                (output, cookies)
             }
         };
 
-        // Get a mutable reference to the request cookies.
-        let request_cookies = request.cookies_mut();
-
-        // Iterate over each result in the parser output. If the cookie was
-        // able to be parsed without error, add it to the request cookies.
+        // Iterate over the remaining results in the parser output. If a cookie
+        // was able to be parsed without error, add it to request_cookies.
+        //
         parser_output.for_each(|result| match result {
             Ok(cookie) => request_cookies.add_original(cookie),
             Err(error) => {
-                let _ = error;
-                // Placeholder for tracing...
+                let _ = error; // Placeholder for tracing...
             }
         });
 
-        // Clone the request cookies so we can merge them with the response
-        // cookies when they are available. This is necessary because we need
-        // to pass ownership of the request to the next middleware.
+        // Clone request_cookies so we can merge them with the response cookies
+        // when they become available. This is necessary because we need to pass
+        // ownership of the request to the next middleware.
         //
         let mut merged_cookies = Box::new(request_cookies.clone());
 
@@ -106,18 +122,17 @@ where
             // Call the next middleware to get a response.
             let mut response = next.call(request).await?;
 
-            // Merge the response cookies with our copy of the request cookies at
-            // `merged_cookies`. We'll replace the value of response cookies with
-            // the combined CookieJar containing both the request and response
-            // cookies. We do this to ensure the delta is calculated correctly
-            // when the response cookies are serialized into Set-Cookie headers.
-            //
-            response.cookies_mut().iter().for_each(|cookie| {
-                merged_cookies.add(cookie.clone());
-            });
+            if let Some(cookies) = response.cookies().map(CookieJar::iter) {
+                cookies.cloned().for_each(|cookie| {
+                    merged_cookies.add(cookie);
+                });
 
-            // Replace the response cookies with the merged cookies.
-            response.set_cookies(merged_cookies);
+                // Replace the response cookies with merged_cookies. The delta
+                // will be calculated and converted into Set-Cookie headers
+                // before the response is sent to the client.
+                //
+                response.set_cookies(merged_cookies);
+            }
 
             // Return the response.
             Ok(response)
