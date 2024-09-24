@@ -42,12 +42,10 @@ async fn count_visits(request: Request, next: Next) -> Result<Response, Error> {
     // using the signed cookie jar to store and retrieve the "n_visits" cookie.
     // If
     //
-    let n_visits = match request.cookies().signed(secret).get("n_visits") {
-        // The cookie exists, parse the value as an i32 and increment it.
-        Some(cookie) => cookie.value().parse::<i32>().unwrap_or(0) + 1,
-        // The cookie does not exist, we'll initialize the counter to 1.
-        None => 1,
-    };
+    let mut n_visits: i32 = request
+        .cookies()
+        .and_then(|cookies| cookies.signed(secret).get("n_visits"))
+        .map_or(0, |cookie| cookie.value().parse().unwrap_or(0));
 
     // Call the next middleware to get the response.
     let mut response = next.call(request).await?;
@@ -58,6 +56,9 @@ async fn count_visits(request: Request, next: Next) -> Result<Response, Error> {
     if !response.status().is_success() {
         return Ok(response);
     }
+
+    // Increment the value of the "n_visits" counter.
+    n_visits += 1;
 
     // Get a mutable reference to the response cookies.
     let mut cookies = response.cookies_mut().signed_mut(secret);

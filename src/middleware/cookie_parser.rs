@@ -83,26 +83,26 @@ where
             }
         };
 
+        // Get a mutable reference to the request cookies.
+        let request_cookies = request.cookies_mut();
+
+        // Iterate over each result in the parser output. If the cookie was
+        // able to be parsed without error, add it to the request cookies.
+        parser_output.for_each(|result| match result {
+            Ok(cookie) => request_cookies.add_original(cookie),
+            Err(error) => {
+                let _ = error;
+                // Placeholder for tracing...
+            }
+        });
+
+        // Clone the request cookies so we can merge them with the response
+        // cookies when they are available. This is necessary because we need
+        // to pass ownership of the request to the next middleware.
+        //
+        let mut merged_cookies = Box::new(request_cookies.clone());
+
         Box::pin(async {
-            // Get a mutable reference to the request cookies.
-            let request_cookies = request.cookies_mut();
-
-            // Iterate over each result in the parser output. If the cookie was
-            // able to be parsed without error, add it to the request cookies.
-            parser_output.for_each(|result| match result {
-                Ok(cookie) => request_cookies.add_original(cookie),
-                Err(error) => {
-                    let _ = error;
-                    // Placeholder for tracing...
-                }
-            });
-
-            // Clone the request cookies so we can merge them with the response
-            // cookies when they are available. This is necessary because we need
-            // to pass ownership of the request to the next middleware.
-            //
-            let mut merged_cookies = request_cookies.clone();
-
             // Call the next middleware to get a response.
             let mut response = next.call(request).await?;
 
@@ -112,12 +112,12 @@ where
             // cookies. We do this to ensure the delta is calculated correctly
             // when the response cookies are serialized into Set-Cookie headers.
             //
-            response.cookies().iter().cloned().for_each(|cookie| {
-                merged_cookies.add(cookie);
+            response.cookies_mut().iter().for_each(|cookie| {
+                merged_cookies.add(cookie.clone());
             });
 
             // Replace the response cookies with the merged cookies.
-            *response.cookies_mut() = merged_cookies;
+            response.set_cookies(merged_cookies);
 
             // Return the response.
             Ok(response)
