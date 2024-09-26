@@ -170,32 +170,26 @@ impl<State> Request<State> {
 }
 
 impl<State> Request<State> {
-    pub(crate) fn new(
-        request: http::Request<Incoming>,
-        params: PathParams,
-        state: Arc<State>,
-    ) -> Self {
-        // Destructure the `http::Request` into its component parts.
-        let (parts, body) = request.into_parts();
-
-        // Convert the Incoming body into a RequestBody.
-        let body = RequestBody::new(AnyBody::Inline(body));
-
-        // A placeholder for the cookies associated with the request.
-        let cookies = None;
+    pub(crate) fn new(head: Parts, body: RequestBody, state: Arc<State>) -> Self {
+        let parts = head;
 
         Self {
             parts,
             body,
             state,
-            cookies,
-            params,
+            cookies: None,
+            params: PathParams::new(),
         }
     }
 
     /// Returns a mutable reference to the cookies associated with the request.
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
         self.cookies.get_or_insert_with(Default::default)
+    }
+
+    /// Returns a mutable reference to the cookies associated with the request.
+    pub(crate) fn params_mut(&mut self) -> &mut PathParams {
+        &mut self.params
     }
 }
 
