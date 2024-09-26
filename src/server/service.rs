@@ -31,10 +31,8 @@ pub struct Service<State> {
 impl Future for FutureResponse {
     type Output = Result<HttpResponse, Infallible>;
 
-    fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
-        this.future
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
+        self.future
             .as_mut()
             .poll(context)
             .map(|result| match result {
