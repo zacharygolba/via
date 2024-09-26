@@ -1,6 +1,5 @@
+use std::collections::VecDeque;
 use std::sync::Arc;
-
-use smallvec::SmallVec;
 use via_router::Match;
 
 use crate::request::PathParams;
@@ -95,34 +94,36 @@ where
 
     pub fn resolve(
         &self,
-        matched_routes: &[Match<Vec<MatchWhen<State>>>],
-    ) -> (PathParams, Next<State>) {
-        let mut params = PathParams::new();
-        let mut stack = SmallVec::new();
+        params: &mut PathParams,
+        routes: &[Match<Vec<MatchWhen<State>>>],
+    ) -> Next<State> {
+        let mut stack = VecDeque::new();
 
         // Iterate over the routes that match the request's path.
-        for route in matched_routes.iter().rev() {
+        for route in routes {
             if let Some(param) = route.param() {
                 params.push(param);
             }
 
             // Extend `stack` with middleware in `matched` depending on whether
             // or not the middleware expects a partial or exact match.
-            stack.extend(route.iter().rev().filter_map(|when| match when {
-                // Include this middleware in `stack` because it expects an exact
-                // match and `matched.exact` is `true`.
-                MatchWhen::Exact(exact) if route.exact => Some(Arc::clone(exact)),
+            for middleware in route.iter().filter_map(|when| match when {
+                // Include this middleware in `stack` because it expects an
+                // exact match and `matched.exact` is `true`.
+                MatchWhen::Exact(exact) if route.exact => Some(exact),
 
-                // Include this middleware in `stack` unconditionally because it
-                // targets partial matches.
-                MatchWhen::Partial(partial) => Some(Arc::clone(partial)),
+                // Include this middleware in `stack` unconditionally because
+                // it targets partial matches.
+                MatchWhen::Partial(partial) => Some(partial),
 
                 // Exclude this middleware from `stack` because it expects an
                 // exact match and `matched.exact` is `false`.
                 MatchWhen::Exact(_) => None,
-            }));
+            }) {
+                stack.push_back(Arc::clone(middleware));
+            }
         }
 
-        (params, Next::new(stack))
+        Next::new(stack)
     }
 }

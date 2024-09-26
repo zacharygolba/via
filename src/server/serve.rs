@@ -47,9 +47,13 @@ where
         // to worry about running into file descriptor limits.
         let permit = semaphore.clone().acquire_many_owned(2).await?;
 
-        // Create a new Service. We'll move this into the connection task when a
-        // new connection is accepted from the listener.
-        let service = Service::new(Arc::clone(&router), Arc::clone(&state));
+        // Clone the Arc around the router so it can be moved into the connection
+        // task.
+        let router = Arc::clone(&router);
+
+        // Clone the Arc around the shared application state so it can be moved
+        // into the connection task.
+        let state = Arc::clone(&state);
 
         // Clone the acceptor so it can be moved into the task responsible for
         // serving individual connections.
@@ -87,10 +91,6 @@ where
                         }
                     };
 
-                    // Wrap the stream in a type that implements hyper's I/O
-                    // traits.
-                    let io = IoStream::new(stream);
-
                     // Create a new HTTP/2 connection.
                     #[cfg(feature = "http2")]
                     let mut connection = {
@@ -98,14 +98,20 @@ where
 
                         hyper::server::conn::http2::Builder::new(exec)
                             .timer(TokioTimer::new())
-                            .serve_connection(io, service)
+                            .serve_connection(
+                                IoStream::new(stream),
+                                Service::new(router, state)
+                            )
                     };
 
                     // Create a new HTTP/1.1 connection.
                     #[cfg(all(feature = "http1", not(feature = "http2")))]
                     let mut connection = hyper::server::conn::http1::Builder::new()
                         .timer(TokioTimer::new())
-                        .serve_connection(io, service)
+                        .serve_connection(
+                            IoStream::new(stream),
+                            Service::new(router, state)
+                        )
                         .with_upgrades();
 
                     // Poll the connection until it is closed or a graceful

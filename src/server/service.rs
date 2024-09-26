@@ -7,8 +7,9 @@ use std::task::{Context, Poll};
 
 use crate::body::{AnyBody, ByteBuffer};
 use crate::middleware::BoxFuture;
+use crate::request::{Request, RequestBody};
 use crate::router::Router;
-use crate::{Error, Request, Response};
+use crate::{Error, Response};
 
 /// The request type used by our hyper service. This is the type that we will
 /// wrap in a `via::Request` and pass to the middleware stack.
@@ -59,15 +60,34 @@ where
     type Future = FutureResponse;
     type Response = HttpResponse;
 
-    fn call(&self, request: HttpRequest) -> Self::Future {
-        // Get a Vec of routes that match the uri path.
-        let matched_routes = self.router.lookup(request.uri().path());
+    fn call(&self, incoming: HttpRequest) -> Self::Future {
+        // Wrap the incoming request in with `via::Request`.
+        let mut request = {
+            // Destructure the incoming request into its component parts.
+            let (parts, body) = incoming.into_parts();
+
+            // Wrap the request body with `RequestBody`.
+            let body = RequestBody::new(AnyBody::Inline(body));
+
+            // Clone the shared application state so request can own a reference
+            // to it. This is a cheaper operation than going from Weak to Arc for
+            // any application that interacts with a connection pool or an
+            // external service.
+            let state = Arc::clone(&self.state);
+
+            Request::new(parts, body, state)
+        };
 
         // Build the middleware stack for the request.
-        let (params, next) = self.router.resolve(&matched_routes);
+        let next = {
+            // Get a Vec of routes that match the uri path.
+            let routes = self.router.lookup(request.uri().path());
 
-        // Wrap the incoming request in with `via::Request`.
-        let request = Request::new(request, params, Arc::clone(&self.state));
+            // Get a mutable reference to the request's path parameters.
+            let params = request.params_mut();
+
+            self.router.resolve(params, &routes)
+        };
 
         // Call the middleware stack and return a Future that resolves to
         // `Result<Self::Response, Self::Error>`.
