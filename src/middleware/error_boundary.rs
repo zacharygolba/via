@@ -8,11 +8,7 @@ pub struct ErrorBoundary;
 
 /// A middleware that catches errors that occur downstream and then calls the
 /// provided closure to inspect the error to another error. Think of this as a
-/// `Result::inspect` for middleware.
-///
-/// Middleware that is upstream from a `MapErrorBoundary` will continue to
-/// execute as usual since the error is eagerly converted into a response after
-/// the `inspect` function is called.
+/// [`Result::inspect_err`] for middleware.
 pub struct InspectErrorBoundary<F> {
     inspect: F,
 }
@@ -96,14 +92,11 @@ where
             // Yield control to the next middleware in the stack.
             let result = next.call(request).await;
 
-            result.or_else(|error| {
+            result.inspect_err(|error| {
                 // Pass a reference to `error` and `state` to the `inspect`
                 // function. This allows the error to be logged or reported
                 // based on the needs of the application.
-                inspect(&error, &state);
-
-                // Convert the error into a response and return.
-                Ok(error.into_response())
+                inspect(error, &state);
             })
         })
     }

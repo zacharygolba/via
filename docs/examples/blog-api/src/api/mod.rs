@@ -1,5 +1,6 @@
 pub mod posts;
 pub mod users;
+pub mod util;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
