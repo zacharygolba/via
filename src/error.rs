@@ -1,10 +1,11 @@
 use http::StatusCode;
+use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::error::Error as StdError;
 use std::fmt::{self, Debug, Display, Formatter};
-use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::io;
 
-use crate::response::Response;
+use crate::Response;
 
 type AnyError = Box<dyn StdError + Send + Sync + 'static>;
 
@@ -23,34 +24,22 @@ enum Format {
     Json,
 }
 
-struct Bail {
-    message: String,
-}
-
 #[derive(Clone, Copy, Debug)]
 struct Chain<'a> {
     source: Option<&'a (dyn StdError + 'static)>,
 }
 
-impl Bail {
-    pub fn new(message: String) -> Self {
-        Self { message }
-    }
+struct ErrorMessage {
+    message: String,
 }
 
-impl Debug for Bail {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Debug::fmt(&self.message, f)
-    }
+/// The serialized representation of an Error.
+///
+struct SerializeError {
+    // Store the error message in an array. This makes it easier to work with
+    // in client-side code.
+    errors: [ErrorMessage; 1],
 }
-
-impl Display for Bail {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(&self.message, f)
-    }
-}
-
-impl StdError for Bail {}
 
 impl<'a> Iterator for Chain<'a> {
     type Item = &'a (dyn StdError + 'static);
@@ -67,15 +56,15 @@ impl Error {
     pub fn new(message: String) -> Self {
         Self {
             format: None,
-            source: Box::new(Bail::new(message)),
+            source: Box::new(ErrorMessage { message }),
             status: StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
-    pub fn from_io_error(error: IoError) -> Self {
+    pub fn from_io_error(error: io::Error) -> Self {
         let status = match error.kind() {
-            IoErrorKind::NotFound => StatusCode::NOT_FOUND,
-            IoErrorKind::PermissionDenied => StatusCode::FORBIDDEN,
+            io::ErrorKind::NotFound => StatusCode::NOT_FOUND,
+            io::ErrorKind::PermissionDenied => StatusCode::FORBIDDEN,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
@@ -139,7 +128,7 @@ impl Error {
     pub(crate) fn with_status(message: String, status: StatusCode) -> Self {
         Self {
             format: None,
-            source: Box::new(Bail::new(message)),
+            source: Box::new(ErrorMessage { message }),
             status,
         }
     }
@@ -170,49 +159,51 @@ impl From<Error> for AnyError {
     }
 }
 
+impl From<Error> for Box<dyn StdError + Send> {
+    fn from(error: Error) -> Self {
+        error.source
+    }
+}
+
 impl Serialize for Error {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        use serde::ser::SerializeStruct;
-        use std::collections::HashSet;
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let message = self.to_string();
+        let repr = SerializeError {
+            errors: [ErrorMessage { message }],
+        };
 
-        #[derive(Eq, PartialEq, Hash)]
-        struct SerializedError {
-            message: String,
-        }
+        repr.serialize(serializer)
+    }
+}
 
-        impl<'a> From<&'a Source> for SerializedError {
-            fn from(error: &'a Source) -> Self {
-                Self {
-                    message: error.to_string(),
-                }
-            }
-        }
+impl Debug for ErrorMessage {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Debug::fmt(&self.message, f)
+    }
+}
 
-        impl Serialize for SerializedError {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: serde::Serializer,
-            {
-                let mut state = serializer.serialize_struct("Error", 1)?;
+impl Display for ErrorMessage {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Display::fmt(&self.message, f)
+    }
+}
 
-                state.serialize_field("message", &self.message)?;
-                state.end()
-            }
-        }
+impl StdError for ErrorMessage {}
 
-        let errors: HashSet<_> = self.chain().map(SerializedError::from).collect();
-        let mut state = serializer.serialize_struct("Errors", 1)?;
+impl Serialize for ErrorMessage {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("ErrorMessage", 1)?;
 
-        state.serialize_field("errors", &errors)?;
+        state.serialize_field("message", &self.message)?;
         state.end()
     }
 }
 
-impl From<Error> for Box<dyn StdError + Send> {
-    fn from(error: Error) -> Self {
-        error.source
+impl Serialize for SerializeError {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("SerializeError", 1)?;
+
+        state.serialize_field("errors", &self.errors)?;
+        state.end()
     }
 }
