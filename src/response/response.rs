@@ -26,6 +26,13 @@ impl Response {
         }
     }
 
+    pub fn new_with_status(body: ResponseBody, status: StatusCode) -> Self {
+        let mut response = Self::new(body);
+
+        response.set_status(status);
+        response
+    }
+
     pub fn html(body: String) -> Self {
         let len = body.len();
 
@@ -151,18 +158,18 @@ impl Response {
         self.headers_mut().insert(name, value);
     }
 
-    /// A shorthand method for `*self.status_mut() = status`.
-    ///
-    pub fn set_status(&mut self, status: StatusCode) {
-        *self.response.status_mut() = status;
-    }
-
     pub fn status(&self) -> StatusCode {
         self.response.status()
     }
 
     pub fn status_mut(&mut self) -> &mut StatusCode {
         self.response.status_mut()
+    }
+
+    /// A shorthand method for `*self.status_mut() = status`.
+    ///
+    pub fn set_status(&mut self, status: StatusCode) {
+        *self.response.status_mut() = status;
     }
 
     pub fn version(&self) -> Version {

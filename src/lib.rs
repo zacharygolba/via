@@ -1,12 +1,12 @@
 #![allow(clippy::module_inception)]
 
 pub mod body;
+pub mod error;
 pub mod middleware;
 pub mod request;
 pub mod response;
 
 mod app;
-mod error;
 mod router;
 mod server;
 

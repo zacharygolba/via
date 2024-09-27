@@ -41,7 +41,8 @@ impl RequestBody {
 
         serde_json::from_slice(&buffer).map_err(|source| {
             let mut error = Error::from(source);
-            *error.status_mut() = StatusCode::BAD_REQUEST;
+
+            error.set_status(StatusCode::BAD_REQUEST);
             error
         })
     }

@@ -1,6 +1,7 @@
 mod api;
 mod database;
 
+use diesel::result::Error as DieselError;
 use via::http::StatusCode;
 use via::{Error, ErrorBoundary, Server};
 
@@ -44,17 +45,33 @@ async fn main() -> Result<(), Error> {
     let mut api = app.at("/api");
 
     // Apply specific error handling logic to the /api namespace.
-    api.include(ErrorBoundary::map(|mut error, _| {
-        use diesel::result::Error as DieselError;
+    api.include(ErrorBoundary::map(|error, _| {
+        // Define the error argument as a mutable variable.
+        let mut error = error;
 
-        if let Some(DieselError::NotFound) = error.source().downcast_ref() {
+        match error.source().downcast_ref() {
             // The error occurred because a record was not found in the
             // database, set the status to 404 Not Found.
-            *error.status_mut() = StatusCode::NOT_FOUND;
+            Some(DieselError::NotFound) => {
+                error.set_status(StatusCode::NOT_FOUND);
+            }
+
+            // The error occurred because of a database error. Return a
+            // new error with an opaque message.
+            Some(_) => {
+                let message = "Internal Server Error";
+                error = Error::new(message.to_string());
+            }
+
+            // The error occurred for some other reason.
+            None => {}
         }
 
-        // Return the error with the response format of JSON.
-        error.json()
+        // Configure the error to respond with JSON.
+        error.respond_with_json();
+
+        // Return the modified error.
+        error
     }));
 
     api.at("/posts").scope(|posts| {
