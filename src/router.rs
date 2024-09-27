@@ -99,7 +99,7 @@ where
         let mut stack = Vec::new();
 
         // Iterate over the routes that match the request's path.
-        for route in routes.into_iter().rev() {
+        for route in routes.iter().rev() {
             if let Some(param) = route.param() {
                 params.push(param);
             }
