@@ -64,6 +64,8 @@ where
             // Destructure the incoming request into its component parts.
             let (parts, body) = incoming.into_parts();
 
+            let parts = Box::new(parts);
+
             // Wrap the request body with `RequestBody`.
             let body = RequestBody::new(AnyBody::Inline(body));
 

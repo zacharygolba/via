@@ -15,7 +15,7 @@ use crate::Error;
 pub struct Request<State = ()> {
     /// The component parts of the underlying HTTP request.
     ///
-    parts: Parts,
+    parts: Box<Parts>,
 
     /// A wrapper around the body of the request. This provides callers with
     /// convienent methods for reading the request body.
@@ -49,13 +49,13 @@ impl<State> Request<State> {
     ///
     pub fn into_inner(self) -> http::Request<RequestBody> {
         let (parts, body) = self.into_parts();
-        http::Request::from_parts(parts, body)
+        http::Request::from_parts(*parts, body)
     }
 
     /// Consumes the request and returns a tuple containing the component
     /// parts of the request and the request body.
     ///
-    pub fn into_parts(self) -> (Parts, RequestBody) {
+    pub fn into_parts(self) -> (Box<Parts>, RequestBody) {
         (self.parts, self.body)
     }
 
@@ -170,9 +170,7 @@ impl<State> Request<State> {
 }
 
 impl<State> Request<State> {
-    pub(crate) fn new(head: Parts, body: RequestBody, state: Arc<State>) -> Self {
-        let parts = head;
-
+    pub(crate) fn new(parts: Box<Parts>, body: RequestBody, state: Arc<State>) -> Self {
         Self {
             parts,
             body,
