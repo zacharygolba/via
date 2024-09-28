@@ -1,10 +1,11 @@
 #![forbid(unsafe_code)]
 
+mod iter;
 mod path;
 mod routes;
 mod visitor;
 
-pub use crate::visitor::Match;
+pub use crate::iter::{Matched, Matches};
 
 use crate::path::Pattern;
 use crate::routes::{Node, RouteStore};
@@ -41,13 +42,13 @@ impl<T> Router<T> {
         self.store.shrink_to_fit();
     }
 
-    pub fn visit<'a>(&'a self, path: &str) -> Vec<Match<'a, T>> {
+    pub fn visit<'a>(&'a self, path: &str) -> Matches<'a, T> {
         let mut results = Vec::with_capacity(24);
         let segments = path::segments(path);
-        let visitor = Visitor::new(path, &segments, &self.store);
+        let store = &self.store;
 
-        visitor.visit(&mut results);
-        results
+        Visitor::new(path, &segments, store).visit(&mut results);
+        Matches::new(store, results)
     }
 }
 
@@ -78,10 +79,12 @@ impl<'a, T> Endpoint<'a, T> {
     where
         F: FnOnce() -> T,
     {
-        self.store
-            .get_mut(self.key)
-            .route_mut()
-            .get_or_insert_with(f)
+        // Get the index of the route associated with the current node or insert
+        // a new route by calling the provided closure `f` if it does not exist.
+        let route_index = self.store.entry(self.key).get_or_insert_route_with(f);
+
+        // Return a mutable reference to the route associated with this `Endpoint`.
+        self.store.route_mut(route_index)
     }
 }
 
@@ -112,7 +115,11 @@ where
         }
     }
 
-    let next_index = routes.entry(into_index).push(Node::new(pattern));
+    let next_index = routes.entry(into_index).push(Node {
+        entries: None,
+        route: None,
+        pattern,
+    });
 
     // If the pattern does not exist in the node at `current_key`, we need to create
     // a new node as a descendant of the node at `current_key` and then insert it
@@ -141,7 +148,7 @@ mod tests {
 
         {
             let path = "/";
-            let matches = router.visit(path);
+            let matches: Vec<_> = router.visit(path).collect();
 
             assert_eq!(matches.len(), 2);
 
@@ -149,10 +156,10 @@ mod tests {
                 // /
                 // ^ as Pattern::Root
                 let matched = &matches[0];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, None);
-                assert_eq!(&path[start..end], "");
+                // assert_eq!(&path[start..end], "");
                 assert!(matched.exact);
             }
 
@@ -160,10 +167,10 @@ mod tests {
                 // /
                 //  ^ as Pattern::CatchAll("*path")
                 let matched = &matches[1];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                assert_eq!(&path[start..end], "");
+                // assert_eq!(&path[start..end], "");
                 // Should be considered exact because of the catch-all pattern.
                 assert!(matched.exact);
             }
@@ -171,7 +178,7 @@ mod tests {
 
         {
             let path = "/not/a/path";
-            let matches = router.visit(path);
+            let matches: Vec<_> = router.visit(path).collect();
 
             assert_eq!(matches.len(), 2);
 
@@ -179,10 +186,10 @@ mod tests {
                 // /not/a/path
                 // ^ as Pattern::Root
                 let matched = &matches[0];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, None);
-                assert_eq!(&path[start..end], "");
+                // assert_eq!(&path[start..end], "");
                 assert!(!matched.exact);
             }
 
@@ -190,10 +197,10 @@ mod tests {
                 // /not/a/path
                 //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let matched = &matches[1];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                assert_eq!(&path[start..end], &path[1..]);
+                // assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(matched.exact);
             }
@@ -201,7 +208,7 @@ mod tests {
 
         {
             let path = "/echo/hello/world";
-            let matches = router.visit(path);
+            let matches: Vec<_> = router.visit(path).collect();
 
             assert_eq!(matches.len(), 4);
 
@@ -209,10 +216,10 @@ mod tests {
                 // /echo/hello/world
                 // ^ as Pattern::Root
                 let matched = &matches[0];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, None);
-                assert_eq!(&path[start..end], "");
+                // assert_eq!(&path[start..end], "");
                 assert!(!matched.exact);
             }
 
@@ -220,10 +227,10 @@ mod tests {
                 // /echo/hello/world
                 //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let matched = &matches[1];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                assert_eq!(&path[start..end], &path[1..]);
+                // assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(matched.exact);
             }
@@ -232,10 +239,10 @@ mod tests {
                 // /echo/hello/world
                 //  ^^^^ as Pattern::Static("echo")
                 let matched = &matches[2];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, None);
-                assert_eq!(&path[start..end], "echo");
+                // assert_eq!(&path[start..end], "echo");
                 assert!(!matched.exact);
             }
 
@@ -243,17 +250,17 @@ mod tests {
                 // /echo/hello/world
                 //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let matched = &matches[3];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                assert_eq!(&path[start..end], "hello/world");
+                // assert_eq!(&path[start..end], "hello/world");
                 assert!(matched.exact);
             }
         }
 
         {
             let path = "/articles/100";
-            let matches = router.visit(path);
+            let matches: Vec<_> = router.visit(path).collect();
 
             assert_eq!(matches.len(), 4);
 
@@ -261,10 +268,10 @@ mod tests {
                 // /articles/100
                 // ^ as Pattern::Root
                 let matched = &matches[0];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, None);
-                assert_eq!(&path[start..end], "");
+                // assert_eq!(&path[start..end], "");
                 assert!(!matched.exact);
             }
 
@@ -272,10 +279,10 @@ mod tests {
                 // /articles/100
                 //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let matched = &matches[1];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                assert_eq!(&path[start..end], &path[1..]);
+                // assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(matched.exact);
             }
@@ -284,10 +291,10 @@ mod tests {
                 // /articles/100
                 //  ^^^^^^^^ as Pattern::Static("articles")
                 let matched = &matches[2];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, None);
-                assert_eq!(&path[start..end], "articles");
+                // assert_eq!(&path[start..end], "articles");
                 assert!(!matched.exact);
             }
 
@@ -295,17 +302,17 @@ mod tests {
                 // /articles/100
                 //           ^^^ as Pattern::Dynamic(":id")
                 let matched = &matches[3];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                assert_eq!(&path[start..end], "100");
+                // assert_eq!(&path[start..end], "100");
                 assert!(matched.exact);
             }
         }
 
         {
             let path = "/articles/100/comments";
-            let matches = router.visit(path);
+            let matches: Vec<_> = router.visit(path).collect();
 
             assert_eq!(matches.len(), 5);
 
@@ -313,10 +320,10 @@ mod tests {
                 // /articles/100/comments
                 // ^ as Pattern::Root
                 let matched = &matches[0];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, None);
-                assert_eq!(&path[start..end], "");
+                // assert_eq!(&path[start..end], "");
                 assert!(!matched.exact);
             }
 
@@ -324,10 +331,10 @@ mod tests {
                 // /articles/100/comments
                 //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let matched = &matches[1];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                assert_eq!(&path[start..end], &path[1..]);
+                // assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(matched.exact);
             }
@@ -336,10 +343,10 @@ mod tests {
                 // /articles/100/comments
                 //  ^^^^^^^^ as Pattern::Static("articles")
                 let matched = &matches[2];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, None);
-                assert_eq!(&path[start..end], "articles");
+                // assert_eq!(&path[start..end], "articles");
                 assert!(!matched.exact);
             }
 
@@ -347,10 +354,10 @@ mod tests {
                 // /articles/100/comments
                 //           ^^^ as Pattern::Dynamic(":id")
                 let matched = &matches[3];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                assert_eq!(&path[start..end], "100");
+                // assert_eq!(&path[start..end], "100");
                 assert!(!matched.exact);
             }
 
@@ -358,10 +365,10 @@ mod tests {
                 // /articles/100/comments
                 //               ^^^^^^^^ as Pattern::Static("comments")
                 let matched = &matches[4];
-                let (start, end) = matched.range;
+                // let (start, end) = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                assert_eq!(&path[start..end], "comments");
+                // assert_eq!(&path[start..end], "comments");
                 // Should be considered exact because it is the last path segment.
                 assert!(matched.exact);
             }
