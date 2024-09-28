@@ -1,25 +1,23 @@
-use core::slice::Iter;
-
 use crate::path::{self, Pattern};
 use crate::routes::RouteStore;
 
-/// Represents either a partial or exact match for a given path segment.
-pub struct Match<'a, T> {
+pub struct Visited {
+    /// The key of the node that matches the path segement at `self.range` in the
+    /// route store.
+    ///
+    pub key: usize,
+
+    /// A tuple that contains the start and end offset of the path segment that
+    /// matches the node at `self.key`.
+    ///
+    pub range: (usize, usize),
+
     /// Indicates whether or not the match is considered an exact match.
     /// If the match is exact, both the middleware and responders will be
     /// called during a request. Otherwise, only the middleware will be
     /// called.
+    ///
     pub exact: bool,
-
-    /// A tuple that contains the start and end offset of the path segment that
-    /// matches `self.route()`.
-    pub range: (usize, usize),
-
-    /// The route that matches the path segement at `self.range`.
-    pub route: Option<&'a T>,
-
-    /// The name of the dynamic segment that was matched against.
-    param: Option<&'static str>,
 }
 
 pub struct Visitor<'a, 'b, T> {
@@ -32,27 +30,6 @@ pub struct Visitor<'a, 'b, T> {
 
     /// A reference to the route store that contains the route tree.
     store: &'a RouteStore<T>,
-}
-
-impl<'a, T> Match<'a, T> {
-    /// Returns a key-value pair where key is the name of the dynamic segment
-    /// that was matched against and value is a key-value pair containing the
-    /// start and end offset of the path segment in the url path. If the matched
-    /// route does not have any dynamic segments, `None` will be returned.
-    pub fn param(&self) -> Option<(&'static str, (usize, usize))> {
-        self.param.zip(Some(self.range))
-    }
-}
-
-impl<'a, T> Match<'a, Vec<T>> {
-    /// Returns an iterator that yields a reference to each item in the matched
-    /// route.
-    pub fn iter(&self) -> Iter<'a, T> {
-        match self.route {
-            Some(route) => route.iter(),
-            None => [].iter(),
-        }
-    }
 }
 
 impl<'a, 'b, T> Visitor<'a, 'b, T> {
@@ -68,17 +45,16 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         }
     }
 
-    pub fn visit(&self, results: &mut Vec<Match<'a, T>>) {
+    pub fn visit(&self, results: &mut Vec<Visited>) {
         // The root node is a special case that we always consider a match.
-        results.push(Match {
+        results.push(Visited {
+            // The root node's key is always `0`.
+            key: 0,
+            // The root node's path segment range should produce to an empty str.
+            range: (0, 0),
             // If there are no path segments to match against, we consider the root
             // node to be an exact match.
             exact: self.segments.is_empty(),
-            // The root node cannot have parameters.
-            param: None,
-            // The root node's path segment range should produce to an empty str.
-            range: (0, 0),
-            route: self.store.get(0).route(),
         });
 
         // Begin the search for matches recursively starting with descendants of
@@ -96,7 +72,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         &self,
         // A mutable reference to a vector that contains the matches that we
         // have found so far.
-        results: &mut Vec<Match<'a, T>>,
+        results: &mut Vec<Visited>,
         // The start and end offset of the path segment at `index` in
         // `self.path_value`.
         range: (usize, usize),
@@ -131,33 +107,32 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                 Pattern::Static(value) if value == path_segment => {
                     // The next node has a `Static` pattern that matches the value
                     // of the path segment.
-                    results.push(Match {
-                        exact,
+                    results.push(Visited {
+                        key: next_key,
                         range,
-                        param: None,
-                        route: descendant.route(),
+                        exact,
                     });
 
                     self.visit_node(results, next_index, next_key);
                 }
-                Pattern::Dynamic(param) => {
+                Pattern::Dynamic(_) => {
                     // The next node has a `Dynamic` pattern. Therefore, we consider
                     // it a match regardless of the value of the path segment.
-                    results.push(Match {
+                    results.push(Visited {
+                        key: next_key,
                         exact,
                         range,
-                        param: Some(param),
-                        route: descendant.route(),
                     });
 
                     self.visit_node(results, next_index, next_key);
                 }
-                Pattern::CatchAll(param) => {
+                Pattern::CatchAll(_) => {
                     // The next node has a `CatchAll` pattern and will be considered
                     // an exact match. Due to the nature of `CatchAll` patterns, we
                     // do not have to continue searching for descendants of this
                     // node that match the remaining path segments.
-                    results.push(Match {
+                    results.push(Visited {
+                        key: next_key,
                         // `CatchAll` patterns are always considered an exact match.
                         exact: true,
                         // The end offset of `path_segment_range` should be the end
@@ -165,8 +140,6 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                         // `CatchAll` patterns match the entire remainder of the
                         // url path from which they are matched.
                         range: (range.0, self.path_value.len()),
-                        param: Some(param),
-                        route: descendant.route(),
                     });
                 }
                 _ => {
@@ -182,7 +155,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
     /// `self.segements` at `index` to match against the descendants of the
     /// node at `key`, we'll instead perform a shallow search for descendants
     /// with a `CatchAll` pattern.
-    fn visit_node(&self, results: &mut Vec<Match<'a, T>>, index: usize, key: usize) {
+    fn visit_node(&self, results: &mut Vec<Visited>, index: usize, key: usize) {
         // Check if there is a path segment at `index` to match against
         if let Some(range) = self.segments.get(index).copied() {
             return self.visit_descendants(results, range, index, key);
@@ -196,21 +169,18 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
             let descendant = self.store.get(next_key);
 
             // Check if `descendant` has a `CatchAll` pattern.
-            if let Pattern::CatchAll(param) = descendant.pattern {
+            if let Pattern::CatchAll(_) = descendant.pattern {
                 // Add the matching node to the vector of matches and continue to
                 // search for adjacent nodes with a `CatchAll` pattern.
-                results.push(Match {
+                results.push(Visited {
+                    key: next_key,
+                    // Due to the fact we are looking for `CatchAll` patterns as
+                    // an immediate descendant of a node that we consider a match,
+                    // we can safely assume that the path segment range should
+                    // always produce an empty str.
+                    range: (0, 0),
                     // `CatchAll` patterns are always considered an exact match.
                     exact: true,
-                    // Include the name of the dynamic segment even if the value
-                    // of the path segment is empty for API consistency.
-                    param: Some(param),
-                    // Due to the fact we are looking for `CatchAll` patterns as an
-                    // immediate descendant of a node that we consider a match, we
-                    // can safely assume that the path segment range should always
-                    // produce an empty str.
-                    range: (0, 0),
-                    route: descendant.route(),
                 });
             }
         }

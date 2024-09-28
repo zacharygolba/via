@@ -86,7 +86,7 @@ where
             // Get a mutable reference to the request's path parameters.
             let params = request.params_mut();
 
-            self.router.resolve(params, &routes)
+            self.router.resolve(params, routes)
         };
 
         // Call the middleware stack and return a Future that resolves to

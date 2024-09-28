@@ -1,9 +1,9 @@
-use core::slice;
+use std::slice;
 
 use crate::path::Pattern;
 
 /// A node in the route tree that represents a single path segment.
-pub struct Node<T> {
+pub struct Node {
     /// The indices of the nodes that are reachable from the current node.
     pub entries: Option<Vec<usize>>,
 
@@ -11,7 +11,7 @@ pub struct Node<T> {
     pub pattern: Pattern,
 
     /// The index of the route in the route store associated with the node.
-    route: Option<T>,
+    pub route: Option<usize>,
 }
 
 /// A mutable representation of a single node the route store. This type is used
@@ -29,10 +29,13 @@ pub struct RouteEntry<'a, T> {
 /// the route tree.
 pub struct RouteStore<T> {
     /// A collection of nodes that represent the path segments of a route.
-    nodes: Vec<Node<T>>,
+    nodes: Vec<Node>,
+
+    /// A vector of routes associated with the nodes in the route tree.
+    routes: Vec<T>,
 }
 
-impl<T> Node<T> {
+impl Node {
     pub fn new(pattern: Pattern) -> Self {
         Self {
             pattern,
@@ -59,19 +62,9 @@ impl<T> Node<T> {
             _ => None,
         }
     }
-
-    /// Returns an optional reference to the route associated with the node.
-    pub fn route(&self) -> Option<&T> {
-        self.route.as_ref()
-    }
-
-    /// Returns a mutable reference to the `route` field of the node.
-    pub fn route_mut(&mut self) -> &mut Option<T> {
-        &mut self.route
-    }
 }
 
-impl<T> Node<T> {
+impl Node {
     /// Pushes a new key into the entries of the node and return it.
     fn push(&mut self, key: usize) -> usize {
         self.entries.get_or_insert_with(Vec::new).push(key);
@@ -79,56 +72,61 @@ impl<T> Node<T> {
     }
 }
 
-/// Like `Option::expect`, but in B minor.
-macro_rules! unwrap_node {
-    (
-        // The option that contains the `&Node<_>` or `&mut Node<_>` that we'll
-        // attempt to unwrap.
-        $option:expr,
-        // The key that was used to look up the node contained in `$option` from
-        // the route store.
-        $at:expr
-    ) => {
-        match $option {
-            Some(node) => node,
-            None => {
-                // This should never happen.
-                //
-                // The router is like the Hotel California. You can check out any
-                // time you like, but you can never leaf.
-                //
-                // If you see this error, you've probably found a bug in the way
-                // that routes are added to the route store or the way the key
-                // is assigned to nodes.
-                if cfg!(debug_assertions) {
-                    panic!("unknown key: {}", $at);
-                }
-
-                panic!("unknown key");
-            }
-        }
-    };
-}
-
 impl<'a, T> RouteEntry<'a, T> {
     /// Pushes a new node into the store and associates the index of the new
     /// node to the entries of the current node. Returns the index of the
     /// newly inserted node.
-    pub fn push(&mut self, node: Node<T>) -> usize {
-        // Push the node into the store and get the key of the newly inserted
+    pub fn push(&mut self, node: Node) -> usize {
+        // Push the node into the store and get the index of the newly inserted
         // node.
-        let next_node_key = self.store.push(node);
+        let next_node_index = self.store.push(node);
 
-        // Associate the key of the newly inserted node with the current node
-        // by adding the key to the entries of the current node.
-        self.store.get_mut(self.key).push(next_node_key)
+        // Associate the index of the newly inserted node with the current node
+        // by adding the index to the entries of the current node.
+        self.store.get_mut(self.key).push(next_node_index);
+
+        // Return the index of the newly inserted node in the store.
+        next_node_index
+    }
+
+    /// Inserts a new route into the store and associates the index of the new
+    /// route to the current node. Returns the index of the newly inserted route.
+    pub fn insert_route(&mut self, route: T) -> usize {
+        // Push the route into the store and get the index of the newly
+        // inserted route.
+        let route_index = self.store.push_route(route);
+
+        // Associate the route index with the current node.
+        self.store.get_mut(self.key).route = Some(route_index);
+
+        // Return the index of the newly inserted route in the store.
+        route_index
+    }
+
+    /// Returns the index of the route at the current node. If the node does not
+    /// have a route associated with it, a new route will be inserted by calling
+    /// the provided closure `f`.
+    pub fn get_or_insert_route_with<F>(&mut self, f: F) -> usize
+    where
+        F: FnOnce() -> T,
+    {
+        // Get the index of the route associated with the node if it exists.
+        let route = self.store.get(self.key).route;
+
+        // If the node does not have a route associated with it, insert a
+        // new route into the store, associate it with the node, and
+        // return the index of the route in the store.
+        route.unwrap_or_else(|| self.insert_route(f()))
     }
 }
 
 impl<T> RouteStore<T> {
     /// Constructs a new, empty `RouteStore`.
     pub fn new() -> Self {
-        Self { nodes: Vec::new() }
+        Self {
+            nodes: Vec::new(),
+            routes: Vec::new(),
+        }
     }
 
     /// Returns a mutable representation of a single node in the route store.
@@ -138,7 +136,7 @@ impl<T> RouteStore<T> {
 
     /// Pushes a new node into the store and returns the key of the newly
     /// inserted node.
-    pub fn push(&mut self, node: Node<T>) -> usize {
+    pub fn push(&mut self, node: Node) -> usize {
         let key = self.nodes.len();
 
         self.nodes.push(node);
@@ -151,12 +149,34 @@ impl<T> RouteStore<T> {
     }
 
     /// Returns a shared reference to the node at the given `key`.
-    pub fn get(&self, key: usize) -> &Node<T> {
-        unwrap_node!(self.nodes.get(key), key)
+    pub fn get(&self, key: usize) -> &Node {
+        &self.nodes[key]
     }
 
     /// Returns a mutable reference to the node at the given `key`.
-    pub fn get_mut(&mut self, key: usize) -> &mut Node<T> {
-        unwrap_node!(self.nodes.get_mut(key), key)
+    pub fn get_mut(&mut self, key: usize) -> &mut Node {
+        &mut self.nodes[key]
+    }
+
+    /// Returns a shared reference to the route at the given `key`.
+    ///
+    pub fn route(&self, key: usize) -> &T {
+        &self.routes[key]
+    }
+
+    /// Returns a mutable reference to the route at the given `key`.
+    ///
+    pub fn route_mut(&mut self, key: usize) -> &mut T {
+        &mut self.routes[key]
+    }
+}
+
+impl<T> RouteStore<T> {
+    /// Pushes a new route into the store and returns the index of the newly
+    /// inserted route.
+    fn push_route(&mut self, route: T) -> usize {
+        let index = self.routes.len();
+        self.routes.push(route);
+        index
     }
 }
