@@ -12,7 +12,7 @@ pub struct Visited {
     /// A tuple that contains the start and end offset of the path segment that
     /// matches the node at `self.key`.
     ///
-    pub range: (usize, usize),
+    pub range: [usize; 2],
 
     /// Indicates whether or not the match is considered an exact match.
     /// If the match is exact, both the middleware and responders will be
@@ -55,7 +55,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
             // The root node's key is always `0`.
             key: 0,
             // The root node's path segment range should produce to an empty str.
-            range: (0, 0),
+            range: [0, 0],
             // If there are no path segments to match against, we consider the root
             // node to be an exact match.
             exact: self.depth == 0,
@@ -79,7 +79,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         results: &mut StackVec<Visited, 2>,
         // The start and end offset of the path segment at `index` in
         // `self.path_value`.
-        range: (usize, usize),
+        range: [usize; 2],
         // The index of the path segment in `self.segments` that we are matching
         // against the node at `key`.
         index: usize,
@@ -92,7 +92,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         // Get the value of the path segment at `index`. We'll eagerly borrow
         // and cache this slice from `self.path_value` to avoid having to build
         // the reference for each descendant with a `Static` pattern.
-        let path_segment = path::segment_at(path_value, range);
+        let path_segment = path::segment_at(path_value, &range);
 
         // Eagerly calculate and store the next index to avoid having to do so
         // for each descendant with a `Dynamic` or `Static` pattern.
@@ -149,7 +149,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                         // offset of the last path segment in the url path since
                         // `CatchAll` patterns match the entire remainder of the
                         // url path from which they are matched.
-                        range: (range.0, path_value.len()),
+                        range: [range[0], path_value.len()],
                     });
                 }
                 _ => {
@@ -190,7 +190,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     // an immediate descendant of a node that we consider a match,
                     // we can safely assume that the path segment range should
                     // always produce an empty str.
-                    range: (0, 0),
+                    range: [0, 0],
                     // `CatchAll` patterns are always considered an exact match.
                     exact: true,
                 });

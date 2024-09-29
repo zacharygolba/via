@@ -12,7 +12,7 @@ pub enum Pattern {
 }
 
 pub struct PathSegments {
-    segments: StackVec<(usize, usize), 4>,
+    segments: StackVec<[usize; 2], 4>,
 }
 
 /// An iterator that splits the path into segments and yields a key-value pair
@@ -25,7 +25,7 @@ struct SplitPath<'a> {
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
     split(path).map(|range| {
-        let value = segment_at(path, range);
+        let value = segment_at(path, &range);
 
         match value.chars().next() {
             Some('*') => {
@@ -63,8 +63,8 @@ pub fn segments(path: &str) -> PathSegments {
 }
 
 // Gets the value of the path segment at `range` from `path`.
-pub fn segment_at(path: &str, range: (usize, usize)) -> &str {
-    match path.get(range.0..range.1) {
+pub fn segment_at<'a>(path: &'a str, range: &[usize; 2]) -> &'a str {
+    match path.get(range[0]..range[1]) {
         Some(value) => {
             // The `range` is valid, return it.
             value
@@ -93,7 +93,7 @@ fn split(value: &str) -> SplitPath {
 }
 
 impl PathSegments {
-    pub fn get(&self, index: usize) -> Option<&(usize, usize)> {
+    pub fn get(&self, index: usize) -> Option<&[usize; 2]> {
         self.segments.get(index)
     }
 
@@ -135,7 +135,7 @@ impl<'a> SplitPath<'a> {
 }
 
 impl<'a> Iterator for SplitPath<'a> {
-    type Item = (usize, usize);
+    type Item = [usize; 2];
 
     fn next(&mut self) -> Option<Self::Item> {
         // Set the start index to the next character that is not a `/`.
@@ -144,7 +144,7 @@ impl<'a> Iterator for SplitPath<'a> {
         let end = self.next_terminator().unwrap_or(self.value.len());
 
         // Return the start and end offset of the current path segment.
-        Some((start, end))
+        Some([start, end])
     }
 }
 
@@ -170,23 +170,23 @@ mod tests {
         "/services/contact//us",
     ];
 
-    fn get_expected_results() -> [Vec<(usize, usize)>; 15] {
+    fn get_expected_results() -> [Vec<[usize; 2]>; 15] {
         [
-            vec![(1, 5), (6, 11)],
-            vec![(1, 9), (10, 14), (15, 18)],
-            vec![(1, 5), (6, 11), (12, 16), (17, 21)],
-            vec![(1, 5), (6, 13), (14, 22)],
-            vec![(1, 9), (10, 17)],
-            vec![(1, 7), (8, 23)],
-            vec![(1, 5), (6, 12)],
-            vec![(1, 10), (11, 18)],
-            vec![(1, 4)],
-            vec![(1, 8), (9, 16)],
-            vec![(2, 6), (8, 13)],
-            vec![(1, 9), (11, 15), (16, 19)],
-            vec![(1, 5), (6, 11), (12, 16), (18, 22)],
-            vec![(1, 5), (7, 14), (15, 23)],
-            vec![(1, 9), (10, 17), (19, 21)],
+            vec![[1, 5], [6, 11]],
+            vec![[1, 9], [10, 14], [15, 18]],
+            vec![[1, 5], [6, 11], [12, 16], [17, 21]],
+            vec![[1, 5], [6, 13], [14, 22]],
+            vec![[1, 9], [10, 17]],
+            vec![[1, 7], [8, 23]],
+            vec![[1, 5], [6, 12]],
+            vec![[1, 10], [11, 18]],
+            vec![[1, 4]],
+            vec![[1, 8], [9, 16]],
+            vec![[2, 6], [8, 13]],
+            vec![[1, 9], [11, 15], [16, 19]],
+            vec![[1, 5], [6, 11], [12, 16], [18, 22]],
+            vec![[1, 5], [7, 14], [15, 23]],
+            vec![[1, 9], [10, 17], [19, 21]],
         ]
     }
 

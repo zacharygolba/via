@@ -114,10 +114,10 @@ impl<State> Request<State> {
     pub fn param<'a>(&self, name: &'a str) -> Param<'_, 'a> {
         // Get the path of the request's uri.
         let path = self.parts.uri.path();
-        // Get an `Option<(usize, usize)>` that represents the start and end
-        // offset of the path parameter with the provided `name` in the request's
-        // uri.
-        let at = self.params.get(name);
+
+        // Get an `Option<[usize; 2]>` that represents the start and end offset
+        // of the path parameter with the provided `name` in the request's uri.
+        let at = self.params.get(name).copied();
 
         Param::new(Some(at), name, path)
     }

@@ -1,7 +1,7 @@
 use std::fmt::{self, Debug, Formatter};
 
 pub struct PathParams {
-    data: Vec<(&'static str, (usize, usize))>,
+    data: Vec<(&'static str, [usize; 2])>,
 }
 
 impl PathParams {
@@ -9,11 +9,11 @@ impl PathParams {
         Self { data: Vec::new() }
     }
 
-    pub fn get(&self, predicate: &str) -> Option<(usize, usize)> {
+    pub fn get(&self, predicate: &str) -> Option<&[usize; 2]> {
         self.data.iter().find_map(
             |(name, at)| {
                 if *name == predicate {
-                    Some(*at)
+                    Some(at)
                 } else {
                     None
                 }
@@ -21,7 +21,7 @@ impl PathParams {
         )
     }
 
-    pub fn push(&mut self, param: (&'static str, (usize, usize))) {
+    pub fn push(&mut self, param: (&'static str, [usize; 2])) {
         self.data.push(param);
     }
 }
