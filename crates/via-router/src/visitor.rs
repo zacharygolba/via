@@ -1,6 +1,8 @@
-use crate::path::{self, Pattern};
+use crate::path::{self, PathSegments, Pattern};
 use crate::routes::RouteStore;
+use crate::stack_vec::StackVec;
 
+#[derive(Clone, Copy)]
 pub struct Visited {
     /// The key of the node that matches the path segement at `self.range` in the
     /// route store.
@@ -26,26 +28,28 @@ pub struct Visitor<'a, 'b, T> {
 
     /// A slice of tuples that contain the start and end offset of each path
     /// segment in `self.path_value`.
-    segments: &'b [(usize, usize)],
+    segments: &'b PathSegments,
 
     /// A reference to the route store that contains the route tree.
     store: &'a RouteStore<T>,
+
+    /// A cache of `self.segments.len()`.
+    depth: usize,
 }
 
 impl<'a, 'b, T> Visitor<'a, 'b, T> {
-    pub fn new(
-        path_value: &'b str,
-        segments: &'b [(usize, usize)],
-        store: &'a RouteStore<T>,
-    ) -> Self {
+    pub fn new(path_value: &'b str, segments: &'b PathSegments, store: &'a RouteStore<T>) -> Self {
+        let depth = segments.len();
+
         Self {
             path_value,
             segments,
             store,
+            depth,
         }
     }
 
-    pub fn visit(&self, results: &mut Vec<Visited>) {
+    pub fn visit(&self, results: &mut StackVec<Visited, 2>) {
         // The root node is a special case that we always consider a match.
         results.push(Visited {
             // The root node's key is always `0`.
@@ -54,7 +58,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
             range: (0, 0),
             // If there are no path segments to match against, we consider the root
             // node to be an exact match.
-            exact: self.segments.is_empty(),
+            exact: self.depth == 0,
         });
 
         // Begin the search for matches recursively starting with descendants of
@@ -72,7 +76,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         &self,
         // A mutable reference to a vector that contains the matches that we
         // have found so far.
-        results: &mut Vec<Visited>,
+        results: &mut StackVec<Visited, 2>,
         // The start and end offset of the path segment at `index` in
         // `self.path_value`.
         range: (usize, usize),
@@ -83,24 +87,30 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         // attempting to match against the path segment at `index`.
         key: usize,
     ) {
+        let path_value = self.path_value;
+
         // Get the value of the path segment at `index`. We'll eagerly borrow
         // and cache this slice from `self.path_value` to avoid having to build
         // the reference for each descendant with a `Static` pattern.
-        let path_segment = path::segment_at(self.path_value, range);
+        let path_segment = path::segment_at(path_value, range);
+
         // Eagerly calculate and store the next index to avoid having to do so
         // for each descendant with a `Dynamic` or `Static` pattern.
         let next_index = index + 1;
+
         // Use the value of `next_index` to determine if we are working with the
         // last path segment in `self.segments`. If so, we'll consider any
         // matching descendant to be an exact match. We perform this check
         // eagerly to avoid having to do so for each descendant with a
         // `Dynamic` or `Static` pattern.
-        let exact = next_index == self.segments.len();
+        let exact = next_index == self.depth;
+
+        let store = self.store;
 
         // Iterate over the keys of the descendants of the node at `key`.
-        for next_key in self.store.get(key).entries().copied() {
+        for next_key in store.get(key).entries().copied() {
             // Get the node at `next_key` from the route store.
-            let descendant = self.store.get(next_key);
+            let descendant = store.get(next_key);
 
             // Check if `descendant` has a pattern that matches `path_segment`.
             match descendant.pattern {
@@ -139,7 +149,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                         // offset of the last path segment in the url path since
                         // `CatchAll` patterns match the entire remainder of the
                         // url path from which they are matched.
-                        range: (range.0, self.path_value.len()),
+                        range: (range.0, path_value.len()),
                     });
                 }
                 _ => {
@@ -155,18 +165,20 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
     /// `self.segements` at `index` to match against the descendants of the
     /// node at `key`, we'll instead perform a shallow search for descendants
     /// with a `CatchAll` pattern.
-    fn visit_node(&self, results: &mut Vec<Visited>, index: usize, key: usize) {
+    fn visit_node(&self, results: &mut StackVec<Visited, 2>, index: usize, key: usize) {
         // Check if there is a path segment at `index` to match against
         if let Some(range) = self.segments.get(index).copied() {
             return self.visit_descendants(results, range, index, key);
         }
 
+        let store = self.store;
+
         // Perform a shallow search for descendants of the current node that
         // have a `CatchAll` pattern. This is required to support matching the
         // "index" path of a descendant node with a `CatchAll` pattern.
-        for next_key in self.store.get(key).entries().copied() {
+        for next_key in store.get(key).entries().copied() {
             // Get the node at `next_key` from the route store.
-            let descendant = self.store.get(next_key);
+            let descendant = store.get(next_key);
 
             // Check if `descendant` has a `CatchAll` pattern.
             if let Pattern::CatchAll(_) = descendant.pattern {

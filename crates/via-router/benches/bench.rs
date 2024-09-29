@@ -108,7 +108,7 @@ static ROUTES: [&str; 100] = [
 ];
 
 #[bench]
-fn find_all_matches(b: &mut Bencher) {
+fn find_all_matches_heap(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
@@ -119,5 +119,20 @@ fn find_all_matches(b: &mut Bencher) {
 
     b.iter(|| {
         router.visit("/api/v1/products/12358132134558/edit");
+    });
+}
+
+#[bench]
+fn find_all_matches_stack(b: &mut Bencher) {
+    let mut router: Router<()> = Router::new();
+
+    for path in ROUTES {
+        let _ = router.at(path).get_or_insert_route_with(|| ());
+    }
+
+    router.shrink_to_fit();
+
+    b.iter(|| {
+        router.visit("/checkout/confirmation");
     });
 }

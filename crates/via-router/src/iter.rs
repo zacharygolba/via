@@ -1,7 +1,7 @@
 use std::slice::Iter;
-use std::vec::IntoIter;
 
 use crate::routes::RouteStore;
+use crate::stack_vec::StackVecIntoIter;
 use crate::visitor::Visited;
 
 /// Represents either a partial or exact match for a given path segment.
@@ -28,7 +28,7 @@ pub struct Matched<'a, T> {
 ///
 pub struct Matches<'a, T> {
     store: &'a RouteStore<T>,
-    iter: IntoIter<Visited>,
+    iter: StackVecIntoIter<Visited, 2>,
 }
 
 impl<'a, T> Matched<'a, Vec<T>> {
@@ -43,11 +43,8 @@ impl<'a, T> Matched<'a, Vec<T>> {
 }
 
 impl<'a, T> Matches<'a, T> {
-    pub(crate) fn new(store: &'a RouteStore<T>, visited: Vec<Visited>) -> Self {
-        Self {
-            store,
-            iter: visited.into_iter(),
-        }
+    pub(crate) fn new(store: &'a RouteStore<T>, iter: StackVecIntoIter<Visited, 2>) -> Self {
+        Self { store, iter }
     }
 }
 

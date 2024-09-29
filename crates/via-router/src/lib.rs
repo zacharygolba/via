@@ -3,7 +3,10 @@
 mod iter;
 mod path;
 mod routes;
+mod stack_vec;
 mod visitor;
+
+use stack_vec::StackVec;
 
 pub use crate::iter::{Matched, Matches};
 
@@ -43,12 +46,12 @@ impl<T> Router<T> {
     }
 
     pub fn visit<'a>(&'a self, path: &str) -> Matches<'a, T> {
-        let mut results = Vec::with_capacity(24);
+        let mut results = StackVec::new();
         let segments = path::segments(path);
         let store = &self.store;
 
         Visitor::new(path, &segments, store).visit(&mut results);
-        Matches::new(store, results)
+        Matches::new(store, results.into_iter())
     }
 }
 
@@ -116,9 +119,9 @@ where
     }
 
     let next_index = routes.entry(into_index).push(Node {
-        entries: None,
-        route: None,
         pattern,
+        entries: StackVec::new(),
+        route: None,
     });
 
     // If the pattern does not exist in the node at `current_key`, we need to create
