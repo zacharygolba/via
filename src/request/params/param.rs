@@ -7,7 +7,7 @@ use super::{DecodeParam, NoopDecode, PercentDecode};
 use crate::{Error, Result};
 
 pub struct Param<'a, 'b, T = NoopDecode> {
-    at: Option<Option<(usize, usize)>>,
+    at: Option<Option<[usize; 2]>>,
     name: &'b str,
     source: &'a str,
     _decode: PhantomData<T>,
@@ -21,7 +21,7 @@ fn missing_required_param<'a>(name: &str) -> Result<Cow<'a, str>, Error> {
 }
 
 impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
-    pub(crate) fn new(at: Option<Option<(usize, usize)>>, name: &'b str, source: &'a str) -> Self {
+    pub(crate) fn new(at: Option<Option<[usize; 2]>>, name: &'b str, source: &'a str) -> Self {
         Self {
             at,
             name,
@@ -77,8 +77,8 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     ///
     pub fn into_result(self) -> Result<Cow<'a, str>, Error> {
         self.at
-            .and_then(|at| {
-                let (start, end) = at?;
+            .and_then(|option| {
+                let [start, end] = option?;
                 self.source.get(start..end)
             })
             .map_or_else(

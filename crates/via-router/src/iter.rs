@@ -17,7 +17,7 @@ pub struct Matched<'a, T> {
     /// matched the path segment as well as the start and end offset of the
     /// path segment value.
     ///
-    pub param: Option<(&'static str, (usize, usize))>,
+    pub param: Option<(&'static str, [usize; 2])>,
 
     /// The route that matches the path segement at `self.range`.
     ///
