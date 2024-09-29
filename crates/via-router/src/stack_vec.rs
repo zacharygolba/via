@@ -6,7 +6,7 @@ pub struct StackVec<T, const N: usize> {
 
 pub struct StackVecIter<'a, T, const N: usize> {
     index: usize,
-    store: &'a StackVec<T, N>,
+    data: &'a StackVecData<T, N>,
 }
 
 pub struct StackVecIntoIter<T, const N: usize> {
@@ -23,6 +23,13 @@ enum StackVecIntoIterInner<T, const N: usize> {
     Heap(vec::IntoIter<T>),
 }
 
+fn get<T, const N: usize>(data: &StackVecData<T, N>, index: usize) -> Option<&T> {
+    match data {
+        StackVecData::Stack(stack) => stack.get(index)?.as_ref(),
+        StackVecData::Heap(heap) => heap.get(index),
+    }
+}
+
 impl<T: Copy, const N: usize> StackVec<T, N> {
     pub fn new() -> Self {
         Self {
@@ -31,10 +38,7 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
     }
 
     pub fn get(&self, index: usize) -> Option<&T> {
-        match &self.data {
-            StackVecData::Stack(stack) => stack.get(index)?.as_ref(),
-            StackVecData::Heap(heap) => heap.get(index),
-        }
+        get(&self.data, index)
     }
 
     pub fn len(&self) -> usize {
@@ -47,7 +51,7 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
     pub fn iter(&self) -> StackVecIter<T, N> {
         StackVecIter {
             index: 0,
-            store: self,
+            data: &self.data,
         }
     }
 
@@ -65,10 +69,11 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
                     }
 
                     let mut heap = Vec::new();
-                    let array = std::mem::replace(stack, [None; N]);
 
-                    for item in array.into_iter().flatten() {
-                        heap.push(item);
+                    for option in std::mem::replace(stack, [None; N]) {
+                        if let Some(item) = option {
+                            heap.push(item);
+                        }
                     }
 
                     *data = StackVecData::Heap(heap);
@@ -89,12 +94,14 @@ impl<T: Copy, const N: usize> IntoIterator for StackVec<T, N> {
     type Item = T;
 
     fn into_iter(self) -> Self::IntoIter {
-        let inner = match self.data {
-            StackVecData::Stack(stack) => StackVecIntoIterInner::Stack(stack.into_iter()),
-            StackVecData::Heap(heap) => StackVecIntoIterInner::Heap(heap.into_iter()),
-        };
-
-        StackVecIntoIter { inner }
+        match self.data {
+            StackVecData::Stack(stack) => StackVecIntoIter {
+                inner: StackVecIntoIterInner::Stack(stack.into_iter()),
+            },
+            StackVecData::Heap(heap) => StackVecIntoIter {
+                inner: StackVecIntoIterInner::Heap(heap.into_iter()),
+            },
+        }
     }
 }
 
@@ -102,7 +109,7 @@ impl<'a, T: Copy, const N: usize> Iterator for StackVecIter<'a, T, N> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.store.get(self.index)?;
+        let next = get(self.data, self.index)?;
 
         self.index += 1;
         Some(next)
@@ -120,11 +127,25 @@ impl<T: Copy, const N: usize> Iterator for StackVecIntoIter<T, N> {
     }
 }
 
-impl<const N: usize, T: Copy> DoubleEndedIterator for StackVecIntoIter<T, N> {
+impl<const N: usize, T: Copy + std::fmt::Debug> DoubleEndedIterator for StackVecIntoIter<T, N> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        match &mut self.inner {
-            StackVecIntoIterInner::Stack(stack) => stack.next_back()?,
-            StackVecIntoIterInner::Heap(heap) => heap.next_back(),
+        let iter = match &mut self.inner {
+            StackVecIntoIterInner::Stack(stack) => stack,
+            StackVecIntoIterInner::Heap(heap) => {
+                return heap.next_back();
+            }
+        };
+
+        if let Some(next @ Some(_)) = iter.next_back() {
+            return next;
         }
+
+        for _ in 0..N {
+            if let Some(next @ Some(_)) = iter.next_back() {
+                return next;
+            }
+        }
+
+        None
     }
 }

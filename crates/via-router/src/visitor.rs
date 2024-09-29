@@ -2,7 +2,7 @@ use crate::path::{self, PathSegments, Pattern};
 use crate::routes::RouteStore;
 use crate::stack_vec::StackVec;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Visited {
     /// The key of the node that matches the path segement at `self.range` in the
     /// route store.
@@ -49,7 +49,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         }
     }
 
-    pub fn visit(&self, results: &mut StackVec<Visited, 2>) {
+    pub fn visit(&self, results: &mut StackVec<Visited, 4>) {
         // The root node is a special case that we always consider a match.
         results.push(Visited {
             // The root node's key is always `0`.
@@ -76,7 +76,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         &self,
         // A mutable reference to a vector that contains the matches that we
         // have found so far.
-        results: &mut StackVec<Visited, 2>,
+        results: &mut StackVec<Visited, 4>,
         // The start and end offset of the path segment at `index` in
         // `self.path_value`.
         range: [usize; 2],
@@ -165,7 +165,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
     /// `self.segements` at `index` to match against the descendants of the
     /// node at `key`, we'll instead perform a shallow search for descendants
     /// with a `CatchAll` pattern.
-    fn visit_node(&self, results: &mut StackVec<Visited, 2>, index: usize, key: usize) {
+    fn visit_node(&self, results: &mut StackVec<Visited, 4>, index: usize, key: usize) {
         // Check if there is a path segment at `index` to match against
         if let Some(range) = self.segments.get(index).copied() {
             return self.visit_descendants(results, range, index, key);
