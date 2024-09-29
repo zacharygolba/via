@@ -1,4 +1,7 @@
-use core::{iter::Enumerate, str::Bytes};
+use core::iter::Enumerate;
+use core::str::Bytes;
+
+use crate::stack_vec::StackVec;
 
 #[derive(PartialEq)]
 pub enum Pattern {
@@ -6,6 +9,10 @@ pub enum Pattern {
     Static(&'static str),
     Dynamic(&'static str),
     CatchAll(&'static str),
+}
+
+pub struct PathSegments {
+    segments: StackVec<(usize, usize), 4>,
 }
 
 /// An iterator that splits the path into segments and yields a key-value pair
@@ -45,11 +52,14 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
 
 /// Returns a collection containing the start and end offset of each segment in
 /// the uri path.
-pub fn segments(path: &str) -> Vec<(usize, usize)> {
-    let mut segments = Vec::with_capacity(12);
+pub fn segments(path: &str) -> PathSegments {
+    let mut segments = StackVec::new();
 
-    segments.extend(split(path));
-    segments
+    for segment in split(path) {
+        segments.push(segment);
+    }
+
+    PathSegments { segments }
 }
 
 // Gets the value of the path segment at `range` from `path`.
@@ -79,6 +89,16 @@ fn split(value: &str) -> SplitPath {
     SplitPath {
         bytes: value.bytes().enumerate(),
         value,
+    }
+}
+
+impl PathSegments {
+    pub fn get(&self, index: usize) -> Option<&(usize, usize)> {
+        self.segments.get(index)
+    }
+
+    pub fn len(&self) -> usize {
+        self.segments.len()
     }
 }
 
