@@ -1,15 +1,15 @@
 use hyper_util::rt::TokioTimer;
-use slab::Slab;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
-use tokio::{task, time};
+use tokio::task::JoinSet;
+use tokio::time;
 
 use super::acceptor::Acceptor;
 use super::io_stream::IoStream;
 use super::service::Service;
-use super::shutdown::{graceful_shutdown, wait_for_shutdown};
+use super::shutdown::wait_for_shutdown;
 use crate::router::Router;
 use crate::Error;
 
@@ -29,7 +29,7 @@ where
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
-    let mut connections = Slab::new();
+    let mut connections = JoinSet::new();
 
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
@@ -75,7 +75,7 @@ where
                 };
 
                 // Spawn a task to serve the connection.
-                connections.insert(task::spawn(async move {
+                connections.spawn(async move {
                     // Define the acceptor as mutable. We do this so we can be
                     // confident that accept is only called within the connection
                     // task.
@@ -144,7 +144,7 @@ where
                         // Placeholder for tracing...
                         let _ = error;
                     }
-                }));
+                });
             }
 
             // Otherwise, wait for a "Ctrl-C" signal to be sent to the process.
@@ -155,12 +155,18 @@ where
         }
 
         // Remove any handles that may have finished.
-        connections.retain(|_, handle| !handle.is_finished());
+        while let Some(result) = connections.try_join_next() {
+            if let Err(error) = result {
+                // Placeholder for tracing...
+                let _ = error;
+            }
+        }
     }
 
     let shutdown_started_at = Instant::now();
 
     if cfg!(debug_assertions) {
+        // TODO: Replace this with tracing.
         eprintln!(
             "waiting for {} inflight connection(s) to close...",
             connections.len()
@@ -171,7 +177,7 @@ where
         // Wait for all inflight connection to finish. If all connections close
         // before the graceful shutdown timeout, return without an error. For
         // unix-based systems, this translates to a 0 exit code.
-        _ = graceful_shutdown(connections) => {
+        _ = connections.join_all() => {
             let elapsed_as_seconds = shutdown_started_at.elapsed().as_secs();
             let timeout_as_seconds = shutdown_timeout.as_secs();
             let remaining_timeout = timeout_as_seconds

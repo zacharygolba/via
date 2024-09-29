@@ -1,18 +1,8 @@
-use slab::Slab;
 use tokio::signal;
 use tokio::sync::watch;
 use tokio::task::{self, JoinHandle};
 
 use crate::Error;
-
-pub async fn graceful_shutdown(connections: Slab<JoinHandle<()>>) {
-    for (_, handle) in connections.into_iter() {
-        if let Err(error) = handle.await {
-            // Placeholder for tracing...
-            let _ = error;
-        }
-    }
-}
 
 pub fn wait_for_shutdown() -> (JoinHandle<Result<(), Error>>, watch::Receiver<bool>) {
     // Create a watch channel to notify the connections to initiate a
