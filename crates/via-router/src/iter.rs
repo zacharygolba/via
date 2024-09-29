@@ -28,7 +28,7 @@ pub struct Matched<'a, T> {
 ///
 pub struct Matches<'a, T> {
     store: &'a RouteStore<T>,
-    iter: StackVecIntoIter<Visited, 2>,
+    iter: StackVecIntoIter<Visited, 4>,
 }
 
 impl<'a, T> Matched<'a, Vec<T>> {
@@ -43,7 +43,7 @@ impl<'a, T> Matched<'a, Vec<T>> {
 }
 
 impl<'a, T> Matches<'a, T> {
-    pub(crate) fn new(store: &'a RouteStore<T>, iter: StackVecIntoIter<Visited, 2>) -> Self {
+    pub(crate) fn new(store: &'a RouteStore<T>, iter: StackVecIntoIter<Visited, 4>) -> Self {
         Self { store, iter }
     }
 }
