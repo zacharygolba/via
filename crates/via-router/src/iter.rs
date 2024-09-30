@@ -60,28 +60,30 @@ impl<'a, T> Iterator for Matches<'a, T> {
     type Item = Match<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let store = self.store;
         let next = self.iter.next()?;
-        let node = self.store.get(next.key);
+        let node = store.get(next.key);
 
         Some(Match {
             exact: next.exact,
             param: node.param(),
             range: next.range,
-            route: node.route.map(|key| self.store.route(key)),
+            route: node.route.map(|key| store.route(key)),
         })
     }
 }
 
 impl<'a, T> DoubleEndedIterator for Matches<'a, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
+        let store = self.store;
         let next = self.iter.next_back()?;
-        let node = self.store.get(next.key);
+        let node = store.get(next.key);
 
         Some(Match {
             exact: next.exact,
             param: node.param(),
             range: next.range,
-            route: node.route.map(|key| self.store.route(key)),
+            route: node.route.map(|key| store.route(key)),
         })
     }
 }
