@@ -71,3 +71,17 @@ impl<'a, T> Iterator for Matches<'a, T> {
         })
     }
 }
+
+impl<'a, T> DoubleEndedIterator for Matches<'a, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let next = self.iter.next_back()?;
+        let node = self.store.get(next.key);
+
+        Some(Match {
+            exact: next.exact,
+            param: node.param(),
+            range: next.range,
+            route: node.route.map(|key| self.store.route(key)),
+        })
+    }
+}
