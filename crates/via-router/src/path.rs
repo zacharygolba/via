@@ -12,7 +12,7 @@ pub enum Pattern {
 }
 
 pub struct PathSegments {
-    segments: StackVec<[usize; 2], 4>,
+    segments: StackVec<[usize; 2], 5>,
 }
 
 /// An iterator that splits the path into segments and yields a key-value pair

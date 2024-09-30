@@ -45,7 +45,7 @@ impl Node {
 
     /// Returns an iterator that yields the indices of the nodes that are
     /// reachable from `self`.
-    pub fn entries(&self) -> StackVecIter<usize, 2> {
+    pub fn entries(&self) -> StackVecIter<usize> {
         self.entries.iter()
     }
 

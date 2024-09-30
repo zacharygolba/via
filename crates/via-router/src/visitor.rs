@@ -1,9 +1,8 @@
 use crate::path::{self, PathSegments, Pattern};
 use crate::routes::RouteStore;
-use crate::stack_vec::StackVec;
 
-#[derive(Clone, Copy, Debug)]
-pub struct Visited {
+#[derive(Debug)]
+pub struct Visit {
     /// The key of the node that matches the path segement at `self.range` in the
     /// route store.
     ///
@@ -38,20 +37,20 @@ pub struct Visitor<'a, 'b, T> {
 }
 
 impl<'a, 'b, T> Visitor<'a, 'b, T> {
-    pub fn new(path_value: &'b str, segments: &'b PathSegments, store: &'a RouteStore<T>) -> Self {
+    pub fn new(path: &'b str, store: &'a RouteStore<T>, segments: &'b PathSegments) -> Self {
         let depth = segments.len();
 
         Self {
-            path_value,
+            path_value: path,
             segments,
             store,
             depth,
         }
     }
 
-    pub fn visit(&self, results: &mut StackVec<Visited, 4>) {
+    pub fn visit(self, results: &mut Vec<Visit>) {
         // The root node is a special case that we always consider a match.
-        results.push(Visited {
+        results.push(Visit {
             // The root node's key is always `0`.
             key: 0,
             // The root node's path segment range should produce to an empty str.
@@ -76,7 +75,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         &self,
         // A mutable reference to a vector that contains the matches that we
         // have found so far.
-        results: &mut StackVec<Visited, 4>,
+        results: &mut Vec<Visit>,
         // The start and end offset of the path segment at `index` in
         // `self.path_value`.
         range: [usize; 2],
@@ -117,7 +116,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                 Pattern::Static(value) if value == path_segment => {
                     // The next node has a `Static` pattern that matches the value
                     // of the path segment.
-                    results.push(Visited {
+                    results.push(Visit {
                         key: next_key,
                         range,
                         exact,
@@ -128,7 +127,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                 Pattern::Dynamic(_) => {
                     // The next node has a `Dynamic` pattern. Therefore, we consider
                     // it a match regardless of the value of the path segment.
-                    results.push(Visited {
+                    results.push(Visit {
                         key: next_key,
                         exact,
                         range,
@@ -141,7 +140,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     // an exact match. Due to the nature of `CatchAll` patterns, we
                     // do not have to continue searching for descendants of this
                     // node that match the remaining path segments.
-                    results.push(Visited {
+                    results.push(Visit {
                         key: next_key,
                         // `CatchAll` patterns are always considered an exact match.
                         exact: true,
@@ -165,7 +164,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
     /// `self.segements` at `index` to match against the descendants of the
     /// node at `key`, we'll instead perform a shallow search for descendants
     /// with a `CatchAll` pattern.
-    fn visit_node(&self, results: &mut StackVec<Visited, 4>, index: usize, key: usize) {
+    fn visit_node(&self, results: &mut Vec<Visit>, index: usize, key: usize) {
         // Check if there is a path segment at `index` to match against
         if let Some(range) = self.segments.get(index).copied() {
             return self.visit_descendants(results, range, index, key);
@@ -184,7 +183,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
             if let Pattern::CatchAll(_) = descendant.pattern {
                 // Add the matching node to the vector of matches and continue to
                 // search for adjacent nodes with a `CatchAll` pattern.
-                results.push(Visited {
+                results.push(Visit {
                     key: next_key,
                     // Due to the fact we are looking for `CatchAll` patterns as
                     // an immediate descendant of a node that we consider a match,
