@@ -159,10 +159,10 @@ mod tests {
                 // /
                 // ^ as Pattern::Root
                 let matched = &matches[0];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, None);
-                // assert_eq!(&path[start..end], "");
+                assert_eq!(&path[start..end], "");
                 assert!(matched.exact);
             }
 
@@ -170,10 +170,10 @@ mod tests {
                 // /
                 //  ^ as Pattern::CatchAll("*path")
                 let matched = &matches[1];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                // assert_eq!(&path[start..end], "");
+                assert_eq!(&path[start..end], "");
                 // Should be considered exact because of the catch-all pattern.
                 assert!(matched.exact);
             }
@@ -189,10 +189,10 @@ mod tests {
                 // /not/a/path
                 // ^ as Pattern::Root
                 let matched = &matches[0];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, None);
-                // assert_eq!(&path[start..end], "");
+                assert_eq!(&path[start..end], "");
                 assert!(!matched.exact);
             }
 
@@ -200,10 +200,10 @@ mod tests {
                 // /not/a/path
                 //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let matched = &matches[1];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                // assert_eq!(&path[start..end], &path[1..]);
+                assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(matched.exact);
             }
@@ -219,10 +219,10 @@ mod tests {
                 // /echo/hello/world
                 // ^ as Pattern::Root
                 let matched = &matches[0];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, None);
-                // assert_eq!(&path[start..end], "");
+                assert_eq!(&path[start..end], "");
                 assert!(!matched.exact);
             }
 
@@ -230,10 +230,10 @@ mod tests {
                 // /echo/hello/world
                 //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let matched = &matches[1];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                // assert_eq!(&path[start..end], &path[1..]);
+                assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(matched.exact);
             }
@@ -242,10 +242,10 @@ mod tests {
                 // /echo/hello/world
                 //  ^^^^ as Pattern::Static("echo")
                 let matched = &matches[2];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, None);
-                // assert_eq!(&path[start..end], "echo");
+                assert_eq!(&path[start..end], "echo");
                 assert!(!matched.exact);
             }
 
@@ -253,10 +253,10 @@ mod tests {
                 // /echo/hello/world
                 //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let matched = &matches[3];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                // assert_eq!(&path[start..end], "hello/world");
+                assert_eq!(&path[start..end], "hello/world");
                 assert!(matched.exact);
             }
         }
@@ -271,10 +271,10 @@ mod tests {
                 // /articles/100
                 // ^ as Pattern::Root
                 let matched = &matches[0];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, None);
-                // assert_eq!(&path[start..end], "");
+                assert_eq!(&path[start..end], "");
                 assert!(!matched.exact);
             }
 
@@ -282,10 +282,10 @@ mod tests {
                 // /articles/100
                 //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let matched = &matches[1];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                // assert_eq!(&path[start..end], &path[1..]);
+                assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(matched.exact);
             }
@@ -294,10 +294,10 @@ mod tests {
                 // /articles/100
                 //  ^^^^^^^^ as Pattern::Static("articles")
                 let matched = &matches[2];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, None);
-                // assert_eq!(&path[start..end], "articles");
+                assert_eq!(&path[start..end], "articles");
                 assert!(!matched.exact);
             }
 
@@ -305,10 +305,10 @@ mod tests {
                 // /articles/100
                 //           ^^^ as Pattern::Dynamic(":id")
                 let matched = &matches[3];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                // assert_eq!(&path[start..end], "100");
+                assert_eq!(&path[start..end], "100");
                 assert!(matched.exact);
             }
         }
@@ -323,10 +323,10 @@ mod tests {
                 // /articles/100/comments
                 // ^ as Pattern::Root
                 let matched = &matches[0];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, None);
-                // assert_eq!(&path[start..end], "");
+                assert_eq!(&path[start..end], "");
                 assert!(!matched.exact);
             }
 
@@ -334,10 +334,10 @@ mod tests {
                 // /articles/100/comments
                 //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let matched = &matches[1];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                // assert_eq!(&path[start..end], &path[1..]);
+                assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(matched.exact);
             }
@@ -346,10 +346,10 @@ mod tests {
                 // /articles/100/comments
                 //  ^^^^^^^^ as Pattern::Static("articles")
                 let matched = &matches[2];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, None);
-                // assert_eq!(&path[start..end], "articles");
+                assert_eq!(&path[start..end], "articles");
                 assert!(!matched.exact);
             }
 
@@ -357,10 +357,10 @@ mod tests {
                 // /articles/100/comments
                 //           ^^^ as Pattern::Dynamic(":id")
                 let matched = &matches[3];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                // assert_eq!(&path[start..end], "100");
+                assert_eq!(&path[start..end], "100");
                 assert!(!matched.exact);
             }
 
@@ -368,10 +368,10 @@ mod tests {
                 // /articles/100/comments
                 //               ^^^^^^^^ as Pattern::Static("comments")
                 let matched = &matches[4];
-                // let (start, end) = matched.range;
+                let [start, end] = matched.range;
 
                 assert_eq!(matched.route, Some(&()));
-                // assert_eq!(&path[start..end], "comments");
+                assert_eq!(&path[start..end], "comments");
                 // Should be considered exact because it is the last path segment.
                 assert!(matched.exact);
             }

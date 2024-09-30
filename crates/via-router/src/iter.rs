@@ -17,11 +17,13 @@ pub struct Match<'a, T> {
     /// matched the path segment as well as the start and end offset of the
     /// path segment value.
     ///
-    pub param: Option<(&'static str, [usize; 2])>,
+    pub range: [usize; 2],
 
     /// The route that matches the path segement at `self.range`.
     ///
     pub route: Option<&'a T>,
+
+    param: Option<&'static str>,
 }
 
 /// An iterator over the routes that match a given path.
@@ -29,6 +31,12 @@ pub struct Match<'a, T> {
 pub struct Matches<'a, T> {
     store: &'a RouteStore<T>,
     iter: IntoIter<Visit>,
+}
+
+impl<'a, T> Match<'a, T> {
+    pub fn param(&self) -> Option<(&'static str, [usize; 2])> {
+        self.param.map(|name| (name, self.range))
+    }
 }
 
 impl<'a, T> Match<'a, Vec<T>> {
@@ -57,7 +65,8 @@ impl<'a, T> Iterator for Matches<'a, T> {
 
         Some(Match {
             exact: next.exact,
-            param: node.param().zip(Some(next.range)),
+            param: node.param(),
+            range: next.range,
             route: node.route.map(|key| self.store.route(key)),
         })
     }
