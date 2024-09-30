@@ -6,8 +6,6 @@ mod routes;
 mod stack_vec;
 mod visitor;
 
-use stack_vec::StackVec;
-
 pub use crate::iter::{Match, Matches};
 
 use crate::path::Pattern;
@@ -120,7 +118,7 @@ where
 
     let next_index = routes.entry(into_index).push(Node {
         pattern,
-        entries: StackVec::new(),
+        entries: None,
         route: None,
     });
 

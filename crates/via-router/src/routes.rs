@@ -1,10 +1,11 @@
+use core::slice::Iter;
+
 use crate::path::Pattern;
-use crate::stack_vec::{StackVec, StackVecIter};
 
 /// A node in the route tree that represents a single path segment.
 pub struct Node {
     /// The indices of the nodes that are reachable from the current node.
-    pub entries: StackVec<usize, 2>,
+    pub entries: Option<Vec<usize>>,
 
     /// The pattern used to match the node against a path segment.
     pub pattern: Pattern,
@@ -38,15 +39,18 @@ impl Node {
     pub fn new(pattern: Pattern) -> Self {
         Self {
             pattern,
-            entries: StackVec::new(),
+            entries: None,
             route: None,
         }
     }
 
     /// Returns an iterator that yields the indices of the nodes that are
     /// reachable from `self`.
-    pub fn entries(&self) -> StackVecIter<usize> {
-        self.entries.iter()
+    pub fn entries(&self) -> Iter<usize> {
+        match &self.entries {
+            Some(entries) => entries.iter(),
+            None => [].iter(),
+        }
     }
 
     /// Returns an optional reference to the name of the dynamic parameter
@@ -63,7 +67,7 @@ impl Node {
 impl Node {
     /// Pushes a new key into the entries of the node and return it.
     fn push(&mut self, key: usize) -> usize {
-        self.entries.push(key);
+        self.entries.get_or_insert_with(Vec::new).push(key);
         key
     }
 }
