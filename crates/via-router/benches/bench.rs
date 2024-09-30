@@ -78,6 +78,7 @@ static ROUTES: [&str; 100] = [
     "/api/:version/:resource",
     "/api/:version/:resource/:resource_id",
     "/api/:version/:resource/:resource_id/edit",
+    "/api/:version/:resource/:resource_id/comments/:comment_id",
     "/api/:version/:resource/:resource_id/delete",
     "/checkout",
     "/checkout/cart",
@@ -100,7 +101,6 @@ static ROUTES: [&str; 100] = [
     "/billing/history",
     "/billing/payment-methods",
     "/billing/invoice/:invoice_id",
-    "/report",
     "/report/user/:user_id",
     "/report/post/:post_id",
     "/report/comment/:comment_id",
@@ -108,7 +108,7 @@ static ROUTES: [&str; 100] = [
 ];
 
 #[bench]
-fn find_all_matches_heap(b: &mut Bencher) {
+fn find_matches_simple(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
@@ -118,12 +118,12 @@ fn find_all_matches_heap(b: &mut Bencher) {
     router.shrink_to_fit();
 
     b.iter(|| {
-        router.visit("/api/v1/products/12358132134558/edit");
+        router.visit("/help/article/12345678987654321");
     });
 }
 
 #[bench]
-fn find_all_matches_stack(b: &mut Bencher) {
+fn find_matches_nested_stack(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
@@ -133,6 +133,21 @@ fn find_all_matches_stack(b: &mut Bencher) {
     router.shrink_to_fit();
 
     b.iter(|| {
-        router.visit("/checkout/confirmation");
+        router.visit("/api/v1/products/12345678987654321/edit");
+    });
+}
+
+#[bench]
+fn find_matches_nested_heap(b: &mut Bencher) {
+    let mut router: Router<()> = Router::new();
+
+    for path in ROUTES {
+        let _ = router.at(path).get_or_insert_route_with(|| ());
+    }
+
+    router.shrink_to_fit();
+
+    b.iter(|| {
+        router.visit("/api/v1/products/12345678987654321/comments/12345678987654321");
     });
 }

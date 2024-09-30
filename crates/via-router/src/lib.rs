@@ -8,7 +8,7 @@ mod visitor;
 
 use stack_vec::StackVec;
 
-pub use crate::iter::{Matched, Matches};
+pub use crate::iter::{Match, Matches};
 
 use crate::path::Pattern;
 use crate::routes::{Node, RouteStore};
@@ -46,11 +46,11 @@ impl<T> Router<T> {
     }
 
     pub fn visit<'a>(&'a self, path: &str) -> Matches<'a, T> {
-        let mut results = StackVec::new();
+        let mut results = Vec::new();
         let segments = path::segments(path);
         let store = &self.store;
 
-        Visitor::new(path, &segments, store).visit(&mut results);
+        Visitor::new(path, store, &segments).visit(&mut results);
         Matches::new(store, results.into_iter())
     }
 }
