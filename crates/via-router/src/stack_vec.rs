@@ -1,12 +1,8 @@
-use core::{array, slice};
+use core::array;
 use std::vec;
 
 pub struct StackVec<T, const N: usize> {
     data: StackVecData<T, N>,
-}
-
-pub struct StackVecIter<'a, T> {
-    iter: slice::Iter<'a, Option<T>>,
 }
 
 pub struct StackVecIntoIter<T, const N: usize> {
@@ -51,15 +47,6 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
         }
     }
 
-    pub fn iter(&self) -> StackVecIter<T> {
-        let iter = match self.data {
-            StackVecData::Stack { ref array, len } => array[..len].iter(),
-            StackVecData::Heap { ref vec } => vec.iter(),
-        };
-
-        StackVecIter { iter }
-    }
-
     pub fn push(&mut self, value: T) {
         let data = &mut self.data;
 
@@ -99,17 +86,6 @@ impl<T, const N: usize> IntoIterator for StackVec<T, N> {
             StackVecData::Heap { vec } => StackVecIntoIter {
                 iter: StackVecIntoIterInner::Heap(vec.into_iter()),
             },
-        }
-    }
-}
-
-impl<'a, T> Iterator for StackVecIter<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.iter.next()? {
-            Some(value) => Some(value),
-            None => None,
         }
     }
 }
