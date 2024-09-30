@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::sync::Arc;
 use via_router::Matches;
 
@@ -97,17 +96,17 @@ where
         params: &mut PathParams,
         routes: Matches<'a, Vec<MatchWhen<State>>>,
     ) -> Next<State> {
-        let mut stack = VecDeque::new();
+        let mut stack = Vec::new();
 
         // Iterate over the routes that match the request's path.
-        for route in routes {
+        for route in routes.rev() {
             if let Some(param) = route.param() {
                 params.push(param);
             }
 
             // Extend `stack` with middleware in `matched` depending on whether
             // or not the middleware expects a partial or exact match.
-            for middleware in route.iter().filter_map(|when| match when {
+            for middleware in route.iter().rev().filter_map(|when| match when {
                 // Include this middleware in `stack` because it expects an
                 // exact match and `matched.exact` is `true`.
                 MatchWhen::Exact(exact) if route.exact => Some(exact),
@@ -120,7 +119,7 @@ where
                 // exact match and `matched.exact` is `false`.
                 MatchWhen::Exact(_) => None,
             }) {
-                stack.push_back(Arc::clone(middleware));
+                stack.push(Arc::clone(middleware));
             }
         }
 
