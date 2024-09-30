@@ -52,9 +52,9 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
     }
 
     pub fn iter(&self) -> StackVecIter<T> {
-        let iter = match &self.data {
-            StackVecData::Stack { array, len } => (&array[..*len]).iter(),
-            StackVecData::Heap { vec } => vec.iter(),
+        let iter = match self.data {
+            StackVecData::Stack { ref array, len } => array[..len].iter(),
+            StackVecData::Heap { ref vec } => vec.iter(),
         };
 
         StackVecIter { iter }

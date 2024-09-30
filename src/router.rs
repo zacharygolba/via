@@ -101,7 +101,7 @@ where
 
         // Iterate over the routes that match the request's path.
         for route in routes {
-            if let Some(param) = route.param {
+            if let Some(param) = route.param() {
                 params.push(param);
             }
 
