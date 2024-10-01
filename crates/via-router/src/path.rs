@@ -8,8 +8,10 @@ pub enum Pattern {
     Dynamic(&'static str),
     CatchAll(&'static str),
 }
-/// An iterator that splits the path into segments and yields a key-value pair
-/// containing the start and end offset of the substring separated by `/`.
+
+/// An iterator that yields a tuple containing the start and end offset of each
+/// segment in the url path.
+///
 pub struct SplitPath<'a> {
     bytes: Enumerate<Bytes<'a>>,
     value: &'a str,
@@ -17,7 +19,7 @@ pub struct SplitPath<'a> {
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
-    split(path).map(|range| {
+    SplitPath::new(path).map(|range| {
         let value = segment_at(path, &range);
 
         match value.chars().next() {
@@ -64,12 +66,12 @@ pub fn segment_at<'a>(path: &'a str, range: &[usize; 2]) -> &'a str {
     }
 }
 
-/// Returns an iterator that yields a tuple containing the start and end offset
-/// of each segment in the url path.
-pub fn split(value: &str) -> SplitPath {
-    SplitPath {
-        bytes: value.bytes().enumerate(),
-        value,
+impl<'a> SplitPath<'a> {
+    pub fn new(value: &'a str) -> Self {
+        SplitPath {
+            bytes: value.bytes().enumerate(),
+            value,
+        }
     }
 }
 
@@ -121,7 +123,7 @@ impl<'a> Iterator for SplitPath<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::split;
+    use super::SplitPath;
 
     const PATHS: [&str; 15] = [
         "/home/about",
@@ -166,7 +168,7 @@ mod tests {
         let expected_results = get_expected_results();
 
         for (path_index, path_value) in PATHS.iter().enumerate() {
-            for (segment_index, segment_value) in split(path_value).enumerate() {
+            for (segment_index, segment_value) in SplitPath::new(path_value).enumerate() {
                 assert_eq!(segment_value, expected_results[path_index][segment_index]);
             }
         }

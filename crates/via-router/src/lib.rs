@@ -6,6 +6,7 @@ mod routes;
 mod stack_vec;
 mod visitor;
 
+use path::SplitPath;
 use stack_vec::StackVec;
 
 pub use crate::iter::{Match, Matches};
@@ -48,7 +49,7 @@ impl<T> Router<T> {
     pub fn visit<'a>(&'a self, path: &str) -> Matches<'a, T> {
         let mut segments = StackVec::new([None; 5]);
 
-        for segment in path::split(path) {
+        for segment in SplitPath::new(path) {
             segments.push(segment);
         }
 
