@@ -110,8 +110,12 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
                     // Allocate a new vec to store the data in `array`.
                     let mut vec = Vec::new();
 
-                    // Move the array out of `store` and into `vec`.
-                    vec.extend(data.take().into_iter().flatten());
+                    if let Some(array) = data.take() {
+                        // Move the array out of `store` and into `vec`.
+                        vec.extend(array);
+                    } else {
+                        // Placeholder for tracing...
+                    }
 
                     // Transition `data` to `StackVecData::Heap`.
                     *inner = StackVecInner::Heap { data: vec };
