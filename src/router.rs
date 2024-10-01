@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use via_router::Matches;
+use via_router::Visit;
 
 use crate::request::PathParams;
 use crate::{Middleware, Next};
@@ -87,14 +87,14 @@ where
         }
     }
 
-    pub fn lookup<'a>(&'a self, path: &str) -> Matches<'a, Vec<MatchWhen<State>>> {
+    pub fn lookup<'a>(&'a self, path: &str) -> Visit<'a, Vec<MatchWhen<State>>> {
         self.inner.visit(path)
     }
 
     pub fn resolve<'a>(
         &'a self,
         params: &mut PathParams,
-        routes: Matches<'a, Vec<MatchWhen<State>>>,
+        routes: Visit<'a, Vec<MatchWhen<State>>>,
     ) -> Next<State> {
         let mut stack = Vec::new();
 
