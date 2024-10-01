@@ -15,9 +15,7 @@ pub struct Param<'a, 'b, T = NoopDecode> {
 
 fn missing_required_param<'a>(name: &str) -> Result<Cow<'a, str>, Error> {
     let message = format!("missing required parameter: \"{}\"", name);
-    let status = StatusCode::BAD_REQUEST;
-
-    Err(Error::with_status(message, status))
+    Err(Error::new_with_status(message, StatusCode::BAD_REQUEST))
 }
 
 impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
@@ -59,9 +57,8 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     {
         self.into_result()?.parse().map_err(|error| {
             let mut error = Error::from(error);
-            let status = StatusCode::BAD_REQUEST;
 
-            *error.status_mut() = status;
+            error.set_status(StatusCode::BAD_REQUEST);
             error
         })
     }

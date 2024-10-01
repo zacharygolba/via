@@ -1,146 +1,174 @@
+//! Conviently work with errors that may occur in an application.
+//!
+
 use http::StatusCode;
+use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::error::Error as StdError;
 use std::fmt::{self, Debug, Display, Formatter};
-use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::io;
 
-use crate::response::Response;
+use crate::Response;
 
 type AnyError = Box<dyn StdError + Send + Sync + 'static>;
+type Source = (dyn StdError + 'static);
 
+/// A type alias for [`std::result::Result`] that uses `Error` as the default
+/// error type.
+///
 pub type Result<T, E = Error> = std::result::Result<T, E>;
-pub type Source = (dyn StdError + 'static);
 
+/// An error type that can be easily converted to a [`Response`].
+///
 #[derive(Debug)]
 pub struct Error {
-    format: Option<Format>,
+    format: Format,
     source: AnyError,
     status: StatusCode,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Format {
-    Json,
-}
-
-struct Bail {
-    message: String,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct Chain<'a> {
+/// An iterator over the sources of an `Error`.
+///
+#[derive(Debug)]
+pub struct Iter<'a> {
     source: Option<&'a (dyn StdError + 'static)>,
 }
 
-impl Bail {
-    pub fn new(message: String) -> Self {
-        Self { message }
-    }
+/// The format of the response body would be generated from an `Error`.
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Format {
+    Json,
+    Text,
 }
 
-impl Debug for Bail {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Debug::fmt(&self.message, f)
-    }
+/// An error type that contains an error message stored in a string.
+///
+#[derive(Debug)]
+struct ErrorMessage {
+    message: String,
 }
 
-impl Display for Bail {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(&self.message, f)
-    }
-}
-
-impl StdError for Bail {}
-
-impl<'a> Iterator for Chain<'a> {
-    type Item = &'a (dyn StdError + 'static);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.source.map(|error| {
-            self.source = error.source();
-            error
-        })
-    }
+/// The serialized representation of an Error.
+///
+struct SerializeError {
+    // Store the error message in an array. This makes it easier to work with
+    // in client-side code.
+    errors: [ErrorMessage; 1],
 }
 
 impl Error {
+    /// Returns a new `Error` with the provided message.
+    ///
     pub fn new(message: String) -> Self {
         Self {
-            format: None,
-            source: Box::new(Bail::new(message)),
+            format: Format::Text,
+            source: Box::new(ErrorMessage { message }),
             status: StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
-    pub fn from_io_error(error: IoError) -> Self {
+    /// A convience for creating a new `Error` from an [io::Error]. This method
+    /// will be deprecated when specialization is released.
+    ///
+    pub fn from_io_error(error: io::Error) -> Self {
         let status = match error.kind() {
-            IoErrorKind::NotFound => StatusCode::NOT_FOUND,
-            IoErrorKind::PermissionDenied => StatusCode::FORBIDDEN,
+            io::ErrorKind::NotFound => StatusCode::NOT_FOUND,
+            io::ErrorKind::PermissionDenied => StatusCode::FORBIDDEN,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         Self {
-            format: None,
+            format: Format::Text,
             source: Box::new(error),
             status,
         }
     }
 
-    pub fn chain(&self) -> impl Iterator<Item = &Source> {
-        Chain {
-            source: Some(&*self.source),
+    /// Returns an iterator over the sources of this error.
+    ///
+    pub fn iter(&self) -> Iter {
+        let source = self.source();
+
+        Iter {
+            source: Some(source),
         }
     }
 
+    /// Returns the source of this error.
+    ///
     pub fn source(&self) -> &Source {
         &*self.source
     }
 
-    pub fn status(&self) -> StatusCode {
-        self.status
+    /// Returns a reference to the status code of this error.
+    ///
+    pub fn status(&self) -> &StatusCode {
+        &self.status
     }
 
+    /// Returns a mutable reference to the status code of this error.
+    ///
     pub fn status_mut(&mut self) -> &mut StatusCode {
         &mut self.status
     }
 
-    pub fn json(mut self) -> Self {
-        self.format = Some(Format::Json);
-        self
+    /// Sets the status code of the error to the provided status code. Returns
+    /// a reference to the updated status code.
+    ///
+    /// If the status code is not in thhe `400-599` range, the status code will
+    /// not be updated.
+    ///
+    pub fn set_status(&mut self, status: StatusCode) -> &StatusCode {
+        if status.is_client_error() || status.is_server_error() {
+            self.status = status;
+        }
+
+        &self.status
+    }
+
+    /// Configures self to respond with JSON when converted to a response.
+    ///
+    pub fn respond_with_json(&mut self) {
+        self.format = Format::Json;
     }
 }
 
 impl Error {
-    pub(crate) fn into_response(mut self) -> Response {
-        let mut response = loop {
-            let result = match self.format {
-                Some(Format::Json) => Response::json(&self),
-                None => Ok(Response::text(self.to_string())),
+    pub(crate) fn new_with_status(message: String, status: StatusCode) -> Self {
+        Self {
+            format: Format::Text,
+            source: Box::new(ErrorMessage { message }),
+            status,
+        }
+    }
+
+    pub(crate) fn into_response(self) -> Response {
+        let mut format = self.format;
+        let status = self.status;
+
+        loop {
+            let result = match format {
+                Format::Json => Response::json(&self),
+                Format::Text => Ok(Response::new(self.to_string().into())),
             };
 
             match result {
-                Ok(response) => break response,
+                Ok(mut response) => {
+                    response.set_status(status);
+                    return response;
+                }
                 Err(error) => {
-                    self.format = None;
+                    // If the error could not be serialized to the requested format,
+                    // use a plain text response instead.
+                    format = Format::Text;
+                    // Placeholder for tracing...
                     if cfg!(debug_assertions) {
                         // TODO: Replace this with tracing.
                         eprintln!("Error: {}", error);
                     }
                 }
-            };
-        };
-
-        response.set_status(self.status);
-        response
-    }
-}
-
-impl Error {
-    pub(crate) fn with_status(message: String, status: StatusCode) -> Self {
-        Self {
-            format: None,
-            source: Box::new(Bail::new(message)),
-            status,
+            }
         }
     }
 }
@@ -157,7 +185,7 @@ where
 {
     fn from(value: T) -> Self {
         Self {
-            format: None,
+            format: Format::Text,
             source: Box::new(value),
             status: StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -170,49 +198,61 @@ impl From<Error> for AnyError {
     }
 }
 
+impl From<Error> for Box<dyn StdError + Send> {
+    fn from(error: Error) -> Self {
+        error.source
+    }
+}
+
 impl Serialize for Error {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        use serde::ser::SerializeStruct;
-        use std::collections::HashSet;
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let message = self.to_string();
+        let repr = SerializeError {
+            errors: [ErrorMessage { message }],
+        };
 
-        #[derive(Eq, PartialEq, Hash)]
-        struct SerializedError {
-            message: String,
-        }
+        repr.serialize(serializer)
+    }
+}
 
-        impl<'a> From<&'a Source> for SerializedError {
-            fn from(error: &'a Source) -> Self {
-                Self {
-                    message: error.to_string(),
-                }
-            }
-        }
+impl Display for ErrorMessage {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Display::fmt(&self.message, f)
+    }
+}
 
-        impl Serialize for SerializedError {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: serde::Serializer,
-            {
-                let mut state = serializer.serialize_struct("Error", 1)?;
+impl StdError for ErrorMessage {}
 
-                state.serialize_field("message", &self.message)?;
-                state.end()
-            }
-        }
+impl Serialize for ErrorMessage {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("ErrorMessage", 1)?;
 
-        let errors: HashSet<_> = self.chain().map(SerializedError::from).collect();
-        let mut state = serializer.serialize_struct("Errors", 1)?;
-
-        state.serialize_field("errors", &errors)?;
+        state.serialize_field("message", &self.message)?;
         state.end()
     }
 }
 
-impl From<Error> for Box<dyn StdError + Send> {
-    fn from(error: Error) -> Self {
-        error.source
+impl<'a> Iterator for Iter<'a> {
+    type Item = &'a dyn StdError;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Attempt to get a copy of the source error from self. If the source
+        // field is None, return early.
+        let next = self.source?;
+
+        // Set self.source to the next source error.
+        self.source = next.source();
+
+        // Return the next error.
+        Some(next)
+    }
+}
+
+impl Serialize for SerializeError {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("SerializeError", 1)?;
+
+        state.serialize_field("errors", &self.errors)?;
+        state.end()
     }
 }

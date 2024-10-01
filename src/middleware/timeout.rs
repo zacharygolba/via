@@ -29,7 +29,7 @@ fn respond_with_timeout<State>(_: &State) -> Result<Response, Error> {
     message.push_str("The server is taking too long to respond. ");
     message.push_str("Please try again later.");
 
-    Ok(Error::with_status(message, status).into_response())
+    Ok(Error::new_with_status(message, status).into_response())
 }
 
 impl<State> Timeout<RespondWithTimeout<State>> {
