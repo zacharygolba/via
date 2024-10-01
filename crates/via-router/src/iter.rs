@@ -1,23 +1,23 @@
 use std::vec::IntoIter;
 
 use crate::routes::RouteStore;
-use crate::visitor::Visit;
+use crate::visitor::Visited;
 
 /// An iterator over the routes that match a given path.
 ///
-pub struct Matches<'a, T> {
+pub struct Visit<'a, T> {
     store: &'a RouteStore<T>,
-    iter: IntoIter<Visit>,
+    iter: IntoIter<Visited>,
 }
 
-impl<'a, T> Matches<'a, T> {
-    pub(crate) fn new(store: &'a RouteStore<T>, iter: IntoIter<Visit>) -> Self {
+impl<'a, T> Visit<'a, T> {
+    pub(crate) fn new(store: &'a RouteStore<T>, iter: IntoIter<Visited>) -> Self {
         Self { store, iter }
     }
 }
 
-impl<'a, T> Iterator for Matches<'a, T> {
-    type Item = (Option<&'a T>, Option<&'static str>, Visit);
+impl<'a, T> Iterator for Visit<'a, T> {
+    type Item = (Option<&'a T>, Option<&'static str>, Visited);
 
     fn next(&mut self) -> Option<Self::Item> {
         let visited = self.iter.next()?;
@@ -32,7 +32,7 @@ impl<'a, T> Iterator for Matches<'a, T> {
     }
 }
 
-impl<'a, T> DoubleEndedIterator for Matches<'a, T> {
+impl<'a, T> DoubleEndedIterator for Visit<'a, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         let visited = self.iter.next_back()?;
         let store = self.store;

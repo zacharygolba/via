@@ -6,8 +6,8 @@ mod routes;
 mod stack_vec;
 mod visitor;
 
-pub use iter::Matches;
-pub use visitor::Visit;
+pub use iter::Visit;
+pub use visitor::Visited;
 
 use path::{Pattern, SplitPath};
 use routes::{Node, RouteStore};
@@ -45,7 +45,7 @@ impl<T> Router<T> {
         self.store.shrink_to_fit();
     }
 
-    pub fn visit<'a>(&'a self, path: &str) -> Matches<'a, T> {
+    pub fn visit<'a>(&'a self, path: &str) -> Visit<'a, T> {
         let mut segments = StackVec::new([None; 5]);
 
         for segment in SplitPath::new(path) {
@@ -56,7 +56,7 @@ impl<T> Router<T> {
         let store = &self.store;
 
         Visitor::new(path, store, &segments).visit(&mut results);
-        Matches::new(store, results.into_iter())
+        Visit::new(store, results.into_iter())
     }
 }
 
