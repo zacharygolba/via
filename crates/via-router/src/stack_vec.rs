@@ -1,4 +1,4 @@
-use core::array;
+use core::{array, mem};
 use std::vec;
 
 pub struct StackVec<T, const N: usize> {
@@ -27,6 +27,8 @@ fn get<T, const N: usize>(data: &StackVecData<T, N>, index: usize) -> Option<&T>
 }
 
 impl<T: Copy, const N: usize> StackVec<T, N> {
+    /// Returns a option containing a reference to the element at `index`.
+    ///
     pub fn new() -> Self {
         Self {
             data: StackVecData::Stack {
@@ -36,10 +38,14 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
         }
     }
 
+    /// Returns an option containing a reference to the element at `index`.
+    ///
     pub fn get(&self, index: usize) -> Option<&T> {
         get(&self.data, index)
     }
 
+    /// Returns the number of elements in the vec.
+    ///
     pub fn len(&self) -> usize {
         match &self.data {
             StackVecData::Stack { len, .. } => *len,
@@ -47,28 +53,57 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
         }
     }
 
+    /// Appends an element to the end of the vec.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new capacity exceeds `isize::MAX` _bytes_.
+    ///
     pub fn push(&mut self, value: T) {
         let data = &mut self.data;
 
-        match data {
-            // Attempt to store `value` on the stack. If there is no vacant
-            // entry, move the data to the heap.
-            StackVecData::Stack { array, len } => {
-                let index = *len;
+        loop {
+            match data {
+                StackVecData::Stack { array, len } => {
+                    // Copy and store the `len` pointer so it can be used for
+                    let index = *len;
 
-                if index < N {
-                    array[index] = Some(value);
-                    *len = index + 1;
-                } else {
-                    let mut vec = array.to_vec();
+                    // If `index` is less than `N`, we can store `value` at `ptr`.
+                    if index < N {
+                        // Store `value` in the vacant entry.
+                        array[index] = Some(value);
+                        // Increment the `len` pointer.
+                        *len = index + 1;
+                        // Exit the loop.
+                        break;
+                    }
 
-                    vec.push(Some(value));
+                    // The stack is full. We're going to move the data in `array`
+                    // to the heap and transition the internal state of self to
+                    // `StackVecData:Heap`.
+
+                    // Allocate a new vec to store the data in `array`.
+                    let mut vec = Vec::new();
+
+                    // Move the data from the stack-allocated `array` to the
+                    // heap-allocated vec. Temporarily replace `array` with
+                    // `[None; N]` to avoid dropping the contents of the array.
+                    vec.extend(mem::replace(array, [None; N]));
+
+                    // Transition the internal state of self at `data` to the
+                    // Heap variant.
                     *data = StackVecData::Heap { vec };
+
+                    // Continue to the next iteration to push `value` to the
+                    // heap. This allows us to confirm that the internal state
+                    // transition was successful.
                 }
-            }
-            // We have a heap-allocated vec. Push `value` into it.
-            StackVecData::Heap { vec } => {
-                vec.push(Some(value));
+                StackVecData::Heap { vec } => {
+                    // We're already on the heap. Append `value` to the vec.
+                    vec.push(Some(value));
+                    // Exit the loop.
+                    break;
+                }
             }
         }
     }
