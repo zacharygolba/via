@@ -24,10 +24,10 @@ enum StackVecIntoIterInner<T, const N: usize> {
     Heap(vec::IntoIter<Option<T>>),
 }
 
-fn get<T, const N: usize>(data: &StackVecInner<T, N>, index: usize) -> Option<&T> {
+fn get<T: Copy, const N: usize>(data: &StackVecInner<T, N>, index: usize) -> Option<T> {
     match data {
-        StackVecInner::Stack { data, .. } => data.as_ref()?.get(index)?.as_ref(),
-        StackVecInner::Heap { data } => data.get(index)?.as_ref(),
+        StackVecInner::Stack { data, .. } => *data.as_ref()?.get(index)?,
+        StackVecInner::Heap { data } => *data.get(index)?,
     }
 }
 
@@ -47,7 +47,7 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
 
     /// Returns an option containing a reference to the element at `index`.
     ///
-    pub fn get(&self, index: usize) -> Option<&T> {
+    pub fn get(&self, index: usize) -> Option<T> {
         get(&self.inner, index)
     }
 
