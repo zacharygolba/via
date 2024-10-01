@@ -32,9 +32,6 @@ pub struct Visitor<'a, 'b, T> {
 
     /// A reference to the route store that contains the route tree.
     store: &'a RouteStore<T>,
-
-    /// A cache of `self.segments.len()`.
-    depth: usize,
 }
 
 impl<'a, 'b, T> Visitor<'a, 'b, T> {
@@ -43,13 +40,10 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         store: &'a RouteStore<T>,
         segments: &'b StackVec<[usize; 2], 5>,
     ) -> Self {
-        let depth = segments.len();
-
         Self {
             path_value: path,
             segments,
             store,
-            depth,
         }
     }
 
@@ -62,7 +56,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
             range: [0, 0],
             // If there are no path segments to match against, we consider the root
             // node to be an exact match.
-            exact: self.depth == 0,
+            exact: self.segments.is_empty(),
         });
 
         // Begin the search for matches recursively starting with descendants of
@@ -107,7 +101,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         // matching descendant to be an exact match. We perform this check
         // eagerly to avoid having to do so for each descendant with a
         // `Dynamic` or `Static` pattern.
-        let exact = next_index == self.depth;
+        let exact = next_index == self.segments.len();
 
         let store = self.store;
 
