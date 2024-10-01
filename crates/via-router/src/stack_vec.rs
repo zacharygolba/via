@@ -1,17 +1,22 @@
-use core::{array, mem};
+use core::array;
 use std::vec;
 
 pub struct StackVec<T, const N: usize> {
-    data: StackVecData<T, N>,
+    inner: StackVecInner<T, N>,
 }
 
 pub struct StackVecIntoIter<T, const N: usize> {
     iter: StackVecIntoIterInner<T, N>,
 }
 
-enum StackVecData<T, const N: usize> {
-    Stack { array: [Option<T>; N], len: usize },
-    Heap { vec: Vec<Option<T>> },
+enum StackVecInner<T, const N: usize> {
+    Stack {
+        data: Option<[Option<T>; N]>,
+        len: usize,
+    },
+    Heap {
+        data: Vec<Option<T>>,
+    },
 }
 
 enum StackVecIntoIterInner<T, const N: usize> {
@@ -19,21 +24,23 @@ enum StackVecIntoIterInner<T, const N: usize> {
     Heap(vec::IntoIter<Option<T>>),
 }
 
-fn get<T, const N: usize>(data: &StackVecData<T, N>, index: usize) -> Option<&T> {
+fn get<T, const N: usize>(data: &StackVecInner<T, N>, index: usize) -> Option<&T> {
     match data {
-        StackVecData::Stack { array, .. } => array.get(index)?.as_ref(),
-        StackVecData::Heap { vec } => vec.get(index)?.as_ref(),
+        StackVecInner::Stack { data, .. } => data.as_ref()?.get(index)?.as_ref(),
+        StackVecInner::Heap { data } => data.get(index)?.as_ref(),
     }
 }
 
 impl<T: Copy, const N: usize> StackVec<T, N> {
     /// Returns a option containing a reference to the element at `index`.
     ///
-    pub fn new() -> Self {
+    pub fn new(init: [Option<T>; N]) -> Self {
+        let len = init.iter().filter(|entry| entry.is_some()).count();
+
         Self {
-            data: StackVecData::Stack {
-                array: [None; N],
-                len: 0,
+            inner: StackVecInner::Stack {
+                data: Some(init),
+                len,
             },
         }
     }
@@ -41,15 +48,15 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
     /// Returns an option containing a reference to the element at `index`.
     ///
     pub fn get(&self, index: usize) -> Option<&T> {
-        get(&self.data, index)
+        get(&self.inner, index)
     }
 
     /// Returns the number of elements in the vec.
     ///
     pub fn len(&self) -> usize {
-        match &self.data {
-            StackVecData::Stack { len, .. } => *len,
-            StackVecData::Heap { vec } => vec.len(),
+        match &self.inner {
+            StackVecInner::Stack { len, .. } => *len,
+            StackVecInner::Heap { data } => data.len(),
         }
     }
 
@@ -60,15 +67,24 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
     /// Panics if the new capacity exceeds `isize::MAX` _bytes_.
     ///
     pub fn push(&mut self, value: T) {
-        let data = &mut self.data;
+        let inner = &mut self.inner;
 
         loop {
-            match data {
-                StackVecData::Stack { array, len } => {
-                    // Copy and store the `len` pointer so it can be used for
+            match inner {
+                StackVecInner::Stack { data, len } => {
+                    let array = match data {
+                        Some(ptr) => ptr,
+                        None => {
+                            // Placeholder for tracing...
+                            *inner = StackVecInner::Heap { data: Vec::new() };
+                            continue;
+                        }
+                    };
+
+                    // Copy and store the `len` pointer as `index`.
                     let index = *len;
 
-                    // If `index` is less than `N`, we can store `value` at `ptr`.
+                    // If `index` is less than `N`, it points to a vacant entry.
                     if index < N {
                         // Store `value` in the vacant entry.
                         array[index] = Some(value);
@@ -85,22 +101,19 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
                     // Allocate a new vec to store the data in `array`.
                     let mut vec = Vec::new();
 
-                    // Move the data from the stack-allocated `array` to the
-                    // heap-allocated vec. Temporarily replace `array` with
-                    // `[None; N]` to avoid dropping the contents of the array.
-                    vec.extend(mem::replace(array, [None; N]));
+                    // Move the array out of `store` and into `vec`.
+                    vec.extend(data.take().into_iter().flatten());
 
-                    // Transition the internal state of self at `data` to the
-                    // Heap variant.
-                    *data = StackVecData::Heap { vec };
+                    // Transition `data` to `StackVecData::Heap`.
+                    *inner = StackVecInner::Heap { data: vec };
 
-                    // Continue to the next iteration to push `value` to the
-                    // heap. This allows us to confirm that the internal state
-                    // transition was successful.
+                    // Continue to the next iteration to append `value` to `vec`.
+                    // The iterative approach that we take here confirms that the
+                    // internal state of `self` remains consistent.
                 }
-                StackVecData::Heap { vec } => {
+                StackVecInner::Heap { data } => {
                     // We're already on the heap. Append `value` to the vec.
-                    vec.push(Some(value));
+                    data.push(Some(value));
                     // Exit the loop.
                     break;
                 }
@@ -109,18 +122,28 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
     }
 }
 
-impl<T, const N: usize> IntoIterator for StackVec<T, N> {
+impl<T: Copy, const N: usize> IntoIterator for StackVec<T, N> {
     type IntoIter = StackVecIntoIter<T, N>;
     type Item = T;
 
     fn into_iter(self) -> Self::IntoIter {
-        match self.data {
-            StackVecData::Stack { array, .. } => StackVecIntoIter {
-                iter: StackVecIntoIterInner::Stack(array.into_iter()),
-            },
-            StackVecData::Heap { vec } => StackVecIntoIter {
-                iter: StackVecIntoIterInner::Heap(vec.into_iter()),
-            },
+        match self.inner {
+            StackVecInner::Stack { data, .. } => {
+                #[allow(clippy::unnecessary_lazy_evaluations)]
+                let array = data.unwrap_or_else(|| [None; N]);
+                let into_iter = array.into_iter();
+
+                StackVecIntoIter {
+                    iter: StackVecIntoIterInner::Stack(into_iter),
+                }
+            }
+            StackVecInner::Heap { data: vec } => {
+                let into_iter = vec.into_iter();
+
+                StackVecIntoIter {
+                    iter: StackVecIntoIterInner::Heap(into_iter),
+                }
+            }
         }
     }
 }
@@ -130,8 +153,8 @@ impl<T, const N: usize> Iterator for StackVecIntoIter<T, N> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.iter {
-            StackVecIntoIterInner::Stack(stack) => stack.next()?,
-            StackVecIntoIterInner::Heap(heap) => heap.next()?,
+            StackVecIntoIterInner::Stack(iter) => iter.next()?,
+            StackVecIntoIterInner::Heap(iter) => iter.next()?,
         }
     }
 }

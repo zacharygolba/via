@@ -1,5 +1,6 @@
-use crate::path::{self, PathSegments, Pattern};
+use crate::path::{self, Pattern};
 use crate::routes::RouteStore;
+use crate::stack_vec::StackVec;
 
 #[derive(Debug)]
 pub struct Visit {
@@ -27,7 +28,7 @@ pub struct Visitor<'a, 'b, T> {
 
     /// A slice of tuples that contain the start and end offset of each path
     /// segment in `self.path_value`.
-    segments: &'b PathSegments,
+    segments: &'b StackVec<[usize; 2], 6>,
 
     /// A reference to the route store that contains the route tree.
     store: &'a RouteStore<T>,
@@ -37,7 +38,11 @@ pub struct Visitor<'a, 'b, T> {
 }
 
 impl<'a, 'b, T> Visitor<'a, 'b, T> {
-    pub fn new(path: &'b str, store: &'a RouteStore<T>, segments: &'b PathSegments) -> Self {
+    pub fn new(
+        path: &'b str,
+        store: &'a RouteStore<T>,
+        segments: &'b StackVec<[usize; 2], 6>,
+    ) -> Self {
         let depth = segments.len();
 
         Self {

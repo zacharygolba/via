@@ -1,8 +1,6 @@
 use core::iter::Enumerate;
 use core::str::Bytes;
 
-use crate::stack_vec::StackVec;
-
 #[derive(PartialEq)]
 pub enum Pattern {
     Root,
@@ -10,14 +8,9 @@ pub enum Pattern {
     Dynamic(&'static str),
     CatchAll(&'static str),
 }
-
-pub struct PathSegments {
-    segments: StackVec<[usize; 2], 5>,
-}
-
 /// An iterator that splits the path into segments and yields a key-value pair
 /// containing the start and end offset of the substring separated by `/`.
-struct SplitPath<'a> {
+pub struct SplitPath<'a> {
     bytes: Enumerate<Bytes<'a>>,
     value: &'a str,
 }
@@ -50,18 +43,6 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
     })
 }
 
-/// Returns a collection containing the start and end offset of each segment in
-/// the uri path.
-pub fn segments(path: &str) -> PathSegments {
-    let mut segments = StackVec::new();
-
-    for segment in split(path) {
-        segments.push(segment);
-    }
-
-    PathSegments { segments }
-}
-
 // Gets the value of the path segment at `range` from `path`.
 pub fn segment_at<'a>(path: &'a str, range: &[usize; 2]) -> &'a str {
     match path.get(range[0]..range[1]) {
@@ -85,20 +66,10 @@ pub fn segment_at<'a>(path: &'a str, range: &[usize; 2]) -> &'a str {
 
 /// Returns an iterator that yields a tuple containing the start and end offset
 /// of each segment in the url path.
-fn split(value: &str) -> SplitPath {
+pub fn split(value: &str) -> SplitPath {
     SplitPath {
         bytes: value.bytes().enumerate(),
         value,
-    }
-}
-
-impl PathSegments {
-    pub fn get(&self, index: usize) -> Option<&[usize; 2]> {
-        self.segments.get(index)
-    }
-
-    pub fn len(&self) -> usize {
-        self.segments.len()
     }
 }
 
