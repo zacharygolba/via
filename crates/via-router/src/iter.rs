@@ -1,53 +1,13 @@
-use core::slice::Iter;
 use std::vec::IntoIter;
 
 use crate::routes::RouteStore;
 use crate::visitor::Visit;
-
-/// Represents either a partial or exact match for a given path segment.
-///
-pub struct Match<'a, T> {
-    /// Indicates whether or not the match is considered an exact match.
-    /// If the match is exact, both the middleware and responders will be
-    /// called during a request. Otherwise, only the middleware will be
-    /// called.
-    pub exact: bool,
-
-    /// An optional tuple containing the name of the dynamic segment that
-    /// matched the path segment as well as the start and end offset of the
-    /// path segment value.
-    ///
-    pub range: [usize; 2],
-
-    /// The route that matches the path segement at `self.range`.
-    ///
-    pub route: Option<&'a T>,
-
-    param: Option<&'static str>,
-}
 
 /// An iterator over the routes that match a given path.
 ///
 pub struct Matches<'a, T> {
     store: &'a RouteStore<T>,
     iter: IntoIter<Visit>,
-}
-
-impl<'a, T> Match<'a, T> {
-    pub fn param(&self) -> Option<(&'static str, [usize; 2])> {
-        self.param.map(|name| (name, self.range))
-    }
-}
-
-impl<'a, T> Match<'a, Vec<T>> {
-    /// Returns an iterator that yields a reference to each item in the matched
-    /// route.
-    pub fn iter(&self) -> Iter<'a, T> {
-        match self.route {
-            Some(route) => route.iter(),
-            None => [].iter(),
-        }
-    }
 }
 
 impl<'a, T> Matches<'a, T> {
@@ -57,33 +17,31 @@ impl<'a, T> Matches<'a, T> {
 }
 
 impl<'a, T> Iterator for Matches<'a, T> {
-    type Item = Match<'a, T>;
+    type Item = (Option<&'a T>, Option<&'static str>, Visit);
 
     fn next(&mut self) -> Option<Self::Item> {
+        let visited = self.iter.next()?;
         let store = self.store;
-        let next = self.iter.next()?;
-        let node = store.get(next.key);
+        let node = store.get(visited.key);
 
-        Some(Match {
-            exact: next.exact,
-            param: node.param(),
-            range: next.range,
-            route: node.route.map(|key| store.route(key)),
-        })
+        Some((
+            node.route.map(|key| store.route(key)),
+            node.param(),
+            visited,
+        ))
     }
 }
 
 impl<'a, T> DoubleEndedIterator for Matches<'a, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
+        let visited = self.iter.next_back()?;
         let store = self.store;
-        let next = self.iter.next_back()?;
-        let node = store.get(next.key);
+        let node = store.get(visited.key);
 
-        Some(Match {
-            exact: next.exact,
-            param: node.param(),
-            range: next.range,
-            route: node.route.map(|key| store.route(key)),
-        })
+        Some((
+            node.route.map(|key| store.route(key)),
+            node.param(),
+            visited,
+        ))
     }
 }

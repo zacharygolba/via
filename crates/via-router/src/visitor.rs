@@ -4,22 +4,20 @@ use crate::stack_vec::StackVec;
 
 #[derive(Debug)]
 pub struct Visit {
-    /// The key of the node that matches the path segement at `self.range` in the
-    /// route store.
-    ///
-    pub key: usize,
-
-    /// A tuple that contains the start and end offset of the path segment that
-    /// matches the node at `self.key`.
+    /// An array containing the start and end index of the path segment that
+    /// matches self.
     ///
     pub range: [usize; 2],
 
-    /// Indicates whether or not the match is considered an exact match.
-    /// If the match is exact, both the middleware and responders will be
-    /// called during a request. Otherwise, only the middleware will be
-    /// called.
+    /// A boolean that indicates if there could be descendants that also match
+    /// the uri path.
     ///
-    pub exact: bool,
+    pub was_leaf: bool,
+
+    /// The route store key of the node that matches the path segement at
+    /// the match range.
+    ///
+    pub(crate) key: usize,
 }
 
 pub struct Visitor<'a, 'b, T> {
@@ -56,7 +54,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
             range: [0, 0],
             // If there are no path segments to match against, we consider the root
             // node to be an exact match.
-            exact: self.segments.is_empty(),
+            was_leaf: self.segments.is_empty(),
         });
 
         // Begin the search for matches recursively starting with descendants of
@@ -98,10 +96,10 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
 
         // Use the value of `next_index` to determine if we are working with the
         // last path segment in `self.segments`. If so, we'll consider any
-        // matching descendant to be an exact match. We perform this check
-        // eagerly to avoid having to do so for each descendant with a
-        // `Dynamic` or `Static` pattern.
-        let exact = next_index == self.segments.len();
+        // matching descendant to be a leaf node. We perform this check eagerly
+        // to avoid having to do so for each descendant with a `Dynamic` or
+        // `Static` pattern.
+        let was_leaf = next_index == self.segments.len();
 
         let store = self.store;
 
@@ -118,7 +116,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     results.push(Visit {
                         key: next_key,
                         range,
-                        exact,
+                        was_leaf,
                     });
 
                     self.visit_node(results, next_index, next_key);
@@ -128,8 +126,8 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     // it a match regardless of the value of the path segment.
                     results.push(Visit {
                         key: next_key,
-                        exact,
                         range,
+                        was_leaf,
                     });
 
                     self.visit_node(results, next_index, next_key);
@@ -141,13 +139,13 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     // node that match the remaining path segments.
                     results.push(Visit {
                         key: next_key,
-                        // `CatchAll` patterns are always considered an exact match.
-                        exact: true,
                         // The end offset of `path_segment_range` should be the end
                         // offset of the last path segment in the url path since
                         // `CatchAll` patterns match the entire remainder of the
                         // url path from which they are matched.
                         range: [range[0], path_value.len()],
+                        // `CatchAll` patterns are always considered a leaf node.
+                        was_leaf: true,
                     });
                 }
                 _ => {
@@ -190,7 +188,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     // always produce an empty str.
                     range: [0, 0],
                     // `CatchAll` patterns are always considered an exact match.
-                    exact: true,
+                    was_leaf: true,
                 });
             }
         }

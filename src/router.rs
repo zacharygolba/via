@@ -99,24 +99,33 @@ where
         let mut stack = Vec::new();
 
         // Iterate over the routes that match the request's path.
-        for route in routes.rev() {
-            if let Some(param) = route.param() {
-                params.push(param);
+        for (route, param, visited) in routes.rev() {
+            // If there is a dynamic parameter name associated with the route,
+            // build a tuple containing the name and the range of the parameter
+            // value in the request's path.
+            if let Some(name) = param {
+                params.push((name, visited.range));
             }
+
+            let middlewares = match route {
+                Some(vec) => vec,
+                None => continue,
+            };
 
             // Extend `stack` with middleware in `matched` depending on whether
             // or not the middleware expects a partial or exact match.
-            for middleware in route.iter().rev().filter_map(|when| match when {
-                // Include this middleware in `stack` because it expects an
-                // exact match and `matched.exact` is `true`.
-                MatchWhen::Exact(exact) if route.exact => Some(exact),
+            for middleware in middlewares.iter().rev().filter_map(|when| match when {
+                // Include this middleware in `stack` because it expects an exact
+                // match and the visited node is considered a leaf in this
+                // context.
+                MatchWhen::Exact(exact) if visited.was_leaf => Some(exact),
 
-                // Include this middleware in `stack` unconditionally because
-                // it targets partial matches.
+                // Include this middleware in `stack` unconditionally because it
+                // targets partial matches.
                 MatchWhen::Partial(partial) => Some(partial),
 
                 // Exclude this middleware from `stack` because it expects an
-                // exact match and `matched.exact` is `false`.
+                // exact match and the visited node is not a leaf.
                 MatchWhen::Exact(_) => None,
             }) {
                 stack.push(Arc::clone(middleware));

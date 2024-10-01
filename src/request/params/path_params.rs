@@ -10,15 +10,9 @@ impl PathParams {
     }
 
     pub fn get(&self, predicate: &str) -> Option<&[usize; 2]> {
-        self.data.iter().find_map(
-            |(name, at)| {
-                if *name == predicate {
-                    Some(at)
-                } else {
-                    None
-                }
-            },
-        )
+        self.data
+            .iter()
+            .find_map(|(name, at)| if *name == predicate { Some(at) } else { None })
     }
 
     pub fn push(&mut self, param: (&'static str, [usize; 2])) {
