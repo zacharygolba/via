@@ -25,7 +25,7 @@ impl<'a, T> Iterator for Matches<'a, T> {
         let node = store.get(visited.key);
 
         Some((
-            node.route.map(|key| store.route(key)),
+            node.route.and_then(|key| store.route(key)),
             node.param(),
             visited,
         ))
@@ -39,7 +39,7 @@ impl<'a, T> DoubleEndedIterator for Matches<'a, T> {
         let node = store.get(visited.key);
 
         Some((
-            node.route.map(|key| store.route(key)),
+            node.route.and_then(|key| store.route(key)),
             node.param(),
             visited,
         ))
