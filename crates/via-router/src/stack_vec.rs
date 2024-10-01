@@ -32,8 +32,6 @@ fn get<T: Copy, const N: usize>(data: &StackVecInner<T, N>, index: usize) -> Opt
 }
 
 impl<T: Copy, const N: usize> StackVec<T, N> {
-    /// Returns a option containing a reference to the element at `index`.
-    ///
     pub fn new(init: [Option<T>; N]) -> Self {
         let len = init.iter().filter(|entry| entry.is_some()).count();
 
@@ -45,13 +43,13 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
         }
     }
 
-    /// Returns an option containing a reference to the element at `index`.
+    /// Returns a option containing a copy of the element at `index`.
     ///
     pub fn get(&self, index: usize) -> Option<T> {
         get(&self.inner, index)
     }
 
-    /// Returns the number of elements in the vec.
+    /// Returns the number of elements in self.
     ///
     pub fn len(&self) -> usize {
         match &self.inner {
@@ -60,7 +58,7 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
         }
     }
 
-    /// Returns the number of elements in the vec.
+    /// Returns the number of elements in self.
     ///
     pub fn is_empty(&self) -> bool {
         match &self.inner {
@@ -69,7 +67,7 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
         }
     }
 
-    /// Appends an element to the end of the vec.
+    /// Appends an element to the end of self.
     ///
     /// # Panics
     ///
