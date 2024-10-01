@@ -54,18 +54,18 @@ impl<T: Copy, const N: usize> StackVec<T, N> {
     /// Returns the number of elements in the vec.
     ///
     pub fn len(&self) -> usize {
-        match self.inner {
-            StackVecInner::Stack { len, .. } => len,
-            StackVecInner::Heap { ref data } => data.len(),
+        match &self.inner {
+            StackVecInner::Stack { len, .. } => *len,
+            StackVecInner::Heap { data } => data.len(),
         }
     }
 
     /// Returns the number of elements in the vec.
     ///
     pub fn is_empty(&self) -> bool {
-        match self.inner {
-            StackVecInner::Stack { len, .. } => len == 0,
-            StackVecInner::Heap { ref data } => data.is_empty(),
+        match &self.inner {
+            StackVecInner::Stack { len, .. } => *len == 0,
+            StackVecInner::Heap { data } => data.is_empty(),
         }
     }
 
