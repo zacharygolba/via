@@ -104,7 +104,7 @@ where
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
             if let Some(name) = param {
-                params.push((name, visited.range));
+                params.push((name.to_owned(), visited.range));
             }
 
             let middlewares = match route {
