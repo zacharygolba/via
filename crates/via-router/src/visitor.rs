@@ -28,7 +28,7 @@ pub struct Visitor<'a, 'b, T> {
 
     /// A slice of tuples that contain the start and end offset of each path
     /// segment in `self.path_value`.
-    segments: &'b StackVec<[usize; 2], 6>,
+    segments: &'b StackVec<[usize; 2], 5>,
 
     /// A reference to the route store that contains the route tree.
     store: &'a RouteStore<T>,
@@ -41,7 +41,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
     pub fn new(
         path: &'b str,
         store: &'a RouteStore<T>,
-        segments: &'b StackVec<[usize; 2], 6>,
+        segments: &'b StackVec<[usize; 2], 5>,
     ) -> Self {
         let depth = segments.len();
 
@@ -171,7 +171,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
     /// with a `CatchAll` pattern.
     fn visit_node(&self, results: &mut Vec<Visit>, index: usize, key: usize) {
         // Check if there is a path segment at `index` to match against
-        if let Some(range) = self.segments.get(index).copied() {
+        if let Some(range) = self.segments.get(index) {
             return self.visit_descendants(results, range, index, key);
         }
 
