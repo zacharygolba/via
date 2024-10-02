@@ -99,15 +99,15 @@ where
         let mut stack = Vec::new();
 
         // Iterate over the routes that match the request's path.
-        for (route, param, visited) in routes.rev() {
+        for found in routes.rev() {
             // If there is a dynamic parameter name associated with the route,
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
-            if let Some(name) = param {
-                params.push((name.clone(), visited.range));
+            if let Some(param_name) = found.param_name {
+                params.push((param_name.clone(), found.at));
             }
 
-            let middlewares = match route {
+            let middlewares = match found.route {
                 Some(vec) => vec,
                 None => continue,
             };
@@ -118,7 +118,7 @@ where
                 // Include this middleware in `stack` because it expects an exact
                 // match and the visited node is considered a leaf in this
                 // context.
-                MatchWhen::Exact(exact) if visited.was_leaf => Some(exact),
+                MatchWhen::Exact(exact) if found.is_leaf_match => Some(exact),
 
                 // Include this middleware in `stack` unconditionally because it
                 // targets partial matches.

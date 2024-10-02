@@ -1,6 +1,6 @@
 use std::vec::IntoIter;
 
-use crate::path::ParamName;
+use crate::path::Param;
 use crate::routes::RouteStore;
 use crate::visitor::Visited;
 
@@ -11,6 +11,29 @@ pub struct Visit<'a, T> {
     iter: IntoIter<Visited>,
 }
 
+#[derive(Debug)]
+pub struct Found<'a, T> {
+    /// True if there were no more segments to match against the children of the
+    /// matched node. Otherwise, false.
+    ///
+    pub is_leaf_match: bool,
+
+    /// A reference to the name of the dynamic parameter that matched the path
+    /// segment.
+    ///
+    pub param_name: Option<&'a Param>,
+
+    /// A reference to the route referenced by the node that matched the path
+    /// segment.
+    ///
+    pub route: Option<&'a T>,
+
+    /// An array containing the start and end index of the path segment that
+    /// matched the node containing `route`.
+    ///
+    pub at: [usize; 2],
+}
+
 impl<'a, T> Visit<'a, T> {
     pub(crate) fn new(store: &'a RouteStore<T>, iter: IntoIter<Visited>) -> Self {
         Self { store, iter }
@@ -18,18 +41,19 @@ impl<'a, T> Visit<'a, T> {
 }
 
 impl<'a, T> Iterator for Visit<'a, T> {
-    type Item = (Option<&'a T>, Option<&'a ParamName>, Visited);
+    type Item = Found<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let visited = self.iter.next()?;
         let store = self.store;
         let node = store.get(visited.key);
 
-        Some((
-            node.route.and_then(|key| store.route(key)),
-            node.param(),
-            visited,
-        ))
+        Some(Found {
+            is_leaf_match: visited.is_leaf_match,
+            param_name: node.param(),
+            route: node.route.and_then(|key| store.route(key)),
+            at: visited.at,
+        })
     }
 }
 
@@ -39,10 +63,11 @@ impl<'a, T> DoubleEndedIterator for Visit<'a, T> {
         let store = self.store;
         let node = store.get(visited.key);
 
-        Some((
-            node.route.and_then(|key| store.route(key)),
-            node.param(),
-            visited,
-        ))
+        Some(Found {
+            is_leaf_match: visited.is_leaf_match,
+            param_name: node.param(),
+            route: node.route.and_then(|key| store.route(key)),
+            at: visited.at,
+        })
     }
 }

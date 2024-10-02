@@ -1,6 +1,6 @@
 use core::slice::Iter;
 
-use crate::path::{ParamName, Pattern};
+use crate::path::{Param, Pattern};
 
 /// A node in the route tree that represents a single path segment.
 pub struct Node {
@@ -56,7 +56,7 @@ impl Node {
     /// Returns an optional reference to the name of the dynamic parameter
     /// associated with the node. The returned value will be `None` if the
     /// node has a `Root` or `Static` pattern.
-    pub fn param(&self) -> Option<&ParamName> {
+    pub fn param(&self) -> Option<&Param> {
         match &self.pattern {
             Pattern::CatchAll(param) | Pattern::Dynamic(param) => Some(param),
             _ => None,
@@ -141,11 +141,6 @@ impl<T> RouteStore<T> {
 
         self.nodes.push(node);
         key
-    }
-
-    /// Shrinks the capacity of the route store as much as possible.
-    pub fn shrink_to_fit(&mut self) {
-        self.nodes.shrink_to_fit();
     }
 
     /// Returns a shared reference to the node at the given `key`.
