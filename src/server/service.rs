@@ -65,15 +65,15 @@ where
 
         // Build the middleware stack for the request.
         let next = {
-            // Allocate a vec to store the middleware associated with the
-            // request.
-            let mut stack = Vec::new();
-
             // Get an iterator of matched nodes for the uri path.
             let visited = {
                 let path = incoming.uri().path();
                 self.router.lookup(path).rev()
             };
+
+            // Allocate a vec to store the middleware associated with the
+            // request.
+            let mut stack = Vec::new();
 
             // Populate the path params and build middleware stack.
             router::resolve(&mut stack, &mut params, visited);
