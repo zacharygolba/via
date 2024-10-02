@@ -15,7 +15,7 @@ Currently, Via is not published to crates.io. If you wish to use Via during the 
 
 ```toml
 [dependencies]
-via = { git = "https://github.com/zacharygolba/via.git", branch = "feat-multi-route-match-with-slab" }
+via = { git = "https://github.com/zacharygolba/via.git" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -24,33 +24,26 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 Below is a basic example to demonstrate how to use Via to create a simple web server that responds to requests at `/hello/:name` with a personalized greeting.
 
 ```rust
-use via::{Event, Next, Request, Response, Result};
+use via::{Error, Next, Request, Server};
 
-async fn hello(request: Request, _: Next) -> Result<Response> {
-    // Extract the `name` parameter from the request URI.
-    let name = request.param("name").required()?;
-    // Respond with a greeting.
-    Response::text(format!("Hello, {}!", name)).finish()
+async fn hello(request: Request, _: Next) -> Result<String, Error> {
+    // Get a reference to the path parameter `name` from the request uri.
+    let name = request.param("name").percent_decode().into_result()?;
+
+    // Send a plain text response with our greeting message.
+    Ok(format!("Hello, {}!", name))
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Error> {
     // Create a new application.
-    let mut app = via::app(());
+    let mut app = via::new(());
 
     // Define a route that listens on /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
     // Start the server.
-    app.listen(("127.0.0.1", 8080), |event| match event {
-        Event::ConnectionError(error) | Event::UncaughtError(error) => {
-            eprintln!("Error: {}", error);
-        }
-        Event::ServerReady(address) => {
-            println!("Server listening at http://{}", address);
-        }
-    })
-    .await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }
 ```
 
@@ -58,15 +51,15 @@ async fn main() -> Result<()> {
 
 1. **Define a Handler**: The `hello` function is an asynchronous handler that receives a `Request` and a `Next` middleware chain. It extracts the `name` parameter from the URL and returns a `Response` with a personalized greeting.
 
-2. **Create the Application**: Using `via::app(())`, you can create a new instance of the application. This function can also accept shared state.
+2. **Create the Application**: Using `via::new(())`, you can create a new instance of the application. This function can also accept shared state.
 
 3. **Define Routes**: The `app.at("/hello/:name").respond(via::get(hello))` line adds a route that listens for GET requests on `/hello/:name`. The colon (`:`) indicates a dynamic segment in the path, which will match any value and make it available as a parameter.
 
-4. **Start the Server**: The `app.listen(("127.0.0.1", 8080), |event| { ... })` function starts the server and listens for connections on the specified address. The event handler allows for logging errors and confirming when the server is ready.
+4. **Start the Server**: The `Server::new(app).listen(("127.0.0.1", 8080)).await` function starts the server and listens for connections on the specified address.
 
 ### Running the Example
 
-To run this example, `cd` in to `./docs/examples/hello-world`, and then use `cargo run`:
+To run this example, `cd` in to `./examples/hello-world`, and then use `cargo run`:
 
 ```sh
 cargo run
