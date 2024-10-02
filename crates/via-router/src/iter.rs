@@ -31,7 +31,7 @@ pub struct Found<'a, T> {
     /// A reference to the name of the dynamic parameter that matched the path
     /// segment.
     ///
-    pub param: Option<Param>,
+    pub param: Option<&'a Param>,
 
     /// An array containing the start and end index of the path segment that
     /// matched the node containing `route`.
@@ -56,7 +56,7 @@ impl<'a, T> Iterator for Visit<'a, T> {
         Some(Found {
             is_leaf: visited.is_leaf,
             route: node.route.and_then(|key| store.route(key)),
-            param: node.param().cloned(),
+            param: node.param(),
             at: visited.at,
         })
     }
@@ -71,7 +71,7 @@ impl<'a, T> DoubleEndedIterator for Visit<'a, T> {
         Some(Found {
             is_leaf: visited.is_leaf,
             route: node.route.and_then(|key| store.route(key)),
-            param: node.param().cloned(),
+            param: node.param(),
             at: visited.at,
         })
     }

@@ -170,13 +170,18 @@ impl<State> Request<State> {
 }
 
 impl<State> Request<State> {
-    pub(crate) fn new(parts: Box<Parts>, body: RequestBody, state: Arc<State>) -> Self {
+    pub(crate) fn new(
+        parts: Box<Parts>,
+        body: RequestBody,
+        state: Arc<State>,
+        params: PathParams,
+    ) -> Self {
         Self {
+            cookies: None,
             parts,
             body,
             state,
-            cookies: None,
-            params: PathParams::new(),
+            params,
         }
     }
 
