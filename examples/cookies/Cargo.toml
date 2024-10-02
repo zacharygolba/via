@@ -8,7 +8,7 @@ edition = "2021"
 
 [dependencies]
 dotenvy = "0.15.7"
-via = { path = "../../.." }
+via = { path = "../.." }
 
 [dependencies.cookie]
 version = "0.18"

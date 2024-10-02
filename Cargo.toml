@@ -34,4 +34,4 @@ optional = true
 default-features = false
 
 [workspace]
-members = ["crates/*", "docs/examples/*"]
+members = ["crates/*", "examples/*"]

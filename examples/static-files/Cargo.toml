@@ -8,5 +8,5 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-via = { path = "../../.." }
-via-serve-static = { path = "../../../crates/via-serve-static" }
+via = { path = "../.." }
+via-serve-static = { path = "../../crates/via-serve-static" }
