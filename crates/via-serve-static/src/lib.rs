@@ -20,7 +20,7 @@ pub struct ServeStatic<'a, State> {
 pub(crate) struct ServerConfig {
     eager_read_threshold: u64,
     read_stream_timeout: u64,
-    path_param: &'static str,
+    path_param: Box<str>,
     public_dir: Arc<Path>,
     flags: Flags,
 }
@@ -98,14 +98,13 @@ where
             ..
         } = self;
         let mut public_dir = public_dir.as_ref().to_path_buf();
-        let path_param = match self.endpoint.param() {
-            Some(param) => param,
-            None => {
-                return Err(Error::new(
-                    "The provided endpoint does not have a path parameter.".to_owned(),
-                ))
-            }
-        };
+        let path_param = self.endpoint.param().map_or_else(
+            || {
+                let message = "The provided endpoint does not have a path parameter.";
+                Err(Error::new(message.to_owned()))
+            },
+            |value| Ok(value.to_owned().into_boxed_str()),
+        )?;
 
         if public_dir.is_relative() {
             let current_dir = std::env::current_dir()?;

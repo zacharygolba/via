@@ -1,5 +1,6 @@
 use std::vec::IntoIter;
 
+use crate::path::ParamName;
 use crate::routes::RouteStore;
 use crate::visitor::Visited;
 
@@ -17,7 +18,7 @@ impl<'a, T> Visit<'a, T> {
 }
 
 impl<'a, T> Iterator for Visit<'a, T> {
-    type Item = (Option<&'a T>, Option<&'static str>, Visited);
+    type Item = (Option<&'a T>, Option<&'a ParamName>, Visited);
 
     fn next(&mut self) -> Option<Self::Item> {
         let visited = self.iter.next()?;

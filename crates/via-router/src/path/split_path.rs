@@ -1,69 +1,12 @@
 use core::iter::Enumerate;
 use core::str::Bytes;
 
-#[derive(PartialEq)]
-pub enum Pattern {
-    Root,
-    Static(&'static str),
-    Dynamic(&'static str),
-    CatchAll(&'static str),
-}
-
 /// An iterator that yields a tuple containing the start and end offset of each
 /// segment in the url path.
 ///
 pub struct SplitPath<'a> {
     bytes: Enumerate<Bytes<'a>>,
     value: &'a str,
-}
-
-/// Returns an iterator that yields a `Pattern` for each segment in the uri path.
-pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
-    SplitPath::new(path).map(|range| {
-        let value = segment_at(path, &range);
-
-        match value.chars().next() {
-            Some('*') => {
-                // Remove the leading `*` character. If we reach the end of
-                // `value`, default to an empty string.
-                let rest = value.get(1..).unwrap_or_default();
-
-                Pattern::CatchAll(rest)
-            }
-            Some(':') => {
-                // Remove the leading `:` character. If we reach the end of
-                // `value`, default to an empty string.
-                let rest = value.get(1..).unwrap_or_default();
-
-                Pattern::Dynamic(rest)
-            }
-            _ => {
-                // The value is a static segment. Keep it as is.
-                Pattern::Static(value)
-            }
-        }
-    })
-}
-
-// Gets the value of the path segment at `range` from `path`.
-pub fn segment_at<'a>(path: &'a str, range: &[usize; 2]) -> &'a str {
-    match path.get(range[0]..range[1]) {
-        Some(value) => {
-            // The `range` is valid, return it.
-            value
-        }
-        None => {
-            // The range is invalid. This should never happen..
-
-            if cfg!(debug_assertions) {
-                // Panic with a somewhat descriptive error message in debug mode.
-                panic!("invalid path segment for '{}' {:?}", path, range);
-            }
-
-            // Panic with a generic error message in release mode.
-            panic!("invalid path segment");
-        }
-    }
 }
 
 impl<'a> SplitPath<'a> {

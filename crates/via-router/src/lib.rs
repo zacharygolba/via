@@ -7,6 +7,7 @@ mod stack_vec;
 mod visitor;
 
 pub use iter::Visit;
+pub use path::ParamName;
 pub use visitor::Visited;
 
 use path::{Pattern, SplitPath};
@@ -76,7 +77,7 @@ impl<'a, T> Endpoint<'a, T> {
         }
     }
 
-    pub fn param(&self) -> Option<&'static str> {
+    pub fn param(&self) -> Option<&ParamName> {
         self.store.get(self.key).param()
     }
 
@@ -137,6 +138,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::ParamName;
+
     use super::Router;
 
     const PATHS: [&str; 4] = [
@@ -166,8 +169,8 @@ mod tests {
                 let (route, param, visited) = &matches[0];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, None);
-                assert_eq!(*param, None);
+                assert_eq!(route, &None);
+                assert_eq!(param, &None);
                 assert_eq!(&path[start..end], "");
                 assert!(visited.was_leaf);
             }
@@ -178,8 +181,8 @@ mod tests {
                 let (route, param, visited) = &matches[1];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, Some(&()));
-                assert_eq!(*param, Some("path"));
+                assert_eq!(route, &Some(&()));
+                assert_eq!(param, &Some(&ParamName::new("path")));
                 assert_eq!(&path[start..end], "");
                 // Should be considered exact because of the catch-all pattern.
                 assert!(visited.was_leaf);
@@ -198,8 +201,8 @@ mod tests {
                 let (route, param, visited) = &matches[0];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, None);
-                assert_eq!(*param, None);
+                assert_eq!(route, &None);
+                assert_eq!(param, &None);
                 assert_eq!(&path[start..end], "");
                 assert!(!visited.was_leaf);
             }
@@ -210,8 +213,8 @@ mod tests {
                 let (route, param, visited) = &matches[1];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, Some(&()));
-                assert_eq!(*param, Some("path"));
+                assert_eq!(route, &Some(&()));
+                assert_eq!(param, &Some(&ParamName::new("path")));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(visited.was_leaf);
@@ -230,8 +233,8 @@ mod tests {
                 let (route, param, visited) = &matches[0];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, None);
-                assert_eq!(*param, None);
+                assert_eq!(route, &None);
+                assert_eq!(param, &None);
                 assert_eq!(&path[start..end], "");
                 assert!(!visited.was_leaf);
             }
@@ -242,8 +245,8 @@ mod tests {
                 let (route, param, visited) = &matches[1];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, Some(&()));
-                assert_eq!(*param, Some("path"));
+                assert_eq!(route, &Some(&()));
+                assert_eq!(param, &Some(&ParamName::new("path")));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(visited.was_leaf);
@@ -255,8 +258,8 @@ mod tests {
                 let (route, param, visited) = &matches[2];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, None);
-                assert_eq!(*param, None);
+                assert_eq!(route, &None);
+                assert_eq!(param, &None);
                 assert_eq!(&path[start..end], "echo");
                 assert!(!visited.was_leaf);
             }
@@ -267,8 +270,8 @@ mod tests {
                 let (route, param, visited) = &matches[3];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, Some(&()));
-                assert_eq!(*param, Some("path"));
+                assert_eq!(route, &Some(&()));
+                assert_eq!(param, &Some(&ParamName::new("path")));
                 assert_eq!(&path[start..end], "hello/world");
                 assert!(visited.was_leaf);
             }
@@ -286,8 +289,8 @@ mod tests {
                 let (route, param, visited) = &matches[0];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, None);
-                assert_eq!(*param, None);
+                assert_eq!(route, &None);
+                assert_eq!(param, &None);
                 assert_eq!(&path[start..end], "");
                 assert!(!visited.was_leaf);
             }
@@ -298,8 +301,8 @@ mod tests {
                 let (route, param, visited) = &matches[1];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, Some(&()));
-                assert_eq!(*param, Some("path"));
+                assert_eq!(route, &Some(&()));
+                assert_eq!(param, &Some(&ParamName::new("path")));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(visited.was_leaf);
@@ -311,8 +314,8 @@ mod tests {
                 let (route, param, visited) = &matches[2];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, None);
-                assert_eq!(*param, None);
+                assert_eq!(route, &None);
+                assert_eq!(param, &None);
                 assert_eq!(&path[start..end], "articles");
                 assert!(!visited.was_leaf);
             }
@@ -323,8 +326,8 @@ mod tests {
                 let (route, param, visited) = &matches[3];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, Some(&()));
-                assert_eq!(*param, Some("id"));
+                assert_eq!(route, &Some(&()));
+                assert_eq!(param, &Some(&ParamName::new("id")));
                 assert_eq!(&path[start..end], "100");
                 assert!(visited.was_leaf);
             }
@@ -342,8 +345,8 @@ mod tests {
                 let (route, param, visited) = &matches[0];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, None);
-                assert_eq!(*param, None);
+                assert_eq!(route, &None);
+                assert_eq!(param, &None);
                 assert_eq!(&path[start..end], "");
                 assert!(!visited.was_leaf);
             }
@@ -354,8 +357,8 @@ mod tests {
                 let (route, param, visited) = &matches[1];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, Some(&()));
-                assert_eq!(*param, Some("path"));
+                assert_eq!(route, &Some(&()));
+                assert_eq!(param, &Some(&ParamName::new("path")));
                 assert_eq!(&path[start..end], &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(visited.was_leaf);
@@ -367,8 +370,8 @@ mod tests {
                 let (route, param, visited) = &matches[2];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, None);
-                assert_eq!(*param, None);
+                assert_eq!(route, &None);
+                assert_eq!(param, &None);
                 assert_eq!(&path[start..end], "articles");
                 assert!(!visited.was_leaf);
             }
@@ -379,8 +382,8 @@ mod tests {
                 let (route, param, visited) = &matches[3];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, Some(&()));
-                assert_eq!(*param, Some("id"));
+                assert_eq!(route, &Some(&()));
+                assert_eq!(param, &Some(&ParamName::new("id")));
                 assert_eq!(&path[start..end], "100");
                 assert!(!visited.was_leaf);
             }
@@ -391,8 +394,8 @@ mod tests {
                 let (route, param, visited) = &matches[4];
                 let [start, end] = visited.range;
 
-                assert_eq!(*route, Some(&()));
-                assert_eq!(*param, None);
+                assert_eq!(route, &Some(&()));
+                assert_eq!(param, &None);
                 assert_eq!(&path[start..end], "comments");
                 // Should be considered exact because it is the last path segment.
                 assert!(visited.was_leaf);

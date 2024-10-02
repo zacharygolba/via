@@ -1,6 +1,6 @@
 use core::slice::Iter;
 
-use crate::path::Pattern;
+use crate::path::{ParamName, Pattern};
 
 /// A node in the route tree that represents a single path segment.
 pub struct Node {
@@ -56,7 +56,7 @@ impl Node {
     /// Returns an optional reference to the name of the dynamic parameter
     /// associated with the node. The returned value will be `None` if the
     /// node has a `Root` or `Static` pattern.
-    pub fn param(&self) -> Option<&'static str> {
+    pub fn param(&self) -> Option<&ParamName> {
         match &self.pattern {
             Pattern::CatchAll(param) | Pattern::Dynamic(param) => Some(param),
             _ => None,
