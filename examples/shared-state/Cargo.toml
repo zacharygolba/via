@@ -8,4 +8,4 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-via = { path = "../../.." }
+via = { path = "../.." }
