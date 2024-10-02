@@ -115,8 +115,6 @@ fn find_matches_simple(b: &mut Bencher) {
         let _ = router.at(path).get_or_insert_route_with(|| ());
     }
 
-    router.shrink_to_fit();
-
     b.iter(|| {
         router.visit("/help/article/12345678987654321");
     });
@@ -130,8 +128,6 @@ fn find_matches_nested_stack(b: &mut Bencher) {
         let _ = router.at(path).get_or_insert_route_with(|| ());
     }
 
-    router.shrink_to_fit();
-
     b.iter(|| {
         router.visit("/api/v1/products/12345678987654321/edit");
     });
@@ -144,8 +140,6 @@ fn find_matches_nested_heap(b: &mut Bencher) {
     for path in ROUTES {
         let _ = router.at(path).get_or_insert_route_with(|| ());
     }
-
-    router.shrink_to_fit();
 
     b.iter(|| {
         router.visit("/api/v1/products/12345678987654321/comments/12345678987654321");

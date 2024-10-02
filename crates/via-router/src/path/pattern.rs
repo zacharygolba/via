@@ -5,15 +5,15 @@ use super::SplitPath;
 #[derive(PartialEq)]
 pub enum Pattern {
     Root,
-    Static(ParamName),
-    Dynamic(ParamName),
-    CatchAll(ParamName),
+    Static(Param),
+    Dynamic(Param),
+    CatchAll(Param),
 }
 
 /// An identifier for a named path segment.
 ///
 #[derive(Debug, PartialEq)]
-pub struct ParamName {
+pub struct Param {
     ident: Box<str>,
 }
 
@@ -26,27 +26,27 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
         match segment.chars().next() {
             Some(':') => {
                 let rest = segment.get(1..).unwrap_or("");
-                Pattern::Dynamic(ParamName::new(rest))
+                Pattern::Dynamic(Param::new(rest))
             }
             Some('*') => {
                 let rest = segment.get(1..).unwrap_or("");
-                Pattern::CatchAll(ParamName::new(rest))
+                Pattern::CatchAll(Param::new(rest))
             }
             _ => {
                 // Segment does not contain a dynamic parameter.
-                Pattern::Static(ParamName::new(segment))
+                Pattern::Static(Param::new(segment))
             }
         }
     })
 }
 
-impl ParamName {
+impl Param {
     pub fn as_str(&self) -> &str {
         &self.ident
     }
 }
 
-impl ParamName {
+impl Param {
     pub(crate) fn new(ident: &str) -> Self {
         Self {
             ident: ident.into(),
@@ -54,7 +54,7 @@ impl ParamName {
     }
 }
 
-impl Clone for ParamName {
+impl Clone for Param {
     fn clone(&self) -> Self {
         Self {
             ident: self.ident.clone(),
@@ -62,7 +62,7 @@ impl Clone for ParamName {
     }
 }
 
-impl Display for ParamName {
+impl Display for Param {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         Display::fmt(&self.ident, f)
     }

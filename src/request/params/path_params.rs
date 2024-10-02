@@ -1,8 +1,8 @@
 use std::fmt::{self, Debug, Formatter};
-use via_router::ParamName;
+use via_router::Param;
 
 pub struct PathParams {
-    data: Vec<(ParamName, [usize; 2])>,
+    data: Vec<(Param, [usize; 2])>,
 }
 
 impl PathParams {
@@ -20,7 +20,7 @@ impl PathParams {
         })
     }
 
-    pub fn push(&mut self, param: (ParamName, [usize; 2])) {
+    pub fn push(&mut self, param: (Param, [usize; 2])) {
         self.data.push(param);
     }
 }
