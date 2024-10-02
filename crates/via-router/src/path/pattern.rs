@@ -1,4 +1,5 @@
 use std::fmt::{self, Debug, Display};
+use std::sync::Arc;
 
 use super::SplitPath;
 
@@ -14,7 +15,7 @@ pub enum Pattern {
 ///
 #[derive(Debug, PartialEq)]
 pub struct Param {
-    ident: Box<str>,
+    ident: Arc<str>,
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
