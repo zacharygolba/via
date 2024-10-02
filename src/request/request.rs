@@ -189,11 +189,6 @@ impl<State> Request<State> {
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
         self.cookies.get_or_insert_with(Default::default)
     }
-
-    /// Returns a mutable reference to the cookies associated with the request.
-    pub(crate) fn params_mut(&mut self) -> &mut PathParams {
-        &mut self.params
-    }
 }
 
 impl<State> Debug for Request<State> {

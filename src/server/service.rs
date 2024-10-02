@@ -59,8 +59,31 @@ where
     type Response = HttpResponse;
 
     fn call(&self, incoming: HttpRequest) -> Self::Future {
+        // Allocate a vec to store the path parameters associated with the
+        // request.
+        let mut params = PathParams::new(Vec::new());
+
+        // Build the middleware stack for the request.
+        let next = {
+            // Allocate a vec to store the middleware associated with the
+            // request.
+            let mut stack = Vec::new();
+
+            // Get an iterator of matched nodes for the uri path.
+            let visited = {
+                let path = incoming.uri().path();
+                self.router.lookup(path).rev()
+            };
+
+            // Populate the path params and build middleware stack.
+            router::resolve(&mut stack, &mut params, visited);
+
+            // Wrap the middleware stack with `via::Next`.
+            Next::new(stack)
+        };
+
         // Wrap the incoming request in with `via::Request`.
-        let mut request = {
+        let request = {
             // Destructure the incoming request into its component parts.
             let (parts, body) = incoming.into_parts();
 
@@ -78,32 +101,7 @@ where
             // external service.
             let state = Arc::clone(&self.state);
 
-            // Allocate a vec to store the path parameters associated with the
-            // request.
-            let params = PathParams::new(Vec::new());
-
             Request::new(parts, body, state, params)
-        };
-
-        // Build the middleware stack for the request.
-        let next = {
-            // Get an iterator of matched nodes for the uri path.
-            let mut visited = {
-                let path = request.uri().path();
-                self.router.lookup(path).rev()
-            };
-
-            // Allocate a vec to store the middleware associated with the
-            // request.
-            let mut stack = Vec::new();
-
-            // Get a mutable reference to the request's path parameters.
-            let params = request.params_mut();
-
-            // Populate the path params and build middleware stack.
-            router::resolve(&mut stack, params, &mut visited);
-
-            Next::new(stack)
         };
 
         // Call the middleware stack and return a Future that resolves to

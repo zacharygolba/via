@@ -31,7 +31,7 @@ pub struct Router<State> {
 pub fn resolve<State>(
     stack: &mut Vec<ArcMiddleware<State>>,
     params: &mut PathParams,
-    visited: &mut Rev<Visit<Vec<MatchWhen<State>>>>,
+    visited: Rev<Visit<Vec<MatchWhen<State>>>>,
 ) {
     // Iterate over the routes that match the request's path.
     for found in visited {
