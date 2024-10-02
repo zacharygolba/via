@@ -42,8 +42,8 @@ impl<'a, State> Endpoint<'a, State> {
         self
     }
 
-    pub fn param(&self) -> Option<&'static str> {
-        self.inner.param()
+    pub fn param(&self) -> Option<&str> {
+        self.inner.param().map(|name| name.as_str())
     }
 
     pub fn include<T>(&mut self, middleware: T) -> &mut Self
@@ -104,7 +104,7 @@ where
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
             if let Some(name) = param {
-                params.push((name.to_owned(), visited.range));
+                params.push((name.clone(), visited.range));
             }
 
             let middlewares = match route {

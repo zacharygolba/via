@@ -1,4 +1,4 @@
-use crate::path::{self, Pattern};
+use crate::path::Pattern;
 use crate::routes::RouteStore;
 use crate::stack_vec::StackVec;
 
@@ -88,7 +88,10 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         // Get the value of the path segment at `index`. We'll eagerly borrow
         // and cache this slice from `self.path_value` to avoid having to build
         // the reference for each descendant with a `Static` pattern.
-        let path_segment = path::segment_at(path_value, &range);
+        let path_segment = {
+            let [start, end] = range;
+            path_value.get(start..end).unwrap_or("")
+        };
 
         // Eagerly calculate and store the next index to avoid having to do so
         // for each descendant with a `Dynamic` or `Static` pattern.
@@ -109,8 +112,8 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
             let descendant = store.get(next_key);
 
             // Check if `descendant` has a pattern that matches `path_segment`.
-            match descendant.pattern {
-                Pattern::Static(value) if value == path_segment => {
+            match &descendant.pattern {
+                Pattern::Static(value) if path_segment == value.as_str() => {
                     // The next node has a `Static` pattern that matches the value
                     // of the path segment.
                     results.push(Visited {
