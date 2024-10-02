@@ -6,8 +6,8 @@ pub struct PathParams {
 }
 
 impl PathParams {
-    pub fn new() -> Self {
-        Self { data: Vec::new() }
+    pub fn new(data: Vec<(Param, [usize; 2])>) -> Self {
+        Self { data }
     }
 
     pub fn get(&self, predicate: &str) -> Option<&[usize; 2]> {
@@ -28,11 +28,5 @@ impl PathParams {
 impl Debug for PathParams {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Debug::fmt(&self.data, f)
-    }
-}
-
-impl Default for PathParams {
-    fn default() -> Self {
-        Self::new()
     }
 }

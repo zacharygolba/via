@@ -7,9 +7,9 @@ use std::task::{Context, Poll};
 
 use crate::body::{AnyBody, ByteBuffer};
 use crate::middleware::BoxFuture;
-use crate::request::{Request, RequestBody};
-use crate::router::Router;
-use crate::{Error, Response};
+use crate::request::{PathParams, Request, RequestBody};
+use crate::router::{self, Router};
+use crate::{Error, Next, Response};
 
 /// The request type used by our hyper service. This is the type that we will
 /// wrap in a `via::Request` and pass to the middleware stack.
@@ -64,6 +64,9 @@ where
             // Destructure the incoming request into its component parts.
             let (parts, body) = incoming.into_parts();
 
+            // Allocate the metadata associated with the request on the heap.
+            // This keeps the size of the request type small enough to pass
+            // around by value.
             let parts = Box::new(parts);
 
             // Wrap the request body with `RequestBody`.
@@ -75,18 +78,32 @@ where
             // external service.
             let state = Arc::clone(&self.state);
 
-            Request::new(parts, body, state)
+            // Allocate a vec to store the path parameters associated with the
+            // request.
+            let params = PathParams::new(Vec::new());
+
+            Request::new(parts, body, state, params)
         };
 
         // Build the middleware stack for the request.
         let next = {
-            // Get a Vec of routes that match the uri path.
-            let routes = self.router.lookup(request.uri().path());
+            // Get an iterator of matched nodes for the uri path.
+            let mut visited = {
+                let path = request.uri().path();
+                self.router.lookup(path).rev()
+            };
+
+            // Allocate a vec to store the middleware associated with the
+            // request.
+            let mut stack = Vec::new();
 
             // Get a mutable reference to the request's path parameters.
             let params = request.params_mut();
 
-            self.router.resolve(params, routes)
+            // Populate the path params and build middleware stack.
+            router::resolve(&mut stack, params, &mut visited);
+
+            Next::new(stack)
         };
 
         // Call the middleware stack and return a Future that resolves to
