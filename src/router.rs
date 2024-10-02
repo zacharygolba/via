@@ -103,8 +103,8 @@ where
             // If there is a dynamic parameter name associated with the route,
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
-            if let Some(param_name) = found.param_name {
-                params.push((param_name.clone(), found.at));
+            if let Some(param) = found.param {
+                params.push((param, found.at));
             }
 
             let middlewares = match found.route {
@@ -118,7 +118,7 @@ where
                 // Include this middleware in `stack` because it expects an exact
                 // match and the visited node is considered a leaf in this
                 // context.
-                MatchWhen::Exact(exact) if found.is_leaf_match => Some(exact),
+                MatchWhen::Exact(exact) if found.is_leaf => Some(exact),
 
                 // Include this middleware in `stack` unconditionally because it
                 // targets partial matches.

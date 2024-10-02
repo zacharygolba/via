@@ -7,7 +7,7 @@ pub struct Visited {
     /// True if there were no more segments to match against the children of the
     /// matched node. Otherwise, false.
     ///
-    pub is_leaf_match: bool,
+    pub is_leaf: bool,
 
     /// An array containing the start and end index of the path segment that
     /// matched the node containing `route`.
@@ -47,7 +47,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         results.push(Visited {
             // If there are no path segments to match against, we consider the
             // root node to be an exact match.
-            is_leaf_match: self.segments.is_empty(),
+            is_leaf: self.segments.is_empty(),
             // The root node's key is always `0`.
             key: 0,
             // The root node's path segment range should produce to an empty str.
@@ -99,7 +99,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
         // matching descendant to be a leaf node. We perform this check eagerly
         // to avoid having to do so for each descendant with a `Dynamic` or
         // `Static` pattern.
-        let is_leaf_match = next_index == self.segments.len();
+        let is_leaf = next_index == self.segments.len();
 
         let store = self.store;
 
@@ -114,7 +114,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     // The next node has a `Static` pattern that matches the value
                     // of the path segment.
                     results.push(Visited {
-                        is_leaf_match,
+                        is_leaf,
                         key: next_key,
                         at: range,
                     });
@@ -125,7 +125,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     // The next node has a `Dynamic` pattern. Therefore, we consider
                     // it a match regardless of the value of the path segment.
                     results.push(Visited {
-                        is_leaf_match,
+                        is_leaf,
                         key: next_key,
                         at: range,
                     });
@@ -139,7 +139,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                     // node that match the remaining path segments.
                     results.push(Visited {
                         // `CatchAll` patterns are always considered a leaf node.
-                        is_leaf_match: true,
+                        is_leaf: true,
                         key: next_key,
                         // The end offset of `path_segment_range` should be the end
                         // offset of the last path segment in the url path since
@@ -182,7 +182,7 @@ impl<'a, 'b, T> Visitor<'a, 'b, T> {
                 // search for adjacent nodes with a `CatchAll` pattern.
                 results.push(Visited {
                     // `CatchAll` patterns are always considered an exact match.
-                    is_leaf_match: true,
+                    is_leaf: true,
                     key: next_key,
                     // Due to the fact we are looking for `CatchAll` patterns as
                     // an immediate descendant of a node that we consider a match,
