@@ -11,7 +11,7 @@ Welcome to **Via**, an asynchronous web framework for Rust, designed to be simpl
 
 ## Getting Started
 
-First add the following to dependencies section of your `Cargo.toml`:
+Add the following to dependencies section of your `Cargo.toml`:
 
 ```toml
 [dependencies]
