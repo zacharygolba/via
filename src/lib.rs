@@ -1,3 +1,17 @@
+//! A multi-threaded web framework built on top of Hyper and Tokio for people who
+//! appreciate simplicity.
+//!
+//! Documentation is sparse at the moment, but the code is well-commented for
+//! the most part.
+//!
+//! If you're interested in contributing, helping with documentation is a great
+//! starting point.
+//!
+//! Check out the
+//! [official examples](https://github.com/zacharygolba/via/tree/main/examples)
+//! to see how to use Via.
+//!
+
 #![allow(clippy::module_inception)]
 
 pub mod body;
