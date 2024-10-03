@@ -1,5 +1,4 @@
-//! A multi-threaded web framework built on top of Hyper and Tokio for people who
-//! appreciate simplicity.
+//! An async multi-threaded web framework for people who appreciate simplicity.
 //!
 //! Documentation is sparse at the moment, but the code is well-commented for
 //! the most part.
