@@ -2,25 +2,25 @@ use std::fmt::{self, Debug, Formatter};
 use via_router::Param;
 
 pub struct PathParams {
-    data: Vec<(Param, [usize; 2])>,
+    data: Vec<(Param, usize, usize)>,
 }
 
 impl PathParams {
-    pub fn new(data: Vec<(Param, [usize; 2])>) -> Self {
+    pub fn new(data: Vec<(Param, usize, usize)>) -> Self {
         Self { data }
     }
 
-    pub fn get(&self, predicate: &str) -> Option<&[usize; 2]> {
-        self.data.iter().find_map(|(name, at)| {
+    pub fn get(&self, predicate: &str) -> Option<(usize, usize)> {
+        self.data.iter().find_map(|(name, start, end)| {
             if predicate == name.as_str() {
-                Some(at)
+                Some((*start, *end))
             } else {
                 None
             }
         })
     }
 
-    pub fn push(&mut self, param: (Param, [usize; 2])) {
+    pub fn push(&mut self, param: (Param, usize, usize)) {
         self.data.push(param);
     }
 }

@@ -1,8 +1,8 @@
-use std::fmt::{self, Debug, Display};
+use core::fmt::{self, Display};
 
 use super::SplitPath;
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Pattern {
     Root,
     Static(Param),
@@ -12,15 +12,15 @@ pub enum Pattern {
 
 /// An identifier for a named path segment.
 ///
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Debug, PartialEq)]
 pub struct Param {
-    ident: Box<str>,
+    ident: &'static str,
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
-    SplitPath::new(path).map(|[start, end]| {
+    SplitPath::new(path).map(|(start, end)| {
         let segment = path.get(start..end).unwrap_or("");
 
         match segment.chars().next() {
@@ -41,29 +41,31 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
 }
 
 impl Param {
-    pub fn as_str(&self) -> &str {
-        &self.ident
+    pub fn as_str(&self) -> &'static str {
+        self.ident
     }
 }
 
 impl Param {
-    pub(crate) fn new(ident: &str) -> Self {
-        Self {
-            ident: ident.into(),
-        }
+    pub(crate) fn new(ident: &'static str) -> Self {
+        Self { ident }
     }
 }
 
 impl Clone for Param {
     fn clone(&self) -> Self {
-        Self {
-            ident: self.ident.clone(),
-        }
+        Self { ident: self.ident }
     }
 }
 
 impl Display for Param {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         Display::fmt(&self.ident, f)
+    }
+}
+
+impl PartialEq<str> for Param {
+    fn eq(&self, other: &str) -> bool {
+        self.ident == other
     }
 }

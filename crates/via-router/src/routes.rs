@@ -3,6 +3,8 @@ use core::slice::Iter;
 use crate::path::{Param, Pattern};
 
 /// A node in the route tree that represents a single path segment.
+///
+#[derive(Debug)]
 pub struct Node {
     /// The indices of the nodes that are reachable from the current node.
     pub entries: Option<Vec<usize>>,
@@ -56,8 +58,8 @@ impl Node {
     /// Returns an optional reference to the name of the dynamic parameter
     /// associated with the node. The returned value will be `None` if the
     /// node has a `Root` or `Static` pattern.
-    pub fn param(&self) -> Option<&Param> {
-        match &self.pattern {
+    pub fn param(&self) -> Option<Param> {
+        match self.pattern {
             Pattern::CatchAll(param) | Pattern::Dynamic(param) => Some(param),
             _ => None,
         }

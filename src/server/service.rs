@@ -8,7 +8,7 @@ use std::task::{Context, Poll};
 use crate::body::{AnyBody, ByteBuffer};
 use crate::middleware::BoxFuture;
 use crate::request::{PathParams, Request, RequestBody};
-use crate::router::{self, Router};
+use crate::router::Router;
 use crate::{Error, Next, Response};
 
 /// The request type used by our hyper service. This is the type that we will
@@ -59,24 +59,19 @@ where
     type Response = HttpResponse;
 
     fn call(&self, incoming: HttpRequest) -> Self::Future {
-        // Allocate a vec to store the path parameters associated with the
-        // request.
+        // Allocate a vec for the path parameters associated with the request.
         let mut params = PathParams::new(Vec::new());
+
+        // Allocate a vec for the middleware associated with the request.
+        let mut stack = Vec::new();
 
         // Build the middleware stack for the request.
         let next = {
             // Get an iterator of matched nodes for the uri path.
-            let visited = {
-                let path = incoming.uri().path();
-                self.router.lookup(path).rev()
-            };
-
-            // Allocate a vec to store the middleware associated with the
-            // request.
-            let mut stack = Vec::new();
+            let visited = self.router.lookup(incoming.uri().path());
 
             // Populate the path params and build middleware stack.
-            router::resolve(&mut stack, &mut params, visited);
+            self.router.resolve(&mut stack, &mut params, visited);
 
             // Wrap the middleware stack with `via::Next`.
             Next::new(stack)
