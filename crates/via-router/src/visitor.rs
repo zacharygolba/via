@@ -1,4 +1,4 @@
-use crate::path::{Param, Pattern, Span};
+use crate::path::{Param, Pattern, SegmentAt};
 use crate::routes::RouteStore;
 use crate::stack_vec::StackVec;
 
@@ -22,18 +22,18 @@ pub struct Found {
     /// An array containing the start and end index of the path segment that
     /// matched the node containing `route`.
     ///
-    pub at: Span,
+    pub at: SegmentAt,
 }
 
 pub fn visit<T>(
     path: &str,
     store: &RouteStore<T>,
-    segments: &StackVec<Span, 5>,
+    segments: &StackVec<SegmentAt, 5>,
 ) -> Vec<(Option<usize>, Found)> {
     let mut results = Vec::new();
     let mut found = Found {
         // The root node's path segment range should produce to an empty str.
-        at: Span::new(0, 0),
+        at: SegmentAt::new(0, 0),
         param: None,
         // Assume we have segments is not empty.
         is_leaf: false,
@@ -78,11 +78,11 @@ fn visit_node<T>(
     // A reference to the route store that contains the route tree.
     store: &RouteStore<T>,
 
-    segments: &StackVec<Span, 5>,
+    segments: &StackVec<SegmentAt, 5>,
 
     // The start and end offset of the path segment at `index` in
     // `self.path_value`.
-    range: &Span,
+    range: &SegmentAt,
 
     // The index of the path segment in `self.segments` that we are matching
     // against the node at `key`.
@@ -170,7 +170,7 @@ fn visit_node<T>(
                     // offset of the last path segment in the url path since
                     // `CatchAll` patterns match the entire remainder of the
                     // url path from which they are matched.
-                    at: Span::new(range.start, path.len()),
+                    at: SegmentAt::new(range.start, path.len()),
                     param: Some(param.clone()),
                     // `CatchAll` patterns are always considered a leaf node.
                     is_leaf: true,
@@ -218,7 +218,7 @@ fn visit_index<T>(
                 // an immediate descendant of a node that we consider a match,
                 // we can safely assume that the path segment range should
                 // always produce an empty str.
-                at: Span::new(0, 0),
+                at: SegmentAt::new(0, 0),
                 param: Some(param.clone()),
                 // `CatchAll` patterns are always considered an exact match.
                 is_leaf: true,
