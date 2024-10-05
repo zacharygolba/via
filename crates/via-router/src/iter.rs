@@ -21,7 +21,7 @@ impl<'a, T> Iterator for Visit<'a, T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let (key, found) = self.iter.next()?;
-        let route = key.and_then(|k| self.store.route(k));
+        let route = key.and_then(|route_key| self.store.route(route_key));
 
         Some((route, found))
     }
@@ -30,7 +30,7 @@ impl<'a, T> Iterator for Visit<'a, T> {
 impl<'a, T> DoubleEndedIterator for Visit<'a, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         let (key, found) = self.iter.next_back()?;
-        let route = key.and_then(|k| self.store.route(k));
+        let route = key.and_then(|route_key| self.store.route(route_key));
 
         Some((route, found))
     }
