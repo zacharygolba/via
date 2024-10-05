@@ -1,9 +1,8 @@
-use std::iter::Rev;
 use std::sync::Arc;
-use via_router::Visit;
 
-use crate::middleware::{ArcMiddleware, Middleware};
+use crate::middleware::Middleware;
 use crate::request::PathParams;
+use crate::Next;
 
 /// An enum that wraps middleware before it's added to the router, specifying
 /// whether the middleware should apply to partial or exact matches of a
@@ -26,46 +25,6 @@ pub struct Endpoint<'a, State> {
 
 pub struct Router<State> {
     inner: via_router::Router<Vec<MatchWhen<State>>>,
-}
-
-pub fn resolve<State>(
-    stack: &mut Vec<ArcMiddleware<State>>,
-    params: &mut PathParams,
-    visited: Rev<Visit<Vec<MatchWhen<State>>>>,
-) {
-    // Iterate over the routes that match the request's path.
-    for (route, found) in visited {
-        // If there is a dynamic parameter name associated with the route,
-        // build a tuple containing the name and the range of the parameter
-        // value in the request's path.
-        if let Some(param) = found.param {
-            params.push((param, found.at));
-        }
-
-        let middlewares = match route {
-            Some(vec) => vec,
-            None => continue,
-        };
-
-        // Extend `stack` with middleware in `matched` depending on whether
-        // or not the middleware expects a partial or exact match.
-        for middleware in middlewares.iter().rev().filter_map(|when| match when {
-            // Include this middleware in `stack` because it expects an exact
-            // match and the visited node is considered a leaf in this
-            // context.
-            MatchWhen::Exact(exact) if found.is_leaf => Some(exact),
-
-            // Include this middleware in `stack` unconditionally because it
-            // targets partial matches.
-            MatchWhen::Partial(partial) => Some(partial),
-
-            // Exclude this middleware from `stack` because it expects an
-            // exact match and the visited node is not a leaf.
-            MatchWhen::Exact(_) => None,
-        }) {
-            stack.push(Arc::clone(middleware));
-        }
-    }
 }
 
 impl<'a, State> Endpoint<'a, State> {
@@ -128,7 +87,43 @@ where
         }
     }
 
-    pub fn lookup<'a>(&'a self, path: &str) -> Visit<'a, Vec<MatchWhen<State>>> {
-        self.inner.visit(path)
+    pub fn lookup(&self, path: &str, params: &mut PathParams) -> Next<State> {
+        let mut stack = Vec::new();
+
+        // Iterate over the routes that match the request's path.
+        for found in self.inner.visit(path).into_iter().rev() {
+            // If there is a dynamic parameter name associated with the route,
+            // build a tuple containing the name and the range of the parameter
+            // value in the request's path.
+            if let Some(param) = found.param {
+                params.push((param, found.at));
+            }
+
+            let route = match found.route {
+                Some(vec) => vec,
+                None => continue,
+            };
+
+            // Extend `stack` with middleware in `matched` depending on whether
+            // or not the middleware expects a partial or exact match.
+            for middleware in route.iter().rev().filter_map(|when| match when {
+                // Include this middleware in `stack` because it expects an exact
+                // match and the visited node is considered a leaf in this
+                // context.
+                MatchWhen::Exact(exact) if found.is_leaf => Some(exact),
+
+                // Include this middleware in `stack` unconditionally because it
+                // targets partial matches.
+                MatchWhen::Partial(partial) => Some(partial),
+
+                // Exclude this middleware from `stack` because it expects an
+                // exact match and the visited node is not a leaf.
+                MatchWhen::Exact(_) => None,
+            }) {
+                stack.push(Arc::clone(middleware));
+            }
+        }
+
+        Next::new(stack)
     }
 }

@@ -7,9 +7,9 @@ use std::task::{Context, Poll};
 
 use crate::body::{AnyBody, ByteBuffer};
 use crate::middleware::BoxFuture;
-use crate::request::{PathParams, Request, RequestBody};
-use crate::router::{self, Router};
-use crate::{Error, Next, Response};
+use crate::request::{Request, RequestBody};
+use crate::router::Router;
+use crate::{Error, Response};
 
 /// The request type used by our hyper service. This is the type that we will
 /// wrap in a `via::Request` and pass to the middleware stack.
@@ -59,31 +59,8 @@ where
     type Response = HttpResponse;
 
     fn call(&self, incoming: HttpRequest) -> Self::Future {
-        // Allocate a vec to store the path parameters associated with the
-        // request.
-        let mut params = PathParams::new(Vec::new());
-
-        // Build the middleware stack for the request.
-        let next = {
-            // Get an iterator of matched nodes for the uri path.
-            let visited = {
-                let path = incoming.uri().path();
-                self.router.lookup(path).rev()
-            };
-
-            // Allocate a vec to store the middleware associated with the
-            // request.
-            let mut stack = Vec::new();
-
-            // Populate the path params and build middleware stack.
-            router::resolve(&mut stack, &mut params, visited);
-
-            // Wrap the middleware stack with `via::Next`.
-            Next::new(stack)
-        };
-
         // Wrap the incoming request in with `via::Request`.
-        let request = {
+        let mut request = {
             // Destructure the incoming request into its component parts.
             let (parts, body) = incoming.into_parts();
 
@@ -101,7 +78,14 @@ where
             // external service.
             let state = Arc::clone(&self.state);
 
-            Request::new(parts, body, state, params)
+            Request::new(parts, body, state)
+        };
+
+        let next = {
+            let path = request.parts.uri.path();
+            let params = &mut request.params;
+
+            self.router.lookup(path, params)
         };
 
         // Call the middleware stack and return a Future that resolves to
