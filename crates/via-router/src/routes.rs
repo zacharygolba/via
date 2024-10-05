@@ -4,14 +4,14 @@ use crate::path::{Param, Pattern};
 
 /// A node in the route tree that represents a single path segment.
 pub struct Node {
-    /// The indices of the nodes that are reachable from the current node.
-    pub entries: Option<Vec<usize>>,
-
     /// The pattern used to match the node against a path segment.
     pub pattern: Pattern,
 
     /// The index of the route in the route store associated with the node.
     pub route: Option<usize>,
+
+    /// The indices of the nodes that are reachable from the current node.
+    entries: Vec<usize>,
 }
 
 /// A mutable representation of a single node the route store. This type is used
@@ -39,7 +39,7 @@ impl Node {
     pub fn new(pattern: Pattern) -> Self {
         Self {
             pattern,
-            entries: None,
+            entries: Vec::new(),
             route: None,
         }
     }
@@ -47,10 +47,7 @@ impl Node {
     /// Returns an iterator that yields the indices of the nodes that are
     /// reachable from `self`.
     pub fn entries(&self) -> Iter<usize> {
-        match &self.entries {
-            Some(entries) => entries.iter(),
-            None => [].iter(),
-        }
+        self.entries.iter()
     }
 
     /// Returns an optional reference to the name of the dynamic parameter
@@ -67,7 +64,7 @@ impl Node {
 impl Node {
     /// Pushes a new key into the entries of the node and return it.
     fn push(&mut self, key: usize) -> usize {
-        self.entries.get_or_insert_with(Vec::new).push(key);
+        self.entries.push(key);
         key
     }
 }
