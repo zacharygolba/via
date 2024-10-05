@@ -7,12 +7,11 @@ mod stack_vec;
 mod visitor;
 
 pub use iter::{Found, Visit};
-pub use path::Param;
+pub use path::{Param, Span};
 
 use path::{Pattern, SplitPath};
 use routes::{Node, RouteStore};
 use stack_vec::StackVec;
-use visitor::Visitor;
 
 pub struct Router<T> {
     store: RouteStore<T>,
@@ -41,16 +40,15 @@ impl<T> Router<T> {
     }
 
     pub fn visit<'a>(&'a self, path: &str) -> Visit<'a, T> {
-        let mut segments = StackVec::new([None; 5]);
+        let mut segments = StackVec::new([None, None, None, None, None]);
 
         for segment in SplitPath::new(path) {
             segments.push(segment);
         }
 
-        let mut results = Vec::new();
         let store = &self.store;
+        let results = visitor::visit(path, store, &segments);
 
-        Visitor::new(path, store, &segments).visit(&mut results);
         Visit::new(store, results.into_iter())
     }
 }
@@ -118,11 +116,7 @@ where
         }
     }
 
-    let next_index = routes.entry(into_index).push(Node {
-        pattern,
-        entries: None,
-        route: None,
-    });
+    let next_index = routes.entry(into_index).push(Node::new(pattern));
 
     // If the pattern does not exist in the node at `current_key`, we need to create
     // a new node as a descendant of the node at `current_key` and then insert it
@@ -130,270 +124,270 @@ where
     insert(routes, segments, next_index)
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::ParamName;
+#[cfg(test)]
+mod tests {
+    use crate::path::{Param, Span};
 
-//     use super::Router;
+    use super::Router;
 
-//     const PATHS: [&str; 4] = [
-//         "/*path",
-//         "/echo/*path",
-//         "/articles/:id",
-//         "/articles/:id/comments",
-//     ];
+    const PATHS: [&str; 4] = [
+        "/*path",
+        "/echo/*path",
+        "/articles/:id",
+        "/articles/:id/comments",
+    ];
 
-//     #[test]
-//     fn test_router_visit() {
-//         let mut router = Router::new();
+    #[test]
+    fn test_router_visit() {
+        let mut router = Router::new();
 
-//         for path in &PATHS {
-//             let _ = router.at(path).get_or_insert_route_with(|| ());
-//         }
+        for path in &PATHS {
+            let _ = router.at(path).get_or_insert_route_with(|| ());
+        }
 
-//         {
-//             let path = "/";
-//             let matches: Vec<_> = router.visit(path).collect();
+        {
+            let path = "/";
+            let matches: Vec<_> = router.visit(path).collect();
 
-//             assert_eq!(matches.len(), 2);
+            assert_eq!(matches.len(), 2);
 
-//             {
-//                 // /
-//                 // ^ as Pattern::Root
-//                 let matched = &matches[0];
-//                 let [start, end] = matched.range;
+            {
+                // /
+                // ^ as Pattern::Root
+                let (route, found) = &matches[0];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, None);
-//                 assert_eq!(matched.param, None);
-//                 assert_eq!(&path[start..end], "");
-//                 assert!(matched.was_leaf);
-//             }
+                assert_eq!(route, &None);
+                assert_eq!(found.param, None);
+                assert_eq!(&path[start..end], "");
+                assert!(found.is_leaf);
+            }
 
-//             {
-//                 // /
-//                 //  ^ as Pattern::CatchAll("*path")
-//                 let matched = &matches[1];
-//                 let [start, end] = matched.range;
+            {
+                // /
+                //  ^ as Pattern::CatchAll("*path")
+                let (route, found) = &matches[1];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, Some(&()));
-//                 assert_eq!(matched.param, Some(&ParamName::new("path")));
-//                 assert_eq!(&path[start..end], "");
-//                 // Should be considered exact because of the catch-all pattern.
-//                 assert!(matched.was_leaf);
-//             }
-//         }
+                assert_eq!(route, &Some(&()));
+                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(&path[start..end], "");
+                // Should be considered exact because of the catch-all pattern.
+                assert!(found.is_leaf);
+            }
+        }
 
-//         {
-//             let path = "/not/a/path";
-//             let matches: Vec<_> = router.visit(path).collect();
+        {
+            let path = "/not/a/path";
+            let matches: Vec<_> = router.visit(path).collect();
 
-//             assert_eq!(matches.len(), 2);
+            assert_eq!(matches.len(), 2);
 
-//             {
-//                 // /not/a/path
-//                 // ^ as Pattern::Root
-//                 let matched = &matches[0];
-//                 let [start, end] = matched.range;
+            {
+                // /not/a/path
+                // ^ as Pattern::Root
+                let (route, found) = &matches[0];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, None);
-//                 assert_eq!(matched.param, None);
-//                 assert_eq!(&path[start..end], "");
-//                 assert!(!matched.was_leaf);
-//             }
+                assert_eq!(route, &None);
+                assert_eq!(found.param, None);
+                assert_eq!(&path[start..end], "");
+                assert!(!found.is_leaf);
+            }
 
-//             {
-//                 // /not/a/path
-//                 //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
-//                 let matched = &matches[1];
-//                 let [start, end] = matched.range;
+            {
+                // /not/a/path
+                //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let (route, found) = &matches[1];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, Some(&()));
-//                 assert_eq!(matched.param, Some(&ParamName::new("path")));
-//                 assert_eq!(&path[start..end], &path[1..]);
-//                 // Should be considered exact because of the catch-all pattern.
-//                 assert!(matched.was_leaf);
-//             }
-//         }
+                assert_eq!(route, &Some(&()));
+                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(&path[start..end], &path[1..]);
+                // Should be considered exact because of the catch-all pattern.
+                assert!(found.is_leaf);
+            }
+        }
 
-//         {
-//             let path = "/echo/hello/world";
-//             let matches: Vec<_> = router.visit(path).collect();
+        {
+            let path = "/echo/hello/world";
+            let matches: Vec<_> = router.visit(path).collect();
 
-//             assert_eq!(matches.len(), 4);
+            assert_eq!(matches.len(), 4);
 
-//             {
-//                 // /echo/hello/world
-//                 // ^ as Pattern::Root
-//                 let matched = &matches[0];
-//                 let [start, end] = matched.range;
+            {
+                // /echo/hello/world
+                // ^ as Pattern::Root
+                let (route, found) = &matches[0];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, None);
-//                 assert_eq!(matched.param, None);
-//                 assert_eq!(&path[start..end], "");
-//                 assert!(!matched.was_leaf);
-//             }
+                assert_eq!(route, &None);
+                assert_eq!(found.param, None);
+                assert_eq!(&path[start..end], "");
+                assert!(!found.is_leaf);
+            }
 
-//             {
-//                 // /echo/hello/world
-//                 //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-//                 let matched = &matches[1];
-//                 let [start, end] = matched.range;
+            {
+                // /echo/hello/world
+                //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let (route, found) = &matches[1];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, Some(&()));
-//                 assert_eq!(matched.param, Some(&ParamName::new("path")));
-//                 assert_eq!(&path[start..end], &path[1..]);
-//                 // Should be considered exact because of the catch-all pattern.
-//                 assert!(matched.was_leaf);
-//             }
+                assert_eq!(route, &Some(&()));
+                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(&path[start..end], &path[1..]);
+                // Should be considered exact because of the catch-all pattern.
+                assert!(found.is_leaf);
+            }
 
-//             {
-//                 // /echo/hello/world
-//                 //  ^^^^ as Pattern::Static("echo")
-//                 let matched = &matches[2];
-//                 let [start, end] = matched.range;
+            {
+                // /echo/hello/world
+                //  ^^^^ as Pattern::Static("echo")
+                let (route, found) = &matches[2];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, None);
-//                 assert_eq!(matched.param, None);
-//                 assert_eq!(&path[start..end], "echo");
-//                 assert!(!matched.was_leaf);
-//             }
+                assert_eq!(route, &None);
+                assert_eq!(found.param, None);
+                assert_eq!(&path[start..end], "echo");
+                assert!(!found.is_leaf);
+            }
 
-//             {
-//                 // /echo/hello/world
-//                 //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
-//                 let matched = &matches[3];
-//                 let [start, end] = matched.range;
+            {
+                // /echo/hello/world
+                //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let (route, found) = &matches[3];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, Some(&()));
-//                 assert_eq!(matched.param, Some(&ParamName::new("path")));
-//                 assert_eq!(&path[start..end], "hello/world");
-//                 assert!(matched.was_leaf);
-//             }
-//         }
+                assert_eq!(route, &Some(&()));
+                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(&path[start..end], "hello/world");
+                assert!(found.is_leaf);
+            }
+        }
 
-//         {
-//             let path = "/articles/100";
-//             let matches: Vec<_> = router.visit(path).collect();
+        {
+            let path = "/articles/100";
+            let matches: Vec<_> = router.visit(path).collect();
 
-//             assert_eq!(matches.len(), 4);
+            assert_eq!(matches.len(), 4);
 
-//             {
-//                 // /articles/100
-//                 // ^ as Pattern::Root
-//                 let matched = &matches[0];
-//                 let [start, end] = matched.range;
+            {
+                // /articles/100
+                // ^ as Pattern::Root
+                let (route, found) = &matches[0];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, None);
-//                 assert_eq!(matched.param, None);
-//                 assert_eq!(&path[start..end], "");
-//                 assert!(!matched.was_leaf);
-//             }
+                assert_eq!(route, &None);
+                assert_eq!(found.param, None);
+                assert_eq!(&path[start..end], "");
+                assert!(!found.is_leaf);
+            }
 
-//             {
-//                 // /articles/100
-//                 //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-//                 let matched = &matches[1];
-//                 let [start, end] = matched.range;
+            {
+                // /articles/100
+                //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let (route, found) = &matches[1];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, Some(&()));
-//                 assert_eq!(matched.param, Some(&ParamName::new("path")));
-//                 assert_eq!(&path[start..end], &path[1..]);
-//                 // Should be considered exact because of the catch-all pattern.
-//                 assert!(matched.was_leaf);
-//             }
+                assert_eq!(route, &Some(&()));
+                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(&path[start..end], &path[1..]);
+                // Should be considered exact because of the catch-all pattern.
+                assert!(found.is_leaf);
+            }
 
-//             {
-//                 // /articles/100
-//                 //  ^^^^^^^^ as Pattern::Static("articles")
-//                 let matched = &matches[2];
-//                 let [start, end] = matched.range;
+            {
+                // /articles/100
+                //  ^^^^^^^^ as Pattern::Static("articles")
+                let (route, found) = &matches[2];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, None);
-//                 assert_eq!(matched.param, None);
-//                 assert_eq!(&path[start..end], "articles");
-//                 assert!(!matched.was_leaf);
-//             }
+                assert_eq!(route, &None);
+                assert_eq!(found.param, None);
+                assert_eq!(&path[start..end], "articles");
+                assert!(!found.is_leaf);
+            }
 
-//             {
-//                 // /articles/100
-//                 //           ^^^ as Pattern::Dynamic(":id")
-//                 let matched = &matches[3];
-//                 let [start, end] = matched.range;
+            {
+                // /articles/100
+                //           ^^^ as Pattern::Dynamic(":id")
+                let (route, found) = &matches[3];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, Some(&()));
-//                 assert_eq!(matched.param, Some(&ParamName::new("id")));
-//                 assert_eq!(&path[start..end], "100");
-//                 assert!(matched.was_leaf);
-//             }
-//         }
+                assert_eq!(route, &Some(&()));
+                assert_eq!(found.param, Some(Param::new("id")));
+                assert_eq!(&path[start..end], "100");
+                assert!(found.is_leaf);
+            }
+        }
 
-//         {
-//             let path = "/articles/100/comments";
-//             let matches: Vec<_> = router.visit(path).collect();
+        {
+            let path = "/articles/100/comments";
+            let matches: Vec<_> = router.visit(path).collect();
 
-//             assert_eq!(matches.len(), 5);
+            assert_eq!(matches.len(), 5);
 
-//             {
-//                 // /articles/100/comments
-//                 // ^ as Pattern::Root
-//                 let matched = &matches[0];
-//                 let [start, end] = matched.range;
+            {
+                // /articles/100/comments
+                // ^ as Pattern::Root
+                let (route, found) = &matches[0];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, None);
-//                 assert_eq!(matched.param, None);
-//                 assert_eq!(&path[start..end], "");
-//                 assert!(!matched.was_leaf);
-//             }
+                assert_eq!(route, &None);
+                assert_eq!(found.param, None);
+                assert_eq!(&path[start..end], "");
+                assert!(!found.is_leaf);
+            }
 
-//             {
-//                 // /articles/100/comments
-//                 //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-//                 let matched = &matches[1];
-//                 let [start, end] = matched.range;
+            {
+                // /articles/100/comments
+                //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let (route, found) = &matches[1];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, Some(&()));
-//                 assert_eq!(matched.param, Some(&ParamName::new("path")));
-//                 assert_eq!(&path[start..end], &path[1..]);
-//                 // Should be considered exact because of the catch-all pattern.
-//                 assert!(matched.was_leaf);
-//             }
+                assert_eq!(route, &Some(&()));
+                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(&path[start..end], &path[1..]);
+                // Should be considered exact because of the catch-all pattern.
+                assert!(found.is_leaf);
+            }
 
-//             {
-//                 // /articles/100/comments
-//                 //  ^^^^^^^^ as Pattern::Static("articles")
-//                 let matched = &matches[2];
-//                 let [start, end] = matched.range;
+            {
+                // /articles/100/comments
+                //  ^^^^^^^^ as Pattern::Static("articles")
+                let (route, found) = &matches[2];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, None);
-//                 assert_eq!(matched.param, None);
-//                 assert_eq!(&path[start..end], "articles");
-//                 assert!(!matched.was_leaf);
-//             }
+                assert_eq!(route, &None);
+                assert_eq!(found.param, None);
+                assert_eq!(&path[start..end], "articles");
+                assert!(!found.is_leaf);
+            }
 
-//             {
-//                 // /articles/100/comments
-//                 //           ^^^ as Pattern::Dynamic(":id")
-//                 let matched = &matches[3];
-//                 let [start, end] = matched.range;
+            {
+                // /articles/100/comments
+                //           ^^^ as Pattern::Dynamic(":id")
+                let (route, found) = &matches[3];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, Some(&()));
-//                 assert_eq!(matched.param, Some(&ParamName::new("id")));
-//                 assert_eq!(&path[start..end], "100");
-//                 assert!(!matched.was_leaf);
-//             }
+                assert_eq!(route, &Some(&()));
+                assert_eq!(found.param, Some(Param::new("id")));
+                assert_eq!(&path[start..end], "100");
+                assert!(!found.is_leaf);
+            }
 
-//             {
-//                 // /articles/100/comments
-//                 //               ^^^^^^^^ as Pattern::Static("comments")
-//                 let matched = &matches[4];
-//                 let [start, end] = matched.range;
+            {
+                // /articles/100/comments
+                //               ^^^^^^^^ as Pattern::Static("comments")
+                let (route, found) = &matches[4];
+                let Span { start, end } = found.at;
 
-//                 assert_eq!(matched.route, Some(&()));
-//                 assert_eq!(matched.param, None);
-//                 assert_eq!(&path[start..end], "comments");
-//                 // Should be considered exact because it is the last path segment.
-//                 assert!(matched.was_leaf);
-//             }
-//         }
-//     }
-// }
+                assert_eq!(route, &Some(&()));
+                assert_eq!(found.param, None);
+                assert_eq!(&path[start..end], "comments");
+                // Should be considered exact because it is the last path segment.
+                assert!(found.is_leaf);
+            }
+        }
+    }
+}

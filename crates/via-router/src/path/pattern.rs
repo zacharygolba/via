@@ -1,6 +1,7 @@
 use std::fmt::{self, Debug, Display};
+use std::sync::Arc;
 
-use super::SplitPath;
+use super::{Span, SplitPath};
 
 #[derive(PartialEq)]
 pub enum Pattern {
@@ -14,13 +15,14 @@ pub enum Pattern {
 ///
 #[derive(Debug, PartialEq)]
 pub struct Param {
-    ident: Box<str>,
+    ident: Arc<str>,
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
-    SplitPath::new(path).map(|[start, end]| {
+    SplitPath::new(path).map(|span| {
+        let Span { start, end } = span;
         let segment = path.get(start..end).unwrap_or("");
 
         match segment.chars().next() {
@@ -57,7 +59,7 @@ impl Param {
 impl Clone for Param {
     fn clone(&self) -> Self {
         Self {
-            ident: self.ident.clone(),
+            ident: Arc::clone(&self.ident),
         }
     }
 }

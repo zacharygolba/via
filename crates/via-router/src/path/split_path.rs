@@ -1,12 +1,36 @@
 use core::iter::Enumerate;
 use core::str::Bytes;
 
+/// A matched range in the url path.
+///
+#[derive(Clone, Debug, PartialEq)]
+pub struct Span {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+}
+
 /// An iterator that yields a tuple containing the start and end offset of each
 /// segment in the url path.
 ///
 pub struct SplitPath<'a> {
     bytes: Enumerate<Bytes<'a>>,
     value: &'a str,
+}
+
+impl Span {
+    pub fn start(&self) -> usize {
+        self.start
+    }
+
+    pub fn end(&self) -> usize {
+        self.start
+    }
+}
+
+impl Span {
+    pub(crate) fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
 }
 
 impl<'a> SplitPath<'a> {
@@ -51,7 +75,7 @@ impl<'a> SplitPath<'a> {
 }
 
 impl<'a> Iterator for SplitPath<'a> {
-    type Item = [usize; 2];
+    type Item = Span;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Set the start index to the next character that is not a `/`.
@@ -60,13 +84,13 @@ impl<'a> Iterator for SplitPath<'a> {
         let end = self.next_terminator().unwrap_or(self.value.len());
 
         // Return the start and end offset of the current path segment.
-        Some([start, end])
+        Some(Span { start, end })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::SplitPath;
+    use super::{Span, SplitPath};
 
     const PATHS: [&str; 15] = [
         "/home/about",
@@ -86,23 +110,33 @@ mod tests {
         "/services/contact//us",
     ];
 
-    fn get_expected_results() -> [Vec<[usize; 2]>; 15] {
+    fn get_expected_results() -> [Vec<Span>; 15] {
         [
-            vec![[1, 5], [6, 11]],
-            vec![[1, 9], [10, 14], [15, 18]],
-            vec![[1, 5], [6, 11], [12, 16], [17, 21]],
-            vec![[1, 5], [6, 13], [14, 22]],
-            vec![[1, 9], [10, 17]],
-            vec![[1, 7], [8, 23]],
-            vec![[1, 5], [6, 12]],
-            vec![[1, 10], [11, 18]],
-            vec![[1, 4]],
-            vec![[1, 8], [9, 16]],
-            vec![[2, 6], [8, 13]],
-            vec![[1, 9], [11, 15], [16, 19]],
-            vec![[1, 5], [6, 11], [12, 16], [18, 22]],
-            vec![[1, 5], [7, 14], [15, 23]],
-            vec![[1, 9], [10, 17], [19, 21]],
+            vec![Span::new(1, 5), Span::new(6, 11)],
+            vec![Span::new(1, 9), Span::new(10, 14), Span::new(15, 18)],
+            vec![
+                Span::new(1, 5),
+                Span::new(6, 11),
+                Span::new(12, 16),
+                Span::new(17, 21),
+            ],
+            vec![Span::new(1, 5), Span::new(6, 13), Span::new(14, 22)],
+            vec![Span::new(1, 9), Span::new(10, 17)],
+            vec![Span::new(1, 7), Span::new(8, 23)],
+            vec![Span::new(1, 5), Span::new(6, 12)],
+            vec![Span::new(1, 10), Span::new(11, 18)],
+            vec![Span::new(1, 4)],
+            vec![Span::new(1, 8), Span::new(9, 16)],
+            vec![Span::new(2, 6), Span::new(8, 13)],
+            vec![Span::new(1, 9), Span::new(11, 15), Span::new(16, 19)],
+            vec![
+                Span::new(1, 5),
+                Span::new(6, 11),
+                Span::new(12, 16),
+                Span::new(18, 22),
+            ],
+            vec![Span::new(1, 5), Span::new(7, 14), Span::new(15, 23)],
+            vec![Span::new(1, 9), Span::new(10, 17), Span::new(19, 21)],
         ]
     }
 

@@ -1,6 +1,6 @@
 use std::vec::IntoIter;
 
-use crate::path::Param;
+use crate::path::{Param, Span};
 use crate::routes::RouteStore;
 use crate::visitor::Visited;
 
@@ -17,26 +17,21 @@ pub struct Visit<'a, T> {
 /// metadata about the match.
 ///
 #[derive(Debug)]
-pub struct Found<'a, T> {
+pub struct Found {
     /// True if there were no more segments to match against the children of the
     /// matched node. Otherwise, false.
     ///
     pub is_leaf: bool,
 
-    /// A reference to the route referenced by the node that matched the path
-    /// segment.
-    ///
-    pub route: Option<&'a T>,
-
     /// A reference to the name of the dynamic parameter that matched the path
     /// segment.
     ///
-    pub param: Option<&'a Param>,
+    pub param: Option<Param>,
 
     /// An array containing the start and end index of the path segment that
     /// matched the node containing `route`.
     ///
-    pub at: [usize; 2],
+    pub at: Span,
 }
 
 impl<'a, T> Visit<'a, T> {
@@ -46,19 +41,21 @@ impl<'a, T> Visit<'a, T> {
 }
 
 impl<'a, T> Iterator for Visit<'a, T> {
-    type Item = Found<'a, T>;
+    type Item = (Option<&'a T>, Found);
 
     fn next(&mut self) -> Option<Self::Item> {
         let visited = self.iter.next()?;
         let store = self.store;
         let node = store.get(visited.key);
 
-        Some(Found {
+        let route = node.route.and_then(|key| store.route(key));
+        let found = Found {
             is_leaf: visited.is_leaf,
-            route: node.route.and_then(|key| store.route(key)),
-            param: node.param(),
+            param: node.param().cloned(),
             at: visited.at,
-        })
+        };
+
+        Some((route, found))
     }
 }
 
@@ -68,11 +65,13 @@ impl<'a, T> DoubleEndedIterator for Visit<'a, T> {
         let store = self.store;
         let node = store.get(visited.key);
 
-        Some(Found {
+        let route = node.route.and_then(|key| store.route(key));
+        let found = Found {
             is_leaf: visited.is_leaf,
-            route: node.route.and_then(|key| store.route(key)),
-            param: node.param(),
+            param: node.param().cloned(),
             at: visited.at,
-        })
+        };
+
+        Some((route, found))
     }
 }
