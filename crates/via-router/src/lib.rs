@@ -29,6 +29,12 @@ impl<T> Router<T> {
         Self { store }
     }
 
+    /// Returns a reference to the route associated with the given key.
+    ///
+    pub fn get(&self, key: usize) -> Option<&T> {
+        self.store.route(key)
+    }
+
     pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
         let mut segments = path::patterns(path);
 
@@ -38,7 +44,7 @@ impl<T> Router<T> {
         }
     }
 
-    pub fn visit<'a>(&'a self, path: &str) -> Vec<Found<'a, T>> {
+    pub fn visit<'a>(&'a self, path: &str) -> Vec<Found> {
         let mut segments = StackVec::new([None, None, None, None, None]);
         let store = &self.store;
 
@@ -152,9 +158,10 @@ mod tests {
                 // /
                 // ^ as Pattern::Root
                 let found = &matches[0];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, None);
+                assert_eq!(route, None);
                 assert_eq!(found.param, None);
                 assert_eq!(segment, "");
                 assert!(found.is_leaf);
@@ -164,9 +171,10 @@ mod tests {
                 // /
                 //  ^ as Pattern::CatchAll("*path")
                 let found = &matches[1];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, Some(&()));
+                assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
                 assert_eq!(segment, "");
                 // Should be considered exact because of the catch-all pattern.
@@ -184,9 +192,10 @@ mod tests {
                 // /not/a/path
                 // ^ as Pattern::Root
                 let found = &matches[0];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, None);
+                assert_eq!(route, None);
                 assert_eq!(found.param, None);
                 assert_eq!(segment, "");
                 assert!(!found.is_leaf);
@@ -196,9 +205,10 @@ mod tests {
                 // /not/a/path
                 //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let found = &matches[1];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, Some(&()));
+                assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
@@ -216,9 +226,10 @@ mod tests {
                 // /echo/hello/world
                 // ^ as Pattern::Root
                 let found = &matches[0];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, None);
+                assert_eq!(route, None);
                 assert_eq!(found.param, None);
                 assert_eq!(segment, "");
                 assert!(!found.is_leaf);
@@ -228,9 +239,10 @@ mod tests {
                 // /echo/hello/world
                 //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let found = &matches[1];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, Some(&()));
+                assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
@@ -241,9 +253,10 @@ mod tests {
                 // /echo/hello/world
                 //  ^^^^ as Pattern::Static("echo")
                 let found = &matches[2];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, None);
+                assert_eq!(route, None);
                 assert_eq!(found.param, None);
                 assert_eq!(segment, "echo");
                 assert!(!found.is_leaf);
@@ -253,9 +266,10 @@ mod tests {
                 // /echo/hello/world
                 //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let found = &matches[3];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, Some(&()));
+                assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
                 assert_eq!(segment, "hello/world");
                 assert!(found.is_leaf);
@@ -272,9 +286,10 @@ mod tests {
                 // /articles/100
                 // ^ as Pattern::Root
                 let found = &matches[0];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, None);
+                assert_eq!(route, None);
                 assert_eq!(found.param, None);
                 assert_eq!(segment, "");
                 assert!(!found.is_leaf);
@@ -284,9 +299,10 @@ mod tests {
                 // /articles/100
                 //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let found = &matches[1];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, Some(&()));
+                assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
@@ -297,9 +313,10 @@ mod tests {
                 // /articles/100
                 //  ^^^^^^^^ as Pattern::Static("articles")
                 let found = &matches[2];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, None);
+                assert_eq!(route, None);
                 assert_eq!(found.param, None);
                 assert_eq!(segment, "articles");
                 assert!(!found.is_leaf);
@@ -309,9 +326,10 @@ mod tests {
                 // /articles/100
                 //           ^^^ as Pattern::Dynamic(":id")
                 let found = &matches[3];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, Some(&()));
+                assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("id")));
                 assert_eq!(segment, "100");
                 assert!(found.is_leaf);
@@ -328,9 +346,10 @@ mod tests {
                 // /articles/100/comments
                 // ^ as Pattern::Root
                 let found = &matches[0];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, None);
+                assert_eq!(route, None);
                 assert_eq!(found.param, None);
                 assert_eq!(segment, "");
                 assert!(!found.is_leaf);
@@ -340,9 +359,10 @@ mod tests {
                 // /articles/100/comments
                 //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let found = &matches[1];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, Some(&()));
+                assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
@@ -353,9 +373,10 @@ mod tests {
                 // /articles/100/comments
                 //  ^^^^^^^^ as Pattern::Static("articles")
                 let found = &matches[2];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, None);
+                assert_eq!(route, None);
                 assert_eq!(found.param, None);
                 assert_eq!(segment, "articles");
                 assert!(!found.is_leaf);
@@ -365,9 +386,10 @@ mod tests {
                 // /articles/100/comments
                 //           ^^^ as Pattern::Dynamic(":id")
                 let found = &matches[3];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, Some(&()));
+                assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("id")));
                 assert_eq!(segment, "100");
                 assert!(!found.is_leaf);
@@ -377,9 +399,10 @@ mod tests {
                 // /articles/100/comments
                 //               ^^^^^^^^ as Pattern::Static("comments")
                 let found = &matches[4];
+                let route = found.route.and_then(|key| router.get(key));
                 let segment = &path[found.at.start()..found.at.end()];
 
-                assert_eq!(found.route, Some(&()));
+                assert_eq!(route, Some(&()));
                 assert_eq!(found.param, None);
                 assert_eq!(segment, "comments");
                 // Should be considered exact because it is the last path segment.

@@ -99,8 +99,8 @@ where
                 params.push((param, found.at));
             }
 
-            let route = match found.route {
-                Some(vec) => vec,
+            let route = match found.route.and_then(|key| self.inner.get(key)) {
+                Some(route) => route,
                 None => continue,
             };
 

@@ -8,13 +8,16 @@ use crate::stack_vec::StackVec;
 /// metadata about the match.
 ///
 #[derive(Debug)]
-pub struct Found<'a, T> {
+pub struct Found {
     /// True if there were no more segments to match against the children of the
     /// matched node. Otherwise, false.
     ///
     pub is_leaf: bool,
 
-    pub route: Option<&'a T>,
+    /// The key of the route associated with the node that matched the path
+    /// segment.
+    ///
+    pub route: Option<usize>,
 
     /// The name of the dynamic parameter that matched the path segment.
     ///
@@ -25,11 +28,11 @@ pub struct Found<'a, T> {
     pub at: SegmentAt,
 }
 
-pub fn visit<'a, T>(
+pub fn visit<T>(
     path: &str,
-    store: &'a RouteStore<T>,
+    store: &RouteStore<T>,
     segments: &StackVec<SegmentAt, 5>,
-) -> Vec<Found<'a, T>> {
+) -> Vec<Found> {
     let mut results = Vec::new();
     let root = store.get(0);
     let at = SegmentAt::new(0, 0);
@@ -37,11 +40,7 @@ pub fn visit<'a, T>(
     match segments.get(0) {
         Some(range) => {
             // Append the root match to the results vector.
-            results.push(Found::new(
-                root.route.and_then(|route_key| store.route(route_key)),
-                None,
-                at,
-            ));
+            results.push(Found::new(root.route, None, at));
 
             // Begin the search for matches recursively starting with descendants of
             // the root node.
@@ -49,11 +48,7 @@ pub fn visit<'a, T>(
         }
         None => {
             // Append the root match to the results vector.
-            results.push(Found::leaf(
-                root.route.and_then(|route_key| store.route(route_key)),
-                None,
-                at,
-            ));
+            results.push(Found::leaf(root.route, None, at));
 
             // Perform a shallow search for descendants of the root node that have a
             // `CatchAll` pattern.
@@ -64,8 +59,8 @@ pub fn visit<'a, T>(
     results
 }
 
-impl<'a, T> Found<'a, T> {
-    fn new(route: Option<&'a T>, param: Option<Param>, at: SegmentAt) -> Self {
+impl Found {
+    fn new(route: Option<usize>, param: Option<Param>, at: SegmentAt) -> Self {
         Self {
             is_leaf: false,
             route,
@@ -74,7 +69,7 @@ impl<'a, T> Found<'a, T> {
         }
     }
 
-    fn leaf(route: Option<&'a T>, param: Option<Param>, at: SegmentAt) -> Self {
+    fn leaf(route: Option<usize>, param: Option<Param>, at: SegmentAt) -> Self {
         Self {
             is_leaf: true,
             route,
@@ -88,16 +83,16 @@ impl<'a, T> Found<'a, T> {
 /// pattern that matches the path segment at `index`. If a match is found,
 /// we'll add it to `results` and continue our search with the descendants
 /// of matched node against the path segment at next index.
-fn visit_node<'a, T>(
+fn visit_node<T>(
     // A mutable reference to a vector that contains the matches that we
     // have found so far.
-    results: &mut Vec<Found<'a, T>>,
+    results: &mut Vec<Found>,
 
     // A reference to the route store that contains the route tree.
-    store: &'a RouteStore<T>,
+    store: &RouteStore<T>,
 
     // A reference to the most recently matched node.
-    node: &'a Node,
+    node: &Node,
 
     // The url path that we are attempting to match against the route tree.
     path: &str,
@@ -139,11 +134,7 @@ fn visit_node<'a, T>(
                 match segments.get(index) {
                     Some(range) => {
                         // Append the match to the results vector.
-                        results.push(Found::new(
-                            entry.route.and_then(|route_key| store.route(route_key)),
-                            None,
-                            at,
-                        ));
+                        results.push(Found::new(entry.route, None, at));
 
                         // Continue searching for descendants of the current node
                         // that match the the next path segment.
@@ -151,11 +142,7 @@ fn visit_node<'a, T>(
                     }
                     None => {
                         // Append the match to the results vector.
-                        results.push(Found::leaf(
-                            entry.route.and_then(|route_key| store.route(route_key)),
-                            None,
-                            at,
-                        ));
+                        results.push(Found::leaf(entry.route, None, at));
 
                         // Perform a shallow search for descendants of the
                         // current node that have a `CatchAll` pattern.
@@ -174,11 +161,7 @@ fn visit_node<'a, T>(
                 match segments.get(index) {
                     Some(range) => {
                         // Append the match to the results vector.
-                        results.push(Found::new(
-                            entry.route.and_then(|route_key| store.route(route_key)),
-                            Some(param.clone()),
-                            at,
-                        ));
+                        results.push(Found::new(entry.route, Some(param.clone()), at));
 
                         // Continue searching for descendants of the current node
                         // that match the the next path segment.
@@ -186,11 +169,7 @@ fn visit_node<'a, T>(
                     }
                     None => {
                         // Append the match to the results vector.
-                        results.push(Found::leaf(
-                            entry.route.and_then(|route_key| store.route(route_key)),
-                            Some(param.clone()),
-                            at,
-                        ));
+                        results.push(Found::leaf(entry.route, Some(param.clone()), at));
 
                         // Perform a shallow search for descendants of the
                         // current node that have a `CatchAll` pattern.
@@ -205,7 +184,7 @@ fn visit_node<'a, T>(
             // node that match the remaining path segments.
             Pattern::CatchAll(param) => {
                 results.push(Found::leaf(
-                    entry.route.and_then(|route_key| store.route(route_key)),
+                    entry.route,
                     Some(param.clone()),
                     SegmentAt::new(range.start(), path.len()),
                 ));
@@ -221,16 +200,16 @@ fn visit_node<'a, T>(
 /// Perform a shallow search for descendants of the `node` that have a `CatchAll`
 /// pattern.
 ///
-fn visit_index<'a, T>(
+fn visit_index<T>(
     // A mutable reference to a vector that contains the matches that we
     // have found so far.
-    results: &mut Vec<Found<'a, T>>,
+    results: &mut Vec<Found>,
 
     // A reference to the route store that contains the route tree.
-    store: &'a RouteStore<T>,
+    store: &RouteStore<T>,
 
     // A reference to the most recently matched node.
-    node: &'a Node,
+    node: &Node,
 ) {
     // Perform a shallow search for descendants of the current node that
     // have a `CatchAll` pattern. This is required to support matching the
@@ -242,7 +221,7 @@ fn visit_index<'a, T>(
         if let Pattern::CatchAll(param) = &entry.pattern {
             // Append the match as a leaf to the results vector.
             results.push(Found::leaf(
-                entry.route.and_then(|route_key| store.route(route_key)),
+                entry.route,
                 Some(param.clone()),
                 SegmentAt::new(0, 0),
             ));
