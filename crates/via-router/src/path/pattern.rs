@@ -1,4 +1,5 @@
 use std::fmt::{self, Debug, Display};
+use std::sync::Arc;
 
 use super::SplitPath;
 
@@ -14,7 +15,7 @@ pub enum Pattern {
 ///
 #[derive(Debug, PartialEq)]
 pub struct Param {
-    ident: Box<str>,
+    ident: Arc<str>,
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
@@ -49,7 +50,7 @@ impl Param {
 impl Param {
     pub(crate) fn new(ident: &str) -> Self {
         Self {
-            ident: ident.to_owned().into_boxed_str(),
+            ident: ident.into(),
         }
     }
 }
@@ -57,7 +58,7 @@ impl Param {
 impl Clone for Param {
     fn clone(&self) -> Self {
         Self {
-            ident: self.ident.clone(),
+            ident: Arc::clone(&self.ident),
         }
     }
 }
