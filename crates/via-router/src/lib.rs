@@ -44,7 +44,7 @@ impl<T> Router<T> {
         }
     }
 
-    pub fn visit<'a>(&'a self, path: &str) -> Vec<Found> {
+    pub fn visit(&self, path: &str) -> Vec<Found> {
         let mut segments = StackVec::new([None, None, None, None, None]);
         let store = &self.store;
 
