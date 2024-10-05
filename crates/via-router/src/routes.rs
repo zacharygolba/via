@@ -150,7 +150,7 @@ impl<T> RouteStore<T> {
         &mut self.nodes[key]
     }
 
-    /// Returns a shared reference to the route at the given `key`.
+    /// Returns a mutable reference to the route at the given `key`.
     ///
     pub fn route(&self, key: usize) -> Option<&T> {
         self.routes.get(key)
