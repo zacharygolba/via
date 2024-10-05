@@ -18,10 +18,14 @@ pub struct SplitPath<'a> {
 }
 
 impl SegmentAt {
+    /// Returns the start offset of the matched range.
+    ///
     pub fn start(&self) -> usize {
         self.start
     }
 
+    /// Returns the end offset of the matched range.
+    ///
     pub fn end(&self) -> usize {
         self.end
     }
