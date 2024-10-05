@@ -6,8 +6,9 @@ mod routes;
 mod stack_vec;
 mod visitor;
 
-pub use iter::{Found, Visit};
+pub use iter::Visit;
 pub use path::{Param, Span};
+pub use visitor::Found;
 
 use path::{Pattern, SplitPath};
 use routes::{Node, RouteStore};
