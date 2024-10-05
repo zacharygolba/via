@@ -34,15 +34,15 @@ pub fn resolve<State>(
     visited: Rev<Visit<Vec<MatchWhen<State>>>>,
 ) {
     // Iterate over the routes that match the request's path.
-    for found in visited {
+    for (route, found) in visited {
         // If there is a dynamic parameter name associated with the route,
         // build a tuple containing the name and the range of the parameter
         // value in the request's path.
         if let Some(param) = found.param {
-            params.push((param.clone(), found.at));
+            params.push((param, found.at));
         }
 
-        let middlewares = match found.route {
+        let middlewares = match route {
             Some(vec) => vec,
             None => continue,
         };

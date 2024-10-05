@@ -117,7 +117,7 @@ impl<State> Request<State> {
 
         // Get an `Option<[usize; 2]>` that represents the start and end offset
         // of the path parameter with the provided `name` in the request's uri.
-        let at = self.params.get(name).copied();
+        let at = self.params.get(name);
 
         Param::new(Some(at), name, path)
     }

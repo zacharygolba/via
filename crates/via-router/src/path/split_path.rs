@@ -23,7 +23,7 @@ impl Span {
     }
 
     pub fn end(&self) -> usize {
-        self.start
+        self.end
     }
 }
 
