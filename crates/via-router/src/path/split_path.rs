@@ -3,10 +3,10 @@ use core::str::Bytes;
 
 /// A matched range in the url path.
 ///
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct SegmentAt {
-    pub(crate) start: usize,
-    pub(crate) end: usize,
+    start: usize,
+    end: usize,
 }
 
 /// An iterator that yields a tuple containing the start and end offset of each
@@ -30,6 +30,15 @@ impl SegmentAt {
 impl SegmentAt {
     pub(crate) fn new(start: usize, end: usize) -> Self {
         Self { start, end }
+    }
+}
+
+impl Clone for SegmentAt {
+    fn clone(&self) -> Self {
+        Self {
+            start: self.start,
+            end: self.end,
+        }
     }
 }
 

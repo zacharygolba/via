@@ -15,7 +15,7 @@ use crate::Error;
 pub struct Request<State = ()> {
     /// The component parts of the underlying HTTP request.
     ///
-    parts: Box<Parts>,
+    pub(crate) parts: Box<Parts>,
 
     /// A wrapper around the body of the request. This provides callers with
     /// convienent methods for reading the request body.
@@ -35,7 +35,7 @@ pub struct Request<State = ()> {
 
     /// The request's path and query parameters.
     ///
-    params: PathParams,
+    pub(crate) params: PathParams,
 }
 
 impl<State> Request<State> {
@@ -170,22 +170,18 @@ impl<State> Request<State> {
 }
 
 impl<State> Request<State> {
-    pub(crate) fn new(
-        parts: Box<Parts>,
-        body: RequestBody,
-        state: Arc<State>,
-        params: PathParams,
-    ) -> Self {
+    pub(crate) fn new(parts: Box<Parts>, body: RequestBody, state: Arc<State>) -> Self {
         Self {
-            cookies: None,
             parts,
             body,
             state,
-            params,
+            cookies: None,
+            params: PathParams::new(Vec::new()),
         }
     }
 
     /// Returns a mutable reference to the cookies associated with the request.
+    ///
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
         self.cookies.get_or_insert_with(Default::default)
     }

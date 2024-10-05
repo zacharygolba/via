@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug, Display};
 
-use super::{SegmentAt, SplitPath};
+use super::SplitPath;
 
 #[derive(PartialEq)]
 pub enum Pattern {
@@ -20,9 +20,8 @@ pub struct Param {
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
-    SplitPath::new(path).map(|span| {
-        let SegmentAt { start, end } = span;
-        let segment = path.get(start..end).unwrap_or("");
+    SplitPath::new(path).map(|at| {
+        let segment = path.get(at.start()..at.end()).unwrap_or("");
 
         match segment.chars().next() {
             Some(':') => {
