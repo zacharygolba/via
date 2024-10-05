@@ -1,12 +1,12 @@
 use std::fmt::{self, Debug, Formatter};
-use via_router::{Param, Span};
+use via_router::{Param, SegmentAt};
 
 pub struct PathParams {
-    data: Vec<(Param, Span)>,
+    data: Vec<(Param, SegmentAt)>,
 }
 
 impl PathParams {
-    pub fn new(data: Vec<(Param, Span)>) -> Self {
+    pub fn new(data: Vec<(Param, SegmentAt)>) -> Self {
         Self { data }
     }
 
@@ -20,7 +20,7 @@ impl PathParams {
         })
     }
 
-    pub fn push(&mut self, param: (Param, Span)) {
+    pub fn push(&mut self, param: (Param, SegmentAt)) {
         self.data.push(param);
     }
 }

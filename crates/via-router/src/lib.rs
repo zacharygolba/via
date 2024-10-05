@@ -7,7 +7,7 @@ mod stack_vec;
 mod visitor;
 
 pub use iter::Visit;
-pub use path::{Param, Span};
+pub use path::{Param, SegmentAt};
 pub use visitor::Found;
 
 use path::{Pattern, SplitPath};
@@ -127,7 +127,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::path::{Param, Span};
+    use crate::path::{Param, SegmentAt};
 
     use super::Router;
 
@@ -156,7 +156,7 @@ mod tests {
                 // /
                 // ^ as Pattern::Root
                 let (route, found) = &matches[0];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &None);
                 assert_eq!(found.param, None);
@@ -168,7 +168,7 @@ mod tests {
                 // /
                 //  ^ as Pattern::CatchAll("*path")
                 let (route, found) = &matches[1];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
@@ -188,7 +188,7 @@ mod tests {
                 // /not/a/path
                 // ^ as Pattern::Root
                 let (route, found) = &matches[0];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &None);
                 assert_eq!(found.param, None);
@@ -200,7 +200,7 @@ mod tests {
                 // /not/a/path
                 //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let (route, found) = &matches[1];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
@@ -220,7 +220,7 @@ mod tests {
                 // /echo/hello/world
                 // ^ as Pattern::Root
                 let (route, found) = &matches[0];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &None);
                 assert_eq!(found.param, None);
@@ -232,7 +232,7 @@ mod tests {
                 // /echo/hello/world
                 //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let (route, found) = &matches[1];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
@@ -245,7 +245,7 @@ mod tests {
                 // /echo/hello/world
                 //  ^^^^ as Pattern::Static("echo")
                 let (route, found) = &matches[2];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &None);
                 assert_eq!(found.param, None);
@@ -257,7 +257,7 @@ mod tests {
                 // /echo/hello/world
                 //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let (route, found) = &matches[3];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
@@ -276,7 +276,7 @@ mod tests {
                 // /articles/100
                 // ^ as Pattern::Root
                 let (route, found) = &matches[0];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &None);
                 assert_eq!(found.param, None);
@@ -288,7 +288,7 @@ mod tests {
                 // /articles/100
                 //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let (route, found) = &matches[1];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
@@ -301,7 +301,7 @@ mod tests {
                 // /articles/100
                 //  ^^^^^^^^ as Pattern::Static("articles")
                 let (route, found) = &matches[2];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &None);
                 assert_eq!(found.param, None);
@@ -313,7 +313,7 @@ mod tests {
                 // /articles/100
                 //           ^^^ as Pattern::Dynamic(":id")
                 let (route, found) = &matches[3];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &Some(&()));
                 assert_eq!(found.param, Some(Param::new("id")));
@@ -332,7 +332,7 @@ mod tests {
                 // /articles/100/comments
                 // ^ as Pattern::Root
                 let (route, found) = &matches[0];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &None);
                 assert_eq!(found.param, None);
@@ -344,7 +344,7 @@ mod tests {
                 // /articles/100/comments
                 //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
                 let (route, found) = &matches[1];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
@@ -357,7 +357,7 @@ mod tests {
                 // /articles/100/comments
                 //  ^^^^^^^^ as Pattern::Static("articles")
                 let (route, found) = &matches[2];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &None);
                 assert_eq!(found.param, None);
@@ -369,7 +369,7 @@ mod tests {
                 // /articles/100/comments
                 //           ^^^ as Pattern::Dynamic(":id")
                 let (route, found) = &matches[3];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &Some(&()));
                 assert_eq!(found.param, Some(Param::new("id")));
@@ -381,7 +381,7 @@ mod tests {
                 // /articles/100/comments
                 //               ^^^^^^^^ as Pattern::Static("comments")
                 let (route, found) = &matches[4];
-                let Span { start, end } = found.at;
+                let SegmentAt { start, end } = found.at;
 
                 assert_eq!(route, &Some(&()));
                 assert_eq!(found.param, None);
