@@ -4,7 +4,7 @@ use core::str::Bytes;
 /// A matched range in the url path.
 ///
 #[derive(Debug, PartialEq)]
-pub struct SegmentAt {
+pub struct Span {
     start: usize,
     end: usize,
 }
@@ -17,7 +17,7 @@ pub struct SplitPath<'a> {
     value: &'a str,
 }
 
-impl SegmentAt {
+impl Span {
     /// Returns the start offset of the matched range.
     ///
     pub fn start(&self) -> usize {
@@ -31,13 +31,13 @@ impl SegmentAt {
     }
 }
 
-impl SegmentAt {
+impl Span {
     pub(crate) fn new(start: usize, end: usize) -> Self {
         Self { start, end }
     }
 }
 
-impl Clone for SegmentAt {
+impl Clone for Span {
     fn clone(&self) -> Self {
         Self {
             start: self.start,
@@ -88,7 +88,7 @@ impl<'a> SplitPath<'a> {
 }
 
 impl<'a> Iterator for SplitPath<'a> {
-    type Item = SegmentAt;
+    type Item = Span;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Set the start index to the next character that is not a `/`.
@@ -97,13 +97,13 @@ impl<'a> Iterator for SplitPath<'a> {
         let end = self.next_terminator().unwrap_or(self.value.len());
 
         // Return the start and end offset of the current path segment.
-        Some(SegmentAt { start, end })
+        Some(Span { start, end })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{SegmentAt, SplitPath};
+    use super::{Span, SplitPath};
 
     const PATHS: [&str; 15] = [
         "/home/about",
@@ -123,53 +123,33 @@ mod tests {
         "/services/contact//us",
     ];
 
-    fn get_expected_results() -> [Vec<SegmentAt>; 15] {
+    fn get_expected_results() -> [Vec<Span>; 15] {
         [
-            vec![SegmentAt::new(1, 5), SegmentAt::new(6, 11)],
+            vec![Span::new(1, 5), Span::new(6, 11)],
+            vec![Span::new(1, 9), Span::new(10, 14), Span::new(15, 18)],
             vec![
-                SegmentAt::new(1, 9),
-                SegmentAt::new(10, 14),
-                SegmentAt::new(15, 18),
+                Span::new(1, 5),
+                Span::new(6, 11),
+                Span::new(12, 16),
+                Span::new(17, 21),
             ],
+            vec![Span::new(1, 5), Span::new(6, 13), Span::new(14, 22)],
+            vec![Span::new(1, 9), Span::new(10, 17)],
+            vec![Span::new(1, 7), Span::new(8, 23)],
+            vec![Span::new(1, 5), Span::new(6, 12)],
+            vec![Span::new(1, 10), Span::new(11, 18)],
+            vec![Span::new(1, 4)],
+            vec![Span::new(1, 8), Span::new(9, 16)],
+            vec![Span::new(2, 6), Span::new(8, 13)],
+            vec![Span::new(1, 9), Span::new(11, 15), Span::new(16, 19)],
             vec![
-                SegmentAt::new(1, 5),
-                SegmentAt::new(6, 11),
-                SegmentAt::new(12, 16),
-                SegmentAt::new(17, 21),
+                Span::new(1, 5),
+                Span::new(6, 11),
+                Span::new(12, 16),
+                Span::new(18, 22),
             ],
-            vec![
-                SegmentAt::new(1, 5),
-                SegmentAt::new(6, 13),
-                SegmentAt::new(14, 22),
-            ],
-            vec![SegmentAt::new(1, 9), SegmentAt::new(10, 17)],
-            vec![SegmentAt::new(1, 7), SegmentAt::new(8, 23)],
-            vec![SegmentAt::new(1, 5), SegmentAt::new(6, 12)],
-            vec![SegmentAt::new(1, 10), SegmentAt::new(11, 18)],
-            vec![SegmentAt::new(1, 4)],
-            vec![SegmentAt::new(1, 8), SegmentAt::new(9, 16)],
-            vec![SegmentAt::new(2, 6), SegmentAt::new(8, 13)],
-            vec![
-                SegmentAt::new(1, 9),
-                SegmentAt::new(11, 15),
-                SegmentAt::new(16, 19),
-            ],
-            vec![
-                SegmentAt::new(1, 5),
-                SegmentAt::new(6, 11),
-                SegmentAt::new(12, 16),
-                SegmentAt::new(18, 22),
-            ],
-            vec![
-                SegmentAt::new(1, 5),
-                SegmentAt::new(7, 14),
-                SegmentAt::new(15, 23),
-            ],
-            vec![
-                SegmentAt::new(1, 9),
-                SegmentAt::new(10, 17),
-                SegmentAt::new(19, 21),
-            ],
+            vec![Span::new(1, 5), Span::new(7, 14), Span::new(15, 23)],
+            vec![Span::new(1, 9), Span::new(10, 17), Span::new(19, 21)],
         ]
     }
 

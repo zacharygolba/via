@@ -5,7 +5,7 @@ mod routes;
 mod stack_vec;
 mod visitor;
 
-pub use path::{Param, SegmentAt};
+pub use path::{Param, Span};
 pub use visitor::Found;
 
 use path::{Pattern, SplitPath};
