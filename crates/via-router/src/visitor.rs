@@ -1,4 +1,4 @@
-use crate::path::{Param, Pattern, SegmentAt};
+use crate::path::{Param, Pattern, Span};
 use crate::routes::{Node, RouteStore};
 use crate::stack_vec::StackVec;
 
@@ -25,17 +25,13 @@ pub struct Found {
 
     /// The range of the path segment that matched the node.
     ///
-    pub at: SegmentAt,
+    pub at: Span,
 }
 
-pub fn visit<T>(
-    path: &str,
-    store: &RouteStore<T>,
-    segments: &StackVec<SegmentAt, 5>,
-) -> Vec<Found> {
+pub fn visit<T>(path: &str, store: &RouteStore<T>, segments: &StackVec<Span, 5>) -> Vec<Found> {
     let mut results = Vec::new();
     let root = store.get(0);
-    let at = SegmentAt::new(0, 0);
+    let at = Span::new(0, 0);
 
     match segments.get(0) {
         Some(range) => {
@@ -60,7 +56,7 @@ pub fn visit<T>(
 }
 
 impl Found {
-    fn new(route: Option<usize>, param: Option<Param>, at: SegmentAt) -> Self {
+    fn new(route: Option<usize>, param: Option<Param>, at: Span) -> Self {
         Self {
             is_leaf: false,
             route,
@@ -69,7 +65,7 @@ impl Found {
         }
     }
 
-    fn leaf(route: Option<usize>, param: Option<Param>, at: SegmentAt) -> Self {
+    fn leaf(route: Option<usize>, param: Option<Param>, at: Span) -> Self {
         Self {
             is_leaf: true,
             route,
@@ -97,11 +93,11 @@ fn visit_node<T>(
     // The url path that we are attempting to match against the route tree.
     path: &str,
 
-    segments: &StackVec<SegmentAt, 5>,
+    segments: &StackVec<Span, 5>,
 
     // The start and end offset of the path segment at `index` in
     // `self.path_value`.
-    range: &SegmentAt,
+    range: &Span,
 
     // The index of the path segment in `self.segments` that we are matching
     // against the node at `key`.
@@ -186,7 +182,7 @@ fn visit_node<T>(
                 results.push(Found::leaf(
                     entry.route,
                     Some(param.clone()),
-                    SegmentAt::new(range.start(), path.len()),
+                    Span::new(range.start(), path.len()),
                 ));
             }
 
@@ -223,7 +219,7 @@ fn visit_index<T>(
             results.push(Found::leaf(
                 entry.route,
                 Some(param.clone()),
-                SegmentAt::new(0, 0),
+                Span::new(0, 0),
             ));
         }
     }
