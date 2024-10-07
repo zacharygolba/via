@@ -1,4 +1,4 @@
-use hyper_util::rt::TokioTimer;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
@@ -7,7 +7,6 @@ use tokio::task::JoinSet;
 use tokio::time;
 
 use super::acceptor::Acceptor;
-use super::io_stream::IoStream;
 use super::service::Service;
 use super::shutdown::wait_for_shutdown;
 use crate::router::Router;
@@ -91,6 +90,13 @@ where
                         }
                     };
 
+                    // Wrap the accepted stream in a type that implements hyper's
+                    // I/O traits.
+                    let io = TokioIo::new(stream);
+
+                    // Create a new service to serve the connection.
+                    let service = Service::new(router, state);
+
                     // Create a new HTTP/2 connection.
                     #[cfg(feature = "http2")]
                     let mut connection = {
@@ -98,20 +104,14 @@ where
 
                         hyper::server::conn::http2::Builder::new(exec)
                             .timer(TokioTimer::new())
-                            .serve_connection(
-                                IoStream::new(stream),
-                                Service::new(router, state)
-                            )
+                            .serve_connection(io, service)
                     };
 
                     // Create a new HTTP/1.1 connection.
                     #[cfg(all(feature = "http1", not(feature = "http2")))]
                     let mut connection = hyper::server::conn::http1::Builder::new()
                         .timer(TokioTimer::new())
-                        .serve_connection(
-                            IoStream::new(stream),
-                            Service::new(router, state)
-                        )
+                        .serve_connection(io, service)
                         .with_upgrades();
 
                     // Poll the connection until it is closed or a graceful
