@@ -1,9 +1,9 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
+use http_body_util::combinators::BoxBody;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::BoxBody;
 use crate::Error;
 
 /// A sum type that can represent any
@@ -16,17 +16,17 @@ use crate::Error;
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub enum AnyBody<T> {
-    /// A dynamically dispatched `dyn Body + Send`.
+    /// A dynamically dispatched `dyn Body + Send + Sync`.
     ///
-    Box(BoxBody),
+    Box(BoxBody<Bytes, Error>),
 
-    /// A statically dispatched `impl Body + Send`.
+    /// A statically dispatched `impl Body + Send + Sync`.
     ///
     Inline(T),
 }
 
 enum AnyBodyProjection<'a, T> {
-    Box(Pin<&'a mut BoxBody>),
+    Box(Pin<&'a mut BoxBody<Bytes, Error>>),
     Inline(Pin<&'a mut T>),
 }
 

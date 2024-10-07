@@ -74,7 +74,7 @@ impl Response {
     ///
     pub fn stream<T, E>(stream: T) -> Self
     where
-        T: Stream<Item = Result<Frame<Bytes>, E>> + Send + 'static,
+        T: Stream<Item = Result<Frame<Bytes>, E>> + Send + Sync + Unpin + 'static,
         Error: From<E>,
     {
         let stream_body = StreamAdapter::new(stream);
@@ -111,11 +111,10 @@ impl Response {
 
     /// Consumes the response returning a new response with body mapped to the
     /// return type of the provided closure `map`.
-    pub fn map<F, T, E>(self, map: F) -> Self
+    pub fn map<F, T>(self, map: F) -> Self
     where
         F: FnOnce(AnyBody<ByteBuffer>) -> T,
-        T: Body<Data = Bytes, Error = E> + Send + 'static,
-        Error: From<E>,
+        T: Body<Data = Bytes, Error = Error> + Send + Sync + 'static,
     {
         let (parts, body) = self.response.into_parts();
         let output = map(body.into_inner());
