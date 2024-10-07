@@ -3,13 +3,14 @@ use cookie::CookieJar;
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
 use http_body::Body;
+use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use super::body::RequestBody;
 use super::params::{Param, PathParams, QueryParam};
-use crate::body::{AnyBody, BoxBody};
+use crate::body::AnyBody;
 use crate::Error;
 
 pub struct Request<State = ()> {
@@ -62,11 +63,10 @@ impl<State> Request<State> {
     /// Consumes the request returning a new request with body mapped to the
     /// return type of the provided closure `map`.
     ///
-    pub fn map<F, T, E>(self, map: F) -> Self
+    pub fn map<F, T>(self, map: F) -> Self
     where
         F: FnOnce(AnyBody<Incoming>) -> T,
-        T: Body<Data = Bytes, Error = E> + Send + 'static,
-        Error: From<E>,
+        T: Body<Data = Bytes, Error = Error> + Send + Sync + 'static,
     {
         let input = self.body.into_inner();
         let output = map(input);

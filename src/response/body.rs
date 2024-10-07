@@ -1,8 +1,9 @@
 use bytes::Bytes;
 use http_body::Body;
+use http_body_util::combinators::BoxBody;
 use std::fmt::{self, Debug, Formatter};
 
-use crate::body::{AnyBody, BoxBody, ByteBuffer};
+use crate::body::{AnyBody, ByteBuffer};
 use crate::Error;
 
 #[must_use = "streams do nothing unless polled"]
@@ -20,10 +21,9 @@ impl ResponseBody {
         }
     }
 
-    pub fn from_dyn<T, E>(body: T) -> Self
+    pub fn from_dyn<T>(body: T) -> Self
     where
-        T: Body<Data = Bytes, Error = E> + Send + 'static,
-        Error: From<E>,
+        T: Body<Data = Bytes, Error = Error> + Send + Sync + 'static,
     {
         Self {
             body: AnyBody::Box(BoxBody::new(body)),
@@ -65,8 +65,8 @@ impl Default for ResponseBody {
     }
 }
 
-impl From<BoxBody> for ResponseBody {
-    fn from(body: BoxBody) -> Self {
+impl From<BoxBody<Bytes, Error>> for ResponseBody {
+    fn from(body: BoxBody<Bytes, Error>) -> Self {
         Self {
             body: AnyBody::Box(body),
         }
