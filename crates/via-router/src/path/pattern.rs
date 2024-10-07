@@ -1,5 +1,4 @@
 use std::fmt::{self, Debug, Display};
-use std::sync::Arc;
 
 use super::SplitPath;
 
@@ -15,28 +14,32 @@ pub enum Pattern {
 ///
 #[derive(Debug, PartialEq)]
 pub struct Param {
-    ident: Arc<str>,
+    ident: String,
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
     SplitPath::new(path).map(|at| {
-        let segment = path.get(at.start()..at.end()).unwrap_or("");
+        let end = at.end();
+        let start = at.start();
+        let segment = path.get(start..end).unwrap_or_default();
 
         match segment.chars().next() {
-            Some(':') => {
-                let rest = segment.get(1..).unwrap_or("");
-                Pattern::Dynamic(Param::new(rest))
-            }
-            Some('*') => {
-                let rest = segment.get(1..).unwrap_or("");
-                Pattern::CatchAll(Param::new(rest))
-            }
-            _ => {
-                // Segment does not contain a dynamic parameter.
-                Pattern::Static(Param::new(segment))
-            }
+            // Path segments that start with a colon are considered a Dynamic
+            // pattern. The remaining characters in the segment are considered
+            // the name or identifier associated with the parameter.
+            Some(':') => Pattern::Dynamic(Param::new(&segment[1..])),
+
+            // Path segments that start with an asterisk are considered CatchAll
+            // pattern. The remaining characters in the segment are considered
+            // the name or identifier associated with the parameter.
+            Some('*') => Pattern::CatchAll(Param::new(&segment[1..])),
+
+            // The segment does not start with a reserved character. We'll
+            // consider it a static pattern and match it against uri path
+            // segments by value.
+            _ => Pattern::Static(Param::new(segment)),
         }
     })
 }
@@ -50,7 +53,7 @@ impl Param {
 impl Param {
     pub(crate) fn new(ident: &str) -> Self {
         Self {
-            ident: ident.into(),
+            ident: ident.to_owned(),
         }
     }
 }
@@ -58,7 +61,7 @@ impl Param {
 impl Clone for Param {
     fn clone(&self) -> Self {
         Self {
-            ident: Arc::clone(&self.ident),
+            ident: self.ident.clone(),
         }
     }
 }
