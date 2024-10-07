@@ -16,7 +16,7 @@ pub struct StreamAdapter<T> {
 
 impl<T, E> StreamAdapter<T>
 where
-    T: Stream<Item = Result<Frame<Bytes>, E>> + Send + Sync + Unpin,
+    T: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin,
 {
     pub fn new(stream: T) -> Self {
         Self { stream }
@@ -34,7 +34,7 @@ impl<T: Unpin> StreamAdapter<T> {
 
 impl<T, E> Body for StreamAdapter<T>
 where
-    T: Stream<Item = Result<Frame<Bytes>, E>> + Send + Sync + Unpin,
+    T: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin,
     Error: From<E>,
 {
     type Data = Bytes;

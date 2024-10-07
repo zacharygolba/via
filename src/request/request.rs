@@ -3,7 +3,7 @@ use cookie::CookieJar;
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
 use http_body::Body;
-use http_body_util::combinators::BoxBody;
+use http_body_util::combinators::UnsyncBoxBody;
 use hyper::body::Incoming;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
@@ -70,7 +70,7 @@ impl<State> Request<State> {
     {
         let input = self.body.into_inner();
         let output = map(input);
-        let box_body = AnyBody::Box(BoxBody::new(output));
+        let box_body = AnyBody::Box(UnsyncBoxBody::new(output));
 
         Self {
             body: RequestBody::new(box_body),
