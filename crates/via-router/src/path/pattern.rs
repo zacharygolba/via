@@ -7,7 +7,7 @@ pub enum Pattern {
     Root,
     Static(Param),
     Dynamic(Param),
-    CatchAll(Param),
+    Wildcard(Param),
 }
 
 /// An identifier for a named path segment.
@@ -66,7 +66,7 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
                 let rest = rest_or!(segment, "Wildcard parameters must be named. Found '*'.");
                 let param = Param::new(rest);
 
-                Pattern::CatchAll(param)
+                Pattern::Wildcard(param)
             }
 
             // The segment does not start with a reserved character. We will

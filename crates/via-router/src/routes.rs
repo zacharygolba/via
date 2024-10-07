@@ -55,7 +55,7 @@ impl Node {
     /// node has a `Root` or `Static` pattern.
     pub fn param(&self) -> Option<&Param> {
         match &self.pattern {
-            Pattern::CatchAll(param) | Pattern::Dynamic(param) => Some(param),
+            Pattern::Wildcard(param) | Pattern::Dynamic(param) => Some(param),
             _ => None,
         }
     }
