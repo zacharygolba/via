@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
-use http_body_util::combinators::BoxBody;
+use http_body_util::combinators::UnsyncBoxBody;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -18,7 +18,7 @@ use crate::Error;
 pub enum AnyBody<T> {
     /// A dynamically dispatched `dyn Body + Send + Sync`.
     ///
-    Box(BoxBody<Bytes, Error>),
+    Box(UnsyncBoxBody<Bytes, Error>),
 
     /// A statically dispatched `impl Body + Send + Sync`.
     ///
@@ -26,7 +26,7 @@ pub enum AnyBody<T> {
 }
 
 enum AnyBodyProjection<'a, T> {
-    Box(Pin<&'a mut BoxBody<Bytes, Error>>),
+    Box(Pin<&'a mut UnsyncBoxBody<Bytes, Error>>),
     Inline(Pin<&'a mut T>),
 }
 

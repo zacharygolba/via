@@ -86,7 +86,7 @@ impl ResponseBuilder {
     ///
     pub fn stream<S, E>(self, stream: S) -> Self
     where
-        S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Sync + Unpin + 'static,
+        S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
         Error: From<E>,
     {
         let mut builder = self.inner;

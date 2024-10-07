@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use http_body::Body;
-use http_body_util::combinators::BoxBody;
+use http_body_util::combinators::UnsyncBoxBody;
 use std::fmt::{self, Debug, Formatter};
 
 use crate::body::{AnyBody, ByteBuffer};
@@ -23,10 +23,10 @@ impl ResponseBody {
 
     pub fn from_dyn<T>(body: T) -> Self
     where
-        T: Body<Data = Bytes, Error = Error> + Send + Sync + 'static,
+        T: Body<Data = Bytes, Error = Error> + Send + 'static,
     {
         Self {
-            body: AnyBody::Box(BoxBody::new(body)),
+            body: AnyBody::Box(UnsyncBoxBody::new(body)),
         }
     }
 }
@@ -65,8 +65,8 @@ impl Default for ResponseBody {
     }
 }
 
-impl From<BoxBody<Bytes, Error>> for ResponseBody {
-    fn from(body: BoxBody<Bytes, Error>) -> Self {
+impl From<UnsyncBoxBody<Bytes, Error>> for ResponseBody {
+    fn from(body: UnsyncBoxBody<Bytes, Error>) -> Self {
         Self {
             body: AnyBody::Box(body),
         }

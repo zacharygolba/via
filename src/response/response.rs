@@ -74,7 +74,7 @@ impl Response {
     ///
     pub fn stream<T, E>(stream: T) -> Self
     where
-        T: Stream<Item = Result<Frame<Bytes>, E>> + Send + Sync + Unpin + 'static,
+        T: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
         Error: From<E>,
     {
         let stream_body = StreamAdapter::new(stream);
