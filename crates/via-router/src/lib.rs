@@ -100,7 +100,7 @@ where
     // In the future we may want to panic if the caller tries to insert a node
     // into a catch-all node rather than silently ignoring the rest of the
     // segments.
-    if let Pattern::CatchAll(_) = routes.get(into_index).pattern {
+    if let Pattern::Wildcard(_) = routes.get(into_index).pattern {
         for _ in segments {}
         return into_index;
     }

@@ -178,7 +178,7 @@ fn visit_node<T>(
             // an exact match. Due to the nature of `CatchAll` patterns, we
             // do not have to continue searching for descendants of this
             // node that match the remaining path segments.
-            Pattern::CatchAll(param) => {
+            Pattern::Wildcard(param) => {
                 results.push(Found::leaf(
                     entry.route,
                     Some(param.clone()),
@@ -214,7 +214,7 @@ fn visit_index<T>(
         let entry = store.get(key);
 
         // Check if `descendant` has a `CatchAll` pattern.
-        if let Pattern::CatchAll(param) = &entry.pattern {
+        if let Pattern::Wildcard(param) = &entry.pattern {
             // Append the match as a leaf to the results vector.
             results.push(Found::leaf(
                 entry.route,
