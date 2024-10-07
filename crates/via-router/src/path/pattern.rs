@@ -17,29 +17,64 @@ pub struct Param {
     ident: String,
 }
 
+/// Unwraps the remaining slice of a path segment after the first char or
+/// panics with a custom message.
+///
+macro_rules! rest_or {
+    (
+        // Should evaluate to a `&str`.
+        $segment:expr,
+        // Args passed to panic! if the segment is empty.
+        $($arg:tt)*
+    ) => {{
+        let segment = $segment;
+        match segment.get(1..) {
+            // The range is out of bounds or produced an empty str.
+            None | Some("") => panic!($($arg)*),
+            // The range is valid.
+            Some(rest) => rest,
+        }
+    }};
+}
+
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
     SplitPath::new(path).map(|at| {
         let end = at.end();
         let start = at.start();
-        let segment = path.get(start..end).unwrap_or_default();
+        let segment = match path.get(start..end) {
+            Some(slice) => slice,
+            None => panic!("Path segments cannot be empty when defining a route."),
+        };
 
         match segment.chars().next() {
             // Path segments that start with a colon are considered a Dynamic
             // pattern. The remaining characters in the segment are considered
             // the name or identifier associated with the parameter.
-            Some(':') => Pattern::Dynamic(Param::new(&segment[1..])),
+            Some(':') => {
+                let rest = rest_or!(segment, "Dynamic parameters must be named. Found ':'.");
+                let param = Param::new(rest);
+
+                Pattern::Dynamic(param)
+            }
 
             // Path segments that start with an asterisk are considered CatchAll
             // pattern. The remaining characters in the segment are considered
             // the name or identifier associated with the parameter.
-            Some('*') => Pattern::CatchAll(Param::new(&segment[1..])),
+            Some('*') => {
+                let rest = rest_or!(segment, "Wildcard parameters must be named. Found '*'.");
+                let param = Param::new(rest);
 
-            // The segment does not start with a reserved character. We'll
-            // consider it a static pattern and match it against uri path
-            // segments by value.
-            _ => Pattern::Static(Param::new(segment)),
+                Pattern::CatchAll(param)
+            }
+
+            // The segment does not start with a reserved character. We will
+            // consider it a static pattern that can be matched by value.
+            _ => {
+                let param = Param::new(segment);
+                Pattern::Static(param)
+            }
         }
     })
 }
