@@ -1,4 +1,4 @@
-use hyper_util::rt::{TokioIo, TokioTimer};
+use hyper_util::rt::TokioTimer;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
@@ -10,6 +10,7 @@ use super::acceptor::Acceptor;
 use super::service::Service;
 use super::shutdown::wait_for_shutdown;
 use crate::router::Router;
+use crate::server::io_stream::IoStream;
 use crate::Error;
 
 pub async fn serve<State, A>(
@@ -92,7 +93,7 @@ where
 
                     // Wrap the accepted stream in a type that implements hyper's
                     // I/O traits.
-                    let io = TokioIo::new(stream);
+                    let io = IoStream::new(stream);
 
                     // Create a new service to serve the connection.
                     let service = Service::new(router, state);
