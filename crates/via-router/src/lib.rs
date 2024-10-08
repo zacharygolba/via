@@ -9,50 +9,94 @@ pub use path::{Param, Span};
 pub use visitor::Found;
 
 use path::{Pattern, SplitPath};
-use routes::{Node, RouteStore};
+use routes::{Node, RouteEntry};
 use stack_vec::StackVec;
 
 pub struct Router<T> {
-    store: RouteStore<T>,
+    /// A collection of nodes that represent the path segments of a route.
+    nodes: Vec<Node>,
+
+    /// A vector of routes associated with the nodes in the route tree.
+    routes: Vec<T>,
 }
 
 pub struct Endpoint<'a, T> {
+    router: &'a mut Router<T>,
     key: usize,
-    store: &'a mut RouteStore<T>,
 }
 
 impl<T> Router<T> {
     pub fn new() -> Self {
-        let mut store = RouteStore::new();
+        let mut nodes = Vec::new();
+        let routes = Vec::new();
 
-        store.push(Node::new(Pattern::Root));
-        Self { store }
+        nodes.push(Node::new(Pattern::Root));
+
+        Self { nodes, routes }
     }
 
     /// Returns a reference to the route associated with the given key.
     ///
     pub fn get(&self, key: usize) -> Option<&T> {
-        self.store.route(key)
+        self.routes.get(key)
     }
 
     pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
         let mut segments = path::patterns(path);
+        let key = insert(self, &mut segments, 0);
 
-        Endpoint {
-            key: insert(&mut self.store, &mut segments, 0),
-            store: &mut self.store,
-        }
+        Endpoint { router: self, key }
     }
 
     pub fn visit(&self, path: &str) -> Vec<Found> {
         let mut segments = StackVec::new([None, None, None, None, None]);
-        let store = &self.store;
+        let nodes = &self.nodes;
 
         for segment in SplitPath::new(path) {
             segments.push(segment);
         }
 
-        visitor::visit(path, store, &segments)
+        visitor::visit(path, nodes, &segments)
+    }
+}
+
+impl<T> Router<T> {
+    /// Returns a mutable representation of a single node in the route store.
+    fn entry(&mut self, key: usize) -> RouteEntry<T> {
+        RouteEntry::new(self, key)
+    }
+
+    /// Pushes a new node into the store and returns the key of the newly
+    /// inserted node.
+    fn push(&mut self, node: Node) -> usize {
+        let key = self.nodes.len();
+
+        self.nodes.push(node);
+        key
+    }
+
+    /// Returns a shared reference to the node at the given `key`.
+    fn node(&self, key: usize) -> &Node {
+        &self.nodes[key]
+    }
+
+    /// Returns a mutable reference to the node at the given `key`.
+    fn node_mut(&mut self, key: usize) -> &mut Node {
+        &mut self.nodes[key]
+    }
+
+    /// Returns a mutable reference to the route at the given `key`.
+    ///
+    fn get_mut(&mut self, key: usize) -> &mut T {
+        &mut self.routes[key]
+    }
+
+    /// Pushes a new route into the store and returns the index of the newly
+    /// inserted route.
+    fn push_route(&mut self, route: T) -> usize {
+        let index = self.routes.len();
+        self.routes.push(route);
+        index
     }
 }
 
@@ -65,15 +109,16 @@ impl<T> Default for Router<T> {
 impl<'a, T> Endpoint<'a, T> {
     pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
         let mut segments = path::patterns(path);
+        let key = insert(self.router, &mut segments, self.key);
 
         Endpoint {
-            key: insert(self.store, &mut segments, self.key),
-            store: self.store,
+            router: self.router,
+            key,
         }
     }
 
     pub fn param(&self) -> Option<&Param> {
-        self.store.get(self.key).param()
+        self.router.node(self.key).param()
     }
 
     /// Returns a mutable reference to the route associated with this `Endpoint`.
@@ -85,14 +130,14 @@ impl<'a, T> Endpoint<'a, T> {
     {
         // Get the index of the route associated with the current node or insert
         // a new route by calling the provided closure `f` if it does not exist.
-        let route_index = self.store.entry(self.key).get_or_insert_route_with(f);
+        let route_index = self.router.entry(self.key).get_or_insert_route_with(f);
 
         // Return a mutable reference to the route associated with this `Endpoint`.
-        self.store.route_mut(route_index)
+        self.router.get_mut(route_index)
     }
 }
 
-fn insert<T, I>(routes: &mut RouteStore<T>, segments: &mut I, into_index: usize) -> usize
+fn insert<T, I>(router: &mut Router<T>, segments: &mut I, into_index: usize) -> usize
 where
     I: Iterator<Item = Pattern>,
 {
@@ -100,7 +145,7 @@ where
     // In the future we may want to panic if the caller tries to insert a node
     // into a catch-all node rather than silently ignoring the rest of the
     // segments.
-    if let Pattern::Wildcard(_) = routes.get(into_index).pattern {
+    if let Pattern::Wildcard(_) = router.node(into_index).pattern {
         for _ in segments {}
         return into_index;
     }
@@ -113,18 +158,18 @@ where
 
     // Check if the pattern already exists in the node at `current_key`. If it does,
     // we can continue to the next segment.
-    for next_index in routes.get(into_index).entries() {
-        if pattern == routes.get(*next_index).pattern {
-            return insert(routes, segments, *next_index);
+    for next_index in router.node(into_index).entries() {
+        if pattern == router.node(*next_index).pattern {
+            return insert(router, segments, *next_index);
         }
     }
 
-    let next_index = routes.entry(into_index).push(Node::new(pattern));
+    let next_index = router.entry(into_index).push(Node::new(pattern));
 
     // If the pattern does not exist in the node at `current_key`, we need to create
     // a new node as a descendant of the node at `current_key` and then insert it
     // into the store.
-    insert(routes, segments, next_index)
+    insert(router, segments, next_index)
 }
 
 #[cfg(test)]
