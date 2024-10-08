@@ -1,5 +1,5 @@
 use crate::path::{Param, Pattern, Span};
-use crate::routes::{Node, RouteStore};
+use crate::routes::Node;
 use crate::stack_vec::StackVec;
 
 /// A matched node in the route tree.
@@ -28,9 +28,9 @@ pub struct Found {
     pub at: Span,
 }
 
-pub fn visit<T>(path: &str, store: &RouteStore<T>, segments: &StackVec<Span, 5>) -> Vec<Found> {
+pub fn visit(path: &str, nodes: &[Node], segments: &StackVec<Span, 5>) -> Vec<Found> {
     let mut results = Vec::new();
-    let root = store.get(0);
+    let root = &nodes[0];
     let at = Span::new(0, 0);
 
     match segments.get(0) {
@@ -40,7 +40,7 @@ pub fn visit<T>(path: &str, store: &RouteStore<T>, segments: &StackVec<Span, 5>)
 
             // Begin the search for matches recursively starting with descendants of
             // the root node.
-            visit_node(&mut results, store, root, path, segments, range, 0);
+            visit_node(&mut results, nodes, root, path, segments, range, 0);
         }
         None => {
             // Append the root match to the results vector.
@@ -48,7 +48,7 @@ pub fn visit<T>(path: &str, store: &RouteStore<T>, segments: &StackVec<Span, 5>)
 
             // Perform a shallow search for descendants of the root node that have a
             // `CatchAll` pattern.
-            visit_index(&mut results, store, root);
+            visit_index(&mut results, nodes, root);
         }
     }
 
@@ -79,13 +79,13 @@ impl Found {
 /// pattern that matches the path segment at `index`. If a match is found,
 /// we'll add it to `results` and continue our search with the descendants
 /// of matched node against the path segment at next index.
-fn visit_node<T>(
+fn visit_node(
     // A mutable reference to a vector that contains the matches that we
     // have found so far.
     results: &mut Vec<Found>,
 
     // A reference to the route store that contains the route tree.
-    store: &RouteStore<T>,
+    nodes: &[Node],
 
     // A reference to the most recently matched node.
     node: &Node,
@@ -116,7 +116,7 @@ fn visit_node<T>(
 
     // Search for descendant nodes that match `segment`.
     for key in node.entries().copied() {
-        let entry = store.get(key);
+        let entry = &nodes[key];
 
         // Check if `descendant` has a pattern that matches `path_segment`.
         match &entry.pattern {
@@ -134,7 +134,7 @@ fn visit_node<T>(
 
                         // Continue searching for descendants of the current node
                         // that match the the next path segment.
-                        visit_node(results, store, entry, path, segments, range, index);
+                        visit_node(results, nodes, entry, path, segments, range, index);
                     }
                     None => {
                         // Append the match to the results vector.
@@ -142,7 +142,7 @@ fn visit_node<T>(
 
                         // Perform a shallow search for descendants of the
                         // current node that have a `CatchAll` pattern.
-                        visit_index(results, store, entry);
+                        visit_index(results, nodes, entry);
                     }
                 }
             }
@@ -161,7 +161,7 @@ fn visit_node<T>(
 
                         // Continue searching for descendants of the current node
                         // that match the the next path segment.
-                        visit_node(results, store, entry, path, segments, range, index);
+                        visit_node(results, nodes, entry, path, segments, range, index);
                     }
                     None => {
                         // Append the match to the results vector.
@@ -169,7 +169,7 @@ fn visit_node<T>(
 
                         // Perform a shallow search for descendants of the
                         // current node that have a `CatchAll` pattern.
-                        visit_index(results, store, entry);
+                        visit_index(results, nodes, entry);
                     }
                 }
             }
@@ -196,13 +196,13 @@ fn visit_node<T>(
 /// Perform a shallow search for descendants of the `node` that have a `CatchAll`
 /// pattern.
 ///
-fn visit_index<T>(
+fn visit_index(
     // A mutable reference to a vector that contains the matches that we
     // have found so far.
     results: &mut Vec<Found>,
 
     // A reference to the route store that contains the route tree.
-    store: &RouteStore<T>,
+    nodes: &[Node],
 
     // A reference to the most recently matched node.
     node: &Node,
@@ -211,7 +211,7 @@ fn visit_index<T>(
     // have a `CatchAll` pattern. This is required to support matching the
     // "index" path of a descendant node with a `CatchAll` pattern.
     for key in node.entries().copied() {
-        let entry = store.get(key);
+        let entry = &nodes[key];
 
         // Check if `descendant` has a `CatchAll` pattern.
         if let Pattern::Wildcard(param) = &entry.pattern {
