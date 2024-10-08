@@ -30,13 +30,20 @@ pub struct Found {
 
 pub fn visit(path: &str, nodes: &[Node], segments: &StackVec<Span, 5>) -> Vec<Found> {
     let mut results = Vec::new();
-    let root = &nodes[0];
-    let at = Span::new(0, 0);
+    let root = match nodes.get(0) {
+        Some(node) => node,
+        None => {
+            // This is an edge-case that can be caused by corrupt memory or a bug
+            // in the router. We should log the error and not match any routes.
+            // Placeholder for tracing...
+            return results;
+        }
+    };
 
     match segments.get(0) {
         Some(range) => {
             // Append the root match to the results vector.
-            results.push(Found::new(root.route, None, at));
+            results.push(Found::new(root.route, None, Span::new(0, 0)));
 
             // Begin the search for matches recursively starting with descendants of
             // the root node.
@@ -44,7 +51,7 @@ pub fn visit(path: &str, nodes: &[Node], segments: &StackVec<Span, 5>) -> Vec<Fo
         }
         None => {
             // Append the root match to the results vector.
-            results.push(Found::leaf(root.route, None, at));
+            results.push(Found::leaf(root.route, None, Span::new(0, 0)));
 
             // Perform a shallow search for descendants of the root node that have a
             // `CatchAll` pattern.
@@ -115,8 +122,14 @@ fn visit_node(
     };
 
     // Search for descendant nodes that match `segment`.
-    for key in node.entries().copied() {
-        let entry = &nodes[key];
+    for key in node.entries() {
+        let entry = match nodes.get(*key) {
+            Some(entry) => entry,
+            None => {
+                // Placeholder for tracing...
+                continue;
+            }
+        };
 
         // Check if `descendant` has a pattern that matches `path_segment`.
         match &entry.pattern {
@@ -210,8 +223,14 @@ fn visit_index(
     // Perform a shallow search for descendants of the current node that
     // have a `CatchAll` pattern. This is required to support matching the
     // "index" path of a descendant node with a `CatchAll` pattern.
-    for key in node.entries().copied() {
-        let entry = &nodes[key];
+    for key in node.entries() {
+        let entry = match nodes.get(*key) {
+            Some(entry) => entry,
+            None => {
+                // Placeholder for tracing...
+                continue;
+            }
+        };
 
         // Check if `descendant` has a `CatchAll` pattern.
         if let Pattern::Wildcard(param) = &entry.pattern {
