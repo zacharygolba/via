@@ -1,7 +1,5 @@
 use std::fmt::{self, Debug, Display};
 
-use super::SplitPath;
-
 #[derive(PartialEq)]
 pub enum Pattern {
     Root,
@@ -14,7 +12,7 @@ pub enum Pattern {
 ///
 #[derive(Debug, PartialEq)]
 pub struct Param {
-    ident: String,
+    ident: Box<str>,
 }
 
 /// Unwraps the remaining slice of a path segment after the first char or
@@ -40,7 +38,7 @@ macro_rules! rest_or {
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
-    SplitPath::new(path).map(|at| {
+    super::split(path).into_iter().map(|at| {
         let end = at.end();
         let start = at.start();
         let segment = match path.get(start..end) {
@@ -88,7 +86,7 @@ impl Param {
 impl Param {
     pub(crate) fn new(ident: &str) -> Self {
         Self {
-            ident: ident.to_owned(),
+            ident: ident.into(),
         }
     }
 }

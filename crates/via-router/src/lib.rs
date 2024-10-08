@@ -2,15 +2,14 @@
 
 mod path;
 mod routes;
-mod stack_vec;
 mod visitor;
 
 pub use path::{Param, Span};
+use smallvec::SmallVec;
 pub use visitor::Found;
 
-use path::{Pattern, SplitPath};
+use path::Pattern;
 use routes::{Node, RouteEntry};
-use stack_vec::StackVec;
 
 pub struct Router<T> {
     /// A collection of nodes that represent the path segments of a route.
@@ -49,13 +48,10 @@ impl<T> Router<T> {
     }
 
     pub fn visit(&self, path: &str) -> Vec<Found> {
-        let mut segments = StackVec::new([None, None, None, None, None]);
+        let mut segments = SmallVec::new();
         let nodes = &self.nodes;
 
-        for segment in SplitPath::new(path) {
-            segments.push(segment);
-        }
-
+        path::split_into(&mut segments, path);
         visitor::visit(path, nodes, &segments)
     }
 }
