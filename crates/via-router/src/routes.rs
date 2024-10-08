@@ -1,9 +1,7 @@
 use core::slice::Iter;
 
-use crate::{
-    path::{Param, Pattern},
-    Router,
-};
+use crate::path::{Param, Pattern};
+use crate::Router;
 
 /// A node in the route tree that represents a single path segment.
 pub struct Node {

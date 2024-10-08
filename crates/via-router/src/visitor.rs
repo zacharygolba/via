@@ -1,6 +1,7 @@
+use smallvec::SmallVec;
+
 use crate::path::{Param, Pattern, Span};
 use crate::routes::Node;
-use crate::stack_vec::StackVec;
 
 /// A matched node in the route tree.
 ///
@@ -28,7 +29,7 @@ pub struct Found {
     pub at: Span,
 }
 
-pub fn visit(path: &str, nodes: &[Node], segments: &StackVec<Span, 5>) -> Vec<Found> {
+pub fn visit(path: &str, nodes: &[Node], segments: &SmallVec<[Span; 6]>) -> Vec<Found> {
     let mut results = Vec::new();
     let root = match nodes.first() {
         Some(node) => node,
@@ -40,7 +41,7 @@ pub fn visit(path: &str, nodes: &[Node], segments: &StackVec<Span, 5>) -> Vec<Fo
         }
     };
 
-    match segments.get(0) {
+    match segments.first() {
         Some(range) => {
             // Append the root match to the results vector.
             results.push(Found::new(root.route, None, Span::new(0, 0)));
@@ -100,7 +101,7 @@ fn visit_node(
     // The url path that we are attempting to match against the route tree.
     path: &str,
 
-    segments: &StackVec<Span, 5>,
+    segments: &SmallVec<[Span; 6]>,
 
     // The start and end offset of the path segment at `index` in
     // `self.path_value`.

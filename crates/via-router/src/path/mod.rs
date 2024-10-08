@@ -1,5 +1,5 @@
 mod pattern;
-mod split_path;
+mod span;
 
 pub use pattern::{patterns, Param, Pattern};
-pub use split_path::{Span, SplitPath};
+pub use span::{split, split_into, Span};

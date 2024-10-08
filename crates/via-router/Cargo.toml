@@ -7,3 +7,6 @@ license = "MIT OR Apache-2.0"
 description = "A fast and flexible http router."
 homepage = "https://github.com/zacharygolba/via"
 repository = "https://github.com/zacharygolba/via"
+
+[dependencies]
+smallvec = "1.13"
