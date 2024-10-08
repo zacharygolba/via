@@ -30,7 +30,7 @@ pub struct Found {
 
 pub fn visit(path: &str, nodes: &[Node], segments: &StackVec<Span, 5>) -> Vec<Found> {
     let mut results = Vec::new();
-    let root = match nodes.get(0) {
+    let root = match nodes.first() {
         Some(node) => node,
         None => {
             // This is an edge-case that can be caused by corrupt memory or a bug
