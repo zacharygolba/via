@@ -52,7 +52,7 @@ pub fn split(path: &'static str) -> Vec<Span> {
 }
 
 #[inline]
-pub fn split_into(segments: &mut SmallVec<[Span; 6]>, path: &str) {
+pub fn split_into(segments: &mut SmallVec<[Span; 5]>, path: &str) {
     let mut start = None;
 
     for (index, byte) in path.chars().enumerate() {
