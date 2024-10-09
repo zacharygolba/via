@@ -1,14 +1,13 @@
 use bytes::Bytes;
-use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::response::Builder;
 use http::{HeaderName, HeaderValue, StatusCode, Version};
-use http_body::Frame;
+use http_body::Body;
 use serde::Serialize;
 
-use super::stream_adapter::StreamAdapter;
 use super::{Response, ResponseBody};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
+use crate::error::AnyError;
 use crate::{Error, Result};
 
 pub struct ResponseBuilder {
@@ -84,19 +83,13 @@ impl ResponseBuilder {
 
     /// Build a response from a stream of `Result<Frame<Bytes>, Error>`.
     ///
-    pub fn stream<S, E>(self, stream: S) -> Self
+    pub fn stream<T>(self, body: T) -> Self
     where
-        S: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
-        Error: From<E>,
+        T: Body<Data = Bytes, Error = AnyError> + Send + 'static,
     {
-        let mut builder = self.inner;
-        let stream_body = StreamAdapter::new(stream);
-
-        builder = builder.header(TRANSFER_ENCODING, CHUNKED_ENCODING);
-
         Self {
-            body: Some(Ok(ResponseBody::from_dyn(stream_body))),
-            inner: builder,
+            body: Some(Ok(ResponseBody::from_dyn(body))),
+            inner: self.inner.header(TRANSFER_ENCODING, CHUNKED_ENCODING),
         }
     }
 

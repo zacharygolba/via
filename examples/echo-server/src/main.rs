@@ -2,12 +2,12 @@ use via::http::header::CONTENT_TYPE;
 use via::{Error, Next, Request, Response, Server};
 
 async fn echo(request: Request, _: Next) -> Result<Response, Error> {
-    // Optionally get the value of the Content-Type header from `request`.
+    // Get an owned copy of the request's Content-Type header.
     let content_type = request.headers().get(CONTENT_TYPE).cloned();
-    // Get a stream of bytes from the body of the request.
+
+    // Consume the request and get a stream of bytes from the body.
     let body_stream = request.into_body().into_stream();
 
-    // Stream the request body back to the client.
     Response::build()
         .stream(body_stream)
         .headers(Some(CONTENT_TYPE).zip(content_type))
