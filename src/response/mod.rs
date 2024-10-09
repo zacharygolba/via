@@ -11,6 +11,8 @@ pub use into_response::IntoResponse;
 pub use redirect::Redirect;
 pub use response::Response;
 
+pub(crate) use response::OutgoingResponse;
+
 use http::HeaderValue;
 
 use stream_adapter::StreamAdapter;
