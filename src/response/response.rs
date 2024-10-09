@@ -1,20 +1,16 @@
 use bytes::Bytes;
 use cookie::CookieJar;
-use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, SET_COOKIE, TRANSFER_ENCODING};
 use http::response::Parts;
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Version};
-use http_body::{Body, Frame};
-use http_body_util::Either;
+use http_body::Body;
 use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 
-use super::body::DynBody;
-use super::{ResponseBody, ResponseBuilder, StreamAdapter};
+use super::{ResponseBody, ResponseBuilder};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
+use crate::error::AnyError;
 use crate::{Error, Result};
-
-pub(crate) type OutgoingResponse = http::Response<ResponseBody>;
 
 pub struct Response {
     cookies: Option<Box<CookieJar>>,
@@ -75,13 +71,11 @@ impl Response {
 
     /// Create a response from a stream of `Result<Frame<Bytes>, Error>`.
     ///
-    pub fn stream<T, E>(stream: T) -> Self
+    pub fn stream<T, E>(body: T) -> Self
     where
-        T: Stream<Item = Result<Frame<Bytes>, E>> + Send + Unpin + 'static,
-        Error: From<E>,
+        T: Body<Data = Bytes, Error = AnyError> + Send + 'static,
     {
-        let stream_body = StreamAdapter::new(stream);
-        let mut response = Self::new(ResponseBody::from_dyn(stream_body));
+        let mut response = Self::new(ResponseBody::from_dyn(body));
 
         response.set_header(TRANSFER_ENCODING, CHUNKED_ENCODING);
         response
@@ -116,14 +110,13 @@ impl Response {
     /// return type of the provided closure `map`.
     pub fn map<F, T>(self, map: F) -> Self
     where
-        F: FnOnce(Either<DynBody, String>) -> T,
-        T: Body<Data = Bytes, Error = Error> + Send + Sync + 'static,
+        F: FnOnce(ResponseBody) -> T,
+        T: Body<Data = Bytes, Error = AnyError> + Send + Sync + 'static,
     {
         let (parts, body) = self.response.into_parts();
-        let output = map(body.into_inner());
-        let body = ResponseBody::from_dyn(output);
+        let output = ResponseBody::from_dyn(map(body));
 
-        Self::from_parts(parts, body)
+        Self::from_parts(parts, output)
     }
 
     pub fn body(&self) -> &ResponseBody {
@@ -184,7 +177,7 @@ impl Response {
     /// final processing that may be required before the response is sent to the
     /// client.
     ///
-    pub(crate) fn into_outgoing_response(self) -> OutgoingResponse {
+    pub(crate) fn into_inner(self) -> http::Response<ResponseBody> {
         // Extract the component parts of the inner response.
         let (mut parts, body) = self.response.into_parts();
 
@@ -210,7 +203,7 @@ impl Response {
         // Reconstruct a http::Response from the component parts and response
         // body.
         //
-        OutgoingResponse::from_parts(parts, body)
+        http::Response::from_parts(parts, body)
     }
 
     pub(crate) fn set_cookies(&mut self, cookies: Box<CookieJar>) {

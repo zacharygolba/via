@@ -5,19 +5,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use crate::body::AnyBody;
 use crate::middleware::BoxFuture;
 use crate::request::{Request, RequestBody};
-use crate::response::OutgoingResponse;
+use crate::response::ResponseBody;
 use crate::router::Router;
 use crate::{Error, Response};
-
-/// The request type used by our hyper service. This is the type that we will
-/// wrap in a `via::Request` and pass to the middleware stack.
-type IncomingRequest = http::Request<Incoming>;
-
-/// The response type used by our hyper service. This is the type that we will
-/// unwrap from the `via::Response` returned from the middleware stack.
 
 pub struct FutureResponse {
     future: BoxFuture<Result<Response, Error>>,
@@ -29,7 +21,7 @@ pub struct Service<State> {
 }
 
 impl Future for FutureResponse {
-    type Output = Result<OutgoingResponse, Infallible>;
+    type Output = Result<http::Response<ResponseBody>, Infallible>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         self.future
@@ -37,9 +29,9 @@ impl Future for FutureResponse {
             .poll(context)
             .map(|result| match result {
                 // The response was generated successfully.
-                Ok(response) => Ok(response.into_outgoing_response()),
+                Ok(response) => Ok(response.into_inner()),
                 // An occurred while generating the response.
-                Err(error) => Ok(error.into_response().into_outgoing_response()),
+                Err(error) => Ok(error.into_response().into_inner()),
             })
     }
 }
@@ -50,19 +42,19 @@ impl<State> Service<State> {
     }
 }
 
-impl<State> hyper::service::Service<IncomingRequest> for Service<State>
+impl<State> hyper::service::Service<http::Request<Incoming>> for Service<State>
 where
     State: Send + Sync + 'static,
 {
     type Error = Infallible;
     type Future = FutureResponse;
-    type Response = OutgoingResponse;
+    type Response = http::Response<ResponseBody>;
 
-    fn call(&self, incoming: IncomingRequest) -> Self::Future {
+    fn call(&self, request: http::Request<Incoming>) -> Self::Future {
         // Wrap the incoming request in with `via::Request`.
         let mut request = {
             // Destructure the incoming request into its component parts.
-            let (parts, body) = incoming.into_parts();
+            let (parts, body) = request.into_parts();
 
             // Allocate the metadata associated with the request on the heap.
             // This keeps the size of the request type small enough to pass
@@ -70,7 +62,7 @@ where
             let parts = Box::new(parts);
 
             // Wrap the request body with `RequestBody`.
-            let body = RequestBody::new(AnyBody::Inline(body));
+            let body = RequestBody::new(body);
 
             // Clone the shared application state so request can own a reference
             // to it. This is a cheaper operation than going from Weak to Arc for

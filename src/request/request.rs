@@ -3,14 +3,11 @@ use cookie::CookieJar;
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
 use http_body::Body;
-use http_body_util::combinators::UnsyncBoxBody;
-use hyper::body::Incoming;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use super::body::RequestBody;
 use super::params::{Param, PathParams, QueryParam};
-use crate::body::AnyBody;
 use crate::Error;
 
 pub struct Request<State = ()> {
@@ -65,15 +62,11 @@ impl<State> Request<State> {
     ///
     pub fn map<F, T>(self, map: F) -> Self
     where
-        F: FnOnce(AnyBody<Incoming>) -> T,
+        F: FnOnce(RequestBody) -> T,
         T: Body<Data = Bytes, Error = Error> + Send + Sync + 'static,
     {
-        let input = self.body.into_inner();
-        let output = map(input);
-        let box_body = AnyBody::Box(UnsyncBoxBody::new(output));
-
         Self {
-            body: RequestBody::new(box_body),
+            body: RequestBody::from_dyn(map(self.body)),
             ..self
         }
     }

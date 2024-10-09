@@ -1,3 +1,4 @@
+use http_body_util::StreamBody;
 use httpdate::HttpDate;
 use std::path::PathBuf;
 use via::{
@@ -103,7 +104,7 @@ where
             let stream = StreamFile::new(file.path, config.read_stream_timeout);
 
             Response::build()
-                .stream(stream)
+                .stream(StreamBody::new(stream))
                 .header(header::CONTENT_TYPE, file.mime_type)
                 .headers(optional_headers)
                 .finish()

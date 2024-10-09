@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use futures_core::Stream;
 use http_body::Frame;
+use std::error::Error as StdError;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::PathBuf;
@@ -8,7 +9,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime};
 use tokio::{runtime::Handle, sync::mpsc, task};
-use via::{Error, Result};
+use via::Result;
 
 /// The amount of `ReadChunkResult` that can be stored in the channel buffer.
 const CHANNEL_CAPACITY: usize = 16;
@@ -127,7 +128,7 @@ impl StreamFile {
 }
 
 impl Stream for StreamFile {
-    type Item = Result<Frame<Bytes>>;
+    type Item = Result<Frame<Bytes>, Box<dyn StdError + Send + Sync>>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -135,6 +136,6 @@ impl Stream for StreamFile {
         this.receiver
             .poll_recv(context)
             .map_ok(|data| Frame::data(data.into()))
-            .map_err(Error::from_io_error)
+            .map_err(|error| error.into())
     }
 }

@@ -1,6 +1,6 @@
-pub mod body;
 pub mod params;
 
+mod body;
 mod request;
 
 pub use body::RequestBody;
