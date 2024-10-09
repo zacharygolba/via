@@ -13,6 +13,7 @@ use crate::error::AnyError;
 use crate::{Error, Result};
 
 pub struct Response {
+    did_map: bool,
     cookies: Option<Box<CookieJar>>,
     response: http::Response<ResponseBody>,
 }
@@ -20,6 +21,7 @@ pub struct Response {
 impl Response {
     pub fn new(body: ResponseBody) -> Self {
         Self {
+            did_map: false,
             cookies: None,
             response: http::Response::new(body),
         }
@@ -94,6 +96,7 @@ impl Response {
 
     pub fn from_parts(parts: Parts, body: ResponseBody) -> Self {
         Self {
+            did_map: false,
             cookies: None,
             response: http::Response::from_parts(parts, body),
         }
@@ -113,10 +116,16 @@ impl Response {
         F: FnOnce(ResponseBody) -> T,
         T: Body<Data = Bytes, Error = AnyError> + Send + Sync + 'static,
     {
-        let (parts, body) = self.response.into_parts();
-        let output = ResponseBody::from_dyn(map(body));
+        if cfg!(debug_assertions) && self.did_map {
+            // TODO: Replace this with tracing and a proper logger.
+            eprintln!("calling response.map() more than once can create reference cycles.");
+        }
 
-        Self::from_parts(parts, output)
+        Self {
+            did_map: true,
+            response: self.response.map(|body| ResponseBody::from_dyn(map(body))),
+            ..self
+        }
     }
 
     pub fn body(&self) -> &ResponseBody {
@@ -227,6 +236,7 @@ impl From<http::Response<ResponseBody>> for Response {
     fn from(response: http::Response<ResponseBody>) -> Self {
         Self {
             response,
+            did_map: false,
             cookies: None,
         }
     }
