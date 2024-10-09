@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use core::str;
 use http::StatusCode;
 use http_body::{Body, Frame};
 use http_body_util::combinators::UnsyncBoxBody;
@@ -8,6 +7,7 @@ use hyper::body::Incoming;
 use serde::de::DeserializeOwned;
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
+use std::str;
 use std::task::{Context, Poll};
 
 use crate::Error;
