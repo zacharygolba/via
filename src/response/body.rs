@@ -1,55 +1,48 @@
 use bytes::Bytes;
-use http_body::Body;
+use http_body::{Body, Frame, SizeHint};
 use http_body_util::combinators::UnsyncBoxBody;
+use http_body_util::Either;
+use std::error::Error as StdError;
 use std::fmt::{self, Debug, Formatter};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
-use crate::body::{AnyBody, ByteBuffer};
 use crate::Error;
 
-#[must_use = "streams do nothing unless polled"]
+type DynBody = UnsyncBoxBody<Bytes, Box<dyn StdError + Send + Sync>>;
+
 pub struct ResponseBody {
-    body: AnyBody<ByteBuffer>,
+    body: Either<String, DynBody>,
 }
 
 impl ResponseBody {
     /// Creates a new, empty response body.
+    ///
+    #[inline]
     pub fn new() -> Self {
-        let buffered = ByteBuffer::new(&[]);
-
         Self {
-            body: AnyBody::Inline(buffered),
+            body: Either::Left(String::new()),
         }
     }
 
-    pub fn from_dyn<T>(body: T) -> Self
+    /// Creates a new, empty response body.
+    ///
+    #[inline]
+    pub fn from_dyn<B>(body: B) -> Self
     where
-        T: Body<Data = Bytes, Error = Error> + Send + 'static,
+        B: Body<Data = Bytes, Error = Box<dyn StdError + Send + Sync>> + Send + 'static,
     {
         Self {
-            body: AnyBody::Box(UnsyncBoxBody::new(body)),
+            body: Either::Right(DynBody::new(body)),
         }
     }
 }
 
 impl ResponseBody {
-    pub(super) fn from_string(string: String) -> Self {
-        let buffered = ByteBuffer::from(string);
-
-        Self {
-            body: AnyBody::Inline(buffered),
-        }
-    }
-
-    pub(super) fn from_vec(bytes: Vec<u8>) -> Self {
-        let buffered = ByteBuffer::from(bytes);
-
-        Self {
-            body: AnyBody::Inline(buffered),
-        }
-    }
-
-    pub(super) fn into_inner(self) -> AnyBody<ByteBuffer> {
-        self.body
+    fn project(self: Pin<&mut Self>) -> Pin<&mut Either<String, DynBody>> {
+        let this = self.get_mut();
+        let ptr = &mut this.body;
+        Pin::new(ptr)
     }
 }
 
@@ -65,23 +58,49 @@ impl Default for ResponseBody {
     }
 }
 
-impl From<UnsyncBoxBody<Bytes, Error>> for ResponseBody {
-    fn from(body: UnsyncBoxBody<Bytes, Error>) -> Self {
+impl Body for ResponseBody {
+    type Data = Bytes;
+    type Error = Box<dyn StdError + Send + Sync>;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        self.project().poll_frame(context)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.body.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.body.size_hint()
+    }
+}
+
+impl From<String> for ResponseBody {
+    #[inline]
+    fn from(string: String) -> Self {
         Self {
-            body: AnyBody::Box(body),
+            body: Either::Left(string),
         }
     }
 }
 
-impl<T> From<T> for ResponseBody
-where
-    ByteBuffer: From<T>,
-{
-    fn from(body: T) -> Self {
-        let buffered = ByteBuffer::from(body);
-
+impl From<DynBody> for ResponseBody {
+    #[inline]
+    fn from(body: DynBody) -> Self {
         Self {
-            body: AnyBody::Inline(buffered),
+            body: Either::Right(body),
         }
+    }
+}
+
+impl TryFrom<Vec<u8>> for ResponseBody {
+    type Error = Error;
+
+    #[inline]
+    fn try_from(utf8: Vec<u8>) -> Result<Self, Self::Error> {
+        Ok(String::from_utf8(utf8)?.into())
     }
 }

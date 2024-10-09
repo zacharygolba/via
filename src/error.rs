@@ -10,13 +10,14 @@ use std::io;
 
 use crate::Response;
 
-type AnyError = Box<dyn StdError + Send + Sync + 'static>;
 type Source = (dyn StdError + 'static);
 
 /// A type alias for [`std::result::Result`] that uses `Error` as the default
 /// error type.
 ///
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+pub(crate) type AnyError = Box<dyn StdError + Send + Sync + 'static>;
 
 /// An error type that can be easily converted to a [`Response`].
 ///
@@ -64,6 +65,14 @@ impl Error {
         Self {
             format: Format::Text,
             source: Box::new(ErrorMessage { message }),
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    pub fn from_box_error(error: AnyError) -> Self {
+        Self {
+            format: Format::Text,
+            source: error,
             status: StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

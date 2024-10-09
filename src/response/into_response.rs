@@ -1,4 +1,4 @@
-use super::{Response, ResponseBuilder};
+use super::{Response, ResponseBody, ResponseBuilder};
 use crate::{Error, Result};
 
 pub trait IntoResponse {
@@ -13,13 +13,14 @@ impl IntoResponse for () {
 
 impl IntoResponse for Vec<u8> {
     fn into_response(self) -> Result<Response> {
-        Response::build().body(self).finish()
+        let body = ResponseBody::try_from(self)?;
+        Response::build().body(body).finish()
     }
 }
 
 impl IntoResponse for &'static [u8] {
     fn into_response(self) -> Result<Response> {
-        Response::build().body(self).finish()
+        Vec::from(self).into_response()
     }
 }
 

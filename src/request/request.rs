@@ -3,17 +3,16 @@ use cookie::CookieJar;
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
 use http_body::Body;
-use http_body_util::combinators::UnsyncBoxBody;
-use hyper::body::Incoming;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use super::body::RequestBody;
 use super::params::{Param, PathParams, QueryParam};
-use crate::body::AnyBody;
 use crate::Error;
 
 pub struct Request<State = ()> {
+    did_map: bool,
+
     /// The component parts of the underlying HTTP request.
     ///
     pub(crate) parts: Box<Parts>,
@@ -65,15 +64,17 @@ impl<State> Request<State> {
     ///
     pub fn map<F, T>(self, map: F) -> Self
     where
-        F: FnOnce(AnyBody<Incoming>) -> T,
+        F: FnOnce(RequestBody) -> T,
         T: Body<Data = Bytes, Error = Error> + Send + Sync + 'static,
     {
-        let input = self.body.into_inner();
-        let output = map(input);
-        let box_body = AnyBody::Box(UnsyncBoxBody::new(output));
+        if cfg!(debug_assertions) && self.did_map {
+            // TODO: Replace this with tracing and a proper logger.
+            eprintln!("calling request.map() more than once can create reference cycles.",);
+        }
 
         Self {
-            body: RequestBody::new(box_body),
+            did_map: true,
+            body: RequestBody::from_dyn(map(self.body)),
             ..self
         }
     }
@@ -175,6 +176,7 @@ impl<State> Request<State> {
             parts,
             body,
             state,
+            did_map: false,
             cookies: None,
             params: PathParams::new(Vec::new()),
         }
