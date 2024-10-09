@@ -69,10 +69,7 @@ impl<State> Request<State> {
     {
         if cfg!(debug_assertions) && self.did_map {
             // TODO: Replace this with tracing and a proper logger.
-            eprintln!(
-                "calling request.map() more than once can create {}",
-                "reference cycles."
-            );
+            eprintln!("calling request.map() more than once can create reference cycles.",);
         }
 
         Self {
