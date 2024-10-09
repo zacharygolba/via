@@ -16,11 +16,11 @@ use crate::Error;
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub enum AnyBody<T> {
-    /// A dynamically dispatched `dyn Body + Send + Sync`.
+    /// A dynamically dispatched `dyn Body + Send`.
     ///
     Box(UnsyncBoxBody<Bytes, Error>),
 
-    /// A statically dispatched `impl Body + Send + Sync`.
+    /// A statically dispatched `impl Body + Send`.
     ///
     Inline(T),
 }

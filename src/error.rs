@@ -68,6 +68,14 @@ impl Error {
         }
     }
 
+    pub fn from_box_error(error: AnyError) -> Self {
+        Self {
+            format: Format::Text,
+            source: error,
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
     /// A convience for creating a new `Error` from an [io::Error]. This method
     /// will be deprecated when specialization is released.
     ///

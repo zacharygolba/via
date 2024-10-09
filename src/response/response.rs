@@ -5,13 +5,16 @@ use http::header::{CONTENT_LENGTH, CONTENT_TYPE, SET_COOKIE, TRANSFER_ENCODING};
 use http::response::Parts;
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Version};
 use http_body::{Body, Frame};
+use http_body_util::Either;
 use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 
+use super::body::DynBody;
 use super::{ResponseBody, ResponseBuilder, StreamAdapter};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
-use crate::body::{AnyBody, ByteBuffer};
 use crate::{Error, Result};
+
+pub(crate) type OutgoingResponse = http::Response<ResponseBody>;
 
 pub struct Response {
     cookies: Option<Box<CookieJar>>,
@@ -36,7 +39,7 @@ impl Response {
     pub fn html(body: String) -> Self {
         let len = body.len();
 
-        let mut response = Self::new(ResponseBody::from_string(body));
+        let mut response = Self::new(body.into());
         let headers = response.headers_mut();
 
         headers.insert(CONTENT_TYPE, TEXT_HTML);
@@ -48,7 +51,7 @@ impl Response {
     pub fn text(body: String) -> Self {
         let len = body.len();
 
-        let mut response = Self::new(ResponseBody::from_string(body));
+        let mut response = Self::new(body.into());
         let headers = response.headers_mut();
 
         headers.insert(CONTENT_TYPE, TEXT_PLAIN);
@@ -58,10 +61,10 @@ impl Response {
     }
 
     pub fn json<T: Serialize>(body: &T) -> Result<Response, Error> {
-        let buf = serde_json::to_vec(body)?;
-        let len = buf.len();
+        let utf8 = serde_json::to_vec(body)?;
+        let len = utf8.len();
 
-        let mut response = Self::new(ResponseBody::from_vec(buf));
+        let mut response = Self::new(ResponseBody::try_from(utf8)?);
         let headers = response.headers_mut();
 
         headers.insert(CONTENT_TYPE, APPLICATION_JSON);
@@ -113,7 +116,7 @@ impl Response {
     /// return type of the provided closure `map`.
     pub fn map<F, T>(self, map: F) -> Self
     where
-        F: FnOnce(AnyBody<ByteBuffer>) -> T,
+        F: FnOnce(Either<DynBody, String>) -> T,
         T: Body<Data = Bytes, Error = Error> + Send + Sync + 'static,
     {
         let (parts, body) = self.response.into_parts();
@@ -181,7 +184,7 @@ impl Response {
     /// final processing that may be required before the response is sent to the
     /// client.
     ///
-    pub(crate) fn into_outgoing_response(self) -> http::Response<AnyBody<ByteBuffer>> {
+    pub(crate) fn into_outgoing_response(self) -> OutgoingResponse {
         // Extract the component parts of the inner response.
         let (mut parts, body) = self.response.into_parts();
 
@@ -207,7 +210,7 @@ impl Response {
         // Reconstruct a http::Response from the component parts and response
         // body.
         //
-        http::Response::from_parts(parts, body.into_inner())
+        OutgoingResponse::from_parts(parts, body)
     }
 
     pub(crate) fn set_cookies(&mut self, cookies: Box<CookieJar>) {
@@ -233,14 +236,5 @@ impl From<http::Response<ResponseBody>> for Response {
             response,
             cookies: None,
         }
-    }
-}
-
-impl From<Response> for http::Response<AnyBody<ByteBuffer>> {
-    fn from(from: Response) -> Self {
-        let (parts, body) = from.into_parts();
-        let body = body.into_inner();
-
-        Self::from_parts(parts, body)
     }
 }

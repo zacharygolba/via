@@ -44,7 +44,7 @@ impl ResponseBuilder {
         builder = builder.header(CONTENT_LENGTH, string.len());
 
         Self {
-            body: Some(Ok(ResponseBody::from_string(string))),
+            body: Some(Ok(string.into())),
             inner: builder,
         }
     }
@@ -56,7 +56,7 @@ impl ResponseBuilder {
         builder = builder.header(CONTENT_LENGTH, string.len());
 
         Self {
-            body: Some(Ok(ResponseBody::from_string(string))),
+            body: Some(Ok(string.into())),
             inner: builder,
         }
     }
@@ -77,7 +77,7 @@ impl ResponseBuilder {
         builder = builder.header(CONTENT_LENGTH, buf.len());
 
         Self {
-            body: Some(Ok(ResponseBody::from_vec(buf))),
+            body: Some(ResponseBody::try_from(buf)),
             inner: builder,
         }
     }
