@@ -2,7 +2,7 @@ use bytes::Bytes;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::response::Builder;
 use http::{HeaderName, HeaderValue, StatusCode, Version};
-use http_body::Body;
+use http_body_util::combinators::BoxBody;
 use serde::Serialize;
 
 use super::{Response, ResponseBody};
@@ -62,7 +62,7 @@ impl ResponseBuilder {
 
     pub fn json<B: Serialize>(self, body: &B) -> Self {
         let mut builder = self.inner;
-        let buf = match serde_json::to_vec(body) {
+        let json = match serde_json::to_string(body) {
             Ok(bytes) => bytes,
             Err(error) => {
                 return Self {
@@ -73,10 +73,10 @@ impl ResponseBuilder {
         };
 
         builder = builder.header(CONTENT_TYPE, APPLICATION_JSON);
-        builder = builder.header(CONTENT_LENGTH, buf.len());
+        builder = builder.header(CONTENT_LENGTH, json.len());
 
         Self {
-            body: Some(ResponseBody::try_from(buf)),
+            body: Some(Ok(json.into())),
             inner: builder,
         }
     }
@@ -85,10 +85,10 @@ impl ResponseBuilder {
     ///
     pub fn stream<T>(self, body: T) -> Self
     where
-        T: Body<Data = Bytes, Error = AnyError> + Send + 'static,
+        T: http_body::Body<Data = Bytes, Error = AnyError> + Send + Sync + 'static,
     {
         Self {
-            body: Some(Ok(ResponseBody::from_dyn(body))),
+            body: Some(Ok(BoxBody::new(body).into())),
             inner: self.inner.header(TRANSFER_ENCODING, CHUNKED_ENCODING),
         }
     }

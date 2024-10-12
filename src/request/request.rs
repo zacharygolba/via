@@ -3,12 +3,14 @@ use cookie::CookieJar;
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
 use http_body::Body;
+use http_body_util::combinators::BoxBody;
+use http_body_util::Either;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use super::body::RequestBody;
 use super::params::{Param, PathParams, QueryParam};
-use crate::Error;
+use crate::error::AnyError;
 
 pub struct Request<State = ()> {
     did_map: bool,
@@ -65,16 +67,21 @@ impl<State> Request<State> {
     pub fn map<F, T>(self, map: F) -> Self
     where
         F: FnOnce(RequestBody) -> T,
-        T: Body<Data = Bytes, Error = Error> + Send + Sync + 'static,
+        T: Body<Data = Bytes, Error = AnyError> + Send + Sync + 'static,
     {
         if cfg!(debug_assertions) && self.did_map {
             // TODO: Replace this with tracing and a proper logger.
-            eprintln!("calling request.map() more than once can create reference cycles.",);
+            eprintln!("calling request.map() more than once can create a reference cycle.",);
         }
+
+        let input = self.body;
+        let output = BoxBody::new(map(input));
 
         Self {
             did_map: true,
-            body: RequestBody::from_dyn(map(self.body)),
+            body: RequestBody {
+                kind: Either::Right(output),
+            },
             ..self
         }
     }
@@ -82,7 +89,10 @@ impl<State> Request<State> {
     /// Returns a reference to the cookies associated with the request.
     ///
     pub fn cookies(&self) -> Option<&CookieJar> {
-        self.cookies.as_deref()
+        match &self.cookies {
+            Some(cookies) => Some(cookies),
+            None => None,
+        }
     }
 
     /// Returns a reference to a map that contains the headers associated with
