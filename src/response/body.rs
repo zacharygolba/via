@@ -9,17 +9,15 @@ use std::task::{Context, Poll};
 use crate::error::{AnyError, Error};
 
 pub struct ResponseBody {
-    pub(super) kind: Either<String, BoxBody<Bytes, AnyError>>,
+    kind: Either<String, BoxBody<Bytes, AnyError>>,
 }
 
 impl ResponseBody {
-    /// Creates a new, empty response body.
+    /// Creates a new response body.
     ///
     #[inline]
-    pub fn new() -> Self {
-        Self {
-            kind: Either::Left(String::new()),
-        }
+    pub fn new(kind: Either<String, BoxBody<Bytes, AnyError>>) -> Self {
+        Self { kind }
     }
 }
 
@@ -40,7 +38,7 @@ impl Debug for ResponseBody {
 
 impl Default for ResponseBody {
     fn default() -> Self {
-        Self::new()
+        Self::new(Either::Left(String::new()))
     }
 }
 
@@ -79,13 +77,6 @@ impl From<BoxBody<Bytes, AnyError>> for ResponseBody {
         Self {
             kind: Either::Right(body),
         }
-    }
-}
-
-impl From<Either<String, BoxBody<Bytes, AnyError>>> for ResponseBody {
-    #[inline]
-    fn from(kind: Either<String, BoxBody<Bytes, AnyError>>) -> Self {
-        Self { kind }
     }
 }
 

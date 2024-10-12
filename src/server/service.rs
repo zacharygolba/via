@@ -1,3 +1,4 @@
+use http_body_util::Either;
 use hyper::body::Incoming;
 use std::convert::Infallible;
 use std::future::Future;
@@ -62,7 +63,7 @@ where
             let parts = Box::new(parts);
 
             // Convert the incoming body type to a RequestBody.
-            let body = RequestBody::new(incoming);
+            let body = RequestBody::new(Either::Left(incoming));
 
             // Clone the shared application state so request can own a reference
             // to it. This is a cheaper operation than going from Weak to Arc for
