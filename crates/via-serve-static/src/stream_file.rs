@@ -9,7 +9,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime};
 use tokio::{runtime::Handle, sync::mpsc, task};
-use via::Result;
 
 /// The amount of `ReadChunkResult` that can be stored in the channel buffer.
 const CHANNEL_CAPACITY: usize = 16;
