@@ -1,7 +1,7 @@
 use http::Method;
 
 use super::{BoxFuture, Middleware, Next};
-use crate::{Request, Response, Result};
+use crate::{Error, Request, Response};
 
 pub struct AllowMethod<T> {
     middleware: T,
@@ -85,7 +85,11 @@ where
     T: Middleware<State>,
     State: Send + Sync + 'static,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+    fn call(
+        &self,
+        request: Request<State>,
+        next: Next<State>,
+    ) -> BoxFuture<Result<Response, Error>> {
         if self.predicate == request.method() {
             self.middleware.call(request, next)
         } else {

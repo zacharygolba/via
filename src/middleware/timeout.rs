@@ -3,7 +3,7 @@ use std::time::Duration;
 use tokio::time;
 
 use super::{BoxFuture, Middleware, Next};
-use crate::{Error, Request, Response, Result};
+use crate::{Error, Request, Response};
 
 /// A type alias for the default `or_else` function.
 type RespondWithTimeout<State> = fn(&State) -> Result<Response, Error>;
@@ -62,7 +62,11 @@ where
     F: Fn(&State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+    fn call(
+        &self,
+        request: Request<State>,
+        next: Next<State>,
+    ) -> BoxFuture<Result<Response, Error>> {
         let duration = self.duration;
         let or_else = self.or_else;
         let state = request.state().clone();

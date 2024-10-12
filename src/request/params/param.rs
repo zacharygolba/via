@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::str::FromStr;
 
 use super::{DecodeParam, NoopDecode, PercentDecode};
-use crate::{Error, Result};
+use crate::Error;
 
 pub struct Param<'a, 'b, T = NoopDecode> {
     at: Option<Option<(usize, usize)>>,

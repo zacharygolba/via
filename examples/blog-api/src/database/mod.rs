@@ -8,15 +8,15 @@ pub mod prelude {
     pub use diesel_async::RunQueryDsl;
 }
 
+use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
 use std::env;
 
-use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
-use via::Result;
-
 type ConnectionManager = AsyncDieselConnectionManager<AsyncPgConnection>;
+
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Pool = bb8::Pool<ConnectionManager>;
 
-pub async fn pool() -> Result<Pool> {
+pub async fn pool() -> Result<Pool, Error> {
     let config = ConnectionManager::new(env::var("DATABASE_URL")?);
     Ok(Pool::builder().build(config).await?)
 }

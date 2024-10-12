@@ -3,7 +3,7 @@ use httpdate::HttpDate;
 use std::path::PathBuf;
 use via::{
     http::{header, HeaderName},
-    Next, Request, Response, Result,
+    Error, Next, Request, Response,
 };
 
 use crate::{static_file::StaticFile, stream_file::StreamFile, Flags, ServerConfig};
@@ -52,7 +52,7 @@ pub async fn respond_to_head_request<State>(
     config: ServerConfig,
     request: Request<State>,
     next: Next<State>,
-) -> Result<Response>
+) -> Result<Response, Error>
 where
     State: Send + Sync + 'static,
 {
@@ -73,7 +73,7 @@ pub async fn respond_to_get_request<State>(
     config: ServerConfig,
     request: Request<State>,
     next: Next<State>,
-) -> Result<Response>
+) -> Result<Response, Error>
 where
     State: Send + Sync + 'static,
 {
@@ -115,7 +115,7 @@ where
 fn build_path_from_request<State>(
     request: &Request<State>,
     config: &ServerConfig,
-) -> Result<PathBuf> {
+) -> Result<PathBuf, Error> {
     let path_param = request.param(&config.path_param).into_result()?;
     Ok(config.public_dir.join(path_param.trim_end_matches('/')))
 }

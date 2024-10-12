@@ -1,5 +1,5 @@
 use crate::middleware::BoxFuture;
-use crate::{Error, Middleware, Next, Request, Response, Result};
+use crate::{Error, Middleware, Next, Request, Response};
 
 /// Middleware that catches errors that occur in downstream middleware and
 /// converts the error into a response. Middleware that is upstream from a
@@ -65,7 +65,11 @@ impl<State> Middleware<State> for ErrorBoundary
 where
     State: Send + Sync + 'static,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+    fn call(
+        &self,
+        request: Request<State>,
+        next: Next<State>,
+    ) -> BoxFuture<Result<Response, Error>> {
         Box::pin(async {
             // Yield control to the next middleware in the stack.
             let result = next.call(request).await;
@@ -81,7 +85,11 @@ where
     F: Fn(&Error, &State) + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+    fn call(
+        &self,
+        request: Request<State>,
+        next: Next<State>,
+    ) -> BoxFuture<Result<Response, Error>> {
         // Copy the `inspect` function so it can be moved in the async block.
         let inspect = self.inspect;
         // Clone `request.state` so it can be used after ownership of `request`
@@ -107,7 +115,11 @@ where
     F: Fn(Error, &State) -> Error + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+    fn call(
+        &self,
+        request: Request<State>,
+        next: Next<State>,
+    ) -> BoxFuture<Result<Response, Error>> {
         // Copy the `map` function so it can be moved in the async block.
         let map = self.map;
         // Clone `request.state` so it can be used after ownership of `request`
@@ -137,7 +149,11 @@ where
     F: Fn(Error, &State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+    fn call(
+        &self,
+        request: Request<State>,
+        next: Next<State>,
+    ) -> BoxFuture<Result<Response, Error>> {
         // Copy the `or_else` function so it can be moved in the async block.
         let or_else = self.or_else;
         // Clone `request.state` so it can be used after ownership of `request`

@@ -5,7 +5,7 @@ mod stream_file;
 
 use bitflags::bitflags;
 use std::{path::Path, sync::Arc};
-use via::{Endpoint, Error, Result};
+use via::{Endpoint, Error};
 
 use crate::respond::{respond_to_get_request, respond_to_head_request};
 
@@ -87,7 +87,7 @@ where
     /// the provided `public_dir` is a relative path, it will be resolved relative to
     /// the current working directory. If the `public_dir` is not a directory or the
     /// `location` does not have a path parameter, an error will be returned.
-    pub fn serve<P>(mut self, public_dir: P) -> Result<()>
+    pub fn serve<P>(mut self, public_dir: P) -> Result<(), Error>
     where
         P: AsRef<Path>,
     {

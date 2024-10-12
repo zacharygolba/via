@@ -1,7 +1,6 @@
-use crate::{
-    http::{header, StatusCode},
-    Error, Response, Result,
-};
+use http::{header, StatusCode};
+
+use crate::{Error, Response};
 
 /// A collection of functions used to generate redirect responses.
 pub struct Redirect;
@@ -14,7 +13,7 @@ impl Redirect {
     ///
     /// This function may return an error if the provided `location` cannot be
     /// parsed into an HTTP header value.
-    pub fn found(location: &str) -> Result<Response> {
+    pub fn found(location: &str) -> Result<Response, Error> {
         Self::with_status(location, StatusCode::FOUND)
     }
 
@@ -25,7 +24,7 @@ impl Redirect {
     ///
     /// This function may return an error if the provided `location` cannot be
     /// parsed into an HTTP header value.
-    pub fn see_other(location: &str) -> Result<Response> {
+    pub fn see_other(location: &str) -> Result<Response, Error> {
         Self::with_status(location, StatusCode::SEE_OTHER)
     }
 
@@ -36,7 +35,7 @@ impl Redirect {
     ///
     /// This function may return an error if the provided `location` cannot be
     /// parsed into an HTTP header value.
-    pub fn temporary(location: &str) -> Result<Response> {
+    pub fn temporary(location: &str) -> Result<Response, Error> {
         Self::with_status(location, StatusCode::TEMPORARY_REDIRECT)
     }
 
@@ -47,7 +46,7 @@ impl Redirect {
     ///
     /// This function may return an error if the provided `location` cannot be
     /// parsed into an HTTP header value.
-    pub fn permanent(location: &str) -> Result<Response> {
+    pub fn permanent(location: &str) -> Result<Response, Error> {
         Self::with_status(location, StatusCode::PERMANENT_REDIRECT)
     }
 
@@ -59,7 +58,7 @@ impl Redirect {
     /// This function may return an error if the provided `location` cannot be
     /// parsed into an HTTP header value or if provided `status` would not
     /// result in a redirect.
-    pub fn with_status<T>(location: &str, status: T) -> Result<Response>
+    pub fn with_status<T>(location: &str, status: T) -> Result<Response, Error>
     where
         StatusCode: TryFrom<T>,
         <StatusCode as TryFrom<T>>::Error: Into<http::Error>,

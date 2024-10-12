@@ -8,10 +8,10 @@ use serde::Serialize;
 use super::{Response, ResponseBody};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
 use crate::error::AnyError;
-use crate::{Error, Result};
+use crate::Error;
 
 pub struct ResponseBuilder {
-    body: Option<Result<ResponseBody>>,
+    body: Option<Result<ResponseBody, Error>>,
     inner: Builder,
 }
 

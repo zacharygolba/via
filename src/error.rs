@@ -12,12 +12,7 @@ use crate::Response;
 
 type Source = (dyn std::error::Error + 'static);
 
-/// A type alias for [`std::result::Result`] that uses `Error` as the default
-/// error type.
-///
-pub type Result<T, E = Error> = std::result::Result<T, E>;
-
-pub(crate) type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
+pub(crate) type AnyError = Box<dyn std::error::Error + Send + Sync>;
 
 /// An error type that can be easily converted to a [`Response`].
 ///
@@ -190,22 +185,22 @@ impl Display for Error {
 
 impl<T> From<T> for Error
 where
-    T: StdError + Send + Sync + 'static,
+    AnyError: From<T>,
 {
     fn from(value: T) -> Self {
         Self {
             format: Format::Text,
-            source: Box::new(value),
+            source: value.into(),
             status: StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
 
-impl From<Error> for AnyError {
-    fn from(error: Error) -> Self {
-        error.source
-    }
-}
+// impl From<Error> for AnyError {
+//     fn from(error: Error) -> Self {
+//         error.source
+//     }
+// }
 
 impl Serialize for Error {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

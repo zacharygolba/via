@@ -1,5 +1,5 @@
 use super::{ArcMiddleware, BoxFuture};
-use crate::{Error, Request, Response, Result};
+use crate::{Error, Request, Response};
 
 pub struct Next<State = ()> {
     stack: Vec<ArcMiddleware<State>>,
