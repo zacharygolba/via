@@ -33,7 +33,7 @@ pub struct Request<State = ()> {
     /// [CookieParser](crate::middleware::CookieParser)
     /// middleware in the middleware stack for the request, this will be empty.
     ///
-    cookies: Option<Box<CookieJar>>,
+    cookies: Box<CookieJar>,
 
     /// The request's path and query parameters.
     ///
@@ -79,20 +79,15 @@ impl<State> Request<State> {
 
         Self {
             did_map: true,
-            body: RequestBody {
-                kind: Either::Right(output),
-            },
+            body: RequestBody::new(Either::Right(output)),
             ..self
         }
     }
 
     /// Returns a reference to the cookies associated with the request.
     ///
-    pub fn cookies(&self) -> Option<&CookieJar> {
-        match &self.cookies {
-            Some(cookies) => Some(cookies),
-            None => None,
-        }
+    pub fn cookies(&self) -> &CookieJar {
+        &self.cookies
     }
 
     /// Returns a reference to a map that contains the headers associated with
@@ -187,7 +182,7 @@ impl<State> Request<State> {
             body,
             state,
             did_map: false,
-            cookies: None,
+            cookies: Box::new(CookieJar::new()),
             params: PathParams::new(Vec::new()),
         }
     }
@@ -195,7 +190,7 @@ impl<State> Request<State> {
     /// Returns a mutable reference to the cookies associated with the request.
     ///
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
-        self.cookies.get_or_insert_with(Default::default)
+        &mut self.cookies
     }
 }
 

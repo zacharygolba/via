@@ -116,23 +116,18 @@ where
         // when they become available. This is necessary because we need to pass
         // ownership of the request to the next middleware.
         //
-        let mut merged_cookies = Box::new(request_cookies.clone());
+        let mut merged_cookies = request_cookies.clone();
 
         Box::pin(async {
             // Call the next middleware to get a response.
             let mut response = next.call(request).await?;
 
-            if let Some(cookies) = response.cookies().map(|jar| jar.iter()) {
-                cookies.cloned().for_each(|cookie| {
-                    merged_cookies.add(cookie);
-                });
-
-                // Replace the response cookies with merged_cookies. The delta
-                // will be calculated and converted into Set-Cookie headers
-                // before the response is sent to the client.
-                //
-                response.set_cookies(merged_cookies);
+            for cookie in response.cookies().iter() {
+                merged_cookies.add(cookie.clone());
             }
+
+            // Set the response cookies.
+            *response.cookies_mut() = merged_cookies;
 
             // Return the response.
             Ok(response)

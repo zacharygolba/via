@@ -7,20 +7,15 @@ use hyper::body::Incoming;
 use serde::de::DeserializeOwned;
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
-use std::str;
 use std::task::{Context, Poll};
 
 use crate::error::{AnyError, Error};
 
 pub struct RequestBody {
-    pub(super) kind: Either<Incoming, BoxBody<Bytes, AnyError>>,
+    kind: Either<Incoming, BoxBody<Bytes, AnyError>>,
 }
 
 impl RequestBody {
-    pub fn to_stream(self) -> BodyStream<Either<Incoming, BoxBody<Bytes, AnyError>>> {
-        BodyStream::new(self.kind)
-    }
-
     pub async fn read_json<D>(self) -> Result<D, Error>
     where
         D: DeserializeOwned,
@@ -48,30 +43,29 @@ impl RequestBody {
     }
 
     pub async fn to_string(self) -> Result<String, Error> {
-        let bytes = self.to_bytes().await?;
+        let data = self.to_vec().await?;
 
-        match str::from_utf8(&bytes) {
-            Ok(str) => Ok(str.to_owned()),
-            Err(error) => {
-                let mut error = Error::from(error);
+        String::from_utf8(data).map_err(|error| {
+            let mut error = Error::from(error);
 
-                *error.status_mut() = StatusCode::BAD_REQUEST;
-                Err(error)
-            }
-        }
+            *error.status_mut() = StatusCode::BAD_REQUEST;
+            error
+        })
     }
 
     pub async fn to_vec(self) -> Result<Vec<u8>, Error> {
         Ok(self.to_bytes().await?.to_vec())
     }
+
+    pub fn to_stream(self) -> BodyStream<RequestBody> {
+        BodyStream::new(self)
+    }
 }
 
 impl RequestBody {
     #[inline]
-    pub(crate) fn new(body: Incoming) -> Self {
-        Self {
-            kind: Either::Left(body),
-        }
+    pub(crate) fn new(kind: Either<Incoming, BoxBody<Bytes, AnyError>>) -> Self {
+        Self { kind }
     }
 }
 

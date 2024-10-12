@@ -42,10 +42,10 @@ async fn count_visits(request: Request, next: Next) -> Result<Response, Error> {
     // using the signed cookie jar to store and retrieve the "n_visits" cookie.
     // If
     //
-    let mut n_visits: i32 = request
-        .cookies()
-        .and_then(|cookies| cookies.signed(secret).get("n_visits"))
-        .map_or(0, |cookie| cookie.value().parse().unwrap_or(0));
+    let mut n_visits: i32 = match request.cookies().signed(secret).get("n_visits") {
+        Some(cookie) => cookie.value().parse().unwrap_or(0),
+        None => 0,
+    };
 
     // Call the next middleware to get the response.
     let mut response = next.call(request).await?;

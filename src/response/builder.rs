@@ -94,11 +94,7 @@ impl ResponseBuilder {
     }
 
     pub fn finish(self) -> Result<Response, Error> {
-        let body = match self.body {
-            Some(body) => body?,
-            None => ResponseBody::new(),
-        };
-
+        let body = self.body.transpose()?.unwrap_or_default();
         Ok(self.inner.body(body)?.into())
     }
 

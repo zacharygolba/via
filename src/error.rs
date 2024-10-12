@@ -10,14 +10,14 @@ use std::io;
 
 use crate::Response;
 
-type Source = (dyn StdError + 'static);
+type Source = (dyn std::error::Error + 'static);
 
 /// A type alias for [`std::result::Result`] that uses `Error` as the default
 /// error type.
 ///
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-pub(crate) type AnyError = Box<dyn StdError + Send + Sync + 'static>;
+pub(crate) type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 /// An error type that can be easily converted to a [`Response`].
 ///
@@ -32,7 +32,7 @@ pub struct Error {
 ///
 #[derive(Debug)]
 pub struct Iter<'a> {
-    source: Option<&'a (dyn StdError + 'static)>,
+    source: Option<&'a Source>,
 }
 
 /// The format of the response body would be generated from an `Error`.
@@ -202,12 +202,6 @@ where
 }
 
 impl From<Error> for AnyError {
-    fn from(error: Error) -> Self {
-        error.source
-    }
-}
-
-impl From<Error> for Box<dyn StdError + Send> {
     fn from(error: Error) -> Self {
         error.source
     }
