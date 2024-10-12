@@ -1,18 +1,15 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
-use http_body_util::combinators::UnsyncBoxBody;
+use http_body_util::combinators::BoxBody;
 use http_body_util::Either;
-use std::error::Error as StdError;
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::Error;
-
-type DynBody = UnsyncBoxBody<Bytes, Box<dyn StdError + Send + Sync>>;
+use crate::error::{AnyError, Error};
 
 pub struct ResponseBody {
-    body: Either<String, DynBody>,
+    pub(super) kind: Either<String, BoxBody<Bytes, AnyError>>,
 }
 
 impl ResponseBody {
@@ -21,34 +18,23 @@ impl ResponseBody {
     #[inline]
     pub fn new() -> Self {
         Self {
-            body: Either::Left(String::new()),
-        }
-    }
-
-    /// Creates a new, empty response body.
-    ///
-    #[inline]
-    pub fn from_dyn<B>(body: B) -> Self
-    where
-        B: Body<Data = Bytes, Error = Box<dyn StdError + Send + Sync>> + Send + 'static,
-    {
-        Self {
-            body: Either::Right(DynBody::new(body)),
+            kind: Either::Left(String::new()),
         }
     }
 }
 
 impl ResponseBody {
-    fn project(self: Pin<&mut Self>) -> Pin<&mut Either<String, DynBody>> {
+    fn project(self: Pin<&mut Self>) -> Pin<&mut Either<String, BoxBody<Bytes, AnyError>>> {
         let this = self.get_mut();
-        let ptr = &mut this.body;
+        let ptr = &mut this.kind;
+
         Pin::new(ptr)
     }
 }
 
 impl Debug for ResponseBody {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Debug::fmt(&self.body, f)
+        Debug::fmt(&self.kind, f)
     }
 }
 
@@ -60,7 +46,7 @@ impl Default for ResponseBody {
 
 impl Body for ResponseBody {
     type Data = Bytes;
-    type Error = Box<dyn StdError + Send + Sync>;
+    type Error = AnyError;
 
     fn poll_frame(
         self: Pin<&mut Self>,
@@ -70,11 +56,11 @@ impl Body for ResponseBody {
     }
 
     fn is_end_stream(&self) -> bool {
-        self.body.is_end_stream()
+        self.kind.is_end_stream()
     }
 
     fn size_hint(&self) -> SizeHint {
-        self.body.size_hint()
+        self.kind.size_hint()
     }
 }
 
@@ -82,17 +68,24 @@ impl From<String> for ResponseBody {
     #[inline]
     fn from(string: String) -> Self {
         Self {
-            body: Either::Left(string),
+            kind: Either::Left(string),
         }
     }
 }
 
-impl From<DynBody> for ResponseBody {
+impl From<BoxBody<Bytes, AnyError>> for ResponseBody {
     #[inline]
-    fn from(body: DynBody) -> Self {
+    fn from(body: BoxBody<Bytes, AnyError>) -> Self {
         Self {
-            body: Either::Right(body),
+            kind: Either::Right(body),
         }
+    }
+}
+
+impl From<Either<String, BoxBody<Bytes, AnyError>>> for ResponseBody {
+    #[inline]
+    fn from(kind: Either<String, BoxBody<Bytes, AnyError>>) -> Self {
+        Self { kind }
     }
 }
 
@@ -100,7 +93,7 @@ impl TryFrom<Vec<u8>> for ResponseBody {
     type Error = Error;
 
     #[inline]
-    fn try_from(utf8: Vec<u8>) -> Result<Self, Self::Error> {
-        Ok(String::from_utf8(utf8)?.into())
+    fn try_from(vec: Vec<u8>) -> Result<Self, Self::Error> {
+        Ok(String::from_utf8(vec)?.into())
     }
 }

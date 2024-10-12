@@ -4,13 +4,14 @@ use http::header::{CONTENT_LENGTH, CONTENT_TYPE, SET_COOKIE, TRANSFER_ENCODING};
 use http::response::Parts;
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Version};
 use http_body::Body;
+use http_body_util::combinators::BoxBody;
+use http_body_util::Either;
 use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 
 use super::{ResponseBody, ResponseBuilder};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
-use crate::error::AnyError;
-use crate::{Error, Result};
+use crate::error::{AnyError, Error};
 
 pub struct Response {
     did_map: bool,
@@ -58,11 +59,14 @@ impl Response {
         response
     }
 
-    pub fn json<T: Serialize>(body: &T) -> Result<Response, Error> {
-        let utf8 = serde_json::to_vec(body)?;
-        let len = utf8.len();
+    pub fn json<T>(body: &T) -> Result<Response, Error>
+    where
+        T: Serialize,
+    {
+        let json = serde_json::to_string(body)?;
+        let len = json.len();
 
-        let mut response = Self::new(ResponseBody::try_from(utf8)?);
+        let mut response = Self::new(json.into());
         let headers = response.headers_mut();
 
         headers.insert(CONTENT_TYPE, APPLICATION_JSON);
@@ -75,9 +79,9 @@ impl Response {
     ///
     pub fn stream<T, E>(body: T) -> Self
     where
-        T: Body<Data = Bytes, Error = AnyError> + Send + 'static,
+        T: Body<Data = Bytes, Error = AnyError> + Send + Sync + 'static,
     {
-        let mut response = Self::new(ResponseBody::from_dyn(body));
+        let mut response = Self::new(BoxBody::new(body).into());
 
         response.set_header(TRANSFER_ENCODING, CHUNKED_ENCODING);
         response
@@ -118,12 +122,18 @@ impl Response {
     {
         if cfg!(debug_assertions) && self.did_map {
             // TODO: Replace this with tracing and a proper logger.
-            eprintln!("calling response.map() more than once can create reference cycles.");
+            eprintln!("calling response.map() more than once can create a reference cycle.");
         }
 
         Self {
             did_map: true,
-            response: self.response.map(|body| ResponseBody::from_dyn(map(body))),
+            response: self.response.map(|input| {
+                let output = BoxBody::new(map(input));
+
+                ResponseBody {
+                    kind: Either::Right(output),
+                }
+            }),
             ..self
         }
     }

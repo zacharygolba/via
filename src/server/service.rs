@@ -5,11 +5,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use crate::error::Error;
 use crate::middleware::BoxFuture;
 use crate::request::{Request, RequestBody};
-use crate::response::ResponseBody;
+use crate::response::{Response, ResponseBody};
 use crate::router::Router;
-use crate::{Error, Response};
 
 pub struct FutureResponse {
     future: BoxFuture<Result<Response, Error>>,
@@ -54,15 +54,15 @@ where
         // Wrap the incoming request in with `via::Request`.
         let mut request = {
             // Destructure the incoming request into its component parts.
-            let (parts, body) = request.into_parts();
+            let (parts, incoming) = request.into_parts();
 
             // Allocate the metadata associated with the request on the heap.
             // This keeps the size of the request type small enough to pass
             // around by value.
             let parts = Box::new(parts);
 
-            // Wrap the request body with `RequestBody`.
-            let body = RequestBody::new(body);
+            // Convert the incoming body type to a RequestBody.
+            let body = RequestBody::new(incoming);
 
             // Clone the shared application state so request can own a reference
             // to it. This is a cheaper operation than going from Weak to Arc for
