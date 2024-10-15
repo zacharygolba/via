@@ -58,6 +58,14 @@ struct SerializeError {
     errors: [ErrorMessage; 1],
 }
 
+pub(crate) fn bad_request(source: AnyError) -> Error {
+    Error {
+        source,
+        format: Format::Text,
+        status: StatusCode::BAD_REQUEST,
+    }
+}
+
 impl Error {
     /// Returns a new `Error` with the provided message.
     ///

@@ -14,7 +14,7 @@ struct Payload<T> {
 
 async fn deserialize<D: DeserializeOwned>(body: RequestBody) -> Result<D, Error> {
     // Deserialize the request body into a `Payload<D>`.
-    let payload: Payload<D> = body.read_json().await?;
+    let payload: Payload<D> = body.json().await?;
 
     // Return the `data` field from the JSON request body.
     Ok(payload.data)
