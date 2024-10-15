@@ -16,7 +16,7 @@ http2 = ["hyper/http2"]
 rustls = ["dep:tokio-rustls"]
 
 [dependencies]
-bytes = "1.7.1"
+bytes = "1.7"
 futures-core = { version = "0.3", default-features = false }
 http = "1"
 http-body = "1"

@@ -1,76 +1,92 @@
-use bytes::Bytes;
-use http::StatusCode;
+use bytes::{Buf, Bytes};
 use http_body::{self, Body, Frame, SizeHint};
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, BodyStream, Either};
+use http_body_util::{BodyDataStream, BodyExt, BodyStream, Collected, Either, Limited};
 use hyper::body::Incoming;
 use serde::de::DeserializeOwned;
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::error::{AnyError, Error};
+use crate::error::{bad_request, AnyError, Error};
+
+type RequestBodyKind = Either<Limited<Incoming>, BoxBody<Bytes, AnyError>>;
 
 pub struct RequestBody {
-    kind: Either<Incoming, BoxBody<Bytes, AnyError>>,
+    kind: RequestBodyKind,
 }
 
 impl RequestBody {
-    pub async fn read_json<D>(self) -> Result<D, Error>
+    pub async fn collect(self) -> Result<Collected<Bytes>, Error> {
+        match BodyExt::collect(self).await {
+            Ok(collected) => Ok(collected),
+            Err(error) => Err(bad_request(error)),
+        }
+    }
+
+    pub async fn json<D>(self) -> Result<D, Error>
     where
         D: DeserializeOwned,
     {
-        let string = self.to_string().await?;
+        let text = self.to_text().await?;
 
-        serde_json::from_str(&string).map_err(|source| {
-            let mut error = Error::from(source);
-
-            error.set_status(StatusCode::BAD_REQUEST);
-            error
+        serde_json::from_str(&text).map_err(|error| {
+            let error = Box::new(error);
+            bad_request(error)
         })
     }
 
     pub async fn to_bytes(self) -> Result<Bytes, Error> {
-        match self.kind.collect().await {
-            Ok(buffer) => Ok(buffer.to_bytes()),
-            Err(error) => {
-                let mut error = Error::from_box_error(error);
-
-                *error.status_mut() = StatusCode::BAD_REQUEST;
-                Err(error)
-            }
-        }
+        Ok(self.collect().await?.to_bytes())
     }
 
-    pub async fn to_string(self) -> Result<String, Error> {
-        let data = self.to_vec().await?;
+    pub async fn to_text(self) -> Result<String, Error> {
+        let utf8 = self.to_vec().await?;
 
-        String::from_utf8(data).map_err(|error| {
-            let mut error = Error::from(error);
-
-            *error.status_mut() = StatusCode::BAD_REQUEST;
-            error
+        String::from_utf8(utf8).map_err(|error| {
+            let error = Box::new(error);
+            bad_request(error)
         })
     }
 
     pub async fn to_vec(self) -> Result<Vec<u8>, Error> {
-        Ok(self.to_bytes().await?.to_vec())
+        let len = self.size_hint().exact().map(usize::try_from);
+        let mut src = self.collect().await?.aggregate();
+        let mut dest = match len {
+            Some(Ok(capacity)) => Vec::with_capacity(capacity),
+            Some(Err(error)) => {
+                let _ = error; // Placeholder for tracing...
+                Vec::new()
+            }
+            None => {
+                // Placeholder for tracing...
+                Vec::new()
+            }
+        };
+
+        src.copy_to_slice(&mut dest);
+
+        Ok(dest)
     }
 
-    pub fn to_stream(self) -> BodyStream<RequestBody> {
+    pub fn data_stream(self) -> BodyDataStream<RequestBody> {
+        BodyDataStream::new(self)
+    }
+
+    pub fn stream(self) -> BodyStream<RequestBody> {
         BodyStream::new(self)
     }
 }
 
 impl RequestBody {
     #[inline]
-    pub(crate) fn new(kind: Either<Incoming, BoxBody<Bytes, AnyError>>) -> Self {
+    pub(crate) fn new(kind: RequestBodyKind) -> Self {
         Self { kind }
     }
 }
 
 impl RequestBody {
-    fn project(self: Pin<&mut Self>) -> Pin<&mut Either<Incoming, BoxBody<Bytes, AnyError>>> {
+    fn project(self: Pin<&mut Self>) -> Pin<&mut RequestBodyKind> {
         let this = self.get_mut();
         let ptr = &mut this.kind;
 

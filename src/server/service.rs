@@ -1,4 +1,4 @@
-use http_body_util::Either;
+use http_body_util::{Either, Limited};
 use hyper::body::Incoming;
 use std::convert::Infallible;
 use std::future::Future;
@@ -17,6 +17,7 @@ pub struct FutureResponse {
 }
 
 pub struct Service<State> {
+    max_request_size: usize,
     router: Arc<Router<State>>,
     state: Arc<State>,
 }
@@ -38,8 +39,12 @@ impl Future for FutureResponse {
 }
 
 impl<State> Service<State> {
-    pub fn new(router: Arc<Router<State>>, state: Arc<State>) -> Self {
-        Self { router, state }
+    pub fn new(max_request_size: usize, router: Arc<Router<State>>, state: Arc<State>) -> Self {
+        Self {
+            max_request_size,
+            router,
+            state,
+        }
     }
 }
 
@@ -63,7 +68,12 @@ where
             let parts = Box::new(parts);
 
             // Convert the incoming body type to a RequestBody.
-            let body = RequestBody::new(Either::Left(incoming));
+            let body = {
+                let limit = self.max_request_size;
+                let kind = Either::Left(Limited::new(incoming, limit));
+
+                RequestBody::new(kind)
+            };
 
             // Clone the shared application state so request can own a reference
             // to it. This is a cheaper operation than going from Weak to Arc for

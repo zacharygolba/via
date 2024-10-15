@@ -19,6 +19,7 @@ pub async fn serve<State, A>(
     state: Arc<State>,
     router: Arc<Router<State>>,
     max_connections: usize,
+    max_request_size: usize,
     shutdown_timeout: Duration,
 ) -> Result<(), Error>
 where
@@ -90,7 +91,7 @@ where
                     let io = IoStream::new(stream);
 
                     // Create a new service to serve the connection.
-                    let service = Service::new(router, state);
+                    let service = Service::new(max_request_size, router, state);
 
                     // Create a new HTTP/2 connection.
                     #[cfg(feature = "http2")]

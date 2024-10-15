@@ -2,6 +2,7 @@ use bytes::Bytes;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::response::Builder;
 use http::{HeaderName, HeaderValue, StatusCode, Version};
+use http_body::Body;
 use http_body_util::combinators::BoxBody;
 use serde::Serialize;
 
@@ -85,7 +86,7 @@ impl ResponseBuilder {
     ///
     pub fn stream<T>(self, body: T) -> Self
     where
-        T: http_body::Body<Data = Bytes, Error = AnyError> + Send + Sync + 'static,
+        T: Body<Data = Bytes, Error = AnyError> + Send + Sync + 'static,
     {
         Self {
             body: Some(Ok(BoxBody::new(body).into())),

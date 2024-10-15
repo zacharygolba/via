@@ -11,9 +11,15 @@ use super::serve::serve;
 use crate::{App, Error, Router};
 
 /// The default value of the maximum number of concurrent connections.
+///
 const DEFAULT_MAX_CONNECTIONS: usize = 256;
 
+/// The default value of the maximum request body size in bytes (100MB).
+///
+const DEFAULT_MAX_REQUEST_SIZE: usize = 1024 * 1024 * 100;
+
 /// The default value of the shutdown timeout in seconds.
+///
 const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
 
 /// Serve an [App] over HTTP or HTTPS.
@@ -22,6 +28,7 @@ pub struct Server<State> {
     state: Arc<State>,
     router: Arc<Router<State>>,
     max_connections: Option<usize>,
+    max_request_size: Option<usize>,
     shutdown_timeout: Option<u64>,
 
     #[cfg(feature = "rustls")]
@@ -34,6 +41,7 @@ async fn listen<State, A>(
     state: Arc<State>,
     router: Arc<Router<State>>,
     max_connections: Option<usize>,
+    max_request_size: Option<usize>,
     shutdown_timeout: Option<u64>,
 ) -> Result<(), Error>
 where
@@ -42,6 +50,7 @@ where
 {
     let listener = TcpListener::bind(address).await?;
     let max_connections = max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS);
+    let max_content_length = max_request_size.unwrap_or(DEFAULT_MAX_REQUEST_SIZE);
     let shutdown_timeout = shutdown_timeout.map_or_else(
         || Duration::from_secs(DEFAULT_SHUTDOWN_TIMEOUT),
         Duration::from_secs,
@@ -59,6 +68,7 @@ where
         state,
         router,
         max_connections,
+        max_content_length,
         shutdown_timeout,
     );
 
@@ -78,6 +88,7 @@ where
             #[cfg(feature = "rustls")]
             rustls_config: None,
             max_connections: None,
+            max_request_size: None,
             shutdown_timeout: None,
         }
     }
@@ -111,6 +122,7 @@ where
         let state = self.state;
         let router = self.router;
         let max_connections = self.max_connections;
+        let max_request_size = self.max_request_size;
         let shutdown_timeout = self.shutdown_timeout;
 
         listen(
@@ -119,6 +131,7 @@ where
             state,
             router,
             max_connections,
+            max_request_size,
             shutdown_timeout,
         )
     }
@@ -141,6 +154,7 @@ where
         let state = self.state;
         let router = self.router;
         let max_connections = self.max_connections;
+        let max_request_size = self.max_request_size;
         let shutdown_timeout = self.shutdown_timeout;
 
         listen(
@@ -149,6 +163,7 @@ where
             state,
             router,
             max_connections,
+            max_request_size,
             shutdown_timeout,
         )
     }
@@ -160,6 +175,13 @@ where
     pub fn shutdown_timeout(self, timeout: u64) -> Self {
         Self {
             shutdown_timeout: Some(timeout),
+            ..self
+        }
+    }
+
+    pub fn max_request_size(self, limit: usize) -> Self {
+        Self {
+            max_request_size: Some(limit),
             ..self
         }
     }
@@ -182,9 +204,9 @@ where
     /// setting this value higher than the number of available file descriptors
     /// (or `ulimit -n`) on POSIX systems.
     ///
-    pub fn max_connections(self, n: usize) -> Self {
+    pub fn max_connections(self, limit: usize) -> Self {
         Self {
-            max_connections: Some(n),
+            max_connections: Some(limit),
             ..self
         }
     }
