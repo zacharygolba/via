@@ -1,4 +1,4 @@
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use http_body::{self, Body, Frame, SizeHint};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyDataStream, BodyExt, BodyStream, Collected, Either, Limited};
@@ -17,13 +17,6 @@ pub struct RequestBody {
 }
 
 impl RequestBody {
-    pub async fn collect(self) -> Result<Collected<Bytes>, Error> {
-        match BodyExt::collect(self).await {
-            Ok(collected) => Ok(collected),
-            Err(error) => Err(bad_request(error)),
-        }
-    }
-
     pub async fn json<D>(self) -> Result<D, Error>
     where
         D: DeserializeOwned,
@@ -50,23 +43,7 @@ impl RequestBody {
     }
 
     pub async fn to_vec(self) -> Result<Vec<u8>, Error> {
-        let len = self.size_hint().exact().map(usize::try_from);
-        let mut src = self.collect().await?.aggregate();
-        let mut dest = match len {
-            Some(Ok(capacity)) => Vec::with_capacity(capacity),
-            Some(Err(error)) => {
-                let _ = error; // Placeholder for tracing...
-                Vec::new()
-            }
-            None => {
-                // Placeholder for tracing...
-                Vec::new()
-            }
-        };
-
-        src.copy_to_slice(&mut dest);
-
-        Ok(dest)
+        Ok(self.to_bytes().await?.to_vec())
     }
 
     pub fn data_stream(self) -> BodyDataStream<RequestBody> {
@@ -82,6 +59,14 @@ impl RequestBody {
     #[inline]
     pub(crate) fn new(kind: RequestBodyKind) -> Self {
         Self { kind }
+    }
+
+    #[inline]
+    pub(crate) async fn collect(self) -> Result<Collected<Bytes>, Error> {
+        match BodyExt::collect(self).await {
+            Ok(collected) => Ok(collected),
+            Err(error) => Err(bad_request(error)),
+        }
     }
 }
 
