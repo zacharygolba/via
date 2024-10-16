@@ -1,7 +1,8 @@
+use via::error::AnyError;
 use via::http::header::CONTENT_TYPE;
-use via::{Error, Next, Request, Response, Server};
+use via::{Next, Request, Response, Server};
 
-async fn echo(request: Request, _: Next) -> Result<Response, Error> {
+async fn echo(request: Request, _: Next) -> via::Result<Response> {
     // Get an owned copy of the request's Content-Type header.
     let content_type = request.headers().get(CONTENT_TYPE).cloned();
 
@@ -15,7 +16,7 @@ async fn echo(request: Request, _: Next) -> Result<Response, Error> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), AnyError> {
     let mut app = via::new(());
 
     // Add our echo responder to the endpoint /echo.

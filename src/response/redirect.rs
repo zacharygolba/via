@@ -71,10 +71,8 @@ impl Redirect {
         let status = response.status();
 
         if !status.is_redirection() {
-            return Err(Error::new(format!(
-                "Invalid status code for redirect: {}",
-                status
-            )));
+            let message = format!("Invalid status code for redirect: {}", status);
+            return Err(Error::new(message.into()));
         }
 
         Ok(response)

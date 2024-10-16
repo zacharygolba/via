@@ -126,10 +126,7 @@ impl ResponseBuilder {
                 builder.header(key, value)
             });
 
-        Self {
-            inner,
-            body: self.body,
-        }
+        Self { inner, ..self }
     }
 
     pub fn status<T>(self, status: T) -> Self

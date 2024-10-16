@@ -2,8 +2,9 @@ mod api;
 mod database;
 
 use std::time::Duration;
+use via::error::AnyError;
 use via::middleware::Timeout;
-use via::{Error, ErrorBoundary, Response, Server};
+use via::{ErrorBoundary, Response, Server};
 
 use database::Pool;
 
@@ -14,7 +15,7 @@ struct State {
     pool: Pool,
 }
 
-async fn log_request(request: Request, next: Next) -> Result<Response, Error> {
+async fn log_request(request: Request, next: Next) -> via::Result<Response> {
     let method = request.method().clone();
     let path = request.uri().path().to_string();
 
@@ -26,7 +27,7 @@ async fn log_request(request: Request, next: Next) -> Result<Response, Error> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), AnyError> {
     dotenvy::dotenv()?;
 
     // Create a new app with our shared state that contains a database pool.
