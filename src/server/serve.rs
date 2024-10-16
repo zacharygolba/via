@@ -1,4 +1,5 @@
-use hyper_util::rt::TokioTimer;
+use hyper::server::conn;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
@@ -6,11 +7,13 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time;
 
+#[cfg(feature = "http2")]
+use hyper_util::rt::TokioExecutor;
+
 use super::acceptor::Acceptor;
 use super::service::Service;
 use super::shutdown::wait_for_shutdown;
 use crate::router::Router;
-use crate::server::io_stream::IoStream;
 use crate::Error;
 
 pub async fn serve<State, A>(
@@ -86,28 +89,23 @@ where
                         }
                     };
 
-                    // Wrap the accepted stream in a type that implements hyper's
-                    // I/O traits.
-                    let io = IoStream::new(stream);
-
-                    // Create a new service to serve the connection.
-                    let service = Service::new(max_request_size, router, state);
-
                     // Create a new HTTP/2 connection.
                     #[cfg(feature = "http2")]
-                    let mut connection = {
-                        let exec = hyper_util::rt::TokioExecutor::new();
-
-                        hyper::server::conn::http2::Builder::new(exec)
-                            .timer(TokioTimer::new())
-                            .serve_connection(io, service)
-                    };
+                    let mut connection = conn::http2::Builder::new(TokioExecutor::new())
+                        .timer(TokioTimer::new())
+                        .serve_connection(
+                            TokioIo::new(stream),
+                            Service::new(max_request_size, router, state),
+                        );
 
                     // Create a new HTTP/1.1 connection.
                     #[cfg(all(feature = "http1", not(feature = "http2")))]
-                    let mut connection = hyper::server::conn::http1::Builder::new()
+                    let mut connection = conn::http1::Builder::new()
                         .timer(TokioTimer::new())
-                        .serve_connection(io, service)
+                        .serve_connection(
+                            TokioIo::new(stream),
+                            Service::new(max_request_size, router, state),
+                        )
                         .with_upgrades();
 
                     // Poll the connection until it is closed or a graceful
