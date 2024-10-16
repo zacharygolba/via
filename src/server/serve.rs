@@ -13,8 +13,8 @@ use hyper_util::rt::TokioExecutor;
 use super::acceptor::Acceptor;
 use super::service::Service;
 use super::shutdown::wait_for_shutdown;
+use crate::error::AnyError;
 use crate::router::Router;
-use crate::Error;
 
 pub async fn serve<State, A>(
     listener: TcpListener,
@@ -24,7 +24,7 @@ pub async fn serve<State, A>(
     max_connections: usize,
     max_request_size: usize,
     shutdown_timeout: Duration,
-) -> Result<(), Error>
+) -> Result<(), AnyError>
 where
     State: Send + Sync + 'static,
     A: Acceptor + Send + Sync + 'static,
@@ -189,7 +189,7 @@ where
         // before the graceful shutdown timeout, return an error. For unix-based
         // systems, this translates to a 1 exit code.
         _ = time::sleep(shutdown_timeout) => {
-            Err(Error::new("server exited before all connections were closed.".to_string()))
+            Err("server exited before all connections were closed.".to_owned().into())
         }
     }
 }

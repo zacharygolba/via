@@ -1,6 +1,7 @@
 use cookie::{Cookie, Key};
+use via::error::AnyError;
 use via::middleware::CookieParser;
-use via::{Error, Response, Server};
+use via::{Response, Server};
 
 type Request = via::Request<CookiesExample>;
 type Next = via::Next<CookiesExample>;
@@ -17,7 +18,7 @@ struct CookiesExample {
 /// Responds with a greeting message with the name provided in the request uri
 /// path.
 ///
-async fn hello(request: Request, _: Next) -> Result<String, Error> {
+async fn hello(request: Request, _: Next) -> via::Result<String> {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").percent_decode().into_result()?;
 
@@ -28,7 +29,7 @@ async fn hello(request: Request, _: Next) -> Result<String, Error> {
 /// Increments the value of the "n_visits" counter to the console. Returns a
 /// response with a message confirming the operation was successful.
 ///
-async fn count_visits(request: Request, next: Next) -> Result<Response, Error> {
+async fn count_visits(request: Request, next: Next) -> via::Result<Response> {
     // Clone the state from the request so we can access the secret key after
     // passing ownership of the request to the next middleware.
     //
@@ -88,7 +89,7 @@ fn get_secret_from_env() -> Key {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), AnyError> {
     // Load the environment variables from the ".env" file. This is where we
     // keep the secret key in development. In production, you may want to
     // configure the secret key using a different method. For example, using

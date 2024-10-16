@@ -32,7 +32,7 @@ impl IntoResponse for String {
 
 impl IntoResponse for &'static str {
     fn into_response(self) -> Result<Response, Error> {
-        self.to_string().into_response()
+        self.to_owned().into_response()
     }
 }
 

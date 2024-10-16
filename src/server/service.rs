@@ -33,7 +33,7 @@ impl Future for FutureResponse {
                 // The response was generated successfully.
                 Ok(response) => Ok(response.into_inner()),
                 // An occurred while generating the response.
-                Err(error) => Ok(error.into_response().into_inner()),
+                Err(error) => Ok(Response::from(error).into_inner()),
             })
     }
 }
