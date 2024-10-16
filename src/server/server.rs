@@ -16,7 +16,7 @@ const DEFAULT_MAX_CONNECTIONS: usize = 256;
 
 /// The default value of the maximum request body size in bytes (100MB).
 ///
-const DEFAULT_MAX_REQUEST_SIZE: usize = 1024 * 1024 * 100;
+const DEFAULT_MAX_REQUEST_SIZE: usize = 104_576_000;
 
 /// The default value of the shutdown timeout in seconds.
 ///
