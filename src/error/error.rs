@@ -2,7 +2,7 @@
 //!
 
 use http::StatusCode;
-use serde::ser::SerializeSeq;
+use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::error::Error as StdError;
 use std::fmt::{self, Debug, Display, Formatter};
@@ -22,19 +22,17 @@ macro_rules! new_with_status {
 
 /// An error type that can be easily converted to a [`Response`].
 ///
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct Error {
-    #[serde(skip)]
-    json: bool,
-
-    #[serde(skip)]
-    filter: Option<fn(&str) -> Option<String>>,
-
-    #[serde(skip)]
+    format: ErrorFormat,
     status: StatusCode,
-
-    #[serde(rename = "errors", serialize_with = "serialize_errors")]
     source: AnyError,
+}
+
+#[derive(Debug)]
+enum ErrorFormat {
+    Json,
+    Text,
 }
 
 /// An error type that contains an error message stored in a string.
@@ -49,25 +47,13 @@ new_with_status!(not_found, NOT_FOUND);
 new_with_status!(gateway_timeout, GATEWAY_TIMEOUT);
 new_with_status!(internal_server_error, INTERNAL_SERVER_ERROR);
 
-fn serialize_errors<S>(error: &AnyError, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let mut state = serializer.serialize_seq(Some(1))?;
-    let message = ErrorMessage::new(error.to_string());
-
-    state.serialize_element(&message)?;
-    state.end()
-}
-
 impl Error {
     /// Returns a new `Error` with the provided message.
     ///
     #[inline]
     pub fn new(source: AnyError) -> Self {
         Self {
-            json: false,
-            filter: None,
+            format: ErrorFormat::Text,
             status: StatusCode::INTERNAL_SERVER_ERROR,
             source,
         }
@@ -78,7 +64,25 @@ impl Error {
     ///
     #[inline]
     pub fn as_json(self) -> Self {
-        Self { json: true, ..self }
+        Self {
+            format: ErrorFormat::Json,
+            ..self
+        }
+    }
+
+    /// Returns a new [Error] that will call the provided filter function when
+    /// the error is converted to a response.
+    ///
+    /// If the provided filter function returns `None` value, the original error
+    /// message will be included in the response body.
+    ///
+    pub fn with_message(self, message: impl ToString) -> Self {
+        Self {
+            source: Box::new(ErrorMessage {
+                message: message.to_string(),
+            }),
+            ..self
+        }
     }
 
     /// Sets the status code of the response that will be generated from self.
@@ -113,8 +117,7 @@ impl Error {
     #[inline]
     pub(crate) fn new_with_status(source: AnyError, status: StatusCode) -> Self {
         Self {
-            json: false,
-            filter: None,
+            format: ErrorFormat::Text,
             status,
             source,
         }
@@ -139,17 +142,16 @@ where
 
 impl From<Error> for Response {
     fn from(error: Error) -> Response {
-        let mut response = if error.json {
-            Response::json(&error).unwrap_or_else(|residual| {
+        let mut response = match error.format {
+            ErrorFormat::Text => Response::text(error.to_string()),
+            ErrorFormat::Json => Response::json(&error).unwrap_or_else(|residual| {
                 // Placeholder for tracing...
                 if cfg!(debug_assertions) {
                     eprintln!("Error: {}", residual);
                 }
 
                 Response::text(error.to_string())
-            })
-        } else {
-            Response::text(error.to_string())
+            }),
         };
 
         response.set_status(error.status);
@@ -157,9 +159,20 @@ impl From<Error> for Response {
     }
 }
 
-impl ErrorMessage {
-    pub fn new(message: String) -> Self {
-        Self { message }
+impl Serialize for Error {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("Error", 1)?;
+        let message = self.to_string();
+        let errors = [ErrorMessage { message }];
+
+        // Serialize the error as a single element array containing an object with
+        // a message field. We do this to provide compatibility with popular API
+        // specification formats like GraphQL and JSON:API.
+        state.serialize_field("errors", &errors)?;
+        state.end()
     }
 }
 
