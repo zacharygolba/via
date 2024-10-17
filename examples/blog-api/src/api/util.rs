@@ -1,8 +1,6 @@
 use diesel::result::Error as DieselError;
-use via::{
-    error::{not_found, Error},
-    http::StatusCode,
-};
+use via::http::StatusCode;
+use via::Error;
 
 use crate::State;
 
