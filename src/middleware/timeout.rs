@@ -1,9 +1,8 @@
-use http::StatusCode;
 use std::time::Duration;
 use tokio::time;
 
 use super::{BoxFuture, Middleware, Next};
-use crate::{Error, Request, Response, Result};
+use crate::{error::gateway_timeout, Error, Request, Response, Result};
 
 /// A type alias for the default `or_else` function.
 type RespondWithTimeout<State> = fn(&State) -> Result<Response, Error>;
@@ -23,13 +22,12 @@ pub fn timeout<State>(duration: Duration) -> Timeout<RespondWithTimeout<State>> 
 /// The default function to call if downstream middleware do not respond within
 /// the specified duration.
 fn respond_with_timeout<State>(_: &State) -> Result<Response, Error> {
-    let mut message = String::with_capacity(65);
-    let status = StatusCode::GATEWAY_TIMEOUT;
+    let mut message = String::new();
 
     message.push_str("The server is taking too long to respond. ");
     message.push_str("Please try again later.");
 
-    Ok(Error::new_with_status(message, status).into_response())
+    Ok(gateway_timeout(message.into()).into())
 }
 
 impl<State> Timeout<RespondWithTimeout<State>> {

@@ -1,6 +1,7 @@
-use via::{Error, Next, Request, Server};
+use via::error::AnyError;
+use via::{Next, Request, Server};
 
-async fn hello(request: Request, _: Next) -> Result<String, Error> {
+async fn hello(request: Request, _: Next) -> via::Result<String> {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").percent_decode().into_result()?;
 
@@ -9,7 +10,7 @@ async fn hello(request: Request, _: Next) -> Result<String, Error> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), AnyError> {
     // Create a new app by calling the `via::app` function.
     let mut app = via::new(());
     //                     ^^

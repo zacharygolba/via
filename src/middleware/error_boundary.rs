@@ -1,5 +1,5 @@
-use crate::middleware::BoxFuture;
-use crate::{Error, Middleware, Next, Request, Response, Result};
+use crate::middleware::{BoxFuture, Middleware, Next};
+use crate::{Error, Request, Response, Result};
 
 /// Middleware that catches errors that occur in downstream middleware and
 /// converts the error into a response. Middleware that is upstream from a
@@ -71,7 +71,7 @@ where
             let result = next.call(request).await;
 
             // Convert the error into a response and return.
-            Ok(result.unwrap_or_else(|error| error.into_response()))
+            Ok(result.unwrap_or_else(Response::from))
         })
     }
 }
@@ -123,10 +123,7 @@ where
                 // to be configured to use a different response format, filter
                 // out sensitive information from leaking into the response
                 // body, etc.
-                let error = map(error, &state);
-
-                // Convert the error into a response and return.
-                Ok(error.into_response())
+                Ok(map(error, &state).into())
             })
         })
     }

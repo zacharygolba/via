@@ -1,21 +1,15 @@
-use http::StatusCode;
 use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
 use super::{DecodeParam, NoopDecode, PercentDecode};
-use crate::{Error, Result};
+use crate::{error::bad_request, Error, Result};
 
 pub struct Param<'a, 'b, T = NoopDecode> {
     at: Option<Option<(usize, usize)>>,
     name: &'b str,
     source: &'a str,
     _decode: PhantomData<T>,
-}
-
-fn missing_required_param<'a>(name: &str) -> Result<Cow<'a, str>, Error> {
-    let message = format!("missing required parameter: \"{}\"", name);
-    Err(Error::new_with_status(message, StatusCode::BAD_REQUEST))
 }
 
 impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
@@ -52,15 +46,16 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     ///
     pub fn parse<U>(self) -> Result<U, Error>
     where
-        Error: From<<U as FromStr>::Err>,
         U: FromStr,
+        U::Err: std::error::Error + Send + Sync + 'static,
     {
-        self.into_result()?.parse().map_err(|error| {
-            let mut error = Error::from(error);
-
-            error.set_status(StatusCode::BAD_REQUEST);
-            error
-        })
+        match self.into_result()?.parse() {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                let source = Box::new(error);
+                Err(bad_request(source))
+            }
+        }
     }
 
     /// Returns a result with the parameter value if it exists. If the param is
@@ -73,14 +68,17 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     /// Request status code.
     ///
     pub fn into_result(self) -> Result<Cow<'a, str>, Error> {
-        self.at
-            .and_then(|option| {
-                let (start, end) = option?;
-                self.source.get(start..end)
-            })
-            .map_or_else(
-                || missing_required_param(self.name),
-                |value| T::decode(value),
-            )
+        match self.at.and_then(|at| {
+            let (start, end) = at?;
+            self.source.get(start..end)
+        }) {
+            Some(value) => T::decode(value),
+            None => {
+                let name = self.name;
+                let message = format!("missing required parameter: \"{}\"", name);
+
+                Err(bad_request(message.into()))
+            }
+        }
     }
 }

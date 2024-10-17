@@ -7,52 +7,40 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use tokio_rustls::rustls;
-use via::Error;
+use via::error::AnyError;
 
 /// Load the certificate and private key from the file system and use them
 /// to create a rustls::ServerConfig.
 ///
-pub fn server_config() -> Result<rustls::ServerConfig, Error> {
+pub fn server_config() -> Result<rustls::ServerConfig, AnyError> {
     let key = load_key("localhost.key")?;
     let cert = load_certs("localhost.cert")?;
     let mut config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(cert, key)
-        .map_err(Error::from)?;
+        .map_err(AnyError::from)?;
 
     config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     Ok(config)
 }
 
-fn load_certs(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, Error> {
-    let path = path.as_ref();
-    let file = File::open(path).map_err(|_| {
-        let message = format!("failed to open cert file at: {:?}", path);
-        Error::new(message)
-    })?;
-
-    let mut reader = BufReader::new(file);
+fn load_certs(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, AnyError> {
+    let mut reader = BufReader::new(File::open(path)?);
 
     rustls_pemfile::certs(&mut reader)
         .map(|result| result.map_err(|error| error.into()))
         .collect()
 }
 
-fn load_key(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>, Error> {
-    let path = path.as_ref();
-    let file = File::open(path).map_err(|_| {
-        let message = format!("failed to open cert file at: {:?}", path);
-        Error::new(message)
-    })?;
-
-    let mut reader = BufReader::new(file);
+fn load_key(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>, AnyError> {
+    let mut reader = BufReader::new(File::open(path)?);
 
     rustls_pemfile::private_key(&mut reader)
         .map_err(|error| error.into())
         .and_then(|option| {
             option.ok_or_else(|| {
-                let message = "failed to load private key".to_string();
-                Error::new(message)
+                let message = "failed to load private key".to_owned();
+                message.into()
             })
         })
 }
