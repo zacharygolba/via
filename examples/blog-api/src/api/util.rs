@@ -1,5 +1,8 @@
 use diesel::result::Error as DieselError;
-use via::error::{not_found, Error};
+use via::{
+    error::{not_found, Error},
+    http::StatusCode,
+};
 
 use crate::State;
 
@@ -19,17 +22,14 @@ pub fn map_error(error: Error, _: &State) -> Error {
     match error.source().downcast_ref() {
         // The error occurred because a record was not found in the
         // database, set the status to 404 Not Found.
-        Some(DieselError::NotFound) => {
-            let message = "Not Found".to_owned();
-            not_found(message.into()).as_json()
-        }
+        Some(DieselError::NotFound) => error
+            .as_json()
+            .with_status(StatusCode::NOT_FOUND)
+            .with_message("Not Found"),
 
         // The error occurred because of a database error. Return a
         // new error with an opaque message.
-        Some(_) => {
-            let message = "Internal Server Error".to_owned();
-            Error::new(message.into()).as_json()
-        }
+        Some(_) => error.as_json().with_message("Internal Server Error"),
 
         // The error occurred for some other reason.
         None => error.as_json(),
