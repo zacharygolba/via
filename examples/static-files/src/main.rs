@@ -1,7 +1,8 @@
-use via::{Error, Next, Request, Response, Server};
+use via::error::AnyError;
+use via::{Next, Request, Response, Server};
 use via_serve_static::serve_static;
 
-async fn not_found(request: Request, _: Next) -> Result<Response, Error> {
+async fn not_found(request: Request, _: Next) -> via::Result<Response> {
     let path = request.param("path").into_result()?;
     let html = format!(
         "
@@ -27,7 +28,7 @@ async fn not_found(request: Request, _: Next) -> Result<Response, Error> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), AnyError> {
     let mut app = via::new(());
 
     // Add the serve_static middleware to the endpoint /*path.

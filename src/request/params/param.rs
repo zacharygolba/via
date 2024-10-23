@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::str::FromStr;
 
 use super::{DecodeParam, NoopDecode, PercentDecode};
-use crate::{error::bad_request, Error, Result};
+use crate::{Error, Result};
 
 pub struct Param<'a, 'b, T = NoopDecode> {
     at: Option<Option<(usize, usize)>>,
@@ -53,7 +53,7 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
             Ok(value) => Ok(value),
             Err(error) => {
                 let source = Box::new(error);
-                Err(bad_request(source))
+                Err(Error::bad_request(source))
             }
         }
     }
@@ -77,7 +77,7 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
                 let name = self.name;
                 let message = format!("missing required parameter: \"{}\"", name);
 
-                Err(bad_request(message.into()))
+                Err(Error::bad_request(message.into()))
             }
         }
     }
