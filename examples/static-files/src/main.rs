@@ -1,4 +1,4 @@
-use via::error::AnyError;
+use via::error::BoxError;
 use via::{Next, Request, Response, Server};
 use via_serve_static::serve_static;
 
@@ -28,7 +28,7 @@ async fn not_found(request: Request, _: Next) -> via::Result<Response> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), AnyError> {
+async fn main() -> Result<(), BoxError> {
     let mut app = via::new(());
 
     // Add the serve_static middleware to the endpoint /*path.

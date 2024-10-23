@@ -8,9 +8,9 @@ use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::error::{AnyError, Error};
+use crate::error::{BoxError, Error};
 
-type RequestBodyKind = Either<Limited<Incoming>, BoxBody<Bytes, AnyError>>;
+type RequestBodyKind = Either<Limited<Incoming>, BoxBody<Bytes, BoxError>>;
 
 pub struct RequestBody {
     kind: RequestBodyKind,
@@ -87,7 +87,7 @@ impl Debug for RequestBody {
 
 impl Body for RequestBody {
     type Data = Bytes;
-    type Error = AnyError;
+    type Error = BoxError;
 
     fn poll_frame(
         self: Pin<&mut Self>,

@@ -2,9 +2,9 @@ use tokio::signal;
 use tokio::sync::watch;
 use tokio::task::{self, JoinHandle};
 
-use crate::error::AnyError;
+use crate::error::BoxError;
 
-pub fn wait_for_shutdown() -> (JoinHandle<Result<(), AnyError>>, watch::Receiver<bool>) {
+pub fn wait_for_shutdown() -> (JoinHandle<Result<(), BoxError>>, watch::Receiver<bool>) {
     // Create a watch channel to notify the connections to initiate a
     // graceful shutdown process when the `ctrl_c` future resolves.
     let (tx, rx) = watch::channel(false);

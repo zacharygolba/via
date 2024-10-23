@@ -1,4 +1,4 @@
-use via::error::AnyError;
+use via::error::BoxError;
 use via::http::header::CONTENT_TYPE;
 use via::{Next, Request, Response, Server};
 
@@ -16,7 +16,7 @@ async fn echo(request: Request, _: Next) -> via::Result<Response> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), AnyError> {
+async fn main() -> Result<(), BoxError> {
     let mut app = via::new(());
 
     // Add our echo responder to the endpoint /echo.

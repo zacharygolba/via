@@ -1,7 +1,7 @@
 use std::fmt::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use via::error::AnyError;
+use via::error::BoxError;
 use via::http::StatusCode;
 use via::{Response, Server};
 
@@ -77,7 +77,7 @@ async fn totals(request: Request, _: Next) -> via::Result<String> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), AnyError> {
+async fn main() -> Result<(), BoxError> {
     // Create a new application with a `Counter` as state.
     let mut app = via::new(Counter {
         errors: Arc::new(AtomicU32::new(0)),

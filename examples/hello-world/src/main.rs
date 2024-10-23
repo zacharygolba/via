@@ -1,4 +1,4 @@
-use via::error::AnyError;
+use via::error::BoxError;
 use via::{Next, Request, Server};
 
 async fn hello(request: Request, _: Next) -> via::Result<String> {
@@ -10,7 +10,7 @@ async fn hello(request: Request, _: Next) -> via::Result<String> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), AnyError> {
+async fn main() -> Result<(), BoxError> {
     // Create a new app by calling the `via::app` function.
     let mut app = via::new(());
     //                     ^^

@@ -8,7 +8,7 @@ use tokio_rustls::rustls;
 
 use super::acceptor::{self, Acceptor};
 use super::serve::serve;
-use crate::error::AnyError;
+use crate::error::BoxError;
 use crate::{App, Router};
 
 /// The default value of the maximum number of concurrent connections.
@@ -44,7 +44,7 @@ async fn listen<State, A>(
     max_connections: Option<usize>,
     max_request_size: Option<usize>,
     shutdown_timeout: Option<u64>,
-) -> Result<(), AnyError>
+) -> Result<(), BoxError>
 where
     State: Send + Sync + 'static,
     A: Acceptor + Send + Sync + 'static,
@@ -113,7 +113,7 @@ where
     pub fn listen<A: ToSocketAddrs>(
         self,
         address: A,
-    ) -> impl Future<Output = Result<(), AnyError>> {
+    ) -> impl Future<Output = Result<(), BoxError>> {
         // Confirm that rustls_config exists before proceeding.
         let tls_config = match self.rustls_config {
             Some(config) => Arc::new(config),
@@ -154,7 +154,7 @@ where
     pub fn listen<A: ToSocketAddrs>(
         self,
         address: A,
-    ) -> impl Future<Output = Result<(), AnyError>> {
+    ) -> impl Future<Output = Result<(), BoxError>> {
         // Create a HttpAcceptor to serve connections over HTTP.
         let acceptor = acceptor::http::HttpAcceptor;
 
