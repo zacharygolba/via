@@ -399,9 +399,7 @@ impl Error {
 
         self
     }
-}
 
-impl Error {
     /// Returns an iterator over the sources of this error.
     ///
     pub fn iter(&self) -> Iter {
