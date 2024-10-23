@@ -1,4 +1,4 @@
-use diesel::result::Error as DieselError;
+use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use via::http::StatusCode;
 use via::Error;
 
@@ -18,16 +18,25 @@ pub fn inspect_error(error: &Error, _: &State) {
 ///
 pub fn map_error(error: Error, _: &State) -> Error {
     match error.source().downcast_ref() {
-        // The error occurred because a record was not found in the
-        // database, set the status to 404 Not Found.
+        // The error occurred because a database record was not found.
         Some(DieselError::NotFound) => error
             .as_json()
             .with_status(StatusCode::NOT_FOUND)
-            .with_message("Not Found"),
+            .use_canonical_reason(),
 
-        // The error occurred because of a database error. Return a
-        // new error with an opaque message.
-        Some(_) => error.as_json().with_message("Internal Server Error"),
+        // The occurred because of some kind of constraint violation.
+        Some(DieselError::DatabaseError(
+            DatabaseErrorKind::ForeignKeyViolation
+            | DatabaseErrorKind::UniqueViolation
+            | DatabaseErrorKind::NotNullViolation,
+            _,
+        )) => error
+            .as_json()
+            .with_status(StatusCode::BAD_REQUEST)
+            .use_canonical_reason(),
+
+        // The error occurred because of some other kind of database error.with a
+        Some(_) => error.as_json().use_canonical_reason(),
 
         // The error occurred for some other reason.
         None => error.as_json(),

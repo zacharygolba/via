@@ -1,7 +1,7 @@
 mod error;
 mod iter;
 
-pub use error::{bad_request, gateway_timeout, internal_server_error, not_found, Error};
+pub use error::Error;
 pub use iter::Iter;
 
 pub type AnyError = Box<dyn std::error::Error + Send + Sync>;

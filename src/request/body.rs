@@ -8,7 +8,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::error::{bad_request, AnyError, Error};
+use crate::error::{AnyError, Error};
 
 type RequestBodyKind = Either<Limited<Incoming>, BoxBody<Bytes, AnyError>>;
 
@@ -24,8 +24,8 @@ impl RequestBody {
         let text = self.to_text().await?;
 
         serde_json::from_str(&text).map_err(|error| {
-            let error = Box::new(error);
-            bad_request(error)
+            let source = Box::new(error);
+            Error::bad_request(source)
         })
     }
 
@@ -37,8 +37,8 @@ impl RequestBody {
         let utf8 = self.to_vec().await?;
 
         String::from_utf8(utf8).map_err(|error| {
-            let error = Box::new(error);
-            bad_request(error)
+            let source = Box::new(error);
+            Error::bad_request(source)
         })
     }
 
@@ -65,7 +65,7 @@ impl RequestBody {
     pub(crate) async fn collect(self) -> Result<Collected<Bytes>, Error> {
         match BodyExt::collect(self).await {
             Ok(collected) => Ok(collected),
-            Err(error) => Err(bad_request(error)),
+            Err(error) => Err(Error::bad_request(error)),
         }
     }
 }

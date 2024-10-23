@@ -2,7 +2,7 @@ use std::time::Duration;
 use tokio::time;
 
 use super::{BoxFuture, Middleware, Next};
-use crate::{error::gateway_timeout, Error, Request, Response, Result};
+use crate::{Error, Request, Response, Result};
 
 /// A type alias for the default `or_else` function.
 type RespondWithTimeout<State> = fn(&State) -> Result<Response, Error>;
@@ -27,7 +27,7 @@ fn respond_with_timeout<State>(_: &State) -> Result<Response, Error> {
     message.push_str("The server is taking too long to respond. ");
     message.push_str("Please try again later.");
 
-    Ok(gateway_timeout(message.into()).into())
+    Err(Error::gateway_timeout(message.into()))
 }
 
 impl<State> Timeout<RespondWithTimeout<State>> {
@@ -63,9 +63,10 @@ where
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
         let duration = self.duration;
         let or_else = self.or_else;
-        let state = request.state().clone();
 
         Box::pin(async move {
+            let state = request.state().clone();
+
             match time::timeout(duration, next.call(request)).await {
                 Ok(result) => result,
                 Err(_) => or_else(&state),
