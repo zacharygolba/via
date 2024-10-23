@@ -5,7 +5,7 @@ use super::{BoxFuture, Middleware, Next};
 use crate::{Error, Request, Response, Result};
 
 /// A type alias for the default `or_else` function.
-type RespondWithTimeout<State> = fn(&State) -> Result<Response, Error>;
+type RespondWithTimeout<State> = fn(&State) -> Result<Response>;
 
 /// Middleware that calls a fallback function if downstream middleware do not
 /// respond within a specified duration.
@@ -21,7 +21,7 @@ pub fn timeout<State>(duration: Duration) -> Timeout<RespondWithTimeout<State>> 
 
 /// The default function to call if downstream middleware do not respond within
 /// the specified duration.
-fn respond_with_timeout<State>(_: &State) -> Result<Response, Error> {
+fn respond_with_timeout<State>(_: &State) -> Result<Response> {
     let mut message = String::new();
 
     message.push_str("The server is taking too long to respond. ");
@@ -46,7 +46,7 @@ impl<F> Timeout<F> {
     /// `self.duration`.
     pub fn or_else<State, O>(self, f: O) -> Timeout<O>
     where
-        O: Fn(&State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+        O: Fn(&State) -> Result<Response> + Copy + Send + Sync + 'static,
     {
         Timeout {
             duration: self.duration,
@@ -57,7 +57,7 @@ impl<F> Timeout<F> {
 
 impl<State, F> Middleware<State> for Timeout<F>
 where
-    F: Fn(&State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+    F: Fn(&State) -> Result<Response> + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
