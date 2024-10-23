@@ -7,8 +7,11 @@ use serde::{Serialize, Serializer};
 use std::error::Error as StdError;
 use std::fmt::{self, Debug, Display, Formatter};
 
-use super::{BoxError, Iter};
 use crate::response::Response;
+
+/// A type alias for a boxed error type that is `Send + Sync`.
+///
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// An error type that can be easily converted to a [`Response`].
 ///
@@ -18,6 +21,12 @@ pub struct Error {
     status: StatusCode,
     message: Option<String>,
     error: BoxError,
+}
+
+/// A serialized representation of an individual error.
+///
+struct SerializeError<'a> {
+    message: &'a str,
 }
 
 impl Error {
@@ -402,8 +411,8 @@ impl Error {
 
     /// Returns an iterator over the sources of this error.
     ///
-    pub fn iter(&self) -> Iter {
-        Iter::new(Some(self.source()))
+    pub fn iter(&self) -> impl Iterator<Item = &dyn StdError> {
+        std::iter::once(self.source())
     }
 
     /// Returns a reference to the error source.
@@ -466,37 +475,33 @@ impl Serialize for Error {
     where
         S: Serializer,
     {
-        struct ErrorMessage<'a> {
-            message: &'a str,
-        }
-
-        impl Serialize for ErrorMessage<'_> {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer,
-            {
-                let mut state = serializer.serialize_struct("ErrorMessage", 1)?;
-
-                state.serialize_field("message", &self.message)?;
-                state.end()
-            }
-        }
-
         let mut state = serializer.serialize_struct("Error", 1)?;
 
         // Serialize the error as a single element array containing an object with
         // a message field. We do this to provide compatibility with popular API
         // specification formats like GraphQL and JSON:API.
         if let Some(message) = &self.message {
-            let errors = [ErrorMessage { message }];
+            let errors = [SerializeError { message }];
             state.serialize_field("errors", &errors)?;
         } else {
             let message = self.error.to_string();
-            let errors = [ErrorMessage { message: &message }];
+            let errors = [SerializeError { message: &message }];
 
             state.serialize_field("errors", &errors)?;
         }
 
+        state.end()
+    }
+}
+
+impl Serialize for SerializeError<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("ErrorMessage", 1)?;
+
+        state.serialize_field("message", &self.message)?;
         state.end()
     }
 }
