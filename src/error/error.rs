@@ -20,13 +20,6 @@ pub struct Error {
     error: AnyError,
 }
 
-/// The serialized representation of an individual error.
-///
-#[derive(Debug, Serialize)]
-struct ErrorMessage<'a> {
-    message: &'a str,
-}
-
 impl Error {
     /// Returns a new [`Error`] with the provided message.
     ///
@@ -475,6 +468,22 @@ impl Serialize for Error {
     where
         S: Serializer,
     {
+        struct ErrorMessage<'a> {
+            message: &'a str,
+        }
+
+        impl Serialize for ErrorMessage<'_> {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                let mut state = serializer.serialize_struct("ErrorMessage", 1)?;
+
+                state.serialize_field("message", &self.message)?;
+                state.end()
+            }
+        }
+
         let mut state = serializer.serialize_struct("Error", 1)?;
 
         // Serialize the error as a single element array containing an object with
