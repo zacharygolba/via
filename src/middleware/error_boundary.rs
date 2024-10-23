@@ -54,7 +54,7 @@ impl ErrorBoundary {
 
     pub fn or_else<State, F>(or_else: F) -> OrElseErrorBoundary<F>
     where
-        F: Fn(Error, &State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+        F: Fn(Error, &State) -> Result<Response> + Copy + Send + Sync + 'static,
         State: Send + Sync + 'static,
     {
         OrElseErrorBoundary { or_else }
@@ -131,7 +131,7 @@ where
 
 impl<State, F> Middleware<State> for OrElseErrorBoundary<F>
 where
-    F: Fn(Error, &State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+    F: Fn(Error, &State) -> Result<Response> + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {

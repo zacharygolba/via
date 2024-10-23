@@ -94,7 +94,7 @@ impl ResponseBuilder {
         }
     }
 
-    pub fn finish(self) -> Result<Response, Error> {
+    pub fn finish(self) -> Result<Response> {
         let body = self.body.transpose()?.unwrap_or_default();
         Ok(self.inner.body(body)?.into())
     }
