@@ -4,7 +4,7 @@ mod iter;
 pub use error::Error;
 pub use iter::Iter;
 
-pub type AnyError = Box<dyn std::error::Error + Send + Sync>;
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// A type alias for [`std::result::Result`] that uses `Error` as the default
 /// error type.

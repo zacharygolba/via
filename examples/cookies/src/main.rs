@@ -1,5 +1,5 @@
 use cookie::{Cookie, Key};
-use via::error::AnyError;
+use via::error::BoxError;
 use via::middleware::CookieParser;
 use via::{Response, Server};
 
@@ -89,7 +89,7 @@ fn get_secret_from_env() -> Key {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), AnyError> {
+async fn main() -> Result<(), BoxError> {
     // Load the environment variables from the ".env" file. This is where we
     // keep the secret key in development. In production, you may want to
     // configure the secret key using a different method. For example, using

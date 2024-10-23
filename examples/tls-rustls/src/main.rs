@@ -1,6 +1,6 @@
 mod tls;
 
-use via::error::AnyError;
+use via::error::BoxError;
 use via::{Next, Request, Server};
 
 async fn hello(request: Request, _: Next) -> via::Result<String> {
@@ -12,7 +12,7 @@ async fn hello(request: Request, _: Next) -> via::Result<String> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), AnyError> {
+async fn main() -> Result<(), BoxError> {
     // Confirm that our certificate and private key exist and are valid before
     // doing anything else.
     let tls_config = tls::server_config().expect("tls config is invalid or missing");

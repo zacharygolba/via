@@ -13,7 +13,7 @@ use hyper_util::rt::TokioExecutor;
 use super::acceptor::Acceptor;
 use super::service::Service;
 use super::shutdown::wait_for_shutdown;
-use crate::error::AnyError;
+use crate::error::BoxError;
 use crate::router::Router;
 
 pub async fn serve<State, A>(
@@ -24,7 +24,7 @@ pub async fn serve<State, A>(
     max_connections: usize,
     max_request_size: usize,
     shutdown_timeout: Duration,
-) -> Result<(), AnyError>
+) -> Result<(), BoxError>
 where
     State: Send + Sync + 'static,
     A: Acceptor + Send + Sync + 'static,

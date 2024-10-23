@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use super::body::RequestBody;
 use super::params::{Param, PathParams, QueryParam};
-use crate::error::AnyError;
+use crate::error::BoxError;
 
 pub struct Request<State = ()> {
     did_map: bool,
@@ -67,7 +67,7 @@ impl<State> Request<State> {
     pub fn map<F, T>(self, map: F) -> Self
     where
         F: FnOnce(RequestBody) -> T,
-        T: Body<Data = Bytes, Error = AnyError> + Send + Sync + 'static,
+        T: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
     {
         if cfg!(debug_assertions) && self.did_map {
             // TODO: Replace this with tracing and a proper logger.
