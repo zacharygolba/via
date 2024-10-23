@@ -446,7 +446,12 @@ where
 {
     #[inline]
     fn from(source: T) -> Self {
-        Self::new(Box::new(source))
+        Self {
+            as_json: false,
+            message: None,
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            error: Box::new(source),
+        }
     }
 }
 
