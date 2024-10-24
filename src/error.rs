@@ -150,16 +150,14 @@ impl Error {
     /// }
     /// ```
     ///
+    #[inline]
     pub fn use_canonical_reason(self) -> Self {
-        let message = match self.status.canonical_reason() {
-            Some(reason) => reason.to_owned(),
-            None => {
-                // Placeholder for tracing...
-                "An error occurred".to_owned()
-            }
-        };
-
-        self.with_message(message)
+        if let Some(reason) = self.status.canonical_reason() {
+            self.with_message(reason.to_owned())
+        } else {
+            // Placeholder for tracing...
+            self.with_message("An error occurred".to_owned())
+        }
     }
 
     /// Returns an iterator over the sources of this error.
