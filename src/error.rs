@@ -145,7 +145,6 @@ impl Error {
     ///         error.use_canonical_reason()
     ///     }));
     ///
-    ///     // Return `Ok` instead of starting the server.
     ///     Ok(())
     /// }
     /// ```
