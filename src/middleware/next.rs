@@ -1,5 +1,5 @@
 use super::{ArcMiddleware, BoxFuture};
-use crate::{Error, Request, Response, Result};
+use crate::{Request, Response, Result};
 
 pub struct Next<State = ()> {
     stack: Vec<ArcMiddleware<State>>,
@@ -10,7 +10,7 @@ impl<State> Next<State> {
         Self { stack }
     }
 
-    pub fn call(mut self, request: Request<State>) -> BoxFuture<Result<Response, Error>> {
+    pub fn call(mut self, request: Request<State>) -> BoxFuture<Result<Response>> {
         if let Some(middleware) = self.stack.pop() {
             middleware.call(request, self)
         } else {

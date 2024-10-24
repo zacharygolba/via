@@ -25,7 +25,7 @@ mod server;
 pub use http;
 
 pub use app::{new, App};
-pub use error::{Error, Result};
+pub use error::Error;
 pub use middleware::allow_method::{connect, delete, get, head, options, patch, post, put};
 pub use middleware::{ErrorBoundary, Middleware, Next};
 pub use request::Request;
@@ -34,3 +34,8 @@ pub use router::Endpoint;
 pub use server::Server;
 
 use router::Router;
+
+/// A type alias for [`std::result::Result`] that uses `Error` as the default
+/// error type.
+///
+pub type Result<T> = std::result::Result<T, Error>;

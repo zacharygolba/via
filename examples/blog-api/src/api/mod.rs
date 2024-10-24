@@ -5,14 +5,13 @@ pub mod util;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use via::request::RequestBody;
-use via::Error;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Payload<T> {
     data: T,
 }
 
-async fn deserialize<D: DeserializeOwned>(body: RequestBody) -> Result<D, Error> {
+async fn deserialize<D: DeserializeOwned>(body: RequestBody) -> via::Result<D> {
     // Deserialize the request body into a `Payload<D>`.
     let payload: Payload<D> = body.json().await?;
 

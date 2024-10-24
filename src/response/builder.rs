@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use super::{Response, ResponseBody};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
-use crate::error::AnyError;
+use crate::error::BoxError;
 use crate::{Error, Result};
 
 pub struct ResponseBuilder {
@@ -86,7 +86,7 @@ impl ResponseBuilder {
     ///
     pub fn stream<T>(self, body: T) -> Self
     where
-        T: Body<Data = Bytes, Error = AnyError> + Send + Sync + 'static,
+        T: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
     {
         Self {
             body: Some(Ok(BoxBody::new(body).into())),
@@ -94,7 +94,7 @@ impl ResponseBuilder {
         }
     }
 
-    pub fn finish(self) -> Result<Response, Error> {
+    pub fn finish(self) -> Result<Response> {
         let body = self.body.transpose()?.unwrap_or_default();
         Ok(self.inner.body(body)?.into())
     }
@@ -126,10 +126,7 @@ impl ResponseBuilder {
                 builder.header(key, value)
             });
 
-        Self {
-            inner,
-            body: self.body,
-        }
+        Self { inner, ..self }
     }
 
     pub fn status<T>(self, status: T) -> Self

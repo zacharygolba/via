@@ -38,7 +38,7 @@ macro_rules! try_unwrap_file {
             Err(error) => {
                 // An error occurred while attempting to resolve the file metadata.
                 // Return an error response with the appropriate status code.
-                return Err(Error::from_io_error(error));
+                return Err(Error::not_found(Box::new(error)));
             }
             Ok(file) => {
                 // The file metadata was successfully resolved.

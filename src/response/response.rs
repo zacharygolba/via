@@ -11,7 +11,7 @@ use std::fmt::{self, Debug, Formatter};
 
 use super::{ResponseBody, ResponseBuilder};
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
-use crate::error::{AnyError, Error};
+use crate::error::{BoxError, Error};
 
 pub struct Response {
     did_map: bool,
@@ -79,7 +79,7 @@ impl Response {
     ///
     pub fn stream<T, E>(body: T) -> Self
     where
-        T: Body<Data = Bytes, Error = AnyError> + Send + Sync + 'static,
+        T: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
     {
         let mut response = Self::new(BoxBody::new(body).into());
 
@@ -118,7 +118,7 @@ impl Response {
     pub fn map<F, T>(self, map: F) -> Self
     where
         F: FnOnce(ResponseBody) -> T,
-        T: Body<Data = Bytes, Error = AnyError> + Send + Sync + 'static,
+        T: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
     {
         if cfg!(debug_assertions) && self.did_map {
             // TODO: Replace this with tracing and a proper logger.

@@ -6,23 +6,23 @@ use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::error::{AnyError, Error};
+use crate::error::{BoxError, Error};
 
 pub struct ResponseBody {
-    kind: Either<String, BoxBody<Bytes, AnyError>>,
+    kind: Either<String, BoxBody<Bytes, BoxError>>,
 }
 
 impl ResponseBody {
     /// Creates a new response body.
     ///
     #[inline]
-    pub fn new(kind: Either<String, BoxBody<Bytes, AnyError>>) -> Self {
+    pub fn new(kind: Either<String, BoxBody<Bytes, BoxError>>) -> Self {
         Self { kind }
     }
 }
 
 impl ResponseBody {
-    fn project(self: Pin<&mut Self>) -> Pin<&mut Either<String, BoxBody<Bytes, AnyError>>> {
+    fn project(self: Pin<&mut Self>) -> Pin<&mut Either<String, BoxBody<Bytes, BoxError>>> {
         let this = self.get_mut();
         let ptr = &mut this.kind;
 
@@ -44,7 +44,7 @@ impl Default for ResponseBody {
 
 impl Body for ResponseBody {
     type Data = Bytes;
-    type Error = AnyError;
+    type Error = BoxError;
 
     fn poll_frame(
         self: Pin<&mut Self>,
@@ -71,9 +71,9 @@ impl From<String> for ResponseBody {
     }
 }
 
-impl From<BoxBody<Bytes, AnyError>> for ResponseBody {
+impl From<BoxBody<Bytes, BoxError>> for ResponseBody {
     #[inline]
-    fn from(body: BoxBody<Bytes, AnyError>) -> Self {
+    fn from(body: BoxBody<Bytes, BoxError>) -> Self {
         Self {
             kind: Either::Right(body),
         }

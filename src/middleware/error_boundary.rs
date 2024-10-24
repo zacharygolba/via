@@ -1,5 +1,5 @@
-use crate::middleware::BoxFuture;
-use crate::{Error, Middleware, Next, Request, Response, Result};
+use crate::middleware::{BoxFuture, Middleware, Next};
+use crate::{Error, Request, Response, Result};
 
 /// Middleware that catches errors that occur in downstream middleware and
 /// converts the error into a response. Middleware that is upstream from a
@@ -54,7 +54,7 @@ impl ErrorBoundary {
 
     pub fn or_else<State, F>(or_else: F) -> OrElseErrorBoundary<F>
     where
-        F: Fn(Error, &State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+        F: Fn(Error, &State) -> Result<Response> + Copy + Send + Sync + 'static,
         State: Send + Sync + 'static,
     {
         OrElseErrorBoundary { or_else }
@@ -71,7 +71,7 @@ where
             let result = next.call(request).await;
 
             // Convert the error into a response and return.
-            Ok(result.unwrap_or_else(|error| error.into_response()))
+            Ok(result.unwrap_or_else(Response::from))
         })
     }
 }
@@ -123,10 +123,7 @@ where
                 // to be configured to use a different response format, filter
                 // out sensitive information from leaking into the response
                 // body, etc.
-                let error = map(error, &state);
-
-                // Convert the error into a response and return.
-                Ok(error.into_response())
+                Ok(map(error, &state).into())
             })
         })
     }
@@ -134,7 +131,7 @@ where
 
 impl<State, F> Middleware<State> for OrElseErrorBoundary<F>
 where
-    F: Fn(Error, &State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+    F: Fn(Error, &State) -> Result<Response> + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
