@@ -37,6 +37,145 @@ impl Error {
         Self::internal_server_error(source)
     }
 
+    /// Returns a new [`Error`] that will be serialized to JSON when converted to
+    /// a [`Response`].
+    ///
+    #[inline]
+    pub fn as_json(self) -> Self {
+        Self {
+            as_json: true,
+            ..self
+        }
+    }
+
+    /// Returns a new [`Error`] that will eagerly map the message that will be
+    /// included in the body of the [`Response`] that will be generated from
+    /// self by calling the provided closure. If the closure returns `None`,
+    /// the message will be left unchanged.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use via::error::BoxError;
+    /// use via::{ErrorBoundary, Next, Request};
+    ///
+    /// #[tokio::main(flavor = "current_thread")]
+    /// async fn main() -> Result<(), BoxError> {
+    ///     let mut app = via::new(());
+    ///
+    ///     // Add an `ErrorBoundary` middleware to the route tree that maps
+    ///     // errors that occur in subsequent middleware by calling the `redact`
+    ///     // function.
+    ///     app.include(ErrorBoundary::map(|error, _| {
+    ///         error.redact(|message| {
+    ///             if message.contains("password") {
+    ///                 // If password is even mentioned in the error, return an
+    ///                 // opaque message instead. You'll probably want something
+    ///                 // more sophisticated than this in production.
+    ///                 Some("An error occurred...".to_owned())
+    ///             } else {
+    ///                 // Otherwise, use the existing error message.
+    ///                 None
+    ///             }
+    ///         })
+    ///     }));
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    pub fn redact(self, f: impl FnOnce(&str) -> Option<String>) -> Self {
+        match &self.message {
+            Some(input) => match f(input) {
+                Some(redacted) => self.with_message(redacted),
+                None => self,
+            },
+            None => {
+                let input = self.error.to_string();
+                let redacted = f(&input).unwrap_or(input);
+
+                self.with_message(redacted)
+            }
+        }
+    }
+
+    /// Returns a new [`Error`] that will use the provided message instead of
+    /// calling the [`Display`] implementation of the error source when
+    /// converted to a [`Response`].
+    ///
+    #[inline]
+    pub fn with_message(self, message: String) -> Self {
+        Self {
+            message: Some(message),
+            ..self
+        }
+    }
+
+    /// Sets the status code of that will be used when converted to a
+    /// [`Response`].
+    ///
+    #[inline]
+    pub fn with_status(self, status: StatusCode) -> Self {
+        // Placeholder for tracing...
+        // Warn if the status code is not in the 4xx or 5xx range.
+        Self { status, ..self }
+    }
+
+    /// Returns a new [`Error`] that will use the canonical reason phrase of the
+    /// status code as the message included in the [`Response`] body that is
+    /// generated when converted to a [`Response`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use via::error::BoxError;
+    /// use via::{ErrorBoundary, Next, Request};
+    ///
+    /// #[tokio::main(flavor = "current_thread")]
+    /// async fn main() -> Result<(), BoxError> {
+    ///     let mut app = via::new(());
+    ///
+    ///     // Add an `ErrorBoundary` middleware to the route tree that maps
+    ///     // errors that occur in subsequent middleware by calling the
+    ///     // `use_canonical_reason` function.
+    ///     app.include(ErrorBoundary::map(|error, _| {
+    ///         // Prevent error messages that occur in downstream middleware from
+    ///         // leaking into the response body by using the reason phrase of
+    ///         // the status code associated with the error.
+    ///         error.use_canonical_reason()
+    ///     }));
+    ///
+    ///     // Return `Ok` instead of starting the server.
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    pub fn use_canonical_reason(self) -> Self {
+        let message = match self.status.canonical_reason() {
+            Some(reason) => reason.to_owned(),
+            None => {
+                // Placeholder for tracing...
+                "An error occurred".to_owned()
+            }
+        };
+
+        self.with_message(message)
+    }
+
+    /// Returns an iterator over the sources of this error.
+    ///
+    pub fn iter(&self) -> impl Iterator<Item = &dyn StdError> {
+        Some(self.source()).into_iter()
+    }
+
+    /// Returns a reference to the error source.
+    ///
+    pub fn source(&self) -> &(dyn StdError + 'static) {
+        &*self.error
+    }
+}
+
+impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `400 Bad Request` status.
     ///
@@ -347,78 +486,6 @@ impl Error {
     #[inline]
     pub fn network_authentication_required(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::NETWORK_AUTHENTICATION_REQUIRED, source)
-    }
-
-    /// Returns a new [`Error`] that will be serialized to JSON when converted to
-    /// a [`Response`].
-    ///
-    #[inline]
-    pub fn as_json(self) -> Self {
-        Self {
-            as_json: true,
-            ..self
-        }
-    }
-
-    /// Returns a new [`Error`] that will use the provided message instead of
-    /// calling the [`Display`] implementation of the error source when
-    /// converted to a [`Response`].
-    ///
-    pub fn with_message(self, message: String) -> Self {
-        Self {
-            message: Some(message),
-            ..self
-        }
-    }
-
-    /// Sets the status code of that will be used when converted to a
-    /// [`Response`].
-    ///
-    #[inline]
-    pub fn with_status(self, status: StatusCode) -> Self {
-        if cfg!(debug_assertions) {
-            if status.is_informational() {
-                eprintln!("Warning: Setting an information status code on an error");
-            }
-
-            if status.is_redirection() {
-                eprintln!("Warning: Setting a redirect status code on an error");
-            }
-
-            if status.is_success() {
-                eprintln!("Warning: Setting a success status code on an error");
-            }
-        }
-
-        Self { status, ..self }
-    }
-
-    /// Returns a new [`Error`] that will use the canonical reason phrase of the
-    /// status code as the message included in the [`Response`] body that is
-    /// generated when converted to a [`Response`].
-    ///
-    #[inline]
-    pub fn use_canonical_reason(self) -> Self {
-        if let Some(reason) = self.status.canonical_reason() {
-            let message = Some(reason.to_owned());
-            return Self { message, ..self };
-        }
-
-        // Placeholder for tracing...
-
-        self
-    }
-
-    /// Returns an iterator over the sources of this error.
-    ///
-    pub fn iter(&self) -> impl Iterator<Item = &dyn StdError> {
-        std::iter::once(self.source())
-    }
-
-    /// Returns a reference to the error source.
-    ///
-    pub fn source(&self) -> &(dyn StdError + 'static) {
-        &*self.error
     }
 }
 
