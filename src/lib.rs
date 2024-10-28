@@ -13,29 +13,22 @@
 
 #![allow(clippy::module_inception)]
 
-pub mod error;
 pub mod middleware;
 pub mod request;
 pub mod response;
 
 mod app;
+mod error;
 mod router;
 mod server;
 
 pub use http;
 
 pub use app::{new, App};
-pub use error::Error;
+pub use error::{BoxError, Error};
 pub use middleware::allow_method::{connect, delete, get, head, options, patch, post, put};
-pub use middleware::{ErrorBoundary, Middleware, Next};
+pub use middleware::{ErrorBoundary, Middleware, Next, Result};
 pub use request::Request;
 pub use response::Response;
 pub use router::Endpoint;
 pub use server::Server;
-
-use router::Router;
-
-/// A type alias for [`std::result::Result`] that uses `Error` as the default
-/// error type.
-///
-pub type Result<T> = std::result::Result<T, Error>;

@@ -1,7 +1,6 @@
 mod tls;
 
-use via::error::BoxError;
-use via::{Next, Request, Server};
+use via::{BoxError, Next, Request, Server};
 
 async fn hello(request: Request, _: Next) -> via::Result<String> {
     // Get a reference to the path parameter `name` from the request uri.

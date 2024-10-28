@@ -1,5 +1,4 @@
-use via::error::BoxError;
-use via::{Next, Request, Response, Server};
+use via::{BoxError, Next, Request, Response, Server};
 use via_serve_static::serve_static;
 
 async fn not_found(request: Request, _: Next) -> via::Result<Response> {

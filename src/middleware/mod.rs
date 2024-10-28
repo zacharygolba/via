@@ -15,3 +15,9 @@ pub use next::Next;
 pub use timeout::{timeout, Timeout};
 
 pub(crate) use self::middleware::ArcMiddleware;
+
+use crate::Error;
+
+/// Shorthand for a `Result` returned from an async middleware function.
+///
+pub type Result<T> = std::result::Result<T, Error>;

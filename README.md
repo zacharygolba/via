@@ -24,8 +24,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 Below is a basic example to demonstrate how to use Via to create a simple web server that responds to requests at `/hello/:name` with a personalized greeting.
 
 ```rust
-use via::error::BoxError;
-use via::{Next, Request, Server};
+use via::{BoxError, Next, Request, Server};
 
 async fn hello(request: Request, _: Next) -> via::Result<String> {
     // Get a reference to the path parameter `name` from the request uri.

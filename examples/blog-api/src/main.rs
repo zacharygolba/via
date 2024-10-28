@@ -2,9 +2,8 @@ mod api;
 mod database;
 
 use std::time::Duration;
-use via::error::BoxError;
 use via::middleware::Timeout;
-use via::{ErrorBoundary, Response, Server};
+use via::{BoxError, ErrorBoundary, Response, Server};
 
 use database::Pool;
 

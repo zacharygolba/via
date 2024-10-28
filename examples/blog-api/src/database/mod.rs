@@ -11,7 +11,7 @@ pub mod prelude {
 use std::env;
 
 use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
-use via::error::BoxError;
+use via::BoxError;
 
 type ConnectionManager = AsyncDieselConnectionManager<AsyncPgConnection>;
 pub type Pool = bb8::Pool<ConnectionManager>;

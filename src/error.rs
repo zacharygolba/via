@@ -9,11 +9,14 @@ use std::fmt::{self, Debug, Display, Formatter};
 
 use crate::response::Response;
 
-/// A type alias for a boxed error type that is `Send + Sync`.
+/// A type alias for a boxed
+/// [`Error`](std::error::Error)
+/// that is `Send + Sync`.
 ///
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// An error type that can be easily converted to a [`Response`].
+/// An error type that can act as a specialized version of a
+/// [`ResponseBuilder`](crate::response::ResponseBuilder).
 ///
 #[derive(Debug)]
 pub struct Error {
@@ -56,8 +59,7 @@ impl Error {
     /// # Example
     ///
     /// ```
-    /// use via::error::BoxError;
-    /// use via::{ErrorBoundary, Next, Request};
+    /// use via::{BoxError, ErrorBoundary, Next, Request};
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), BoxError> {
@@ -128,8 +130,7 @@ impl Error {
     /// # Example
     ///
     /// ```
-    /// use via::error::BoxError;
-    /// use via::{ErrorBoundary, Next, Request};
+    /// use via::{BoxError, ErrorBoundary, Next, Request};
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), BoxError> {
