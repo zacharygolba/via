@@ -1,9 +1,8 @@
 use std::fmt::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use via::error::BoxError;
 use via::http::StatusCode;
-use via::{Response, Server};
+use via::{BoxError, Response, Server};
 
 // Define a type alias for the `via::Request` to include the `Counter` state.
 // This is a convenience to avoid having to write out the full type signature.

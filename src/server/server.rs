@@ -8,8 +8,9 @@ use tokio_rustls::rustls;
 
 use super::acceptor::{self, Acceptor};
 use super::serve::serve;
+use crate::app::App;
 use crate::error::BoxError;
-use crate::{App, Router};
+use crate::router::Router;
 
 /// The default value of the maximum number of concurrent connections.
 ///
@@ -23,7 +24,7 @@ const DEFAULT_MAX_REQUEST_SIZE: usize = 104_576_000;
 ///
 const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
 
-/// Serve an [App] over HTTP or HTTPS.
+/// Serve an [`App`] over HTTP or HTTPS.
 ///
 pub struct Server<State> {
     state: Arc<State>,

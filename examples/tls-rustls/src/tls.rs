@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use tokio_rustls::rustls;
-use via::error::BoxError;
+use via::BoxError;
 
 /// Load the certificate and private key from the file system and use them
 /// to create a rustls::ServerConfig.

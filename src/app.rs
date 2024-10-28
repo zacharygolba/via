@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use crate::Middleware;
-use crate::{Endpoint, Router};
+use crate::middleware::Middleware;
+use crate::router::{Endpoint, Router};
 
 pub struct App<State> {
     pub(crate) state: Arc<State>,
     pub(crate) router: Router<State>,
 }
 
-/// Constructs a new `App` with the provided `state`.
+/// Constructs a new [`App`] with the provided `state` argument.
+///
 pub fn new<State>(state: State) -> App<State>
 where
     State: Send + Sync + 'static,

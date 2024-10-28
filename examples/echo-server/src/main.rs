@@ -1,6 +1,5 @@
-use via::error::BoxError;
 use via::http::header::CONTENT_TYPE;
-use via::{Next, Request, Response, Server};
+use via::{BoxError, Next, Request, Response, Server};
 
 async fn echo(request: Request, _: Next) -> via::Result<Response> {
     // Get an owned copy of the request's Content-Type header.

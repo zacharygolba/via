@@ -1,7 +1,6 @@
 use cookie::{Cookie, Key};
-use via::error::BoxError;
 use via::middleware::CookieParser;
-use via::{Response, Server};
+use via::{BoxError, Response, Server};
 
 type Request = via::Request<CookiesExample>;
 type Next = via::Next<CookiesExample>;

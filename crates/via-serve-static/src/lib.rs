@@ -6,8 +6,7 @@ mod stream_file;
 use bitflags::bitflags;
 use std::path::Path;
 use std::sync::Arc;
-use via::error::BoxError;
-use via::Endpoint;
+use via::{BoxError, Endpoint};
 
 use crate::respond::{respond_to_get_request, respond_to_head_request};
 
