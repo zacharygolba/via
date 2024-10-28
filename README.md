@@ -15,7 +15,7 @@ Add the following to dependencies section of your `Cargo.toml`:
 
 ```toml
 [dependencies]
-via = "0.1"
+via = "2.0.0-beta.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -24,9 +24,10 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 Below is a basic example to demonstrate how to use Via to create a simple web server that responds to requests at `/hello/:name` with a personalized greeting.
 
 ```rust
-use via::{Error, Next, Request, Server};
+use via::error::BoxError;
+use via::{Next, Request, Server};
 
-async fn hello(request: Request, _: Next) -> Result<String, Error> {
+async fn hello(request: Request, _: Next) -> via::Result<String> {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").percent_decode().into_result()?;
 
@@ -35,7 +36,7 @@ async fn hello(request: Request, _: Next) -> Result<String, Error> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), BoxError> {
     // Create a new application.
     let mut app = via::new(());
 
