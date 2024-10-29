@@ -1,7 +1,4 @@
-# advanced-blog
-
-A not so advanced blog example that demonstrates how nesting services can be useful for
-code organization and separating concerns.
+# blog-api
 
 ### Initial Setup
 
