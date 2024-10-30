@@ -75,6 +75,10 @@ For more detailed information on Via's features and how to use them, please refe
 
 Contributions are welcome! Feel free to submit issues or pull requests on our [GitHub repository](https://github.com/zacharygolba/via).
 
+## Inspiration
+
+This project is inspired by [Koa](https://github.com/koajs/koa) (a web framework for Node.js).
+
 ## License
 
 Licensed under either of
