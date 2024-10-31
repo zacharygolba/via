@@ -88,13 +88,13 @@ impl Error {
     ///
     pub fn redact(self, f: impl FnOnce(&str) -> Option<String>) -> Self {
         match &self.message {
-            Some(input) => match f(input) {
+            Some(message) => match f(message) {
                 Some(redacted) => self.with_message(redacted),
                 None => self,
             },
             None => {
-                let input = self.error.to_string();
-                let redacted = f(&input).unwrap_or(input);
+                let message = self.error.to_string();
+                let redacted = f(&message).unwrap_or(message);
 
                 self.with_message(redacted)
             }
