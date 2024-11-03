@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, ToSocketAddrs};
@@ -45,7 +46,7 @@ async fn listen<State, A>(
     max_connections: Option<usize>,
     max_request_size: Option<usize>,
     shutdown_timeout: Option<u64>,
-) -> Result<(), BoxError>
+) -> Result<ExitCode, BoxError>
 where
     State: Send + Sync + 'static,
     A: Acceptor + Send + Sync + 'static,
@@ -114,8 +115,9 @@ where
     pub fn listen<A: ToSocketAddrs>(
         self,
         address: A,
-    ) -> impl Future<Output = Result<(), BoxError>> {
+    ) -> impl Future<Output = Result<ExitCode, BoxError>> {
         // Confirm that rustls_config exists before proceeding.
+
         let tls_config = match self.rustls_config {
             Some(config) => Arc::new(config),
             None => panic!("rustls_config is required to use the 'rustls' feature"),
@@ -155,7 +157,7 @@ where
     pub fn listen<A: ToSocketAddrs>(
         self,
         address: A,
-    ) -> impl Future<Output = Result<(), BoxError>> {
+    ) -> impl Future<Output = Result<ExitCode, BoxError>> {
         // Create a HttpAcceptor to serve connections over HTTP.
         let acceptor = acceptor::http::HttpAcceptor;
 

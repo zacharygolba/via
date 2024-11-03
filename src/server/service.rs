@@ -12,12 +12,15 @@ use crate::request::{Request, RequestBody};
 use crate::response::{Response, ResponseBody};
 use crate::router::Router;
 
+use super::shutdown::ShutdownTx;
+
 pub struct FutureResponse {
     future: BoxFuture<Result<Response, Error>>,
 }
 
 pub struct Service<State> {
     max_request_size: usize,
+    shutdown_tx: ShutdownTx,
     router: Arc<Router<State>>,
     state: Arc<State>,
 }
@@ -39,9 +42,15 @@ impl Future for FutureResponse {
 }
 
 impl<State> Service<State> {
-    pub fn new(max_request_size: usize, router: Arc<Router<State>>, state: Arc<State>) -> Self {
+    pub fn new(
+        max_request_size: usize,
+        shutdown_tx: ShutdownTx,
+        router: Arc<Router<State>>,
+        state: Arc<State>,
+    ) -> Self {
         Self {
             max_request_size,
+            shutdown_tx,
             router,
             state,
         }

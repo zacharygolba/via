@@ -1,3 +1,4 @@
+use std::process::ExitCode;
 use via::{BoxError, Next, Request, Response, Server};
 use via_serve_static::serve_static;
 
@@ -27,7 +28,7 @@ async fn not_found(request: Request, _: Next) -> via::Result<Response> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), BoxError> {
+async fn main() -> Result<ExitCode, BoxError> {
     let mut app = via::new(());
 
     // Add the serve_static middleware to the endpoint /*path.

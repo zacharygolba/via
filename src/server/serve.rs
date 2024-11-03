@@ -1,5 +1,6 @@
 use hyper::server::conn;
 use hyper_util::rt::{TokioIo, TokioTimer};
+use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
@@ -24,12 +25,12 @@ pub async fn serve<State, A>(
     max_connections: usize,
     max_request_size: usize,
     shutdown_timeout: Duration,
-) -> Result<(), BoxError>
+) -> Result<ExitCode, BoxError>
 where
     State: Send + Sync + 'static,
     A: Acceptor + Send + Sync + 'static,
 {
-    let (shutdown_task, shutdown_rx) = wait_for_shutdown();
+    let (shutdown_tx, shutdown_rx, shutdown_task) = wait_for_shutdown();
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
@@ -41,7 +42,7 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
-    loop {
+    let exit_code = loop {
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
 
@@ -56,6 +57,10 @@ where
         // Clone the acceptor so it can be moved into the task responsible for
         // serving individual connections.
         let acceptor = acceptor.clone();
+
+        // Clone the watch sender so connections can notify the main thread if an
+        // unrecoverable error is encountered.
+        let shutdown_tx = shutdown_tx.clone();
 
         // Clone the watch channel so that we can notify the connection task when
         // initiate a graceful shutdown process before the server exits.
@@ -95,7 +100,7 @@ where
                         .timer(TokioTimer::new())
                         .serve_connection(
                             TokioIo::new(stream),
-                            Service::new(max_request_size, router, state),
+                            Service::new(max_request_size, shutdown_tx, router, state),
                         );
 
                     // Create a new HTTP/1.1 connection.
@@ -142,9 +147,15 @@ where
             }
 
             // Otherwise, wait for a "Ctrl-C" signal to be sent to the process.
-            _ = shutdown_rx.changed() => {
-                // Break out of the loop to stop accepting new connections.
-                break;
+            _ = shutdown_rx.changed() => match *shutdown_rx.borrow_and_update() {
+                // NOOP
+                None => {},
+
+                // An unrecoverable error occurred.
+                Some(true) => break ExitCode::FAILURE,
+
+                // A scheduled shutdown was requested.
+                Some(false) => break ExitCode::SUCCESS,
             }
         }
 
@@ -155,7 +166,7 @@ where
                 let _ = error;
             }
         }
-    }
+    };
 
     let shutdown_started_at = Instant::now();
 
@@ -179,10 +190,10 @@ where
                 .map_or(Duration::from_secs(10), Duration::from_secs);
 
             // Wait for the shutdown task to complete before exiting the server.
-            time::timeout(remaining_timeout, shutdown_task).await???;
+            time::timeout(remaining_timeout, shutdown_task).await??;
 
             // The shutdown_task completed within the timeout.
-            Ok(())
+            Ok(exit_code)
         }
 
         // Otherwise, return an error if we're unable to close all connections
