@@ -1,6 +1,7 @@
 mod api;
 mod database;
 
+use std::process::ExitCode;
 use std::time::Duration;
 use via::middleware::Timeout;
 use via::{BoxError, ErrorBoundary, Response, Server};
@@ -26,7 +27,7 @@ async fn log_request(request: Request, next: Next) -> via::Result<Response> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), BoxError> {
+async fn main() -> Result<ExitCode, BoxError> {
     dotenvy::dotenv()?;
 
     // Create a new app with our shared state that contains a database pool.

@@ -1,5 +1,6 @@
 mod tls;
 
+use std::process::ExitCode;
 use via::{BoxError, Next, Request, Server};
 
 async fn hello(request: Request, _: Next) -> via::Result<String> {
@@ -11,7 +12,7 @@ async fn hello(request: Request, _: Next) -> via::Result<String> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), BoxError> {
+async fn main() -> Result<ExitCode, BoxError> {
     // Confirm that our certificate and private key exist and are valid before
     // doing anything else.
     let tls_config = tls::server_config().expect("tls config is invalid or missing");
