@@ -93,17 +93,21 @@ where
             Request::new(parts, body, state)
         };
 
-        let next = {
-            let path = request.parts.uri.path();
-            let params = &mut request.params;
+        let future = match self
+            .router
+            .lookup(request.parts.uri.path(), &mut request.params)
+        {
+            // Call the middleware stack for the resolved routes.
+            Ok(next) => next.call(request),
 
-            self.router.lookup(path, params)
+            // Alert the main thread that we encountered an unrecoverable error.
+            Err(error) => {
+                let _ = self.shutdown_tx.send(Some(true)).ok();
+                let _ = error; // Placeholder for tracing...
+                Box::pin(async { Ok(Response::internal_server_error()) })
+            }
         };
 
-        // Call the middleware stack and return a Future that resolves to
-        // `Result<Self::Response, Self::Error>`.
-        Self::Future {
-            future: next.call(request),
-        }
+        Self::Future { future }
     }
 }

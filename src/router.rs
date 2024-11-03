@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use via_router::VisitError;
+
 use crate::middleware::Middleware;
 use crate::request::PathParams;
 use crate::Next;
@@ -87,16 +89,18 @@ where
         }
     }
 
-    pub fn lookup(&self, path: &str, params: &mut PathParams) -> Next<State> {
+    pub fn lookup(&self, path: &str, params: &mut PathParams) -> Result<Next<State>, VisitError> {
         let mut stack = Vec::new();
 
         // Iterate over the routes that match the request's path.
-        for found in self.inner.visit(path).into_iter().rev() {
+        for result in self.inner.visit(path).into_iter().rev() {
+            let found = result?;
+
             // If there is a dynamic parameter name associated with the route,
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
-            if let Some(param) = found.param {
-                params.push((param, found.at));
+            if let (Some(param), Some(at)) = (found.param, found.at) {
+                params.push((param, at));
             }
 
             let route = match found.route.and_then(|key| self.inner.get(key)) {
@@ -124,6 +128,6 @@ where
             }
         }
 
-        Next::new(stack)
+        Ok(Next::new(stack))
     }
 }
