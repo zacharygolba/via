@@ -5,8 +5,9 @@ mod routes;
 mod visitor;
 
 pub use path::{Param, Span};
+pub use visitor::{Found, VisitError};
+
 use smallvec::SmallVec;
-pub use visitor::Found;
 
 use path::Pattern;
 use routes::{Node, RouteEntry};
@@ -47,7 +48,7 @@ impl<T> Router<T> {
         Endpoint { router: self, key }
     }
 
-    pub fn visit(&self, path: &str) -> Vec<Found> {
+    pub fn visit(&self, path: &str) -> Vec<Result<Found, VisitError>> {
         let mut segments = SmallVec::new();
         let nodes = &self.nodes;
 
@@ -198,26 +199,24 @@ mod tests {
             {
                 // /
                 // ^ as Pattern::Root
-                let found = &matches[0];
+                let found = matches[0].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
 
                 assert_eq!(route, None);
                 assert_eq!(found.param, None);
-                assert_eq!(segment, "");
+                assert_eq!(found.at, None);
                 assert!(found.is_leaf);
             }
 
             {
                 // /
                 //  ^ as Pattern::CatchAll("*path")
-                let found = &matches[1];
+                let found = matches[1].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
 
                 assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
-                assert_eq!(segment, "");
+                assert_eq!(found.at, None);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(found.is_leaf);
             }
@@ -232,22 +231,24 @@ mod tests {
             {
                 // /not/a/path
                 // ^ as Pattern::Root
-                let found = &matches[0];
+                let found = matches[0].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
 
                 assert_eq!(route, None);
                 assert_eq!(found.param, None);
-                assert_eq!(segment, "");
+                assert_eq!(found.at, None);
                 assert!(!found.is_leaf);
             }
 
             {
                 // /not/a/path
                 //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
-                let found = &matches[1];
+                let found = matches[1].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
+                let segment = {
+                    let range = found.at.as_ref().unwrap();
+                    &path[range.start()..range.end()]
+                };
 
                 assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
@@ -266,22 +267,24 @@ mod tests {
             {
                 // /echo/hello/world
                 // ^ as Pattern::Root
-                let found = &matches[0];
+                let found = matches[0].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
 
                 assert_eq!(route, None);
+                assert_eq!(found.at, None);
                 assert_eq!(found.param, None);
-                assert_eq!(segment, "");
                 assert!(!found.is_leaf);
             }
 
             {
                 // /echo/hello/world
                 //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-                let found = &matches[1];
+                let found = matches[1].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
+                let segment = {
+                    let range = found.at.as_ref().unwrap();
+                    &path[range.start()..range.end()]
+                };
 
                 assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
@@ -293,9 +296,12 @@ mod tests {
             {
                 // /echo/hello/world
                 //  ^^^^ as Pattern::Static("echo")
-                let found = &matches[2];
+                let found = matches[2].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
+                let segment = {
+                    let range = found.at.as_ref().unwrap();
+                    &path[range.start()..range.end()]
+                };
 
                 assert_eq!(route, None);
                 assert_eq!(found.param, None);
@@ -306,9 +312,12 @@ mod tests {
             {
                 // /echo/hello/world
                 //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
-                let found = &matches[3];
+                let found = matches[3].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
+                let segment = {
+                    let range = found.at.as_ref().unwrap();
+                    &path[range.start()..range.end()]
+                };
 
                 assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
@@ -326,22 +335,24 @@ mod tests {
             {
                 // /articles/100
                 // ^ as Pattern::Root
-                let found = &matches[0];
+                let found = matches[0].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
 
                 assert_eq!(route, None);
+                assert_eq!(found.at, None);
                 assert_eq!(found.param, None);
-                assert_eq!(segment, "");
                 assert!(!found.is_leaf);
             }
 
             {
                 // /articles/100
                 //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-                let found = &matches[1];
+                let found = matches[1].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
+                let segment = {
+                    let range = found.at.as_ref().unwrap();
+                    &path[range.start()..range.end()]
+                };
 
                 assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
@@ -353,9 +364,12 @@ mod tests {
             {
                 // /articles/100
                 //  ^^^^^^^^ as Pattern::Static("articles")
-                let found = &matches[2];
+                let found = matches[2].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
+                let segment = {
+                    let range = found.at.as_ref().unwrap();
+                    &path[range.start()..range.end()]
+                };
 
                 assert_eq!(route, None);
                 assert_eq!(found.param, None);
@@ -366,9 +380,12 @@ mod tests {
             {
                 // /articles/100
                 //           ^^^ as Pattern::Dynamic(":id")
-                let found = &matches[3];
+                let found = matches[3].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
+                let segment = {
+                    let range = found.at.as_ref().unwrap();
+                    &path[range.start()..range.end()]
+                };
 
                 assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("id")));
@@ -386,22 +403,24 @@ mod tests {
             {
                 // /articles/100/comments
                 // ^ as Pattern::Root
-                let found = &matches[0];
+                let found = matches[0].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
 
                 assert_eq!(route, None);
+                assert_eq!(found.at, None);
                 assert_eq!(found.param, None);
-                assert_eq!(segment, "");
                 assert!(!found.is_leaf);
             }
 
             {
                 // /articles/100/comments
                 //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-                let found = &matches[1];
+                let found = matches[1].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
+                let segment = {
+                    let range = found.at.as_ref().unwrap();
+                    &path[range.start()..range.end()]
+                };
 
                 assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("path")));
@@ -413,9 +432,12 @@ mod tests {
             {
                 // /articles/100/comments
                 //  ^^^^^^^^ as Pattern::Static("articles")
-                let found = &matches[2];
+                let found = matches[2].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
+                let segment = {
+                    let range = found.at.as_ref().unwrap();
+                    &path[range.start()..range.end()]
+                };
 
                 assert_eq!(route, None);
                 assert_eq!(found.param, None);
@@ -426,9 +448,12 @@ mod tests {
             {
                 // /articles/100/comments
                 //           ^^^ as Pattern::Dynamic(":id")
-                let found = &matches[3];
+                let found = matches[3].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
+                let segment = {
+                    let range = found.at.as_ref().unwrap();
+                    &path[range.start()..range.end()]
+                };
 
                 assert_eq!(route, Some(&()));
                 assert_eq!(found.param, Some(Param::new("id")));
@@ -439,9 +464,12 @@ mod tests {
             {
                 // /articles/100/comments
                 //               ^^^^^^^^ as Pattern::Static("comments")
-                let found = &matches[4];
+                let found = matches[4].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
-                let segment = &path[found.at.start()..found.at.end()];
+                let segment = {
+                    let range = found.at.as_ref().unwrap();
+                    &path[range.start()..range.end()]
+                };
 
                 assert_eq!(route, Some(&()));
                 assert_eq!(found.param, None);

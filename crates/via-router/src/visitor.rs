@@ -1,7 +1,38 @@
 use smallvec::SmallVec;
+use std::error::Error;
+use std::fmt::{self, Display};
 
 use crate::path::{Param, Pattern, Span};
 use crate::routes::Node;
+
+macro_rules! expect_entry {
+    ($results:expr, $nodes:expr, $key:expr) => {
+        match $nodes.get($key) {
+            Some(descendant) => descendant,
+            None => {
+                $results.push(Err(crate::VisitError::NodeNotFound));
+                continue;
+            }
+        }
+    };
+}
+
+#[derive(Clone, Debug)]
+pub enum VisitError {
+    /// The route tree is missing a node that is referenced by another node.
+    //
+    // This is an unlikely error that could indicate that the memory where the
+    // route tree is stored has been corrupted.
+    //
+    NodeNotFound,
+
+    /// The route tree is missing the root node.
+    //
+    // This is a *very* unlikely error that could indicate that the memory where
+    // the route tree is stored has been corrupted.
+    //
+    RootNotFound,
+}
 
 /// A matched node in the route tree.
 ///
@@ -26,17 +57,19 @@ pub struct Found {
 
     /// The range of the path segment that matched the node.
     ///
-    pub at: Span,
+    pub at: Option<Span>,
 }
 
-pub fn visit(path: &str, nodes: &[Node], segments: &SmallVec<[Span; 5]>) -> Vec<Found> {
+pub fn visit(
+    path: &str,
+    nodes: &[Node],
+    segments: &SmallVec<[Span; 5]>,
+) -> Vec<Result<Found, VisitError>> {
     let mut results = Vec::new();
     let root = match nodes.first() {
         Some(node) => node,
         None => {
-            // This is an edge-case that can be caused by corrupt memory or a bug
-            // in the router. We should log the error and not match any routes.
-            // Placeholder for tracing...
+            results.push(Err(VisitError::NodeNotFound));
             return results;
         }
     };
@@ -44,7 +77,7 @@ pub fn visit(path: &str, nodes: &[Node], segments: &SmallVec<[Span; 5]>) -> Vec<
     match segments.first() {
         Some(range) => {
             // Append the root match to the results vector.
-            results.push(Found::new(root.route, None, Span::new(0, 0)));
+            results.push(Ok(Found::new(root.route, None, None)));
 
             // Begin the search for matches recursively starting with descendants of
             // the root node.
@@ -52,7 +85,7 @@ pub fn visit(path: &str, nodes: &[Node], segments: &SmallVec<[Span; 5]>) -> Vec<
         }
         None => {
             // Append the root match to the results vector.
-            results.push(Found::leaf(root.route, None, Span::new(0, 0)));
+            results.push(Ok(Found::leaf(root.route, None, None)));
 
             // Perform a shallow search for descendants of the root node that have a
             // `CatchAll` pattern.
@@ -63,8 +96,23 @@ pub fn visit(path: &str, nodes: &[Node], segments: &SmallVec<[Span; 5]>) -> Vec<
     results
 }
 
+impl Display for VisitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NodeNotFound => {
+                write!(f, "a node was visited that contains an invalid reference")
+            }
+            Self::RootNotFound => {
+                write!(f, "the route tree is missing the root node")
+            }
+        }
+    }
+}
+
+impl Error for VisitError {}
+
 impl Found {
-    fn new(route: Option<usize>, param: Option<Param>, at: Span) -> Self {
+    fn new(route: Option<usize>, param: Option<Param>, at: Option<Span>) -> Self {
         Self {
             is_leaf: false,
             route,
@@ -73,7 +121,7 @@ impl Found {
         }
     }
 
-    fn leaf(route: Option<usize>, param: Option<Param>, at: Span) -> Self {
+    fn leaf(route: Option<usize>, param: Option<Param>, at: Option<Span>) -> Self {
         Self {
             is_leaf: true,
             route,
@@ -90,7 +138,7 @@ impl Found {
 fn visit_node(
     // A mutable reference to a vector that contains the matches that we
     // have found so far.
-    results: &mut Vec<Found>,
+    results: &mut Vec<Result<Found, VisitError>>,
 
     // A reference to the route store that contains the route tree.
     nodes: &[Node],
@@ -114,23 +162,11 @@ fn visit_node(
     // Get the value of the path segment at `range`. We'll eagerly borrow
     // and cache this slice from `path` to avoid having to build the ref
     // for each descendant with a static pattern.
-    let segment = match path.get(range.start()..range.end()) {
-        Some(slice) => slice,
-        None => {
-            // Placeholder for tracing...
-            return;
-        }
-    };
+    let segment = &path[range.start()..range.end()];
 
     // Search for descendant nodes that match `segment`.
-    for key in node.entries() {
-        let entry = match nodes.get(*key) {
-            Some(entry) => entry,
-            None => {
-                // Placeholder for tracing...
-                continue;
-            }
-        };
+    for key in node.entries().copied() {
+        let entry = expect_entry!(results, nodes, key);
 
         // Check if `descendant` has a pattern that matches `path_segment`.
         match &entry.pattern {
@@ -138,21 +174,23 @@ fn visit_node(
             // of the path segment.
             Pattern::Static(param) if segment == param.as_str() => {
                 // Calculate the index of the next path segment.
-                let index = index + 1;
-                let at = range.clone();
+                let next_index = index + 1;
+                let at = Some(range.clone());
 
-                match segments.get(index) {
-                    Some(range) => {
+                match segments.get(next_index) {
+                    Some(next_range) => {
                         // Append the match to the results vector.
-                        results.push(Found::new(entry.route, None, at));
+                        results.push(Ok(Found::new(entry.route, None, at)));
 
                         // Continue searching for descendants of the current node
                         // that match the the next path segment.
-                        visit_node(results, nodes, entry, path, segments, range, index);
+                        visit_node(
+                            results, nodes, entry, path, segments, next_range, next_index,
+                        );
                     }
                     None => {
                         // Append the match to the results vector.
-                        results.push(Found::leaf(entry.route, None, at));
+                        results.push(Ok(Found::leaf(entry.route, None, at)));
 
                         // Perform a shallow search for descendants of the
                         // current node that have a `CatchAll` pattern.
@@ -165,21 +203,24 @@ fn visit_node(
             // it a match regardless of the value of the path segment.
             Pattern::Dynamic(param) => {
                 // Calculate the index of the next path segment.
-                let index = index + 1;
-                let at = range.clone();
+                let next_index = index + 1;
+                let param = Some(param.clone());
+                let at = Some(range.clone());
 
-                match segments.get(index) {
-                    Some(range) => {
+                match segments.get(next_index) {
+                    Some(next_range) => {
                         // Append the match to the results vector.
-                        results.push(Found::new(entry.route, Some(param.clone()), at));
+                        results.push(Ok(Found::new(entry.route, param, at)));
 
                         // Continue searching for descendants of the current node
                         // that match the the next path segment.
-                        visit_node(results, nodes, entry, path, segments, range, index);
+                        visit_node(
+                            results, nodes, entry, path, segments, next_range, next_index,
+                        );
                     }
                     None => {
                         // Append the match to the results vector.
-                        results.push(Found::leaf(entry.route, Some(param.clone()), at));
+                        results.push(Ok(Found::leaf(entry.route, param, at)));
 
                         // Perform a shallow search for descendants of the
                         // current node that have a `CatchAll` pattern.
@@ -193,11 +234,11 @@ fn visit_node(
             // do not have to continue searching for descendants of this
             // node that match the remaining path segments.
             Pattern::Wildcard(param) => {
-                results.push(Found::leaf(
+                results.push(Ok(Found::leaf(
                     entry.route,
                     Some(param.clone()),
-                    Span::new(range.start(), path.len()),
-                ));
+                    Some(Span::new(range.start(), path.len())),
+                )));
             }
 
             // We don't have to check and see if the pattern is `Pattern::Root`
@@ -213,7 +254,7 @@ fn visit_node(
 fn visit_index(
     // A mutable reference to a vector that contains the matches that we
     // have found so far.
-    results: &mut Vec<Found>,
+    results: &mut Vec<Result<Found, VisitError>>,
 
     // A reference to the route store that contains the route tree.
     nodes: &[Node],
@@ -224,23 +265,13 @@ fn visit_index(
     // Perform a shallow search for descendants of the current node that
     // have a `CatchAll` pattern. This is required to support matching the
     // "index" path of a descendant node with a `CatchAll` pattern.
-    for key in node.entries() {
-        let entry = match nodes.get(*key) {
-            Some(entry) => entry,
-            None => {
-                // Placeholder for tracing...
-                continue;
-            }
-        };
+    for key in node.entries().copied() {
+        let entry = expect_entry!(results, nodes, key);
 
         // Check if `descendant` has a `CatchAll` pattern.
         if let Pattern::Wildcard(param) = &entry.pattern {
             // Append the match as a leaf to the results vector.
-            results.push(Found::leaf(
-                entry.route,
-                Some(param.clone()),
-                Span::new(0, 0),
-            ));
+            results.push(Ok(Found::leaf(entry.route, Some(param.clone()), None)));
         }
     }
 }

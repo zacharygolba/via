@@ -109,7 +109,7 @@ where
                         .timer(TokioTimer::new())
                         .serve_connection(
                             TokioIo::new(stream),
-                            Service::new(max_request_size, router, state),
+                            Service::new(max_request_size, shutdown_tx, router, state),
                         )
                         .with_upgrades();
 
