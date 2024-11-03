@@ -1,6 +1,6 @@
 [package]
 name = "via"
-version = "2.0.0-beta.5"
+version = "2.0.0-beta.2"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -16,7 +16,7 @@ http2 = ["hyper/http2"]
 rustls = ["dep:tokio-rustls"]
 
 [dependencies]
-bytes = "=1.7.2"
+bytes = "1.7"
 futures-core = { version = "0.3", default-features = false }
 http = "1"
 http-body = "1"
