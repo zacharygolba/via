@@ -44,7 +44,14 @@ where
 
     let exit_code = loop {
         // Acquire a permit from the semaphore.
-        let permit = semaphore.clone().acquire_owned().await?;
+        //
+        // TODO:
+        //
+        // Make the number of file descriptors per connection configurable with an
+        // appropriate warning.
+        //
+        //
+        let permit = semaphore.clone().acquire_many_owned(2).await?;
 
         // Clone the Arc around the router so it can be moved into the connection
         // task.
