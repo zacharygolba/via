@@ -97,7 +97,8 @@ where
     }
 
     /// Starts the server and listens for incoming connections at the provided
-    /// address. Returns a future that resolves when the server is shutdown.
+    /// address. Returns a future that resolves with an [`ExitCode`] when the
+    /// server is shutdown.
     ///
     /// # Errors
     ///
@@ -110,6 +111,36 @@ where
     ///
     /// If [`rustls_config`](Self::rustls_config)
     /// was not provided prior to calling this method.
+    ///
+    /// # Exit Codes
+    ///
+    /// An [`ExitCode::SUCCESS`] can be viewed as a confirmation that every
+    /// request was served before exiting the accept loop.
+    ///
+    /// An [`ExitCode::FAILURE`] is an indicator that an unrecoverable error
+    /// occured which requires that the server be restarted in order to function
+    /// as intended.
+    ///
+    /// If you are running your Via application as a daemon with a process
+    /// supervisor such as upstart or systemd, you can use the exit code to
+    /// determine whether or not the process should restart.
+    ///
+    /// If you are running your Via application in a cluster behind a load
+    /// balancer you can use the exit code to properly configure node replacement
+    /// and / or decommissioning logic.
+    ///
+    /// When high availability is mission-critical, and you are scaling your Via
+    /// application both horizontally and vertically using a combination of the
+    /// aforementioned deployment strategies, we recommend configuring a temporal
+    /// threshold for the number of restarts caused by an [`ExitCode::FAILURE`].
+    /// If the threshold is exceeded the cluster should immutably replace the
+    /// node and the process supervisor should not make further attempts to
+    /// restart the process.
+    ///
+    /// This approach significantly reduces the impact of environmental entropy
+    /// on your application's availability while preventing conflicts between the
+    /// process supervisor of an individual node and the replacement and
+    /// decommissioning logic of the cluster.
     ///
     #[cfg(feature = "rustls")]
     pub fn listen<A: ToSocketAddrs>(
@@ -152,6 +183,36 @@ where
     /// finish serving all of the inflight connections within the specified
     /// [shutdown timeout](Self::shutdown_timeout)
     /// when a shutdown signal is received.
+    ///
+    /// # Exit Codes
+    ///
+    /// An [`ExitCode::SUCCESS`] can be viewed as a confirmation that every
+    /// request was served before exiting the accept loop.
+    ///
+    /// An [`ExitCode::FAILURE`] is an indicator that an unrecoverable error
+    /// occured which requires that the server be restarted in order to function
+    /// as intended.
+    ///
+    /// If you are running your Via application as a daemon with a process
+    /// supervisor such as upstart or systemd, you can use the exit code to
+    /// determine whether or not the process should restart.
+    ///
+    /// If you are running your Via application in a cluster behind a load
+    /// balancer you can use the exit code to properly configure node replacement
+    /// and / or decommissioning logic.
+    ///
+    /// When high availability is mission-critical, and you are scaling your Via
+    /// application both horizontally and vertically using a combination of the
+    /// aforementioned deployment strategies, we recommend configuring a temporal
+    /// threshold for the number of restarts caused by an [`ExitCode::FAILURE`].
+    /// If the threshold is exceeded the cluster should immutably replace the
+    /// node and the process supervisor should not make further attempts to
+    /// restart the process.
+    ///
+    /// This approach significantly reduces the impact of environmental entropy
+    /// on your application's availability while preventing conflicts between the
+    /// process supervisor of an individual node and the replacement and
+    /// decommissioning logic of the cluster.
     ///
     #[cfg(not(feature = "rustls"))]
     pub fn listen<A: ToSocketAddrs>(
