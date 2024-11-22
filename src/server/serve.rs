@@ -136,7 +136,7 @@ where
                         }
                     };
 
-                    // Return the permits back to the semaphore.
+                    // Return the permit back to the semaphore.
                     drop(permit);
 
                     if let Err(error) = result {
@@ -151,10 +151,17 @@ where
                 // NOOP
                 None => {},
 
-                // An unrecoverable error occurred.
+                // An unrecoverable error occurred. An `ExitCode::FAILURE` can be
+                // used to initiate restart logic configured in a process
+                // supervisor such as upstart or systemd.
                 Some(true) => break ExitCode::FAILURE,
 
-                // A scheduled shutdown was requested.
+                // A scheduled shutdown was requested. An `ExitCode::SUCCESS` can
+                // be viewed as a confirmation that every request was served
+                // before exiting the event loop. Restart logic configured in a
+                // process manager such as upstart or systemd should be
+                // circumvented if the main process exits with
+                // `ExitCode::SUCCESS`.
                 Some(false) => break ExitCode::SUCCESS,
             }
         }
