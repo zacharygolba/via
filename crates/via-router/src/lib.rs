@@ -104,7 +104,7 @@ impl<T> Default for Router<T> {
     }
 }
 
-impl<'a, T> Endpoint<'a, T> {
+impl<T> Endpoint<'_, T> {
     pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
         let mut segments = path::patterns(path);
         let key = insert(self.router, &mut segments, self.key);
