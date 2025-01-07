@@ -21,7 +21,7 @@ pub struct Param {
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
     let mut segments = vec![];
 
-    super::split_into(&mut segments, path);
+    super::split(&mut segments, path);
     segments.into_iter().map(|at| {
         let end = at.end();
         let start = at.start();

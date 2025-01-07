@@ -79,7 +79,7 @@ static ROUTES: [&str; 100] = [
     "/api/:version/:resource/:resource_id",
     "/api/:version/:resource/:resource_id/edit",
     "/api/:version/:resource/:resource_id/comments/:comment_id",
-    "/api/:version/:resource/:resource_id/delete",
+    "/api/:version/:resource/:resource_id/comments/:comment_id/edit",
     "/checkout",
     "/checkout/cart",
     "/checkout/payment",
@@ -108,7 +108,20 @@ static ROUTES: [&str; 100] = [
 ];
 
 #[bench]
-fn find_matches_simple(b: &mut Bencher) {
+fn find_matches_2(b: &mut Bencher) {
+    let mut router: Router<()> = Router::new();
+
+    for path in ROUTES {
+        let _ = router.at(path).get_or_insert_route_with(|| ());
+    }
+
+    b.iter(|| {
+        router.visit("/dashboard/overview");
+    });
+}
+
+#[bench]
+fn find_matches_3(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
@@ -121,7 +134,7 @@ fn find_matches_simple(b: &mut Bencher) {
 }
 
 #[bench]
-fn find_matches_nested_stack(b: &mut Bencher) {
+fn find_matches_4(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
@@ -129,12 +142,12 @@ fn find_matches_nested_stack(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/api/v1/products/12345678987654321/edit");
+        router.visit("/api/v1/products/12345678987654321");
     });
 }
 
 #[bench]
-fn find_matches_nested_heap(b: &mut Bencher) {
+fn find_matches_5(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
@@ -143,5 +156,31 @@ fn find_matches_nested_heap(b: &mut Bencher) {
 
     b.iter(|| {
         router.visit("/api/v1/products/12345678987654321/comments/12345678987654321");
+    });
+}
+
+#[bench]
+fn find_matches_6(b: &mut Bencher) {
+    let mut router: Router<()> = Router::new();
+
+    for path in ROUTES {
+        let _ = router.at(path).get_or_insert_route_with(|| ());
+    }
+
+    b.iter(|| {
+        router.visit("/api/v1/products/12345678987654321/comments/12345678987654321");
+    });
+}
+
+#[bench]
+fn find_matches_7(b: &mut Bencher) {
+    let mut router: Router<()> = Router::new();
+
+    for path in ROUTES {
+        let _ = router.at(path).get_or_insert_route_with(|| ());
+    }
+
+    b.iter(|| {
+        router.visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit");
     });
 }
