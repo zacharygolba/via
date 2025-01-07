@@ -1,4 +1,3 @@
-use smallvec::SmallVec;
 use std::error::Error;
 use std::fmt::{self, Display};
 
@@ -60,11 +59,7 @@ pub struct Found {
     pub at: Option<Span>,
 }
 
-pub fn visit(
-    path: &str,
-    nodes: &[Node],
-    segments: &SmallVec<[Span; 5]>,
-) -> Vec<Result<Found, VisitError>> {
+pub fn visit(path: &str, nodes: &[Node], segments: &[Span]) -> Vec<Result<Found, VisitError>> {
     let mut results = Vec::new();
     let root = match nodes.first() {
         Some(node) => node,
@@ -149,7 +144,7 @@ fn visit_node(
     // The url path that we are attempting to match against the route tree.
     path: &str,
 
-    segments: &SmallVec<[Span; 5]>,
+    segments: &[Span],
 
     // The start and end offset of the path segment at `index` in
     // `self.path_value`.

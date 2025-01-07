@@ -1,12 +1,3 @@
-use smallvec::SmallVec;
-
-/// Defines the behavior of a collection that can have elements appended
-/// to the end.
-///
-pub trait Push {
-    fn push(&mut self, span: Span);
-}
-
 /// A matched range in the url path.
 ///
 #[derive(Debug, PartialEq)]
@@ -15,7 +6,9 @@ pub struct Span {
     end: usize,
 }
 
-pub fn split_into(segments: &mut impl Push, path: &str) {
+/// Accumulate path segment ranges as a [Span] from path into segments.
+///
+pub fn split(segments: &mut Vec<Span>, path: &str) {
     // Assume the byte position of the first span in path is `0`. Bounds checks
     // are required before creating a Span with this value.
     let mut start = 0;
@@ -41,20 +34,6 @@ pub fn split_into(segments: &mut impl Push, path: &str) {
     // when path does not end with `/`.
     if len > start {
         segments.push(Span::new(start, len));
-    }
-}
-
-impl Push for SmallVec<[Span; 5]> {
-    #[inline]
-    fn push(&mut self, span: Span) {
-        SmallVec::push(self, span);
-    }
-}
-
-impl Push for Vec<Span> {
-    #[inline]
-    fn push(&mut self, span: Span) {
-        Vec::push(self, span);
     }
 }
 
@@ -93,9 +72,7 @@ impl Clone for Span {
 
 #[cfg(test)]
 mod tests {
-    use smallvec::SmallVec;
-
-    use super::{split_into, Span};
+    use super::Span;
 
     const PATHS: [&str; 16] = [
         "/home/about",
@@ -152,9 +129,9 @@ mod tests {
         let expected_results = get_expected_results();
 
         for (path_index, path_value) in PATHS.iter().enumerate() {
-            let mut segments = SmallVec::new();
+            let mut segments = vec![];
 
-            split_into(&mut segments, path_value);
+            super::split(&mut segments, path_value);
 
             for (segment_index, segment_value) in segments.into_iter().enumerate() {
                 assert_eq!(

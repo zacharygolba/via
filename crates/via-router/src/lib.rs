@@ -7,8 +7,6 @@ mod visitor;
 pub use path::{Param, Span};
 pub use visitor::{Found, VisitError};
 
-use smallvec::SmallVec;
-
 use path::Pattern;
 use routes::{Node, RouteEntry};
 
@@ -49,11 +47,10 @@ impl<T> Router<T> {
     }
 
     pub fn visit(&self, path: &str) -> Vec<Result<Found, VisitError>> {
-        let mut segments = SmallVec::new();
-        let nodes = &self.nodes;
+        let mut segments = vec![];
 
-        path::split_into(&mut segments, path);
-        visitor::visit(path, nodes, &segments)
+        path::split(&mut segments, path);
+        visitor::visit(path, &self.nodes, &segments)
     }
 }
 
