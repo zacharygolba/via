@@ -1,4 +1,5 @@
 use std::fmt::{self, Debug, Display};
+use std::sync::Arc;
 
 #[derive(PartialEq)]
 pub enum Pattern {
@@ -12,33 +13,16 @@ pub enum Pattern {
 ///
 #[derive(Debug, PartialEq)]
 pub struct Param {
-    ident: Box<str>,
-}
-
-/// Unwraps the remaining slice of a path segment after the first char or
-/// panics with a custom message.
-///
-macro_rules! rest_or {
-    (
-        // Should evaluate to a `&str`.
-        $segment:expr,
-        // Args passed to panic! if the segment is empty.
-        $($arg:tt)*
-    ) => {{
-        let segment = $segment;
-        match segment.get(1..) {
-            // The range is out of bounds or produced an empty str.
-            None | Some("") => panic!($($arg)*),
-            // The range is valid.
-            Some(rest) => rest,
-        }
-    }};
+    ident: Arc<str>,
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
-    super::split(path).into_iter().map(|at| {
+    let mut segments = vec![];
+
+    super::split_into(&mut segments, path);
+    segments.into_iter().map(|at| {
         let end = at.end();
         let start = at.start();
         let segment = match path.get(start..end) {
@@ -51,8 +35,10 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
             // pattern. The remaining characters in the segment are considered
             // the name or identifier associated with the parameter.
             Some(':') => {
-                let rest = rest_or!(segment, "Dynamic parameters must be named. Found ':'.");
-                let param = Param::new(rest);
+                let param = Param::new(match segment.get(1..) {
+                    None | Some("") => panic!("Dynamic parameters must be named. Found ':'."),
+                    Some(rest) => rest,
+                });
 
                 Pattern::Dynamic(param)
             }
@@ -61,8 +47,10 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
             // pattern. The remaining characters in the segment are considered
             // the name or identifier associated with the parameter.
             Some('*') => {
-                let rest = rest_or!(segment, "Wildcard parameters must be named. Found '*'.");
-                let param = Param::new(rest);
+                let param = Param::new(match segment.get(1..) {
+                    None | Some("") => panic!("Wildcard parameters must be named. Found '*'."),
+                    Some(rest) => rest,
+                });
 
                 Pattern::Wildcard(param)
             }
@@ -94,7 +82,7 @@ impl Param {
 impl Clone for Param {
     fn clone(&self) -> Self {
         Self {
-            ident: self.ident.clone(),
+            ident: Arc::clone(&self.ident),
         }
     }
 }
