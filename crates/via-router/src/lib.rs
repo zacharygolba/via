@@ -47,7 +47,7 @@ impl<T> Router<T> {
     }
 
     pub fn visit(&self, path: &str) -> Vec<Result<Found, VisitError>> {
-        let mut segments = vec![];
+        let mut segments = Vec::with_capacity(8);
 
         path::split(&mut segments, path);
         visitor::visit(path, &self.nodes, &segments)
