@@ -59,13 +59,17 @@ pub struct Found {
     pub at: Option<Span>,
 }
 
-pub fn visit(path: &str, nodes: &[Node], segments: &[Span]) -> Vec<Result<Found, VisitError>> {
-    let mut results = Vec::new();
+pub fn visit(
+    results: &mut Vec<Result<Found, VisitError>>,
+    nodes: &[Node],
+    segments: &[Span],
+    path: &str,
+) {
     let root = match nodes.first() {
         Some(node) => node,
         None => {
             results.push(Err(VisitError::NodeNotFound));
-            return results;
+            return;
         }
     };
 
@@ -76,7 +80,7 @@ pub fn visit(path: &str, nodes: &[Node], segments: &[Span]) -> Vec<Result<Found,
 
             // Begin the search for matches recursively starting with descendants of
             // the root node.
-            visit_node(&mut results, nodes, root, path, segments, range, 0);
+            visit_node(results, nodes, root, path, segments, range, 0);
         }
         None => {
             // Append the root match to the results vector.
@@ -84,11 +88,9 @@ pub fn visit(path: &str, nodes: &[Node], segments: &[Span]) -> Vec<Result<Found,
 
             // Perform a shallow search for descendants of the root node that have a
             // `CatchAll` pattern.
-            visit_index(&mut results, nodes, root);
+            visit_index(results, nodes, root);
         }
     }
-
-    results
 }
 
 impl Display for VisitError {
