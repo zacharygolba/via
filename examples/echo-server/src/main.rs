@@ -7,10 +7,10 @@ async fn echo(request: Request, _: Next) -> via::Result<Response> {
     let content_type = request.headers().get(CONTENT_TYPE).cloned();
 
     // Consume the request and get a stream of bytes from the body.
-    let body_stream = request.into_body().stream();
+    let request_body = request.into_body().stream();
 
     Response::build()
-        .stream(body_stream)
+        .stream(request_body)
         .headers(Some(CONTENT_TYPE).zip(content_type))
         .finish()
 }

@@ -1,4 +1,7 @@
-use super::{Response, ResponseBody, ResponseBuilder};
+use http::header::CONTENT_LENGTH;
+
+use super::{Response, ResponseBuilder};
+use crate::body::{BufferBody, HttpBody};
 use crate::Error;
 
 pub trait IntoResponse {
@@ -13,14 +16,25 @@ impl IntoResponse for () {
 
 impl IntoResponse for Vec<u8> {
     fn into_response(self) -> Result<Response, Error> {
-        let body = ResponseBody::try_from(self)?;
-        Response::build().body(body).finish()
+        let body = BufferBody::from(self);
+        let len = body.len();
+
+        Response::build()
+            .body(HttpBody::Inline(body))
+            .header(CONTENT_LENGTH, len)
+            .finish()
     }
 }
 
 impl IntoResponse for &'static [u8] {
     fn into_response(self) -> Result<Response, Error> {
-        Vec::from(self).into_response()
+        let body = BufferBody::new(self);
+        let len = body.len();
+
+        Response::build()
+            .body(HttpBody::Inline(body))
+            .header(CONTENT_LENGTH, len)
+            .finish()
     }
 }
 
@@ -32,7 +46,13 @@ impl IntoResponse for String {
 
 impl IntoResponse for &'static str {
     fn into_response(self) -> Result<Response, Error> {
-        self.to_owned().into_response()
+        let body = BufferBody::new(self.as_bytes());
+        let len = body.len();
+
+        Response::build()
+            .body(HttpBody::Inline(body))
+            .header(CONTENT_LENGTH, len)
+            .finish()
     }
 }
 

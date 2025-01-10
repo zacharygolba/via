@@ -1,15 +1,15 @@
 use bytes::Bytes;
 use cookie::CookieJar;
+use http::header::AsHeaderName;
 use http::request::Parts;
-use http::{HeaderMap, Method, Uri, Version};
-use http_body::Body;
+use http::{HeaderMap, HeaderValue, Method, Uri, Version};
 use http_body_util::combinators::BoxBody;
-use http_body_util::Either;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
-use super::body::RequestBody;
+use super::body::{HyperBody, RequestBody};
 use super::params::{Param, PathParams, QueryParam};
+use crate::body::HttpBody;
 use crate::error::BoxError;
 
 pub struct Request<State = ()> {
@@ -64,22 +64,18 @@ impl<State> Request<State> {
     /// Consumes the request returning a new request with body mapped to the
     /// return type of the provided closure `map`.
     ///
-    pub fn map<F, T>(self, map: F) -> Self
+    pub fn map<F>(self, map: F) -> Self
     where
-        F: FnOnce(RequestBody) -> T,
-        T: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
+        F: FnOnce(HttpBody<HyperBody>) -> BoxBody<Bytes, BoxError>,
     {
         if cfg!(debug_assertions) && self.did_map {
             // TODO: Replace this with tracing and a proper logger.
             eprintln!("calling request.map() more than once can create a reference cycle.",);
         }
 
-        let input = self.body;
-        let output = BoxBody::new(map(input));
-
         Self {
             did_map: true,
-            body: RequestBody::new(Either::Right(output)),
+            body: self.body.map(map),
             ..self
         }
     }
@@ -95,6 +91,12 @@ impl<State> Request<State> {
     ///
     pub fn headers(&self) -> &HeaderMap {
         &self.parts.headers
+    }
+
+    /// Returns a reference to the header value associated with the key.
+    ///
+    pub fn header<K: AsHeaderName>(&self, key: K) -> Option<&HeaderValue> {
+        self.parts.headers.get(key)
     }
 
     /// Returns a reference to the HTTP method associated with the request.
