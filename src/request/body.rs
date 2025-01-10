@@ -1,19 +1,55 @@
 use bytes::Bytes;
 use http_body::{self, Body, Frame, SizeHint};
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyDataStream, BodyExt, BodyStream, Collected, Either, Limited};
+use http_body_util::{BodyDataStream, BodyExt, BodyStream, Collected};
 use hyper::body::Incoming;
 use serde::de::DeserializeOwned;
-use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate::body::HttpBody;
 use crate::error::{BoxError, Error};
 
-type RequestBodyKind = Either<Limited<Incoming>, BoxBody<Bytes, BoxError>>;
+#[derive(Debug)]
+pub struct HyperBody {
+    body: Incoming,
+}
 
+#[derive(Debug)]
 pub struct RequestBody {
-    kind: RequestBodyKind,
+    remaining: usize,
+    body: HttpBody<HyperBody>,
+}
+
+impl Body for HyperBody {
+    type Data = Bytes;
+    type Error = BoxError;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let this = self.get_mut();
+
+        Pin::new(&mut this.body)
+            .poll_frame(cx)
+            .map_err(|e| e.into())
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.body.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.body.size_hint()
+    }
+}
+
+impl HyperBody {
+    #[inline]
+    pub(crate) fn new(body: Incoming) -> Self {
+        Self { body }
+    }
 }
 
 impl RequestBody {
@@ -57,8 +93,19 @@ impl RequestBody {
 
 impl RequestBody {
     #[inline]
-    pub(crate) fn new(kind: RequestBodyKind) -> Self {
-        Self { kind }
+    pub(crate) fn new(remaining: usize, body: HttpBody<HyperBody>) -> Self {
+        Self { remaining, body }
+    }
+
+    #[inline]
+    pub(crate) fn map<F>(self, map: F) -> Self
+    where
+        F: FnOnce(HttpBody<HyperBody>) -> BoxBody<Bytes, BoxError>,
+    {
+        Self {
+            body: HttpBody::Box(map(self.body)),
+            ..self
+        }
     }
 
     #[inline]
@@ -70,37 +117,41 @@ impl RequestBody {
     }
 }
 
-impl RequestBody {
-    fn project(self: Pin<&mut Self>) -> Pin<&mut RequestBodyKind> {
-        let this = self.get_mut();
-        let ptr = &mut this.kind;
-
-        Pin::new(ptr)
-    }
-}
-
-impl Debug for RequestBody {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Debug::fmt(&self.kind, f)
-    }
-}
-
 impl Body for RequestBody {
     type Data = Bytes;
     type Error = BoxError;
 
     fn poll_frame(
         self: Pin<&mut Self>,
-        context: &mut Context<'_>,
+        cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        self.project().poll_frame(context)
+        let this = self.get_mut();
+
+        match Pin::new(&mut this.body).poll_frame(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
+            Poll::Ready(Some(Ok(frame))) => {
+                if let Some(data) = frame.data_ref() {
+                    let frame_len = data.len();
+
+                    if this.remaining < frame_len {
+                        todo!()
+                    }
+
+                    this.remaining -= frame_len;
+                }
+
+                Poll::Ready(Some(Ok(frame)))
+            }
+        }
     }
 
     fn is_end_stream(&self) -> bool {
-        self.kind.is_end_stream()
+        self.body.is_end_stream()
     }
 
     fn size_hint(&self) -> SizeHint {
-        self.kind.size_hint()
+        self.body.size_hint()
     }
 }

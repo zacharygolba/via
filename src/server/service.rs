@@ -1,4 +1,3 @@
-use http_body_util::{Either, Limited};
 use hyper::body::Incoming;
 use std::convert::Infallible;
 use std::future::Future;
@@ -6,10 +5,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use crate::body::{BufferBody, HttpBody};
 use crate::error::Error;
 use crate::middleware::BoxFuture;
-use crate::request::{Request, RequestBody};
-use crate::response::{Response, ResponseBody};
+use crate::request::{HyperBody, Request, RequestBody};
+use crate::response::Response;
 use crate::router::Router;
 
 use super::shutdown::ShutdownTx;
@@ -26,7 +26,7 @@ pub struct Service<State> {
 }
 
 impl Future for FutureResponse {
-    type Output = Result<http::Response<ResponseBody>, Infallible>;
+    type Output = Result<http::Response<HttpBody<BufferBody>>, Infallible>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         self.future
@@ -63,7 +63,7 @@ where
 {
     type Error = Infallible;
     type Future = FutureResponse;
-    type Response = http::Response<ResponseBody>;
+    type Response = http::Response<HttpBody<BufferBody>>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
         // Wrap the incoming request in with `via::Request`.
@@ -77,12 +77,10 @@ where
             let parts = Box::new(parts);
 
             // Convert the incoming body type to a RequestBody.
-            let body = {
-                let limit = self.max_request_size;
-                let kind = Either::Left(Limited::new(incoming, limit));
-
-                RequestBody::new(kind)
-            };
+            let body = RequestBody::new(
+                self.max_request_size,
+                HttpBody::Inline(HyperBody::new(incoming)),
+            );
 
             // Clone the shared application state so request can own a reference
             // to it. This is a cheaper operation than going from Weak to Arc for

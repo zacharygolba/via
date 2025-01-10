@@ -95,7 +95,7 @@ where
                 .header(header::CONTENT_TYPE, file.mime_type)
                 .header(header::CONTENT_LENGTH, file.size)
                 .headers(optional_headers)
-                .body(data)
+                .body(data.into())
                 .finish()
         }
         None => {

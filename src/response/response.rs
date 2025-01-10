@@ -1,38 +1,39 @@
-use bytes::Bytes;
+use bytes::{BufMut, Bytes, BytesMut};
 use cookie::CookieJar;
+use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, SET_COOKIE, TRANSFER_ENCODING};
 use http::response::Parts;
-use http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Version};
-use http_body::Body;
+use http::{HeaderMap, StatusCode, Version};
+use http_body::Frame;
 use http_body_util::combinators::BoxBody;
-use http_body_util::Either;
+use http_body_util::StreamBody;
 use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 
-use super::{ResponseBody, ResponseBuilder};
+use super::ResponseBuilder;
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
+use crate::body::{BufferBody, HttpBody};
 use crate::error::{BoxError, Error};
 
 pub struct Response {
     did_map: bool,
     cookies: Box<CookieJar>,
-    response: http::Response<ResponseBody>,
+    response: http::Response<HttpBody<BufferBody>>,
 }
 
 impl Response {
     /// Consumes the response and returns a tuple containing the component
     /// parts of the response and the response body.
     ///
-    pub fn into_parts(self) -> (Parts, ResponseBody) {
+    pub fn into_parts(self) -> (Parts, HttpBody<BufferBody>) {
         self.response.into_parts()
     }
 
     /// Consumes the response returning a new response with body mapped to the
     /// return type of the provided closure `map`.
-    pub fn map<F, T>(self, map: F) -> Self
+    pub fn map<F>(self, map: F) -> Self
     where
-        F: FnOnce(ResponseBody) -> T,
-        T: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
+        F: FnOnce(HttpBody<BufferBody>) -> BoxBody<Bytes, BoxError>,
     {
         if cfg!(debug_assertions) && self.did_map {
             // TODO: Replace this with tracing and a proper logger.
@@ -40,20 +41,17 @@ impl Response {
         }
 
         Self {
+            response: self.response.map(|body| HttpBody::Box(map(body))),
             did_map: true,
-            response: self.response.map(|input| {
-                let output = BoxBody::new(map(input));
-                ResponseBody::new(Either::Right(output))
-            }),
             ..self
         }
     }
 
-    pub fn body(&self) -> &ResponseBody {
+    pub fn body(&self) -> &HttpBody<BufferBody> {
         self.response.body()
     }
 
-    pub fn body_mut(&mut self) -> &mut ResponseBody {
+    pub fn body_mut(&mut self) -> &mut HttpBody<BufferBody> {
         self.response.body_mut()
     }
 
@@ -77,12 +75,6 @@ impl Response {
         self.response.headers_mut()
     }
 
-    /// A shorthand method for `self.headers_mut().insert(name, value)`.
-    ///
-    pub fn set_header(&mut self, name: HeaderName, value: HeaderValue) {
-        self.headers_mut().insert(name, value);
-    }
-
     pub fn status(&self) -> StatusCode {
         self.response.status()
     }
@@ -104,7 +96,7 @@ impl Response {
 
 impl Response {
     #[inline]
-    pub fn new(body: ResponseBody) -> Self {
+    pub fn new(body: HttpBody<BufferBody>) -> Self {
         Self {
             did_map: false,
             cookies: Box::new(CookieJar::new()),
@@ -119,9 +111,10 @@ impl Response {
 
     #[inline]
     pub fn html(body: String) -> Self {
+        let body = BufferBody::new(body.as_bytes());
         let len = body.len();
 
-        let mut response = Self::new(body.into());
+        let mut response = Self::new(HttpBody::Inline(body));
         let headers = response.headers_mut();
 
         headers.insert(CONTENT_TYPE, TEXT_HTML);
@@ -132,9 +125,10 @@ impl Response {
 
     #[inline]
     pub fn text(body: String) -> Self {
+        let body = BufferBody::new(body.as_bytes());
         let len = body.len();
 
-        let mut response = Self::new(body.into());
+        let mut response = Self::new(HttpBody::Inline(body));
         let headers = response.headers_mut();
 
         headers.insert(CONTENT_TYPE, TEXT_PLAIN);
@@ -148,10 +142,15 @@ impl Response {
     where
         T: Serialize,
     {
-        let json = serde_json::to_string(body)?;
-        let len = json.len();
+        let (len, json) = {
+            let mut writer = BytesMut::new().writer();
+            serde_json::to_writer(&mut writer, body)?;
 
-        let mut response = Self::new(json.into());
+            let buf = writer.into_inner().freeze();
+            (buf.len(), BufferBody::from_raw(buf))
+        };
+
+        let mut response = Self::new(HttpBody::Inline(json));
         let headers = response.headers_mut();
 
         headers.insert(CONTENT_TYPE, APPLICATION_JSON);
@@ -160,21 +159,25 @@ impl Response {
         Ok(response)
     }
 
-    /// Create a response from a stream of `Result<Frame<Bytes>, Error>`.
+    /// Create a response from a stream of `Result<Frame<Bytes>, BoxError>`.
     ///
     #[inline]
-    pub fn stream<T, E>(body: T) -> Self
+    pub fn stream<T, E>(stream: T) -> Self
     where
-        T: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
+        T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static,
     {
-        let mut response = Self::new(BoxBody::new(body).into());
+        let body = BoxBody::new(StreamBody::new(stream));
 
-        response.set_header(TRANSFER_ENCODING, CHUNKED_ENCODING);
+        let mut response = Self::new(HttpBody::Box(body));
+        let headers = response.headers_mut();
+
+        headers.insert(TRANSFER_ENCODING, CHUNKED_ENCODING);
+
         response
     }
 
     #[inline]
-    pub fn from_parts(parts: Parts, body: ResponseBody) -> Self {
+    pub fn from_parts(parts: Parts, body: HttpBody<BufferBody>) -> Self {
         Self {
             did_map: false,
             cookies: Box::new(CookieJar::new()),
@@ -617,7 +620,7 @@ impl Response {
     /// final processing that may be required before the response is sent to the
     /// client.
     ///
-    pub(crate) fn into_inner(self) -> http::Response<ResponseBody> {
+    pub(crate) fn into_inner(self) -> http::Response<HttpBody<BufferBody>> {
         // Extract the component parts of the inner response.
         let (mut parts, body) = self.response.into_parts();
 
@@ -645,7 +648,8 @@ impl Response {
 
 impl Default for Response {
     fn default() -> Self {
-        Self::new(Default::default())
+        let empty = BufferBody::new(&[]);
+        Self::new(HttpBody::Inline(empty))
     }
 }
 
@@ -655,8 +659,8 @@ impl Debug for Response {
     }
 }
 
-impl From<http::Response<ResponseBody>> for Response {
-    fn from(response: http::Response<ResponseBody>) -> Self {
+impl From<http::Response<HttpBody<BufferBody>>> for Response {
+    fn from(response: http::Response<HttpBody<BufferBody>>) -> Self {
         Self {
             response,
             did_map: false,

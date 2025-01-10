@@ -13,6 +13,7 @@
 
 #![allow(clippy::module_inception)]
 
+pub mod body;
 pub mod middleware;
 pub mod request;
 pub mod response;
