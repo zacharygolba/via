@@ -3,7 +3,7 @@ use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::response::Builder;
 use http::{HeaderName, HeaderValue, StatusCode, Version};
-use http_body::{Body, Frame};
+use http_body::Frame;
 use http_body_util::combinators::BoxBody;
 use http_body_util::StreamBody;
 use serde::Serialize;
@@ -12,6 +12,26 @@ use super::Response;
 use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
 use crate::body::{BufferBody, HttpBody};
 use crate::error::{BoxError, Error};
+use crate::request::RequestBody;
+
+/// Defines how a response body source can be applied to a [ResponseBuilder] to
+/// generate a [Response].
+///
+/// ```
+/// use http::header::CONTENT_TYPE;
+/// use via::{Error, Next, Request, Response, Pipe};
+///
+/// async fn echo(request: Request, _: Next) -> via::Result<Response> {
+///     let content_type = request.header(CONTENT_TYPE).cloned();
+///     let response = Response::build().headers([(CONTENT_TYPE, content_type)]);
+///
+///     request.into_body().pipe(response)
+/// }
+/// ```
+///
+pub trait Pipe {
+    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error>;
+}
 
 pub struct ResponseBuilder {
     body: Option<Result<HttpBody<BufferBody>, Error>>,
@@ -80,28 +100,6 @@ impl ResponseBuilder {
     }
 
     #[inline]
-    pub fn boxed<T>(self, body: T) -> Self
-    where
-        T: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
-    {
-        self.body(HttpBody::Box(BoxBody::new(body)))
-            .header(TRANSFER_ENCODING, CHUNKED_ENCODING)
-    }
-
-    /// Build a response from a stream of `Result<Frame<Bytes>, Error>`.
-    ///
-    #[inline]
-    pub fn stream<T>(self, stream: T) -> Self
-    where
-        T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static,
-    {
-        let body = BoxBody::new(StreamBody::new(stream));
-
-        self.body(HttpBody::Box(body))
-            .header(TRANSFER_ENCODING, CHUNKED_ENCODING)
-    }
-
-    #[inline]
     pub fn finish(self) -> Result<Response, Error> {
         let body = self.body.transpose()?.unwrap_or_default();
         Ok(self.inner.body(body)?.into())
@@ -124,14 +122,17 @@ impl ResponseBuilder {
     #[inline]
     pub fn headers<I, K, V>(self, iter: I) -> Self
     where
-        I: IntoIterator<Item = (K, V)>,
+        I: IntoIterator<Item = (K, Option<V>)>,
         HeaderName: TryFrom<K>,
         <HeaderName as TryFrom<K>>::Error: Into<http::Error>,
         HeaderValue: TryFrom<V>,
         <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
     {
         iter.into_iter()
-            .fold(self, |builder, (name, value)| builder.header(name, value))
+            .fold(self, |builder, (key, option)| match option {
+                Some(value) => builder.header(key, value),
+                None => builder,
+            })
     }
 
     #[inline]
@@ -158,5 +159,37 @@ impl ResponseBuilder {
 impl Default for ResponseBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Pipe for RequestBody {
+    /// Apply `self` to the provided response builder to generate a response.
+    ///
+    /// The response body will be streamed back to the client with chunked
+    /// transfer encoding.
+    ///
+    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
+        response
+            .body(HttpBody::Box(BoxBody::new(self)))
+            .header(TRANSFER_ENCODING, CHUNKED_ENCODING)
+            .finish()
+    }
+}
+
+impl<T> Pipe for T
+where
+    T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static,
+{
+    /// Create a [`StreamBody`] from self and apply it to the provided response
+    /// builder to generate a response.
+    ///
+    /// The response body will be streamed back to the client with chunked
+    /// transfer encoding.
+    ///
+    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
+        response
+            .body(HttpBody::Box(BoxBody::new(StreamBody::new(self))))
+            .header(TRANSFER_ENCODING, CHUNKED_ENCODING)
+            .finish()
     }
 }

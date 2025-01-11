@@ -1,18 +1,17 @@
+use http::header::CONTENT_TYPE;
 use std::process::ExitCode;
-use via::http::header::CONTENT_TYPE;
-use via::{BoxError, Next, Request, Response, Server};
+use via::{BoxError, Next, Pipe, Request, Response, Server};
 
 async fn echo(request: Request, _: Next) -> via::Result<Response> {
-    // Get an owned copy of the request's Content-Type header.
-    let content_type = request.headers().get(CONTENT_TYPE).cloned();
+    // Get an optional copy of the Content-Type header from the request.
+    let content_type = request.header(CONTENT_TYPE).cloned();
 
-    // Consume the request and get a stream of bytes from the body.
-    let request_body = request.into_body().stream();
+    // Create a response builder with the Content-Type header from the request.
+    let response = Response::build().headers([(CONTENT_TYPE, content_type)]);
 
-    Response::build()
-        .stream(request_body)
-        .headers(Some(CONTENT_TYPE).zip(content_type))
-        .finish()
+    // Stream the request payload back to the client with the options configured
+    // in the response builder above.
+    request.into_body().pipe(response)
 }
 
 #[tokio::main]
