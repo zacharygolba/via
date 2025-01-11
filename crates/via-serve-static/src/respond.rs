@@ -1,9 +1,9 @@
-use http_body_util::StreamBody;
 use httpdate::HttpDate;
 use std::path::PathBuf;
+use via::http::header::{CONTENT_LENGTH, CONTENT_TYPE, ETAG, LAST_MODIFIED};
 use via::{
-    http::{header, HeaderName},
-    Next, Request, Response, Result,
+    body::{BufferBody, HttpBody},
+    Next, Pipe, Request, Response, Result,
 };
 
 use crate::{static_file::StaticFile, stream_file::StreamFile, Flags, ServerConfig};
@@ -60,13 +60,21 @@ where
         let path = build_path_from_request(&request, &config)?;
         StaticFile::metadata(path, config.flags).await
     });
-    let optional_headers = get_optional_headers(&mut file, &config.flags);
 
-    Response::build()
-        .header(header::CONTENT_TYPE, file.mime_type)
-        .header(header::CONTENT_LENGTH, file.size)
-        .headers(optional_headers)
-        .finish()
+    let mut headers = vec![
+        (CONTENT_TYPE, Some(file.mime_type.clone())),
+        (CONTENT_LENGTH, Some(file.size.to_string())),
+        (ETAG, file.etag.take()),
+    ];
+
+    if config.flags.contains(Flags::INCLUDE_LAST_MODIFIED) {
+        headers.push((
+            LAST_MODIFIED,
+            file.modified_at.map(|at| HttpDate::from(at).to_string()),
+        ))
+    }
+
+    Response::build().headers(headers).finish()
 }
 
 pub async fn respond_to_get_request<State>(
@@ -84,32 +92,35 @@ where
 
         StaticFile::open(path, flags, eager_read_threshold).await
     });
-    let optional_headers = get_optional_headers(&mut file, &config.flags);
 
-    match file.data.take() {
-        Some(data) => {
-            // The file was small enough to be eagerly read into memory. We can
-            // respond immediately with the entire vector of bytes as the
-            // response body.
-            Response::build()
-                .header(header::CONTENT_TYPE, file.mime_type)
-                .header(header::CONTENT_LENGTH, file.size)
-                .headers(optional_headers)
-                .body(data.into())
-                .finish()
-        }
-        None => {
-            // The file is too large to be eagerly read into memory. Stream the
-            // file data from disk into the response body.
-            let stream = StreamFile::new(file.path, config.read_stream_timeout);
+    let mut headers = vec![
+        (CONTENT_TYPE, Some(file.mime_type.clone())),
+        (ETAG, file.etag.take()),
+    ];
 
-            Response::build()
-                .stream(StreamBody::new(stream))
-                .header(header::CONTENT_TYPE, file.mime_type)
-                .headers(optional_headers)
-                .finish()
-        }
+    if config.flags.contains(Flags::INCLUDE_LAST_MODIFIED) {
+        headers.push((
+            LAST_MODIFIED,
+            file.modified_at.map(|at| HttpDate::from(at).to_string()),
+        ))
     }
+
+    if let Some(data) = file.data.take() {
+        // The file was small enough to be eagerly read into memory. We can
+        // respond immediately with the entire vector of bytes as the
+        // response body.
+        return Response::build()
+            .body(HttpBody::Inline(BufferBody::from(data)))
+            .header(CONTENT_LENGTH, file.size)
+            .headers(headers)
+            .finish();
+    }
+
+    // The file is too large to be eagerly read into memory. Stream the
+    // file data from disk into the response body.
+    let stream = StreamFile::new(file.path, config.read_stream_timeout);
+
+    stream.pipe(Response::build().headers(headers))
 }
 
 fn build_path_from_request<State>(
@@ -118,24 +129,4 @@ fn build_path_from_request<State>(
 ) -> Result<PathBuf> {
     let path_param = request.param(&config.path_param).into_result()?;
     Ok(config.public_dir.join(path_param.trim_end_matches('/')))
-}
-
-fn get_optional_headers(
-    file: &mut StaticFile,
-    flags: &Flags,
-) -> impl Iterator<Item = (HeaderName, String)> {
-    let last_modified = if flags.contains(Flags::INCLUDE_LAST_MODIFIED) {
-        file.modified_at.map(|time| {
-            let http_date = HttpDate::from(time);
-            (header::LAST_MODIFIED, http_date.to_string())
-        })
-    } else {
-        None
-    };
-
-    // We don't need to check if the `INCLUDE_ETAG` flag is set because the
-    // value of `file.etag` is `None` when the flag is not set.
-    let etag = file.etag.take().map(|etag| (header::ETAG, etag));
-
-    last_modified.into_iter().chain(etag)
 }
