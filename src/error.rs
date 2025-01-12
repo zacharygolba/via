@@ -35,7 +35,6 @@ struct SerializeError<'a> {
 impl Error {
     /// Returns a new [`Error`] with the provided message.
     ///
-    #[inline]
     pub fn new(source: BoxError) -> Self {
         Self::internal_server_error(source)
     }
@@ -43,7 +42,6 @@ impl Error {
     /// Returns a new [`Error`] that will be serialized to JSON when converted to
     /// a [`Response`].
     ///
-    #[inline]
     pub fn as_json(self) -> Self {
         Self {
             as_json: true,
@@ -105,7 +103,6 @@ impl Error {
     /// calling the [`Display`] implementation of the error source when
     /// converted to a [`Response`].
     ///
-    #[inline]
     pub fn with_message(self, message: String) -> Self {
         Self {
             message: Some(message),
@@ -116,7 +113,6 @@ impl Error {
     /// Sets the status code of that will be used when converted to a
     /// [`Response`].
     ///
-    #[inline]
     pub fn with_status(self, status: StatusCode) -> Self {
         // Placeholder for tracing...
         // Warn if the status code is not in the 4xx or 5xx range.
@@ -150,7 +146,6 @@ impl Error {
     /// }
     /// ```
     ///
-    #[inline]
     pub fn use_canonical_reason(self) -> Self {
         if let Some(reason) = self.status.canonical_reason() {
             self.with_message(reason.to_owned())
@@ -177,7 +172,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `400 Bad Request` status.
     ///
-    #[inline]
     pub fn bad_request(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::BAD_REQUEST, source)
     }
@@ -185,7 +179,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `401 Unauthorized` status.
     ///
-    #[inline]
     pub fn unauthorized(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::UNAUTHORIZED, source)
     }
@@ -193,7 +186,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `402 Payment Required` status.
     ///
-    #[inline]
     pub fn payment_required(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::PAYMENT_REQUIRED, source)
     }
@@ -201,7 +193,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `403 Forbidden` status.
     ///
-    #[inline]
     pub fn forbidden(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::FORBIDDEN, source)
     }
@@ -209,7 +200,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `404 Not Found` status.
     ///
-    #[inline]
     pub fn not_found(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::NOT_FOUND, source)
     }
@@ -217,7 +207,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `405 Method Not Allowed` status.
     ///
-    #[inline]
     pub fn method_not_allowed(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::METHOD_NOT_ALLOWED, source)
     }
@@ -225,7 +214,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `406 Not Acceptable` status.
     ///
-    #[inline]
     pub fn not_acceptable(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::NOT_ACCEPTABLE, source)
     }
@@ -233,7 +221,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `407 Proxy Authentication Required` status.
     ///
-    #[inline]
     pub fn proxy_authentication_required(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::PROXY_AUTHENTICATION_REQUIRED, source)
     }
@@ -241,7 +228,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `408 Request Timeout` status.
     ///
-    #[inline]
     pub fn request_timeout(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::REQUEST_TIMEOUT, source)
     }
@@ -249,7 +235,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `409 Conflict` status.
     ///
-    #[inline]
     pub fn conflict(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::CONFLICT, source)
     }
@@ -257,7 +242,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `410 Gone` status.
     ///
-    #[inline]
     pub fn gone(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::GONE, source)
     }
@@ -265,7 +249,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `411 Length Required` status.
     ///
-    #[inline]
     pub fn length_required(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::LENGTH_REQUIRED, source)
     }
@@ -273,7 +256,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `412 Precondition Failed` status.
     ///
-    #[inline]
     pub fn precondition_failed(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::PRECONDITION_FAILED, source)
     }
@@ -281,7 +263,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `413 Payload Too Large` status.
     ///
-    #[inline]
     pub fn payload_too_large(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::PAYLOAD_TOO_LARGE, source)
     }
@@ -289,7 +270,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `414 URI Too Long` status.
     ///
-    #[inline]
     pub fn uri_too_long(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::URI_TOO_LONG, source)
     }
@@ -297,7 +277,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `415 Unsupported Media Type` status.
     ///
-    #[inline]
     pub fn unsupported_media_type(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::UNSUPPORTED_MEDIA_TYPE, source)
     }
@@ -305,7 +284,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `416 Range Not Satisfiable` status.
     ///
-    #[inline]
     pub fn range_not_satisfiable(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::RANGE_NOT_SATISFIABLE, source)
     }
@@ -313,7 +291,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `417 Expectation Failed` status.
     ///
-    #[inline]
     pub fn expectation_failed(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::EXPECTATION_FAILED, source)
     }
@@ -321,7 +298,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `418 I'm a teapot` status.
     ///
-    #[inline]
     pub fn im_a_teapot(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::IM_A_TEAPOT, source)
     }
@@ -329,7 +305,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `421 Misdirected Request` status.
     ///
-    #[inline]
     pub fn misdirected_request(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::MISDIRECTED_REQUEST, source)
     }
@@ -337,7 +312,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `422 Unprocessable Entity` status.
     ///
-    #[inline]
     pub fn unprocessable_entity(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::UNPROCESSABLE_ENTITY, source)
     }
@@ -345,7 +319,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `423 Locked` status.
     ///
-    #[inline]
     pub fn locked(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::LOCKED, source)
     }
@@ -353,7 +326,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `424 Failed Dependency` status.
     ///
-    #[inline]
     pub fn failed_dependency(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::FAILED_DEPENDENCY, source)
     }
@@ -361,7 +333,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `426 Upgrade Required` status.
     ///
-    #[inline]
     pub fn upgrade_required(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::UPGRADE_REQUIRED, source)
     }
@@ -369,7 +340,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `428 Precondition Required` status.
     ///
-    #[inline]
     pub fn precondition_required(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::PRECONDITION_REQUIRED, source)
     }
@@ -377,7 +347,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `429 Too Many Requests` status.
     ///
-    #[inline]
     pub fn too_many_requests(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::TOO_MANY_REQUESTS, source)
     }
@@ -385,7 +354,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `431 Request Header Fields Too Large` status.
     ///
-    #[inline]
     pub fn request_header_fields_too_large(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE, source)
     }
@@ -393,7 +361,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `451 Unavailable For Legal Reasons` status.
     ///
-    #[inline]
     pub fn unavailable_for_legal_reasons(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::UNAVAILABLE_FOR_LEGAL_REASONS, source)
     }
@@ -401,7 +368,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `500 Internal Server Error` status.
     ///
-    #[inline]
     pub fn internal_server_error(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::INTERNAL_SERVER_ERROR, source)
     }
@@ -409,7 +375,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `501 Not Implemented` status.
     ///
-    #[inline]
     pub fn not_implemented(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::NOT_IMPLEMENTED, source)
     }
@@ -417,7 +382,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `502 Bad Gateway` status.
     ///
-    #[inline]
     pub fn bad_gateway(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::BAD_GATEWAY, source)
     }
@@ -425,7 +389,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `503 Service Unavailable` status.
     ///
-    #[inline]
     pub fn service_unavailable(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::SERVICE_UNAVAILABLE, source)
     }
@@ -433,7 +396,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `504 Gateway Timeout` status.
     ///
-    #[inline]
     pub fn gateway_timeout(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::GATEWAY_TIMEOUT, source)
     }
@@ -441,7 +403,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `505 HTTP Version Not Supported` status.
     ///
-    #[inline]
     pub fn http_version_not_supported(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::HTTP_VERSION_NOT_SUPPORTED, source)
     }
@@ -449,7 +410,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `506 Variant Also Negotiates` status.
     ///
-    #[inline]
     pub fn variant_also_negotiates(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::VARIANT_ALSO_NEGOTIATES, source)
     }
@@ -457,7 +417,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `507 Insufficient Storage` status.
     ///
-    #[inline]
     pub fn insufficient_storage(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::INSUFFICIENT_STORAGE, source)
     }
@@ -465,7 +424,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `508 Loop Detected` status.
     ///
-    #[inline]
     pub fn loop_detected(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::LOOP_DETECTED, source)
     }
@@ -473,7 +431,6 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `510 Not Extended` status.
     ///
-    #[inline]
     pub fn not_extended(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::NOT_EXTENDED, source)
     }
@@ -481,14 +438,12 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `511 Network Authentication Required` status.
     ///
-    #[inline]
     pub fn network_authentication_required(source: BoxError) -> Self {
         Self::new_with_status(StatusCode::NETWORK_AUTHENTICATION_REQUIRED, source)
     }
 }
 
 impl Error {
-    #[inline]
     fn new_with_status(status: StatusCode, source: BoxError) -> Self {
         Self {
             as_json: false,
@@ -509,7 +464,6 @@ impl<T> From<T> for Error
 where
     T: StdError + Send + Sync + 'static,
 {
-    #[inline]
     fn from(source: T) -> Self {
         Self {
             as_json: false,
@@ -522,21 +476,27 @@ where
 
 impl From<Error> for Response {
     fn from(error: Error) -> Response {
-        let mut response = if error.as_json {
-            Response::json(&error).unwrap_or_else(|residual| {
-                // Placeholder for tracing...
-                if cfg!(debug_assertions) {
-                    eprintln!("Error: {}", residual);
+        let mut respond_with_json = error.as_json;
+
+        loop {
+            if !respond_with_json {
+                return Response::build()
+                    .status(error.status)
+                    .text(error.to_string())
+                    .unwrap();
+            }
+
+            match Response::build().status(error.status).json(&error) {
+                Ok(response) => return response,
+                Err(error) => {
+                    respond_with_json = false;
+                    // Placeholder for tracing...
+                    if cfg!(debug_assertions) {
+                        eprintln!("Error: {}", error);
+                    }
                 }
-
-                Response::text(error.to_string())
-            })
-        } else {
-            Response::text(error.to_string())
-        };
-
-        response.set_status(error.status);
-        response
+            }
+        }
     }
 }
 

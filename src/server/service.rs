@@ -102,7 +102,7 @@ where
             Err(error) => {
                 let _ = self.shutdown_tx.send(Some(true)).ok();
                 let _ = error; // Placeholder for tracing...
-                Box::pin(async { Ok(Response::internal_server_error()) })
+                Box::pin(async { Response::internal_server_error() })
             }
         };
 

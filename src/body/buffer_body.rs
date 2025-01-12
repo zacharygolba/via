@@ -140,7 +140,15 @@ impl From<&'static str> for BufferBody {
     }
 }
 
+impl HttpBody<BufferBody> {
+    #[inline]
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
 impl Default for HttpBody<BufferBody> {
+    #[inline]
     fn default() -> Self {
         HttpBody::Inline(Default::default())
     }

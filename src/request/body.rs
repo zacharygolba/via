@@ -161,8 +161,7 @@ impl Body for RequestBody {
                 Poll::Ready(Some(Ok(frame)))
             }
             Poll::Ready(Some(Err(error))) => {
-                //
-                Poll::Ready(Some(Err(error)))
+                return Poll::Ready(Some(Err(error)));
             }
         }
     }
