@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use cookie::CookieJar;
+use cookie::{Cookie, CookieJar};
 use http::header::AsHeaderName;
 use http::request::Parts;
 use http::{HeaderMap, HeaderValue, Method, Uri, Version};
@@ -33,7 +33,7 @@ pub struct Request<State = ()> {
     /// [CookieParser](crate::middleware::CookieParser)
     /// middleware in the middleware stack for the request, this will be empty.
     ///
-    cookies: Box<CookieJar>,
+    cookies: Option<Box<CookieJar>>,
 
     /// The request's path and query parameters.
     ///
@@ -80,10 +80,22 @@ impl<State> Request<State> {
         }
     }
 
-    /// Returns a reference to the cookies associated with the request.
+    /// Returns an optional reference to the cookie with the provided `name`.
     ///
-    pub fn cookies(&self) -> &CookieJar {
-        &self.cookies
+    pub fn cookie(&self, name: &str) -> Option<&Cookie<'static>> {
+        self.cookies.as_ref()?.get(name)
+    }
+
+    /// Returns an optional reference to the cookies associated with the request.
+    ///
+    pub fn cookies(&self) -> Option<&CookieJar> {
+        self.cookies.as_deref()
+    }
+
+    /// Returns a reference to the header value associated with the key.
+    ///
+    pub fn header<K: AsHeaderName>(&self, key: K) -> Option<&HeaderValue> {
+        self.parts.headers.get(key)
     }
 
     /// Returns a reference to a map that contains the headers associated with
@@ -91,12 +103,6 @@ impl<State> Request<State> {
     ///
     pub fn headers(&self) -> &HeaderMap {
         &self.parts.headers
-    }
-
-    /// Returns a reference to the header value associated with the key.
-    ///
-    pub fn header<K: AsHeaderName>(&self, key: K) -> Option<&HeaderValue> {
-        self.parts.headers.get(key)
     }
 
     /// Returns a reference to the HTTP method associated with the request.
@@ -184,7 +190,7 @@ impl<State> Request<State> {
             body,
             state,
             did_map: false,
-            cookies: Box::new(CookieJar::new()),
+            cookies: None,
             params: PathParams::new(Vec::new()),
         }
     }
@@ -192,7 +198,7 @@ impl<State> Request<State> {
     /// Returns a mutable reference to the cookies associated with the request.
     ///
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
-        &mut self.cookies
+        self.cookies.get_or_insert_default()
     }
 }
 

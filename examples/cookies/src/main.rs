@@ -43,13 +43,17 @@ async fn count_visits(request: Request, next: Next) -> via::Result<Response> {
     // using the signed cookie jar to store and retrieve the "n_visits" cookie.
     // If
     //
-    let mut n_visits: i32 = match request.cookies().signed(secret).get("n_visits") {
-        Some(cookie) => cookie.value().parse().unwrap_or(0),
-        None => 0,
-    };
+    let mut counter = request
+        .cookies()
+        .and_then(|jar| jar.signed(secret).get("n_visits"))
+        .and_then(|cookie| cookie.value().parse().ok())
+        .unwrap_or(0i32);
 
     // Call the next middleware to get the response.
     let mut response = next.call(request).await?;
+
+    // Print the number of times the user has visited the site to stdout.
+    println!("User has visited {} times.", counter);
 
     // If the response status is not successful, return early without updating
     // the "n_visits" cookie.
@@ -58,23 +62,17 @@ async fn count_visits(request: Request, next: Next) -> via::Result<Response> {
         return Ok(response);
     }
 
-    // Increment the value of the "n_visits" counter.
-    n_visits += 1;
+    // Increment the visit counter.
+    counter += 1;
 
-    // Get a mutable reference to the response cookies.
-    let mut cookies = response.cookies_mut().signed_mut(secret);
-
-    // Create a new cookie with the updated "n_visits" value.
-    let mut cookie = Cookie::new("n_visits", n_visits.to_string());
-
-    // Set the cookie's path to "/" so it's available to all routes.
-    cookie.set_path("/");
-
-    // Print the number of times the user has visited the site to stdout.
-    println!("User has visited {} times.", n_visits);
+    // Create a new cookie with the updated value. Set the path to / so it is
+    // available on every route.
+    let cookie = Cookie::build(Cookie::new("n_visits", counter.to_string()))
+        .path("/")
+        .build();
 
     // Add the updated "n_visits" cookie to the response cookies.
-    cookies.add(cookie);
+    response.cookies_mut().signed_mut(secret).add(cookie);
 
     // Return the response.
     Ok(response)

@@ -62,72 +62,56 @@ where
         mut request: Request<State>,
         next: Next<State>,
     ) -> BoxFuture<Result<Response, Error>> {
-        // Get the value of the `Cookie` header from the request.
-        let cookie_header = request.headers().get(COOKIE);
-
         // Attempt to parse the value of the `Cookie` header if it exists and
         // contains a valid cookie string.
         //
-        let (parser_output, request_cookies) = match cookie_header.map(|value| value.to_str()) {
-            // There are no cookies to parse.
-            None => {
-                return next.call(request);
+        let existing = request
+            .header(COOKIE)
+            .map(|c| c.to_str().map(|s| s.to_owned()))
+            .and_then(|to_str_result| match to_str_result {
+                // The cookie header contains a valid cookie string. Parse it.
+                Ok(input) => {
+                    let mut cookies = vec![];
+
+                    T::parse_cookies(input).for_each(|result| match result {
+                        Ok(cookie) => cookies.push(cookie),
+                        Err(error) => {
+                            // Placeholder for tracing...
+                            let _ = error;
+                        }
+                    });
+
+                    if !cookies.is_empty() {
+                        Some(cookies)
+                    } else {
+                        None
+                    }
+                }
+
+                // The cookie header contains characters that are not visible ASCII.
+                Err(error) => {
+                    let _ = error; // Placeholder for tracing...
+                    None
+                }
+            });
+
+        if let Some(cookies) = &existing {
+            let jar = request.cookies_mut();
+            for cookie in cookies {
+                jar.add_original(cookie.clone());
             }
-
-            // The cookie header contains characters that are not visible ASCII.
-            Some(Err(error)) => {
-                let _ = error; // Placeholder for tracing...
-                return next.call(request);
-            }
-
-            // The cookie header contains a valid cookie string. Parse it.
-            Some(Ok(cookie_str)) => {
-                // Get an owned String from cookie_str.
-                let input = cookie_str.to_string();
-
-                // Parse the cookie string into an iter of results.
-                let mut output = T::parse_cookies(input).peekable();
-
-                // Get a mutable reference to the request cookies.
-                let cookies = if output.peek().is_some() {
-                    // The parser parsed some cookies. Allocate a new
-                    // `Box<CookieJar>` and get a mutable reference to it.
-                    request.cookies_mut()
-                } else {
-                    // The parser did not parse any cookies.
-                    return next.call(request);
-                };
-
-                (output, cookies)
-            }
-        };
-
-        // Iterate over the remaining results in the parser output. If a cookie
-        // was able to be parsed without error, add it to request_cookies.
-        //
-        parser_output.for_each(|result| match result {
-            Ok(cookie) => request_cookies.add_original(cookie),
-            Err(error) => {
-                let _ = error; // Placeholder for tracing...
-            }
-        });
-
-        // Clone request_cookies so we can merge them with the response cookies
-        // when they become available. This is necessary because we need to pass
-        // ownership of the request to the next middleware.
-        //
-        let mut merged_cookies = request_cookies.clone();
+        }
 
         Box::pin(async {
             // Call the next middleware to get a response.
             let mut response = next.call(request).await?;
 
-            for cookie in response.cookies().iter() {
-                merged_cookies.add(cookie.clone());
+            if let Some(cookies) = existing {
+                let jar = response.cookies_mut();
+                for cookie in cookies {
+                    jar.add_original(cookie);
+                }
             }
-
-            // Set the response cookies.
-            *response.cookies_mut() = merged_cookies;
 
             // Return the response.
             Ok(response)
