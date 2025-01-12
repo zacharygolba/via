@@ -9,7 +9,7 @@ pub async fn index(request: Request, _: Next) -> via::Result<Response> {
     let state = request.state();
     let users = User::all(&state.pool).await?;
 
-    Response::json(&Payload { data: users })
+    Response::build().json(&Payload { data: users })
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result<Response> {
@@ -18,9 +18,8 @@ pub async fn create(request: Request, _: Next) -> via::Result<Response> {
     let user = new_user.insert(&state.pool).await?;
 
     Response::build()
-        .json(&Payload { data: user })
         .status(StatusCode::CREATED)
-        .finish()
+        .json(&Payload { data: user })
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result<Response> {
@@ -28,7 +27,7 @@ pub async fn show(request: Request, _: Next) -> via::Result<Response> {
     let state = request.state();
     let user = User::find(&state.pool, id).await?;
 
-    Response::json(&Payload { data: user })
+    Response::build().json(&Payload { data: user })
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result<Response> {
@@ -37,7 +36,7 @@ pub async fn update(request: Request, _: Next) -> via::Result<Response> {
     let change_set = deserialize::<ChangeSet>(request.into_body()).await?;
     let user = change_set.apply(&state.pool, id).await?;
 
-    Response::json(&Payload { data: user })
+    Response::build().json(&Payload { data: user })
 }
 
 pub async fn destroy(request: Request, _: Next) -> via::Result<Response> {
@@ -45,5 +44,5 @@ pub async fn destroy(request: Request, _: Next) -> via::Result<Response> {
     let state = request.state();
 
     User::delete(&state.pool, id).await?;
-    Response::json(&Payload { data: () })
+    Response::build().json(&Payload { data: () })
 }

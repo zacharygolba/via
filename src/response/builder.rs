@@ -9,7 +9,6 @@ use http_body_util::StreamBody;
 use serde::Serialize;
 
 use super::Response;
-use super::{APPLICATION_JSON, CHUNKED_ENCODING, TEXT_HTML, TEXT_PLAIN};
 use crate::body::{BufferBody, HttpBody};
 use crate::error::{BoxError, Error};
 use crate::request::RequestBody;
@@ -33,78 +32,12 @@ pub trait Pipe {
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error>;
 }
 
+#[derive(Debug)]
 pub struct ResponseBuilder {
-    body: Option<Result<HttpBody<BufferBody>, Error>>,
-    inner: Builder,
+    builder: Builder,
 }
 
 impl ResponseBuilder {
-    #[inline]
-    pub fn new() -> Self {
-        Self {
-            body: None,
-            inner: Builder::new(),
-        }
-    }
-
-    #[inline]
-    pub fn body(self, body: HttpBody<BufferBody>) -> Self {
-        Self {
-            body: Some(Ok(body)),
-            ..self
-        }
-    }
-
-    #[inline]
-    pub fn html(self, string: String) -> Self {
-        let body = BufferBody::from(string);
-        let len = body.len();
-
-        self.body(HttpBody::Inline(body))
-            .header(CONTENT_TYPE, TEXT_HTML)
-            .header(CONTENT_LENGTH, len)
-    }
-
-    #[inline]
-    pub fn text(self, string: String) -> Self {
-        let body = BufferBody::from(string);
-        let len = body.len();
-
-        self.body(HttpBody::Inline(body))
-            .header(CONTENT_TYPE, TEXT_PLAIN)
-            .header(CONTENT_LENGTH, len)
-    }
-
-    #[inline]
-    pub fn json<B: Serialize>(self, body: &B) -> Self {
-        let (len, json) = {
-            let mut writer = BytesMut::new().writer();
-
-            match serde_json::to_writer(&mut writer, body) {
-                Ok(_) => {
-                    let buf = writer.into_inner().freeze();
-                    (buf.len(), BufferBody::from_raw(buf))
-                }
-                Err(e) => {
-                    return Self {
-                        body: Some(Err(e.into())),
-                        ..self
-                    }
-                }
-            }
-        };
-
-        self.body(HttpBody::Inline(json))
-            .header(CONTENT_TYPE, APPLICATION_JSON)
-            .header(CONTENT_LENGTH, len)
-    }
-
-    #[inline]
-    pub fn finish(self) -> Result<Response, Error> {
-        let body = self.body.transpose()?.unwrap_or_default();
-        Ok(self.inner.body(body)?.into())
-    }
-
     #[inline]
     pub fn header<K, V>(self, key: K, value: V) -> Self
     where
@@ -114,12 +47,10 @@ impl ResponseBuilder {
         <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
     {
         Self {
-            inner: self.inner.header(key, value),
-            ..self
+            builder: self.builder.header(key, value),
         }
     }
 
-    #[inline]
     pub fn headers<I, K, V>(self, iter: I) -> Self
     where
         I: IntoIterator<Item = (K, Option<V>)>,
@@ -142,23 +73,69 @@ impl ResponseBuilder {
         <StatusCode as TryFrom<T>>::Error: Into<http::Error>,
     {
         Self {
-            inner: self.inner.status(status),
-            ..self
+            builder: self.builder.status(status),
         }
     }
 
     #[inline]
     pub fn version(self, version: Version) -> Self {
         Self {
-            inner: self.inner.version(version),
-            ..self
+            builder: self.builder.version(version),
         }
+    }
+
+    #[inline]
+    pub fn body(self, body: HttpBody<BufferBody>) -> Result<Response, Error> {
+        let inner = self.builder.body(body)?;
+        Ok(Response::from_inner(inner))
+    }
+
+    /// Convert self into a [Response] with an empty payload.
+    ///
+    #[inline]
+    pub fn finish(self) -> Result<Response, Error> {
+        self.body(HttpBody::new())
+    }
+
+    pub fn html(self, html: String) -> Result<Response, Error> {
+        let body = BufferBody::from(html);
+
+        self.header(CONTENT_TYPE, "text/html; charset=utf-8")
+            .header(CONTENT_LENGTH, body.len())
+            .body(HttpBody::Inline(body))
+    }
+
+    pub fn text(self, text: String) -> Result<Response, Error> {
+        let body = BufferBody::from(text);
+
+        self.header(CONTENT_TYPE, "text/plain; charset=utf-8")
+            .header(CONTENT_LENGTH, body.len())
+            .body(HttpBody::Inline(body))
+    }
+
+    pub fn json<T>(self, body: &T) -> Result<Response, Error>
+    where
+        T: Serialize,
+    {
+        let body = {
+            let mut writer = BytesMut::new().writer();
+            serde_json::to_writer(&mut writer, body)?;
+
+            let buf = writer.into_inner().freeze();
+            BufferBody::from_raw(buf)
+        };
+
+        self.header(CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(CONTENT_LENGTH, body.len())
+            .body(HttpBody::Inline(body))
     }
 }
 
 impl Default for ResponseBuilder {
     fn default() -> Self {
-        Self::new()
+        Self {
+            builder: Default::default(),
+        }
     }
 }
 
@@ -170,9 +147,8 @@ impl Pipe for RequestBody {
     ///
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response
+            .header(TRANSFER_ENCODING, "chunked")
             .body(HttpBody::Box(BoxBody::new(self)))
-            .header(TRANSFER_ENCODING, CHUNKED_ENCODING)
-            .finish()
     }
 }
 
@@ -188,8 +164,7 @@ where
     ///
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response
+            .header(TRANSFER_ENCODING, "chunked")
             .body(HttpBody::Box(BoxBody::new(StreamBody::new(self))))
-            .header(TRANSFER_ENCODING, CHUNKED_ENCODING)
-            .finish()
     }
 }

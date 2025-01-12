@@ -14,7 +14,7 @@ impl<State> Next<State> {
         if let Some(middleware) = self.stack.pop() {
             middleware.call(request, self)
         } else {
-            Box::pin(async { Ok(Response::not_found()) })
+            Box::pin(async { Response::not_found() })
         }
     }
 }

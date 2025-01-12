@@ -4,7 +4,8 @@ use via_serve_static::serve_static;
 
 async fn not_found(request: Request, _: Next) -> via::Result<Response> {
     let path = request.param("path").into_result()?;
-    let html = format!(
+
+    Response::build().status(404).html(format!(
         "
         <!DOCTYPE html>
         <html lang=\"en\">
@@ -22,9 +23,7 @@ async fn not_found(request: Request, _: Next) -> via::Result<Response> {
         </html>
         ",
         path
-    );
-
-    Response::build().html(html).status(404).finish()
+    ))
 }
 
 #[tokio::main]

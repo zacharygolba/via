@@ -62,8 +62,8 @@ where
     });
 
     let mut headers = vec![
-        (CONTENT_TYPE, Some(file.mime_type.clone())),
         (CONTENT_LENGTH, Some(file.size.to_string())),
+        (CONTENT_TYPE, Some(file.mime_type.clone())),
         (ETAG, file.etag.take()),
     ];
 
@@ -110,10 +110,9 @@ where
         // respond immediately with the entire vector of bytes as the
         // response body.
         return Response::build()
-            .body(HttpBody::Inline(BufferBody::from(data)))
             .header(CONTENT_LENGTH, file.size)
             .headers(headers)
-            .finish();
+            .body(HttpBody::Inline(BufferBody::from(data)));
     }
 
     // The file is too large to be eagerly read into memory. Stream the
