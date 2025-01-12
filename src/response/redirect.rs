@@ -67,14 +67,15 @@ impl Redirect {
         let response = Response::build()
             .header(header::LOCATION, location)
             .status(status)
-            .body(Default::default())?;
+            .finish()?;
+
         let status = response.status();
 
-        if !status.is_redirection() {
+        if status.is_redirection() {
             let message = format!("Invalid status code for redirect: {}", status);
-            return Err(Error::new(message.into()));
+            Err(Error::new(message.into()))
+        } else {
+            Ok(response)
         }
-
-        Ok(response)
     }
 }
