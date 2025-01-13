@@ -1,9 +1,9 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
-use http_body_util::combinators::BoxBody;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use super::BoxBody;
 use crate::BoxError;
 
 /// A sum type that can represent any
@@ -22,7 +22,7 @@ pub enum HttpBody<T> {
 
     /// A dynamically dispatched `dyn Body + Send + Sync`.
     ///
-    Box(BoxBody<Bytes, BoxError>),
+    Box(BoxBody),
 }
 
 impl<T> Body for HttpBody<T>
@@ -57,9 +57,8 @@ where
     }
 }
 
-impl<T> From<BoxBody<Bytes, BoxError>> for HttpBody<T> {
-    #[inline]
-    fn from(body: BoxBody<Bytes, BoxError>) -> Self {
+impl<T> From<BoxBody> for HttpBody<T> {
+    fn from(body: BoxBody) -> Self {
         Self::Box(body)
     }
 }

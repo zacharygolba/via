@@ -4,6 +4,13 @@ use via::Error;
 
 use crate::State;
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Payload<T> {
+    pub(super) data: T,
+}
+
 /// Used with the InspectErrorBoundary to log errors that occur on /api routes.
 ///
 pub fn inspect_error(error: &Error, _: &State) {

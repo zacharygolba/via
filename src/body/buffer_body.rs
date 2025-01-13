@@ -100,7 +100,7 @@ impl Body for BufferBody {
 
 impl Debug for BufferBody {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ByteBuffer").finish()
+        f.debug_struct("BufferBody").finish()
     }
 }
 

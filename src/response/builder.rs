@@ -4,12 +4,10 @@ use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::response::Builder;
 use http::{HeaderName, HeaderValue, StatusCode, Version};
 use http_body::Frame;
-use http_body_util::combinators::BoxBody;
-use http_body_util::StreamBody;
 use serde::Serialize;
 
 use super::Response;
-use crate::body::{BufferBody, HttpBody};
+use crate::body::{BoxBody, BufferBody, HttpBody, StreamBody};
 use crate::error::{BoxError, Error};
 use crate::request::RequestBody;
 
