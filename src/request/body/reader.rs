@@ -81,8 +81,8 @@ impl Future for BodyReader {
                     continue;
                 }
                 Err(frame) => match frame.into_trailers() {
-                    Err(_) => continue,
                     Ok(map) => map,
+                    Err(_) => continue,
                 },
             };
 
