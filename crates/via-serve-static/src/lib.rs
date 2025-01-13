@@ -46,7 +46,7 @@ pub fn serve_static<State>(endpoint: Endpoint<State>) -> ServeStatic<State> {
     }
 }
 
-impl<'a, State> ServeStatic<'a, State>
+impl<State> ServeStatic<'_, State>
 where
     State: Send + Sync + 'static,
 {
