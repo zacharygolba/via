@@ -59,12 +59,12 @@ impl Future for BodyReader {
         let mut body = Pin::new(&mut this.body);
 
         loop {
-            let frame = match body.as_mut().poll_frame(context) {
-                Poll::Ready(Some(Ok(frame))) => frame,
-                Poll::Ready(Some(Err(e))) => {
-                    let error = error_from_boxed(e);
-                    break Poll::Ready(Err(error));
-                }
+            let frame = match body
+                .as_mut()
+                .poll_frame(context)
+                .map_err(error_from_boxed)?
+            {
+                Poll::Ready(Some(frame)) => frame,
                 Poll::Ready(None) => {
                     let payload = this.payload.to_vec();
                     let trailers = this.trailers.take();
@@ -108,7 +108,7 @@ impl ReadToEnd {
     where
         D: DeserializeOwned,
     {
-        let payload = self.into_text();
+        let payload = self.into_text()?;
 
         serde_json::from_str(&payload).map_err(|error| {
             let source = Box::new(error);
