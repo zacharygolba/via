@@ -108,9 +108,9 @@ impl ReadToEnd {
     where
         D: DeserializeOwned,
     {
-        let payload = self.into_bytes();
+        let payload = self.into_text();
 
-        serde_json::from_slice(&payload).map_err(|error| {
+        serde_json::from_str(&payload).map_err(|error| {
             let source = Box::new(error);
             Error::bad_request(source)
         })
