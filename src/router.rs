@@ -29,7 +29,7 @@ pub struct Router<State> {
     inner: via_router::Router<Vec<MatchWhen<State>>>,
 }
 
-impl<'a, State> Endpoint<'a, State> {
+impl<State> Endpoint<'_, State> {
     pub fn at(&mut self, pattern: &'static str) -> Endpoint<State> {
         Endpoint {
             inner: self.inner.at(pattern),

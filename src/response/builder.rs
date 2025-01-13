@@ -32,7 +32,7 @@ pub trait Pipe {
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ResponseBuilder {
     builder: Builder,
 }
@@ -128,14 +128,6 @@ impl ResponseBuilder {
         self.header(CONTENT_TYPE, "application/json; charset=utf-8")
             .header(CONTENT_LENGTH, body.len())
             .body(HttpBody::Inline(body))
-    }
-}
-
-impl Default for ResponseBuilder {
-    fn default() -> Self {
-        Self {
-            builder: Default::default(),
-        }
     }
 }
 

@@ -480,14 +480,14 @@ impl From<Error> for Response {
 
         loop {
             if !respond_with_json {
-                return Response::build()
-                    .status(error.status)
-                    .text(error.to_string())
-                    .unwrap();
+                let mut response = Response::new(error.to_string().into());
+
+                *response.status_mut() = error.status;
+                break response;
             }
 
             match Response::build().status(error.status).json(&error) {
-                Ok(response) => return response,
+                Ok(response) => break response,
                 Err(error) => {
                     respond_with_json = false;
                     // Placeholder for tracing...
