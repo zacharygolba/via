@@ -20,7 +20,6 @@ bytes = "1.9"
 futures-core = { version = "0.3", default-features = false }
 http = "1"
 http-body = "1"
-http-body-util = "0.1"
 hyper = { version = "1.4", features = ["server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 percent-encoding = "2.3"

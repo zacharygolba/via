@@ -1,14 +1,12 @@
-use bytes::Bytes;
 use cookie::CookieJar;
 use http::header::SET_COOKIE;
 use http::response::Parts;
 use http::{HeaderMap, StatusCode, Version};
-use http_body_util::combinators::BoxBody;
 use std::fmt::{self, Debug, Formatter};
 
 use super::ResponseBuilder;
-use crate::body::{BufferBody, HttpBody};
-use crate::error::{BoxError, Error};
+use crate::body::{BoxBody, BufferBody, HttpBody};
+use crate::error::Error;
 
 pub struct Response {
     did_map: bool,
@@ -29,7 +27,7 @@ impl Response {
     /// return type of the provided closure `map`.
     pub fn map<F>(self, map: F) -> Self
     where
-        F: FnOnce(HttpBody<BufferBody>) -> BoxBody<Bytes, BoxError>,
+        F: FnOnce(HttpBody<BufferBody>) -> BoxBody,
     {
         if cfg!(debug_assertions) && self.did_map {
             // TODO: Replace this with tracing and a proper logger.

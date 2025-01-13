@@ -8,12 +8,14 @@ use std::task::{Context, Poll};
 use crate::body::{BufferBody, HttpBody};
 use crate::error::Error;
 use crate::middleware::BoxFuture;
-use crate::request::{HyperBody, Request, RequestBody};
+use crate::request::body::RequestBody;
+use crate::request::Request;
 use crate::response::Response;
 use crate::router::Router;
 
 use super::shutdown::ShutdownTx;
 
+#[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct FutureResponse {
     future: BoxFuture<Result<Response, Error>>,
 }
@@ -77,10 +79,7 @@ where
             let parts = Box::new(parts);
 
             // Convert the incoming body type to a RequestBody.
-            let body = RequestBody::new(
-                self.max_request_size,
-                HttpBody::Inline(HyperBody::new(incoming)),
-            );
+            let body = RequestBody::new(self.max_request_size, incoming);
 
             // Clone the shared application state so request can own a reference
             // to it. This is a cheaper operation than going from Weak to Arc for

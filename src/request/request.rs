@@ -1,16 +1,13 @@
-use bytes::Bytes;
 use cookie::{Cookie, CookieJar};
 use http::header::AsHeaderName;
 use http::request::Parts;
 use http::{HeaderMap, HeaderValue, Method, Uri, Version};
-use http_body_util::combinators::BoxBody;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use super::body::{HyperBody, RequestBody};
 use super::params::{Param, PathParams, QueryParam};
-use crate::body::HttpBody;
-use crate::error::BoxError;
+use crate::body::{BoxBody, HttpBody};
 
 pub struct Request<State = ()> {
     did_map: bool,
@@ -66,7 +63,7 @@ impl<State> Request<State> {
     ///
     pub fn map<F>(self, map: F) -> Self
     where
-        F: FnOnce(HttpBody<HyperBody>) -> BoxBody<Bytes, BoxError>,
+        F: FnOnce(HttpBody<HyperBody>) -> BoxBody,
     {
         if cfg!(debug_assertions) && self.did_map {
             // TODO: Replace this with tracing and a proper logger.
