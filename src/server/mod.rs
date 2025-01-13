@@ -4,7 +4,6 @@
 mod acceptor;
 mod serve;
 mod server;
-mod service;
 mod shutdown;
 
 pub use server::Server;

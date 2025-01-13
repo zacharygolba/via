@@ -1,5 +1,7 @@
 use hyper::server::conn;
+use hyper::service::service_fn;
 use hyper_util::rt::{TokioIo, TokioTimer};
+use std::convert::Infallible;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -12,10 +14,11 @@ use tokio::time;
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
-use super::service::Service;
 use super::shutdown::wait_for_shutdown;
 use crate::error::BoxError;
+use crate::request::RequestBody;
 use crate::router::Router;
+use crate::{Request, Response};
 
 pub async fn serve<State, A>(
     listener: TcpListener,
@@ -86,31 +89,70 @@ where
 
                     // Accept the stream from the acceptor. This is where the
                     // TLS handshake would occur if the acceptor is a TlsAcceptor.
-                    let stream = match acceptor.accept(stream).await {
-                        Ok(accepted) => accepted,
+                    let io = match acceptor.accept(stream).await {
+                        Ok(accepted) => TokioIo::new(accepted),
                         Err(_) => {
                             // Placeholder for tracing...
                             return;
                         }
                     };
 
+                    let service = service_fn(|r| {
+                        // Wrap the incoming request in with `via::Request`.
+                        let mut request = {
+                            // Destructure the incoming request into its component parts.
+                            let (parts, incoming) = r.into_parts();
+
+                            // Allocate the metadata associated with the request on the heap.
+                            // This keeps the size of the request type small enough to pass
+                            // around by value.
+                            let parts = Box::new(parts);
+
+                            // Convert the incoming body type to a RequestBody.
+                            let body = RequestBody::new(max_request_size, incoming);
+
+                            // Clone the shared application state so request can own a reference
+                            // to it. This is a cheaper operation than going from Weak to Arc for
+                            // any application that interacts with a connection pool or an
+                            // external service.
+                            let state = Arc::clone(&state);
+
+                            Request::new(parts, body, state)
+                        };
+
+                        let future = match router.lookup(request.parts.uri.path(), &mut request.params) {
+                            // Call the middleware stack for the resolved routes.
+                            Ok(next) => next.call(request),
+
+                            // Alert the main thread that we encountered an unrecoverable error.
+                            Err(error) => {
+                                let _ = shutdown_tx.send(Some(true)).ok();
+                                let _ = error; // Placeholder for tracing...
+                                Box::pin(async { Response::internal_server_error() })
+                            }
+                        };
+
+                        async {
+                            Ok::<_, Infallible>(match future.await {
+                                // The response was generated successfully.
+                                Ok(response) => response.into_inner(),
+                                // An occurred while generating the response.
+                                Err(error) => Response::from(error).into_inner(),
+                            })
+                        }
+                    });
+
                     // Create a new HTTP/2 connection.
                     #[cfg(feature = "http2")]
                     let mut connection = conn::http2::Builder::new(TokioExecutor::new())
                         .timer(TokioTimer::new())
-                        .serve_connection(
-                            TokioIo::new(stream),
-                            Service::new(max_request_size, shutdown_tx, router, state),
-                        );
+                        .serve_connection(io, service);
 
                     // Create a new HTTP/1.1 connection.
                     #[cfg(all(feature = "http1", not(feature = "http2")))]
                     let mut connection = conn::http1::Builder::new()
                         .timer(TokioTimer::new())
-                        .serve_connection(
-                            TokioIo::new(stream),
-                            Service::new(max_request_size, shutdown_tx, router, state),
-                        )
+                        .serve_connection(io, service)
                         .with_upgrades();
 
                     // Poll the connection until it is closed or a graceful
