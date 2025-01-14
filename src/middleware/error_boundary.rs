@@ -1,4 +1,5 @@
-use crate::middleware::{BoxFuture, Middleware, Next};
+use super::middleware::{BoxFuture, Middleware};
+use super::next::Next;
 use crate::{Error, Request, Response};
 
 /// A middleware that catches errors that occur downstream and then calls the

@@ -1,4 +1,4 @@
-use super::{ArcMiddleware, BoxFuture};
+use super::middleware::{ArcMiddleware, BoxFuture};
 use crate::error::Error;
 use crate::request::Request;
 use crate::response::Response;
