@@ -494,7 +494,7 @@ impl From<Error> for Response {
                 .and_then(|json| {
                     Response::build()
                         .status(error.status)
-                        .header(CONTENT_TYPE, "application/json; charset=utf8")
+                        .header(CONTENT_TYPE, "application/json; charset=utf-8")
                         .body(json.into())
                 }) {
                 Ok(response) => break response,
