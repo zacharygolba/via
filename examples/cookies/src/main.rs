@@ -1,7 +1,7 @@
 use cookie::{Cookie, Key};
 use std::process::ExitCode;
 use via::middleware::CookieParser;
-use via::{BoxError, Response, Server};
+use via::{BoxError, ErrorBoundary, Response, Server};
 
 type Request = via::Request<CookiesExample>;
 type Next = via::Next<CookiesExample>;
@@ -100,6 +100,11 @@ async fn main() -> Result<ExitCode, BoxError> {
     let mut app = via::new(CookiesExample {
         secret: get_secret_from_env(),
     });
+
+    // Include an error boundary to catch any errors that occur downstream.
+    app.include(ErrorBoundary::catch(|error, _| {
+        eprintln!("Error: {}", error);
+    }));
 
     // The CookieParser middleware can be added at any depth of the route tree.
     // In this example, we add it to the root of the app. This means that every

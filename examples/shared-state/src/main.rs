@@ -3,7 +3,7 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use via::http::StatusCode;
-use via::{BoxError, Response, Server};
+use via::{BoxError, ErrorBoundary, Response, Server};
 
 // Define a type alias for the `via::Request` to include the `Counter` state.
 // This is a convenience to avoid having to write out the full type signature.
@@ -83,6 +83,11 @@ async fn main() -> Result<ExitCode, BoxError> {
         errors: Arc::new(AtomicU32::new(0)),
         sucesses: Arc::new(AtomicU32::new(0)),
     });
+
+    // Include an error boundary to catch any errors that occur downstream.
+    app.include(ErrorBoundary::catch(|error, _| {
+        eprintln!("Error: {}", error);
+    }));
 
     // Add the `counter` middleware to the application. Since we are not
     // specifying an endpoint with the `at` method, this middleware will

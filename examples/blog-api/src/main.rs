@@ -43,17 +43,12 @@ async fn main() -> Result<ExitCode, BoxError> {
     app.at("/api").scope(|api| {
         use api::{posts, users, util};
 
-        // Redact sensitive information from errors that occur on /api routes.
-        // Also configure the error to respond with JSON when converted to a
-        // response.
-        api.include(ErrorBoundary::map(util::map_error));
-
-        // Configure error reporting for /api routes. We're including this
-        // middleware after the ErrorBoundary::map middleware because we want it
-        // to run before sensitive information is redacted from the error. This
-        // sequence is necessary because we are doing post-processing of the
-        // response rather than pre-processing of the request.
-        api.include(ErrorBoundary::inspect(util::inspect_error));
+        // Catch any errors that occur in the API namespace and generate a
+        // JSON response from a redacted version of the original error.
+        api.include(ErrorBoundary::map(|error, _| {
+            eprintln!("Error: {}", error); // Placeholder for tracing...
+            util::map_error(error)
+        }));
 
         // Add a timeout middleware to the /api routes. This will prevent the
         // server from waiting indefinitely if we lose connection to the
