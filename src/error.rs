@@ -58,7 +58,8 @@ impl Error {
     /// # Example
     ///
     /// ```
-    /// use via::{BoxError, ErrorBoundary, Next, Request};
+    /// use via::middleware::error_boundary;
+    /// use via::{BoxError, Next, Request};
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), BoxError> {
@@ -67,7 +68,7 @@ impl Error {
     ///     // Add an `ErrorBoundary` middleware to the route tree that maps
     ///     // errors that occur in subsequent middleware by calling the `redact`
     ///     // function.
-    ///     app.include(ErrorBoundary::map(|error, _| {
+    ///     app.include(error_boundary::map(|error, _| {
     ///         error.redact(|message| {
     ///             if message.contains("password") {
     ///                 // If password is even mentioned in the error, return an
@@ -127,7 +128,8 @@ impl Error {
     /// # Example
     ///
     /// ```
-    /// use via::{BoxError, ErrorBoundary, Next, Request};
+    /// use via::middleware::error_boundary;
+    /// use via::{BoxError, Next, Request};
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), BoxError> {
@@ -136,7 +138,7 @@ impl Error {
     ///     // Add an `ErrorBoundary` middleware to the route tree that maps
     ///     // errors that occur in subsequent middleware by calling the
     ///     // `use_canonical_reason` function.
-    ///     app.include(ErrorBoundary::map(|error, _| {
+    ///     app.include(error_boundary::map(|error, _| {
     ///         // Prevent error messages that occur in downstream middleware from
     ///         // leaking into the response body by using the reason phrase of
     ///         // the status code associated with the error.
