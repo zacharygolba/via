@@ -503,8 +503,7 @@ impl Response {
 
 impl Default for Response {
     fn default() -> Self {
-        let empty = BufferBody::new(&[]);
-        Self::new(HttpBody::Inline(empty))
+        Self::new(HttpBody::new())
     }
 }
 
