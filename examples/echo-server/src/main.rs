@@ -1,6 +1,7 @@
 use http::header::CONTENT_TYPE;
 use std::process::ExitCode;
-use via::{BoxError, ErrorBoundary, Next, Pipe, Request, Response, Server};
+use via::middleware::error_boundary;
+use via::{BoxError, Next, Pipe, Request, Response, Server};
 
 async fn echo(request: Request, _: Next) -> via::Result<Response> {
     // Get an optional copy of the Content-Type header from the request.
@@ -19,7 +20,7 @@ async fn main() -> Result<ExitCode, BoxError> {
     let mut app = via::new(());
 
     // Include an error boundary to catch any errors that occur downstream.
-    app.include(ErrorBoundary::catch(|error, _| {
+    app.include(error_boundary::catch(|error, _| {
         eprintln!("Error: {}", error);
     }));
 
