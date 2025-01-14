@@ -1,7 +1,8 @@
 mod tls;
 
 use std::process::ExitCode;
-use via::{BoxError, ErrorBoundary, Next, Request, Server};
+use via::middleware::error_boundary;
+use via::{BoxError, Next, Request, Server};
 
 async fn hello(request: Request, _: Next) -> via::Result<String> {
     // Get a reference to the path parameter `name` from the request uri.
@@ -21,7 +22,7 @@ async fn main() -> Result<ExitCode, BoxError> {
     let mut app = via::new(());
 
     // Include an error boundary to catch any errors that occur downstream.
-    app.include(ErrorBoundary::catch(|error, _| {
+    app.include(error_boundary::catch(|error, _| {
         eprintln!("Error: {}", error);
     }));
 

@@ -1,7 +1,7 @@
 use cookie::{Cookie, Key};
 use std::process::ExitCode;
-use via::middleware::CookieParser;
-use via::{BoxError, ErrorBoundary, Response, Server};
+use via::middleware::{error_boundary, CookieParser};
+use via::{BoxError, Response, Server};
 
 type Request = via::Request<CookiesExample>;
 type Next = via::Next<CookiesExample>;
@@ -102,7 +102,7 @@ async fn main() -> Result<ExitCode, BoxError> {
     });
 
     // Include an error boundary to catch any errors that occur downstream.
-    app.include(ErrorBoundary::catch(|error, _| {
+    app.include(error_boundary::catch(|error, _| {
         eprintln!("Error: {}", error);
     }));
 
