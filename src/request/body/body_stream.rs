@@ -4,8 +4,8 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::body::RequestBody;
-use super::error::error_from_boxed;
+use super::length_limit_error::error_from_boxed;
+use super::request_body::RequestBody;
 use crate::error::Error;
 
 /// A stream of frames that compose the body and trailers of a request.

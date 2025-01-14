@@ -4,9 +4,9 @@ use hyper::body::Incoming;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::error::PayloadTooLargeError;
-use super::reader::BodyReader;
-use super::stream::BodyStream;
+use super::body_reader::BodyReader;
+use super::body_stream::BodyStream;
+use super::length_limit_error::LengthLimitError;
 use crate::body::{BoxBody, HttpBody};
 use crate::error::BoxError;
 
@@ -94,7 +94,7 @@ impl Body for RequestBody {
                     let frame_len = data.len();
 
                     if this.remaining < frame_len {
-                        let error = Box::new(PayloadTooLargeError);
+                        let error = Box::new(LengthLimitError);
                         return Poll::Ready(Some(Err(error)));
                     }
 
