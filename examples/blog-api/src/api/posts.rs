@@ -20,11 +20,8 @@ pub async fn index(request: Request, _: Next) -> via::Result<Response> {
 
 pub async fn create(request: Request, _: Next) -> via::Result<Response> {
     let state = request.state().clone();
-    let new_post = request
-        .into_body()
-        .read_to_end()
-        .parse_json::<NewPost>()
-        .await?;
+    let payload = request.into_body().read_to_end().await?;
+    let new_post = payload.parse_json::<NewPost>()?;
 
     Response::build()
         .status(StatusCode::CREATED)
@@ -45,11 +42,8 @@ pub async fn show(request: Request, _: Next) -> via::Result<Response> {
 pub async fn update(request: Request, _: Next) -> via::Result<Response> {
     let id = request.param("id").parse()?;
     let state = request.state().clone();
-    let change_set = request
-        .into_body()
-        .read_to_end()
-        .parse_json::<ChangeSet>()
-        .await?;
+    let payload = request.into_body().read_to_end().await?;
+    let change_set = payload.parse_json::<ChangeSet>()?;
 
     Response::build().json(&Payload {
         data: change_set.apply(&state.pool, id).await?,

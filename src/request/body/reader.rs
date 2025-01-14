@@ -25,23 +25,6 @@ pub struct ReadToEnd {
 }
 
 impl BodyReader {
-    pub async fn parse_json<D>(self) -> Result<D, Error>
-    where
-        D: DeserializeOwned,
-    {
-        self.await?.parse_json()
-    }
-
-    pub async fn into_bytes(self) -> Result<Bytes, Error> {
-        Ok(self.await?.into_bytes())
-    }
-
-    pub async fn into_text(self) -> Result<String, Error> {
-        self.await?.into_text()
-    }
-}
-
-impl BodyReader {
     pub(crate) fn new(body: RequestBody) -> Self {
         Self {
             body,
