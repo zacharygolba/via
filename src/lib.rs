@@ -14,7 +14,7 @@
 //! [Additional examples](https://github.com/zacharygolba/via/tree/main/examples)
 //! can be found in our git repository.
 //!
-//! ```
+//! ```no_run
 //! use std::process::ExitCode;
 //! use via::middleware::error_boundary;
 //! use via::{BoxError, Error, Next, Request, Server};
