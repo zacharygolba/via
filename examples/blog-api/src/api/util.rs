@@ -2,21 +2,11 @@ use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use via::http::StatusCode;
 use via::Error;
 
-use crate::State;
-
-/// Used with the InspectErrorBoundary to log errors that occur on /api routes.
-///
-pub fn inspect_error(error: &Error, _: &State) {
-    // In production you'll likely want to use tracing or report to some error
-    // tracking service.
-    eprintln!("Error: {}", error);
-}
-
 /// Used with the MapErrorBoundary to map errors that occur on /api routes. This
 /// function ensures that errors that occur in the /api namespace respond with
 /// JSON and do not leak sensitive information to the client.
 ///
-pub fn map_error(error: Error, _: &State) -> Error {
+pub fn map_error(error: Error) -> Error {
     match error.source().downcast_ref() {
         // The error occurred because a database record was not found.
         Some(DieselError::NotFound) => error
