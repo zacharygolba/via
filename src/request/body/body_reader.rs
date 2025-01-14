@@ -8,7 +8,8 @@ use std::task::{Context, Poll};
 
 use crate::Error;
 
-use super::error::error_from_boxed;
+use super::json_payload::JsonPayload;
+use super::length_limit_error::error_from_boxed;
 use super::RequestBody;
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
@@ -97,10 +98,25 @@ impl ReadToEnd {
     {
         let payload = self.into_text()?;
 
-        serde_json::from_str(&payload).map_err(|error| {
-            let source = Box::new(error);
-            Error::bad_request(source)
-        })
+        // Attempt deserialize JSON assuming that type `D` exists in a top-level
+        // data field. This is a common pattern so we optimize for it to provide
+        // a more convienent API. If you frequently expect `D` to be at the root
+        // of the JSON object contained in `payload` and not in a top-level
+        // `data` field, we recommend writing a utility function that circumvents
+        // the extra call to deserialize. Otherwise, this has no additional
+        // overhead.
+        serde_json::from_str(&payload)
+            // If `D` was contained in a top-level `data` field, unwrap it.
+            .map(|json: JsonPayload<D>| json.data)
+            // Otherwise, attempt to deserialize `D` from the object at the root
+            // of payload. If that also fails, use the original error.
+            .or_else(|error| serde_json::from_str(&payload).or(Err(error)))
+            // If an error occured, wrap it with `via::Error` and set the status
+            // code to 400 Bad Request.
+            .map_err(|error| {
+                let source = Box::new(error);
+                Error::bad_request(source)
+            })
     }
 
     pub fn into_bytes(self) -> Bytes {

@@ -1,6 +1,7 @@
 //! Conviently work with errors that may occur in an application.
 //!
 
+use http::header::CONTENT_TYPE;
 use http::StatusCode;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
@@ -486,7 +487,14 @@ impl From<Error> for Response {
                 break response;
             }
 
-            match Response::build().status(error.status).json(&error) {
+            match serde_json::to_string(&error)
+                .map_err(Error::from)
+                .and_then(|json| {
+                    Response::build()
+                        .status(error.status)
+                        .header(CONTENT_TYPE, "application/json; charset=utf8")
+                        .body(json.into())
+                }) {
                 Ok(response) => break response,
                 Err(error) => {
                     respond_with_json = false;

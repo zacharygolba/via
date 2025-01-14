@@ -1,7 +1,6 @@
 use via::http::StatusCode;
 use via::Response;
 
-use super::util::Payload;
 use crate::database::models::post::*;
 use crate::{Next, Request};
 
@@ -11,49 +10,43 @@ pub async fn authenticate(request: Request, next: Next) -> via::Result<Response>
 }
 
 pub async fn index(request: Request, _: Next) -> via::Result<Response> {
-    let state = request.state();
+    let posts = Post::public(&request.state().pool).await?;
 
-    Response::build().json(&Payload {
-        data: Post::public(&state.pool).await?,
-    })
+    Response::build().json(&posts)
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result<Response> {
     let state = request.state().clone();
     let payload = request.into_body().read_to_end().await?;
-    let new_post = payload.parse_json::<NewPost>()?;
+    let new_post = payload.parse_json::<NewPost>()?.insert(&state.pool).await?;
 
     Response::build()
         .status(StatusCode::CREATED)
-        .json(&Payload {
-            data: new_post.insert(&state.pool).await?,
-        })
+        .json(&new_post)
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result<Response> {
     let id = request.param("id").parse()?;
-    let state = request.state();
+    let post = Post::find(&request.state().pool, id).await?;
 
-    Response::build().json(&Payload {
-        data: Post::find(&state.pool, id).await?,
-    })
+    Response::build().json(&post)
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result<Response> {
     let id = request.param("id").parse()?;
     let state = request.state().clone();
     let payload = request.into_body().read_to_end().await?;
-    let change_set = payload.parse_json::<ChangeSet>()?;
+    let updated_post = payload
+        .parse_json::<ChangeSet>()?
+        .apply(&state.pool, id)
+        .await?;
 
-    Response::build().json(&Payload {
-        data: change_set.apply(&state.pool, id).await?,
-    })
+    Response::build().json(&updated_post)
 }
 
 pub async fn destroy(request: Request, _: Next) -> via::Result<Response> {
     let id = request.param("id").parse()?;
-    let state = request.state();
 
-    Post::delete(&state.pool, id).await?;
+    Post::delete(&request.state().pool, id).await?;
     Response::build().status(StatusCode::NO_CONTENT).finish()
 }

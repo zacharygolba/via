@@ -4,7 +4,8 @@ use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::response::Builder;
 use http::{HeaderName, HeaderValue, StatusCode, Version};
 use http_body::Frame;
-use serde::Serialize;
+use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
 
 use super::Response;
 use crate::body::{BoxBody, BufferBody, HttpBody, StreamBody};
@@ -33,6 +34,40 @@ pub trait Pipe {
 #[derive(Debug, Default)]
 pub struct ResponseBuilder {
     builder: Builder,
+}
+
+struct JsonPayload<'a, T> {
+    data: &'a T,
+}
+
+impl Pipe for RequestBody {
+    /// Apply `self` to the provided response builder to generate a response.
+    ///
+    /// The response body will be streamed back to the client with chunked
+    /// transfer encoding.
+    ///
+    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
+        response
+            .header(TRANSFER_ENCODING, "chunked")
+            .body(HttpBody::Box(BoxBody::new(self)))
+    }
+}
+
+impl<T> Pipe for T
+where
+    T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static,
+{
+    /// Create a [`StreamBody`] from self and apply it to the provided response
+    /// builder to generate a response.
+    ///
+    /// The response body will be streamed back to the client with chunked
+    /// transfer encoding.
+    ///
+    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
+        response
+            .header(TRANSFER_ENCODING, "chunked")
+            .body(HttpBody::Box(BoxBody::new(StreamBody::new(self))))
+    }
 }
 
 impl ResponseBuilder {
@@ -95,6 +130,20 @@ impl ResponseBuilder {
         self.body(HttpBody::new())
     }
 
+    pub fn json<T: Serialize>(self, data: &T) -> Result<Response, Error> {
+        let body = {
+            let mut writer = BytesMut::new().writer();
+            serde_json::to_writer(&mut writer, &JsonPayload { data })?;
+
+            let buf = writer.into_inner().freeze();
+            BufferBody::from_raw(buf)
+        };
+
+        self.header(CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(CONTENT_LENGTH, body.len())
+            .body(HttpBody::Inline(body))
+    }
+
     pub fn html(self, html: String) -> Result<Response, Error> {
         let body = BufferBody::from(html);
 
@@ -110,51 +159,13 @@ impl ResponseBuilder {
             .header(CONTENT_LENGTH, body.len())
             .body(HttpBody::Inline(body))
     }
-
-    pub fn json<T>(self, body: &T) -> Result<Response, Error>
-    where
-        T: Serialize,
-    {
-        let body = {
-            let mut writer = BytesMut::new().writer();
-            serde_json::to_writer(&mut writer, body)?;
-
-            let buf = writer.into_inner().freeze();
-            BufferBody::from_raw(buf)
-        };
-
-        self.header(CONTENT_TYPE, "application/json; charset=utf-8")
-            .header(CONTENT_LENGTH, body.len())
-            .body(HttpBody::Inline(body))
-    }
 }
 
-impl Pipe for RequestBody {
-    /// Apply `self` to the provided response builder to generate a response.
-    ///
-    /// The response body will be streamed back to the client with chunked
-    /// transfer encoding.
-    ///
-    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
-        response
-            .header(TRANSFER_ENCODING, "chunked")
-            .body(HttpBody::Box(BoxBody::new(self)))
-    }
-}
+impl<T: Serialize> Serialize for JsonPayload<'_, T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("JsonPayload", 1)?;
 
-impl<T> Pipe for T
-where
-    T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static,
-{
-    /// Create a [`StreamBody`] from self and apply it to the provided response
-    /// builder to generate a response.
-    ///
-    /// The response body will be streamed back to the client with chunked
-    /// transfer encoding.
-    ///
-    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
-        response
-            .header(TRANSFER_ENCODING, "chunked")
-            .body(HttpBody::Box(BoxBody::new(StreamBody::new(self))))
+        state.serialize_field("data", self.data)?;
+        state.end()
     }
 }
