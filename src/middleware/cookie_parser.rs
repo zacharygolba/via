@@ -102,9 +102,11 @@ where
             }
         }
 
+        let future = next.call(request);
+
         Box::pin(async {
             // Call the next middleware to get a response.
-            let mut response = next.call(request).await?;
+            let mut response = future.await?;
 
             if let Some(cookies) = existing {
                 let jar = response.cookies_mut();

@@ -66,12 +66,14 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
-        Box::pin(async {
-            // Yield control to the next middleware in the stack.
-            let result = next.call(request).await;
+        // Call the next middleware to get a future that will resolve to a
+        // response.
+        let future = next.call(request);
 
-            // Convert the error into a response and return.
-            Ok(result.unwrap_or_else(Response::from))
+        Box::pin(async {
+            // Await the future. If it resolves to a `Result::Err`, generate a
+            // response from the contained error.
+            Ok(future.await.unwrap_or_else(Response::from))
         })
     }
 }
@@ -84,20 +86,20 @@ where
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
         // Copy the `inspect` function so it can be moved in the async block.
         let inspect = self.inspect;
+
         // Clone `request.state` so it can be used after ownership of `request`
         // is transfered to `next.call()`.
         let state = request.state().clone();
 
-        Box::pin(async move {
-            // Yield control to the next middleware in the stack.
-            let result = next.call(request).await;
+        // Call the next middleware to get a future that will resolve to a
+        // response.
+        let future = next.call(request);
 
-            result.inspect_err(|error| {
-                // Pass a reference to `error` and `state` to the `inspect`
-                // function. This allows the error to be logged or reported
-                // based on the needs of the application.
-                inspect(error, &state);
-            })
+        Box::pin(async move {
+            // Await the future. If it resolves to a `Result::Err` call the
+            // provided inspect fn with a reference to the contained error and
+            // the global application state.
+            future.await.inspect_err(|error| inspect(error, &state))
         })
     }
 }
@@ -110,21 +112,21 @@ where
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
         // Copy the `map` function so it can be moved in the async block.
         let map = self.map;
+
         // Clone `request.state` so it can be used after ownership of `request`
         // is transfered to `next.call()`.
         let state = request.state().clone();
 
-        Box::pin(async move {
-            // Yield control to the next middleware in the stack.
-            let result = next.call(request).await;
+        // Call the next middleware to get a future that will resolve to a
+        // response.
+        let future = next.call(request);
 
-            result.or_else(|error| {
-                // Apply the `map` function to `error`. This allows the error
-                // to be configured to use a different response format, filter
-                // out sensitive information from leaking into the response
-                // body, etc.
-                Ok(map(error, &state).into())
-            })
+        Box::pin(async move {
+            // Await the future. If it resolves to a `Result::Err`, call the
+            // provided map function with the error and a reference to the global
+            // application state. Then generate a response from the returned
+            // error.
+            future.await.or_else(|error| Ok(map(error, &state).into()))
         })
     }
 }
@@ -137,20 +139,20 @@ where
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
         // Copy the `or_else` function so it can be moved in the async block.
         let or_else = self.or_else;
+
         // Clone `request.state` so it can be used after ownership of `request`
         // is transfered to `next.call()`.
         let state = request.state().clone();
 
-        Box::pin(async move {
-            // Yield control to the next middleware in the stack.
-            let result = next.call(request).await;
+        // Call the next middleware to get a future that will resolve to a
+        // response.
+        let future = next.call(request);
 
-            result.or_else(|error| {
-                // Apply the `or_else` function to the output of `next.call()`.
-                // This allows the error to be handled in a way that may
-                // produce a different response or error.
-                or_else(error, &state)
-            })
+        Box::pin(async move {
+            // Await the future. If it resolves to a `Result::Err`, call the p
+            // provided or_else function with the error and a reference to the
+            // global application state.
+            future.await.or_else(|error| or_else(error, &state))
         })
     }
 }
