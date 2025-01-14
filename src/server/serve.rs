@@ -1,7 +1,6 @@
 use hyper::server::conn;
 use hyper::service::service_fn;
-use hyper_util::rt::{TokioIo, TokioTimer};
-use std::convert::Infallible;
+use hyper_util::rt::TokioTimer;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,11 +13,12 @@ use tokio::time;
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
+use super::io_stream::IoStream;
 use super::shutdown::wait_for_shutdown;
 use crate::error::BoxError;
-use crate::request::RequestBody;
+use crate::request::{Request, RequestBody};
+use crate::response::Response;
 use crate::router::Router;
-use crate::{Request, Response};
 
 pub async fn serve<State, A>(
     listener: TcpListener,
@@ -88,9 +88,10 @@ where
                     let mut acceptor = acceptor;
 
                     // Accept the stream from the acceptor. This is where the
-                    // TLS handshake would occur if the acceptor is a TlsAcceptor.
+                    // TLS handshake would occur if the acceptor is a
+                    // TlsAcceptor.
                     let io = match acceptor.accept(stream).await {
-                        Ok(accepted) => TokioIo::new(accepted),
+                        Ok(accepted) => IoStream::new(accepted),
                         Err(_) => {
                             // Placeholder for tracing...
                             return;
@@ -100,40 +101,51 @@ where
                     let service = service_fn(|r| {
                         // Wrap the incoming request in with `via::Request`.
                         let mut request = {
-                            // Destructure the incoming request into its component parts.
+                            // Destructure the incoming request into its
+                            // component parts.
                             let (parts, incoming) = r.into_parts();
 
-                            // Allocate the metadata associated with the request on the heap.
-                            // This keeps the size of the request type small enough to pass
-                            // around by value.
+                            // Allocate the metadata associated with the request
+                            // on the heap. This keeps the size of the request
+                            // type small enough to pass around by value.
                             let parts = Box::new(parts);
 
                             // Convert the incoming body type to a RequestBody.
-                            let body = RequestBody::new(max_request_size, incoming);
+                            let body = RequestBody::new(
+                                max_request_size,
+                                incoming,
+                            );
 
-                            // Clone the shared application state so request can own a reference
-                            // to it. This is a cheaper operation than going from Weak to Arc for
-                            // any application that interacts with a connection pool or an
+                            // Clone the shared application state so request can
+                            // own a reference to it. This is a cheaper operation
+                            // than going from Weak to Arc for any application
+                            // that interacts with a connection pool or an
                             // external service.
                             let state = Arc::clone(&state);
 
                             Request::new(parts, body, state)
                         };
 
-                        let future = match router.lookup(request.parts.uri.path(), &mut request.params) {
+                        let future = match router.lookup(
+                            request.parts.uri.path(),
+                            &mut request.params
+                        ) {
                             // Call the middleware stack for the resolved routes.
                             Ok(next) => next.call(request),
 
-                            // Alert the main thread that we encountered an unrecoverable error.
+                            // Alert the main thread that we encountered an
+                            // unrecoverable error.
                             Err(error) => {
-                                let _ = shutdown_tx.send(Some(true)).ok();
+                                let _ = shutdown_tx.send(Some(true));
                                 let _ = error; // Placeholder for tracing...
-                                Box::pin(async { Response::internal_server_error() })
+                                Box::pin(async {
+                                    Response::internal_server_error()
+                                })
                             }
                         };
 
                         async {
-                            Ok::<_, Infallible>(match future.await {
+                            Ok::<_, hyper::Error>(match future.await {
                                 // The response was generated successfully.
                                 Ok(response) => response.into_inner(),
                                 // An occurred while generating the response.
@@ -144,9 +156,10 @@ where
 
                     // Create a new HTTP/2 connection.
                     #[cfg(feature = "http2")]
-                    let mut connection = conn::http2::Builder::new(TokioExecutor::new())
-                        .timer(TokioTimer::new())
-                        .serve_connection(io, service);
+                    let mut connection =
+                        conn::http2::Builder::new(TokioExecutor::new())
+                            .timer(TokioTimer::new())
+                            .serve_connection(io, service);
 
                     // Create a new HTTP/1.1 connection.
                     #[cfg(all(feature = "http1", not(feature = "http2")))]
@@ -249,7 +262,10 @@ where
         // before the graceful shutdown timeout, return an error. For unix-based
         // systems, this translates to a 1 exit code.
         _ = time::sleep(shutdown_timeout) => {
-            Err("server exited before all connections were closed.".to_owned().into())
+            let message = "server exited before all connections were closed".to_owned();
+            let error = BoxError::from(message);
+
+            Err(error)
         }
     }
 }

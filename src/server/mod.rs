@@ -2,6 +2,7 @@
 //!
 
 mod acceptor;
+mod io_stream;
 mod serve;
 mod server;
 mod shutdown;
