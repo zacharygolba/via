@@ -1,9 +1,9 @@
 use http::header::CONTENT_TYPE;
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{BoxError, Next, Pipe, Request, Response, Server};
+use via::{BoxError, Error, Next, Pipe, Request, Response, Server};
 
-async fn echo(request: Request, _: Next) -> via::Result<Response> {
+async fn echo(request: Request, _: Next) -> Result<Response, Error> {
     // Get an optional copy of the Content-Type header from the request.
     let content_type = request.header(CONTENT_TYPE).cloned();
 

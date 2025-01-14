@@ -14,19 +14,27 @@ pub trait ParseCookies {
     fn parse_cookies(input: String) -> Self::Iter;
 }
 
+pub fn parse_encoded<T>() -> impl Middleware<T> {
+    CookieParser::new()
+}
+
+pub fn parse_unencoded<T>() -> impl Middleware<T> {
+    CookieParser::unencoded()
+}
+
 /// Decodes percent-encoded cookie strings with the `percent-encoded` crate
 /// before they are parsed.
 ///
-pub struct ParseEncoded;
+struct ParseEncoded;
 
 /// Parses cookie strings without decoding them.
 ///
-pub struct ParseUnencoded;
+struct ParseUnencoded;
 
 /// Middleware that parses request cookies and set's the response `Cookie`
 /// header.
 ///
-pub struct CookieParser<T = ParseEncoded> {
+struct CookieParser<T = ParseEncoded> {
     _parse: PhantomData<T>,
 }
 
@@ -54,7 +62,6 @@ impl CookieParser<ParseUnencoded> {
 
 impl<State, T> Middleware<State> for CookieParser<T>
 where
-    State: Send + Sync + 'static,
     T: ParseCookies + Send + Sync,
 {
     fn call(

@@ -27,8 +27,8 @@ pub use http;
 
 pub use app::{new, App};
 pub use error::{BoxError, Error};
-pub use middleware::allow_method::{connect, delete, get, head, options, patch, post, put};
-pub use middleware::{Middleware, Next, Result};
+pub use middleware::filter_method::{connect, delete, get, head, options, patch, post, put, trace};
+pub use middleware::{Middleware, Next};
 pub use request::Request;
 pub use response::{Pipe, Response};
 pub use router::Endpoint;

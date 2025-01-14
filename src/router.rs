@@ -9,37 +9,34 @@ use crate::Next;
 /// An enum that wraps middleware before it's added to the router, specifying
 /// whether the middleware should apply to partial or exact matches of a
 /// request's url path.
-pub enum MatchWhen<State> {
+pub enum MatchWhen<T> {
     /// Apply the middleware to exact matches of a request's url path. This
     /// variant is used when middleware is added to an `Endpoint` with the
     /// `respond` method.
-    Exact(Arc<dyn Middleware<State>>),
+    Exact(Arc<dyn Middleware<T>>),
 
     /// Apply the middleware to partial matches of a request's url path. This
     /// variant is used when middleware is added to an `Endpoint` with the
     /// `include` method.
-    Partial(Arc<dyn Middleware<State>>),
+    Partial(Arc<dyn Middleware<T>>),
 }
 
-pub struct Endpoint<'a, State> {
-    inner: via_router::Endpoint<'a, Vec<MatchWhen<State>>>,
+pub struct Endpoint<'a, T> {
+    inner: via_router::Endpoint<'a, Vec<MatchWhen<T>>>,
 }
 
-pub struct Router<State> {
-    inner: via_router::Router<Vec<MatchWhen<State>>>,
+pub struct Router<T> {
+    inner: via_router::Router<Vec<MatchWhen<T>>>,
 }
 
-impl<State> Endpoint<'_, State> {
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint<State> {
+impl<T> Endpoint<'_, T> {
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint<T> {
         Endpoint {
             inner: self.inner.at(pattern),
         }
     }
 
-    pub fn scope<T>(&mut self, scope: T) -> &mut Self
-    where
-        T: FnOnce(&mut Self),
-    {
+    pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) -> &mut Self {
         scope(self);
         self
     }
@@ -48,48 +45,39 @@ impl<State> Endpoint<'_, State> {
         self.inner.param().map(|name| name.as_str())
     }
 
-    pub fn include<T>(&mut self, middleware: T) -> &mut Self
-    where
-        T: Middleware<State> + 'static,
-    {
+    pub fn include(&mut self, middleware: impl Middleware<T> + 'static) -> &mut Self {
         let middleware = Arc::new(middleware);
 
         self.route_mut().push(MatchWhen::Partial(middleware));
         self
     }
 
-    pub fn respond<T>(&mut self, responder: T) -> &mut Self
-    where
-        T: Middleware<State> + 'static,
-    {
+    pub fn respond(&mut self, responder: impl Middleware<T> + 'static) -> &mut Self {
         let responder = Arc::new(responder);
 
         self.route_mut().push(MatchWhen::Exact(responder));
         self
     }
 
-    fn route_mut(&mut self) -> &mut Vec<MatchWhen<State>> {
+    fn route_mut(&mut self) -> &mut Vec<MatchWhen<T>> {
         self.inner.get_or_insert_route_with(Vec::new)
     }
 }
 
-impl<State> Router<State>
-where
-    State: Send + Sync + 'static,
-{
+impl<T> Router<T> {
     pub fn new() -> Self {
         Self {
             inner: via_router::Router::new(),
         }
     }
 
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint<State> {
+    pub fn at(&mut self, pattern: &'static str) -> Endpoint<T> {
         Endpoint {
             inner: self.inner.at(pattern),
         }
     }
 
-    pub fn lookup(&self, path: &str, params: &mut PathParams) -> Result<Next<State>, VisitError> {
+    pub fn lookup(&self, path: &str, params: &mut PathParams) -> Result<Next<T>, VisitError> {
         let mut stack = Vec::new();
 
         // Iterate over the routes that match the request's path.

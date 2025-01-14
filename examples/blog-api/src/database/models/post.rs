@@ -1,11 +1,9 @@
 use diesel::dsl::IsNotNull;
 use serde::{Deserialize, Serialize};
-use via::Result;
+use via::Error;
 
-use crate::database::{
-    models::user::{users, User},
-    prelude::*,
-};
+use crate::database::models::user::{users, User};
+use crate::database::prelude::*;
 
 pub use schema::posts;
 
@@ -53,7 +51,7 @@ fn published() -> IsNotNull<posts::published_at> {
 }
 
 impl ChangeSet {
-    pub async fn apply(self, pool: &Pool, id: i32) -> Result<Post> {
+    pub async fn apply(self, pool: &Pool, id: i32) -> Result<Post, Error> {
         let post = diesel::update(posts::table.filter(posts::id.eq(id)))
             .set(self)
             .returning(posts::all_columns)
@@ -65,7 +63,7 @@ impl ChangeSet {
 }
 
 impl NewPost {
-    pub async fn insert(self, pool: &Pool) -> Result<PostWithAuthor> {
+    pub async fn insert(self, pool: &Pool) -> Result<PostWithAuthor, Error> {
         let author = User::find(pool, self.user_id).await?;
         let post = diesel::insert_into(posts::table)
             .values(self)
@@ -77,7 +75,7 @@ impl NewPost {
 }
 
 impl Post {
-    pub async fn delete(pool: &Pool, id: i32) -> Result<()> {
+    pub async fn delete(pool: &Pool, id: i32) -> Result<(), Error> {
         diesel::delete(posts::table.filter(posts::id.eq(id)))
             .execute(&mut pool.get().await?)
             .await?;
@@ -85,7 +83,7 @@ impl Post {
         Ok(())
     }
 
-    pub async fn by_user(pool: &Pool, id: i32) -> Result<Vec<PostWithAuthor>> {
+    pub async fn by_user(pool: &Pool, id: i32) -> Result<Vec<PostWithAuthor>, Error> {
         Ok(posts::table
             .inner_join(users::table)
             .filter(posts::user_id.eq(id))
@@ -97,7 +95,7 @@ impl Post {
             .collect())
     }
 
-    pub async fn find(pool: &Pool, id: i32) -> Result<PostWithAuthor> {
+    pub async fn find(pool: &Pool, id: i32) -> Result<PostWithAuthor, Error> {
         let (post, author) = posts::table
             .inner_join(users::table)
             .filter(posts::id.eq(id))
@@ -108,7 +106,7 @@ impl Post {
         Ok(PostWithAuthor { post, author })
     }
 
-    pub async fn public(pool: &Pool) -> Result<Vec<PostWithAuthor>> {
+    pub async fn public(pool: &Pool) -> Result<Vec<PostWithAuthor>, Error> {
         Ok(posts::table
             .inner_join(users::table)
             .filter(posts::published_at.is_not_null())

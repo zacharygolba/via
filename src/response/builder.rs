@@ -19,7 +19,7 @@ use crate::request::RequestBody;
 /// use http::header::CONTENT_TYPE;
 /// use via::{Error, Next, Request, Response, Pipe};
 ///
-/// async fn echo(request: Request, _: Next) -> via::Result<Response> {
+/// async fn echo(request: Request, _: Next) -> Result<Response, Error> {
 ///     let content_type = request.header(CONTENT_TYPE).cloned();
 ///     let response = Response::build().headers([(CONTENT_TYPE, content_type)]);
 ///
