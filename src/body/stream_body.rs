@@ -7,7 +7,7 @@ use std::task::{Context, Poll};
 
 use crate::error::BoxError;
 
-/// Converts an `impl Stream` into an `impl Body`.
+/// Converts an `impl Stream` to an `impl Body`.
 ///
 #[must_use = "streams do nothing unless polled"]
 pub struct StreamBody<T> {
