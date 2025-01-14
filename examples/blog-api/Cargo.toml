@@ -11,6 +11,7 @@ chrono = { features = ["serde"], version = "0.4.38" }
 diesel = { features = ["chrono"], version = "2.1.6" }
 diesel-async = { version = "0.4.1", features = ["bb8", "postgres"] }
 dotenvy = "0.15.7"
+http = "1"
 serde = { features = ["derive"], version = "1.0.202" }
 serde_json = "1.0.117"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

@@ -1,7 +1,7 @@
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE, ETAG, LAST_MODIFIED};
 use httpdate::HttpDate;
 use std::path::PathBuf;
 use via::body::{BufferBody, HttpBody};
-use via::http::header::{CONTENT_LENGTH, CONTENT_TYPE, ETAG, LAST_MODIFIED};
 use via::{Error, Next, Pipe, Request, Response};
 
 use crate::{static_file::StaticFile, stream_file::StreamFile, Flags, ServerConfig};
