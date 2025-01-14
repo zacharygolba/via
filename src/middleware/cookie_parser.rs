@@ -2,17 +2,9 @@ use cookie::{Cookie, SplitCookies};
 use http::header::COOKIE;
 use std::marker::PhantomData;
 
-use crate::middleware::{BoxFuture, Middleware, Next};
+use super::middleware::{BoxFuture, Middleware};
+use super::next::Next;
 use crate::{Error, Request, Response};
-
-/// Defines how to parse cookies from a cookie string.
-///
-pub trait ParseCookies {
-    type Iter: Iterator<Item = Result<Cookie<'static>, Self::Error>> + Send + 'static;
-    type Error: Into<Error> + Send;
-
-    fn parse_cookies(input: String) -> Self::Iter;
-}
 
 pub fn parse_encoded<T>() -> impl Middleware<T> {
     CookieParser::new()
@@ -20,6 +12,15 @@ pub fn parse_encoded<T>() -> impl Middleware<T> {
 
 pub fn parse_unencoded<T>() -> impl Middleware<T> {
     CookieParser::unencoded()
+}
+
+/// Defines how to parse cookies from a cookie string.
+///
+trait ParseCookies {
+    type Iter: Iterator<Item = Result<Cookie<'static>, Self::Error>> + Send + 'static;
+    type Error: Into<Error> + Send;
+
+    fn parse_cookies(input: String) -> Self::Iter;
 }
 
 /// Decodes percent-encoded cookie strings with the `percent-encoded` crate

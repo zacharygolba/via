@@ -7,8 +7,6 @@ mod middleware;
 mod next;
 mod timeout;
 
-pub use middleware::{BoxFuture, Middleware};
+pub use middleware::Middleware;
 pub use next::Next;
 pub use timeout::timeout;
-
-pub(crate) use middleware::ArcMiddleware;
