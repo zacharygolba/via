@@ -15,7 +15,7 @@ Add the following to dependencies section of your `Cargo.toml`:
 
 ```toml
 [dependencies]
-via = "2.0.0-beta.7"
+via = "2.0.0-beta.11"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -24,7 +24,8 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 Below is a basic example to demonstrate how to use Via to create a simple web server that responds to requests at `/hello/:name` with a personalized greeting.
 
 ```rust
-use via::{BoxError, Next, Request, Server};
+use std::process::ExitCode;
+use via::{BoxError, ErrorBoundary, Next, Request, Server};
 
 async fn hello(request: Request, _: Next) -> via::Result<String> {
     // Get a reference to the path parameter `name` from the request uri.
@@ -35,9 +36,14 @@ async fn hello(request: Request, _: Next) -> via::Result<String> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), BoxError> {
+async fn main() -> Result<ExitCode, BoxError> {
     // Create a new application.
     let mut app = via::new(());
+
+    // Include an error boundary to catch any errors that occur downstream.
+    app.include(ErrorBoundary::catch(|error, _| {
+        eprintln!("Error: {}", error);
+    }));
 
     // Define a route that listens on /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
@@ -53,9 +59,11 @@ async fn main() -> Result<(), BoxError> {
 
 2. **Create the Application**: Using `via::new(())`, you can create a new instance of the application. This function can also accept shared state.
 
-3. **Define Routes**: The `app.at("/hello/:name").respond(via::get(hello))` line adds a route that listens for GET requests on `/hello/:name`. The colon (`:`) indicates a dynamic segment in the path, which will match any value and make it available as a parameter.
+3. **Define an ErrorBoundary**: Define an `ErrorBoundary` middleware to catch errors that occur downstream and convert them to a response. Middleware can be added at any depth of the route tree with the `.include(middleware)` method.
 
-4. **Start the Server**: The `Server::new(app).listen(("127.0.0.1", 8080)).await` function starts the server and listens for connections on the specified address.
+4. **Define Routes**: The `app.at("/hello/:name").respond(via::get(hello))` line adds a route that listens for GET requests on `/hello/:name`. The colon (`:`) indicates a dynamic segment in the path, which will match any value and make it available as a parameter.
+
+5. **Start the Server**: The `Server::new(app).listen(("127.0.0.1", 8080)).await` function starts the server and listens for connections on the specified address.
 
 ### Running the Example
 
