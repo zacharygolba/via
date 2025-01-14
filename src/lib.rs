@@ -29,5 +29,5 @@ pub use middleware::filter_method::{connect, delete, get, head, options, patch, 
 pub use middleware::Next;
 pub use request::Request;
 pub use response::{Pipe, Response};
-pub use router::Endpoint;
+pub use router::Route;
 pub use server::Server;

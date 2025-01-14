@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::middleware::Middleware;
-use crate::router::{Endpoint, Router};
+use crate::router::{Route, Router};
 
 pub struct App<T> {
     pub(crate) state: Arc<T>,
@@ -18,7 +18,7 @@ pub fn new<T>(state: T) -> App<T> {
 }
 
 impl<T> App<T> {
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint<T> {
+    pub fn at(&mut self, pattern: &'static str) -> Route<T> {
         self.router.at(pattern)
     }
 

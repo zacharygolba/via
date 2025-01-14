@@ -21,7 +21,7 @@ pub enum MatchWhen<T> {
     Partial(Arc<dyn Middleware<T>>),
 }
 
-pub struct Endpoint<'a, T> {
+pub struct Route<'a, T> {
     inner: via_router::Endpoint<'a, Vec<MatchWhen<T>>>,
 }
 
@@ -29,9 +29,9 @@ pub struct Router<T> {
     inner: via_router::Router<Vec<MatchWhen<T>>>,
 }
 
-impl<T> Endpoint<'_, T> {
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint<T> {
-        Endpoint {
+impl<T> Route<'_, T> {
+    pub fn at(&mut self, pattern: &'static str) -> Route<T> {
+        Route {
             inner: self.inner.at(pattern),
         }
     }
@@ -71,8 +71,8 @@ impl<T> Router<T> {
         }
     }
 
-    pub fn at(&mut self, pattern: &'static str) -> Endpoint<T> {
-        Endpoint {
+    pub fn at(&mut self, pattern: &'static str) -> Route<T> {
+        Route {
             inner: self.inner.at(pattern),
         }
     }
