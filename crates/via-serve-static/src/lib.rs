@@ -6,14 +6,14 @@ mod stream_file;
 use bitflags::bitflags;
 use std::path::Path;
 use std::sync::Arc;
-use via::{BoxError, Endpoint};
+use via::{BoxError, Route};
 
 use crate::respond::{respond_to_get_request, respond_to_head_request};
 
 pub struct ServeStatic<'a, State> {
     eager_read_threshold: u64,
     read_stream_timeout: u64,
-    endpoint: Endpoint<'a, State>,
+    endpoint: Route<'a, State>,
     flags: Flags,
 }
 
@@ -37,7 +37,7 @@ bitflags! {
 
 /// Returns a builder struct used to configure the static server middleware.
 /// The provided `endpoint` must have a path parameter.
-pub fn serve_static<State>(endpoint: Endpoint<State>) -> ServeStatic<State> {
+pub fn serve_static<State>(endpoint: Route<State>) -> ServeStatic<State> {
     ServeStatic {
         eager_read_threshold: 1048576, // 1MB
         read_stream_timeout: 60,       // 60 seconds
