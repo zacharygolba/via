@@ -100,6 +100,10 @@ impl ReadToEnd {
         self.payload.iter().map(Bytes::len).sum()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn trailers(&self) -> Option<&HeaderMap> {
         self.trailers.as_ref()
     }
