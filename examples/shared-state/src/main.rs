@@ -1,8 +1,8 @@
+use http::StatusCode;
 use std::fmt::Write;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use via::http::StatusCode;
 use via::middleware::error_boundary;
 use via::{BoxError, Error, Response, Server};
 

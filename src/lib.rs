@@ -23,8 +23,6 @@ mod error;
 mod router;
 mod server;
 
-pub use http;
-
 pub use app::{new, App};
 pub use error::{BoxError, Error};
 pub use middleware::filter_method::{connect, delete, get, head, options, patch, post, put, trace};

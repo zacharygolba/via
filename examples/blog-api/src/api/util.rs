@@ -1,5 +1,5 @@
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
-use via::http::StatusCode;
+use http::StatusCode;
 use via::Error;
 
 /// Used with the MapErrorBoundary to map errors that occur on /api routes. This
