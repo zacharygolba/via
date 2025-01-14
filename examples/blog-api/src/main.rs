@@ -4,7 +4,7 @@ mod database;
 use std::process::ExitCode;
 use std::time::Duration;
 use via::middleware::{error_boundary, timeout};
-use via::{BoxError, Response, Server};
+use via::{BoxError, Error, Response, Server};
 
 use database::Pool;
 
@@ -15,7 +15,7 @@ struct State {
     pool: Pool,
 }
 
-async fn log_request(request: Request, next: Next) -> via::Result<Response> {
+async fn log_request(request: Request, next: Next) -> Result<Response, Error> {
     let method = request.method().clone();
     let path = request.uri().path().to_string();
 

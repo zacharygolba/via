@@ -139,9 +139,9 @@ impl<State> Request<State> {
     /// # Example
     ///
     /// ```
-    /// use via::{Next, Request, Result};
+    /// use via::{Error, Next, Request};
     ///
-    /// async fn hello(request: Request, _: Next) -> Result<String> {
+    /// async fn hello(request: Request, _: Next) -> Result<String, Error> {
     ///     // Attempt to parse the first query parameter named `n` to a `usize`
     ///     // no greater than 1000. If the query parameter doesn't exist or
     ///     // can't be converted to a `usize`, default to 1.

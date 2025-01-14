@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use via::http::StatusCode;
 use via::middleware::error_boundary;
-use via::{BoxError, Response, Server};
+use via::{BoxError, Error, Response, Server};
 
 // Define a type alias for the `via::Request` to include the `Counter` state.
 // This is a convenience to avoid having to write out the full type signature.
@@ -32,7 +32,7 @@ fn status_is_error(status: StatusCode) -> bool {
 
 /// A middleware function that will either increment the `successes` or
 /// `errors` field of the `Counter` state based on the response status.
-async fn counter(request: Request, next: Next) -> via::Result<Response> {
+async fn counter(request: Request, next: Next) -> Result<Response, Error> {
     // Clone the `Counter` state by incrementing the reference count of the
     // outer `Arc`. This will allow us to modify the `state` after we pass
     // ownership of `request` to the `next` middleware.
@@ -54,7 +54,7 @@ async fn counter(request: Request, next: Next) -> via::Result<Response> {
 
 /// A responder that will return the total number of `successes` and `errors`
 /// in the `Counter` state.
-async fn totals(request: Request, _: Next) -> via::Result<String> {
+async fn totals(request: Request, _: Next) -> Result<String, Error> {
     // Get a reference to the `Counter` state from the request. We don't need
     // to clone the state since we are consuming the request rather than
     // passing it as an argument to `next.call`.

@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::str::FromStr;
 
 use super::{DecodeParam, NoopDecode, PercentDecode};
-use crate::{Error, Result};
+use crate::error::Error;
 
 pub struct Param<'a, 'b, T = NoopDecode> {
     at: Option<Option<(usize, usize)>>,
@@ -44,7 +44,7 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     /// Calls [`str::parse`] on the parameter value if it exists and returns the
     /// result. If the param is encoded, it will be decoded before it is parsed.
     ///
-    pub fn parse<U>(self) -> Result<U>
+    pub fn parse<U>(self) -> Result<U, Error>
     where
         U: FromStr,
         U::Err: std::error::Error + Send + Sync + 'static,
@@ -67,7 +67,7 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     /// implementation of `T::decode`, an error is returned with a 400 Bad
     /// Request status code.
     ///
-    pub fn into_result(self) -> Result<Cow<'a, str>> {
+    pub fn into_result(self) -> Result<Cow<'a, str>, Error> {
         match self.at.and_then(|at| {
             let (start, end) = at?;
             self.source.get(start..end)

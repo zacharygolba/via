@@ -1,10 +1,8 @@
 use httpdate::HttpDate;
 use std::path::PathBuf;
+use via::body::{BufferBody, HttpBody};
 use via::http::header::{CONTENT_LENGTH, CONTENT_TYPE, ETAG, LAST_MODIFIED};
-use via::{
-    body::{BufferBody, HttpBody},
-    Next, Pipe, Request, Response, Result,
-};
+use via::{Error, Next, Pipe, Request, Response};
 
 use crate::{static_file::StaticFile, stream_file::StreamFile, Flags, ServerConfig};
 
@@ -52,7 +50,7 @@ pub async fn respond_to_head_request<State>(
     config: ServerConfig,
     request: Request<State>,
     next: Next<State>,
-) -> Result<Response>
+) -> Result<Response, Error>
 where
     State: Send + Sync + 'static,
 {
@@ -77,14 +75,11 @@ where
     Response::build().headers(headers).finish()
 }
 
-pub async fn respond_to_get_request<State>(
+pub async fn respond_to_get_request<T>(
     config: ServerConfig,
-    request: Request<State>,
-    next: Next<State>,
-) -> Result<Response>
-where
-    State: Send + Sync + 'static,
-{
+    request: Request<T>,
+    next: Next<T>,
+) -> Result<Response, Error> {
     let mut file = try_unwrap_file!(config, request, next, {
         let path = build_path_from_request(&request, &config)?;
         let flags = config.flags;
@@ -122,10 +117,10 @@ where
     stream.pipe(Response::build().headers(headers))
 }
 
-fn build_path_from_request<State>(
-    request: &Request<State>,
+fn build_path_from_request<T>(
+    request: &Request<T>,
     config: &ServerConfig,
-) -> Result<PathBuf> {
+) -> Result<PathBuf, Error> {
     let path_param = request.param(&config.path_param).into_result()?;
     Ok(config.public_dir.join(path_param.trim_end_matches('/')))
 }

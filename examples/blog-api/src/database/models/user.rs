@@ -1,6 +1,7 @@
-use crate::database::prelude::*;
 use serde::{Deserialize, Serialize};
-use via::Result;
+use via::Error;
+
+use crate::database::prelude::*;
 
 pub use schema::users;
 
@@ -28,7 +29,7 @@ pub struct User {
 }
 
 impl ChangeSet {
-    pub async fn apply(self, pool: &Pool, id: i32) -> Result<User> {
+    pub async fn apply(self, pool: &Pool, id: i32) -> Result<User, Error> {
         let post = diesel::update(users::table.filter(users::id.eq(id)))
             .set(self)
             .returning(users::all_columns)
@@ -40,7 +41,7 @@ impl ChangeSet {
 }
 
 impl NewUser {
-    pub async fn insert(self, pool: &Pool) -> Result<User> {
+    pub async fn insert(self, pool: &Pool) -> Result<User, Error> {
         let insert = diesel::insert_into(users::table);
         Ok(insert
             .values(self)
@@ -50,14 +51,14 @@ impl NewUser {
 }
 
 impl User {
-    pub async fn all(pool: &Pool) -> Result<Vec<User>> {
+    pub async fn all(pool: &Pool) -> Result<Vec<User>, Error> {
         Ok(users::table
             .select(users::all_columns)
             .load(&mut pool.get().await?)
             .await?)
     }
 
-    pub async fn delete(pool: &Pool, id: i32) -> Result<()> {
+    pub async fn delete(pool: &Pool, id: i32) -> Result<(), Error> {
         diesel::delete(users::table.filter(users::id.eq(id)))
             .execute(&mut pool.get().await?)
             .await?;
@@ -65,7 +66,7 @@ impl User {
         Ok(())
     }
 
-    pub async fn find(pool: &Pool, id: i32) -> Result<User> {
+    pub async fn find(pool: &Pool, id: i32) -> Result<User, Error> {
         Ok(users::table
             .filter(users::id.eq(id))
             .first(&mut pool.get().await?)

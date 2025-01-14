@@ -1,7 +1,7 @@
 use cookie::{Cookie, Key};
 use std::process::ExitCode;
-use via::middleware::{error_boundary, CookieParser};
-use via::{BoxError, Response, Server};
+use via::middleware::{cookie_parser, error_boundary};
+use via::{BoxError, Error, Response, Server};
 
 type Request = via::Request<CookiesExample>;
 type Next = via::Next<CookiesExample>;
@@ -18,7 +18,7 @@ struct CookiesExample {
 /// Responds with a greeting message with the name provided in the request uri
 /// path.
 ///
-async fn hello(request: Request, _: Next) -> via::Result<String> {
+async fn hello(request: Request, _: Next) -> Result<String, Error> {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").percent_decode().into_result()?;
 
@@ -29,7 +29,7 @@ async fn hello(request: Request, _: Next) -> via::Result<String> {
 /// Increments the value of the "n_visits" counter to the console. Returns a
 /// response with a message confirming the operation was successful.
 ///
-async fn count_visits(request: Request, next: Next) -> via::Result<Response> {
+async fn count_visits(request: Request, next: Next) -> Result<Response, Error> {
     // Clone the state from the request so we can access the secret key after
     // passing ownership of the request to the next middleware.
     //
@@ -110,7 +110,7 @@ async fn main() -> Result<ExitCode, BoxError> {
     // In this example, we add it to the root of the app. This means that every
     // request will pass through the CookieParser middleware.
     //
-    app.include(CookieParser::new());
+    app.include(cookie_parser::parse_encoded());
 
     // Add the count_visits middleware to the app at "/".
     app.include(count_visits);

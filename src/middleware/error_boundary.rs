@@ -1,5 +1,5 @@
 use crate::middleware::{BoxFuture, Middleware, Next};
-use crate::{Error, Request, Response, Result};
+use crate::{Error, Request, Response};
 
 /// A middleware that catches errors that occur downstream and then calls the
 /// provided closure to inspect the error to another error. Think of this as a
@@ -48,7 +48,7 @@ where
 
 pub fn or_else<State, F>(or_else: F) -> OrElseErrorBoundary<F>
 where
-    F: Fn(Error, &State) -> Result<Response> + Copy + Send + Sync + 'static,
+    F: Fn(Error, &State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
     OrElseErrorBoundary { or_else }
@@ -59,7 +59,11 @@ where
     F: Fn(&Error, &State) + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+    fn call(
+        &self,
+        request: Request<State>,
+        next: Next<State>,
+    ) -> BoxFuture<Result<Response, Error>> {
         // Copy the `inspect` function so it can be moved in the async block.
         let inspect = self.inspect;
 
@@ -88,7 +92,11 @@ where
     F: Fn(Error, &State) -> Error + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+    fn call(
+        &self,
+        request: Request<State>,
+        next: Next<State>,
+    ) -> BoxFuture<Result<Response, Error>> {
         // Copy the `map` function so it can be moved in the async block.
         let map = self.map;
 
@@ -112,10 +120,14 @@ where
 
 impl<State, F> Middleware<State> for OrElseErrorBoundary<F>
 where
-    F: Fn(Error, &State) -> Result<Response> + Copy + Send + Sync + 'static,
+    F: Fn(Error, &State) -> Result<Response, Error> + Copy + Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture<Result<Response>> {
+    fn call(
+        &self,
+        request: Request<State>,
+        next: Next<State>,
+    ) -> BoxFuture<Result<Response, Error>> {
         // Copy the `or_else` function so it can be moved in the async block.
         let or_else = self.or_else;
 
