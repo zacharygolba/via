@@ -1,67 +1,12 @@
 use std::sync::Arc;
-
 use via_router::VisitError;
 
-use crate::middleware::Middleware;
+use super::route::{MatchWhen, Route};
+use crate::middleware::Next;
 use crate::request::PathParams;
-use crate::Next;
-
-/// An enum that wraps middleware before it's added to the router, specifying
-/// whether the middleware should apply to partial or exact matches of a
-/// request's url path.
-pub enum MatchWhen<T> {
-    /// Apply the middleware to exact matches of a request's url path. This
-    /// variant is used when middleware is added to an `Endpoint` with the
-    /// `respond` method.
-    Exact(Arc<dyn Middleware<T>>),
-
-    /// Apply the middleware to partial matches of a request's url path. This
-    /// variant is used when middleware is added to an `Endpoint` with the
-    /// `include` method.
-    Partial(Arc<dyn Middleware<T>>),
-}
-
-pub struct Route<'a, T> {
-    inner: via_router::Endpoint<'a, Vec<MatchWhen<T>>>,
-}
 
 pub struct Router<T> {
     inner: via_router::Router<Vec<MatchWhen<T>>>,
-}
-
-impl<T> Route<'_, T> {
-    pub fn at(&mut self, pattern: &'static str) -> Route<T> {
-        Route {
-            inner: self.inner.at(pattern),
-        }
-    }
-
-    pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) -> &mut Self {
-        scope(self);
-        self
-    }
-
-    pub fn param(&self) -> Option<&str> {
-        self.inner.param().map(|name| name.as_str())
-    }
-
-    pub fn include(&mut self, middleware: impl Middleware<T> + 'static) -> &mut Self {
-        let middleware = Arc::new(middleware);
-
-        self.route_mut().push(MatchWhen::Partial(middleware));
-        self
-    }
-
-    pub fn respond(&mut self, responder: impl Middleware<T> + 'static) -> &mut Self {
-        let responder = Arc::new(responder);
-
-        self.route_mut().push(MatchWhen::Exact(responder));
-        self
-    }
-
-    fn route_mut(&mut self) -> &mut Vec<MatchWhen<T>> {
-        self.inner.get_or_insert_route_with(Vec::new)
-    }
 }
 
 impl<T> Router<T> {
@@ -72,9 +17,7 @@ impl<T> Router<T> {
     }
 
     pub fn at(&mut self, pattern: &'static str) -> Route<T> {
-        Route {
-            inner: self.inner.at(pattern),
-        }
+        Route::new(self.inner.at(pattern))
     }
 
     pub fn lookup(&self, path: &str, params: &mut PathParams) -> Result<Next<T>, VisitError> {
