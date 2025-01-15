@@ -8,10 +8,8 @@ pub struct PathParams {
 
 impl PathParams {
     #[inline]
-    pub fn new() -> Self {
-        Self {
-            data: Default::default(),
-        }
+    pub fn new(data: Vec<(String, Span)>) -> Self {
+        Self { data }
     }
 
     #[inline]
