@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use crate::path::{Param, Pattern, Span};
+use crate::path::{Pattern, Span};
 use crate::routes::Node;
 
 macro_rules! expect_entry {
@@ -52,7 +52,7 @@ pub struct Found {
 
     /// The name of the dynamic parameter that matched the path segment.
     ///
-    pub param: Option<Param>,
+    pub param: Option<String>,
 
     /// The range of the path segment that matched the node.
     ///
@@ -109,7 +109,8 @@ impl Display for VisitError {
 impl Error for VisitError {}
 
 impl Found {
-    fn new(route: Option<usize>, param: Option<Param>, at: Option<Span>) -> Self {
+    #[inline]
+    fn new(route: Option<usize>, param: Option<String>, at: Option<Span>) -> Self {
         Self {
             is_leaf: false,
             route,
@@ -118,7 +119,8 @@ impl Found {
         }
     }
 
-    fn leaf(route: Option<usize>, param: Option<Param>, at: Option<Span>) -> Self {
+    #[inline]
+    fn leaf(route: Option<usize>, param: Option<String>, at: Option<Span>) -> Self {
         Self {
             is_leaf: true,
             route,
@@ -169,7 +171,7 @@ fn visit_node(
         match &entry.pattern {
             // The next node has a `Static` pattern that matches the value
             // of the path segment.
-            Pattern::Static(param) if segment == param.as_str() => {
+            Pattern::Static(param) if param == segment => {
                 // Calculate the index of the next path segment.
                 let next_index = index + 1;
                 let at = Some(range.clone());
@@ -201,7 +203,7 @@ fn visit_node(
             Pattern::Dynamic(param) => {
                 // Calculate the index of the next path segment.
                 let next_index = index + 1;
-                let param = Some(param.clone());
+                let param = Some(param.to_owned());
                 let at = Some(range.clone());
 
                 match segments.get(next_index) {
@@ -233,7 +235,7 @@ fn visit_node(
             Pattern::Wildcard(param) => {
                 results.push(Ok(Found::leaf(
                     entry.route,
-                    Some(param.clone()),
+                    Some(param.to_owned()),
                     Some(Span::new(range.start(), path.len())),
                 )));
             }
@@ -268,7 +270,7 @@ fn visit_index(
         // Check if `descendant` has a `CatchAll` pattern.
         if let Pattern::Wildcard(param) = &entry.pattern {
             // Append the match as a leaf to the results vector.
-            results.push(Ok(Found::leaf(entry.route, Some(param.clone()), None)));
+            results.push(Ok(Found::leaf(entry.route, Some(param.to_owned()), None)));
         }
     }
 }

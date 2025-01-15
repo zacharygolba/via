@@ -1,26 +1,26 @@
 use std::fmt::{self, Debug, Formatter};
-use via_router::{Param, Span};
+use std::slice::Iter;
+use via_router::Span;
 
 pub struct PathParams {
-    data: Vec<(Param, Span)>,
+    data: Vec<(String, Span)>,
 }
 
 impl PathParams {
-    pub fn new(data: Vec<(Param, Span)>) -> Self {
-        Self { data }
+    #[inline]
+    pub fn new() -> Self {
+        Self {
+            data: Default::default(),
+        }
     }
 
-    pub fn get(&self, predicate: &str) -> Option<(usize, usize)> {
-        self.data.iter().find_map(|(name, at)| {
-            if predicate == name.as_str() {
-                Some((at.start(), at.end()))
-            } else {
-                None
-            }
-        })
+    #[inline]
+    pub fn iter(&self) -> Iter<(String, Span)> {
+        self.data.iter()
     }
 
-    pub fn push(&mut self, param: (Param, Span)) {
+    #[inline]
+    pub fn push(&mut self, param: (String, Span)) {
         self.data.push(param);
     }
 }

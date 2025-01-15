@@ -4,7 +4,7 @@ mod path;
 mod routes;
 mod visitor;
 
-pub use path::{Param, Span};
+pub use path::Span;
 pub use visitor::{Found, VisitError};
 
 use path::Pattern;
@@ -115,7 +115,7 @@ impl<T> Endpoint<'_, T> {
         }
     }
 
-    pub fn param(&self) -> Option<&Param> {
+    pub fn param(&self) -> Option<&str> {
         self.router.node(self.key).param()
     }
 
@@ -172,8 +172,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::path::Param;
-
     use super::Router;
 
     const PATHS: [&str; 4] = [
@@ -216,7 +214,7 @@ mod tests {
                 let route = found.route.and_then(|key| router.get(key));
 
                 assert_eq!(route, Some(&()));
-                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(found.param, Some("path".into()));
                 assert_eq!(found.at, None);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(found.is_leaf);
@@ -252,7 +250,7 @@ mod tests {
                 };
 
                 assert_eq!(route, Some(&()));
-                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(found.param, Some("path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(found.is_leaf);
@@ -288,7 +286,7 @@ mod tests {
                 };
 
                 assert_eq!(route, Some(&()));
-                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(found.param, Some("path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(found.is_leaf);
@@ -321,7 +319,7 @@ mod tests {
                 };
 
                 assert_eq!(route, Some(&()));
-                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(found.param, Some("path".into()));
                 assert_eq!(segment, "hello/world");
                 assert!(found.is_leaf);
             }
@@ -356,7 +354,7 @@ mod tests {
                 };
 
                 assert_eq!(route, Some(&()));
-                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(found.param, Some("path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(found.is_leaf);
@@ -389,7 +387,7 @@ mod tests {
                 };
 
                 assert_eq!(route, Some(&()));
-                assert_eq!(found.param, Some(Param::new("id")));
+                assert_eq!(found.param, Some("id".into()));
                 assert_eq!(segment, "100");
                 assert!(found.is_leaf);
             }
@@ -424,7 +422,7 @@ mod tests {
                 };
 
                 assert_eq!(route, Some(&()));
-                assert_eq!(found.param, Some(Param::new("path")));
+                assert_eq!(found.param, Some("path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(found.is_leaf);
@@ -457,7 +455,7 @@ mod tests {
                 };
 
                 assert_eq!(route, Some(&()));
-                assert_eq!(found.param, Some(Param::new("id")));
+                assert_eq!(found.param, Some("id".into()));
                 assert_eq!(segment, "100");
                 assert!(!found.is_leaf);
             }

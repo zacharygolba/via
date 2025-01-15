@@ -107,7 +107,13 @@ impl<T> Request<T> {
     ///
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
         let path = self.parts.uri.path();
-        let at = self.params.get(name);
+        let at = self.params.iter().find_map(|(param, span)| {
+            if name == param {
+                Some((span.start(), span.end()))
+            } else {
+                None
+            }
+        });
 
         PathParam::new(at, name, path)
     }
@@ -155,7 +161,7 @@ impl<T> Request<T> {
             state,
             mapped: false,
             cookies: None,
-            params: PathParams::new(vec![]),
+            params: PathParams::new(),
         }
     }
 

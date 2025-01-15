@@ -38,7 +38,7 @@ impl<T> Route<'_, T> {
     }
 
     pub fn param(&self) -> Option<&str> {
-        self.inner.param().map(|name| name.as_str())
+        self.inner.param()
     }
 
     pub fn include(&mut self, middleware: impl Middleware<T> + 'static) -> &mut Self {
