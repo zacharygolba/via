@@ -59,10 +59,12 @@ impl Error {
     ///
     /// ```
     /// use via::middleware::error_boundary;
-    /// use via::{BoxError, Next, Request};
+    /// use via::{Next, Request};
+    ///
+    /// type Error = Box<dyn std::error::Error + Send + Sync>;
     ///
     /// #[tokio::main(flavor = "current_thread")]
-    /// async fn main() -> Result<(), BoxError> {
+    /// async fn main() -> Result<(), Error> {
     ///     let mut app = via::new(());
     ///
     ///     // Add an `ErrorBoundary` middleware to the route tree that maps
@@ -129,10 +131,12 @@ impl Error {
     ///
     /// ```
     /// use via::middleware::error_boundary;
-    /// use via::{BoxError, Next, Request};
+    /// use via::{Next, Request};
+    ///
+    /// type Error = Box<dyn std::error::Error + Send + Sync>;
     ///
     /// #[tokio::main(flavor = "current_thread")]
-    /// async fn main() -> Result<(), BoxError> {
+    /// async fn main() -> Result<(), Error> {
     ///     let mut app = via::new(());
     ///
     ///     // Add an `ErrorBoundary` middleware to the route tree that maps

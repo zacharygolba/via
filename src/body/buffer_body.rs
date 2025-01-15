@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use super::HttpBody;
-use crate::BoxError;
+use crate::error::BoxError;
 
 /// The maximum amount of data that can be read from a buffered body per frame.
 ///

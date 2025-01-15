@@ -1,7 +1,9 @@
 use http::header::CONTENT_TYPE;
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{BoxError, Next, Pipe, Request, Response, Server};
+use via::{Next, Pipe, Request, Response, Server};
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 async fn echo(request: Request, _: Next) -> via::Result {
     // Get an optional copy of the Content-Type header from the request.
@@ -16,7 +18,7 @@ async fn echo(request: Request, _: Next) -> via::Result {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, BoxError> {
+async fn main() -> Result<ExitCode, Error> {
     let mut app = via::new(());
 
     // Include an error boundary to catch any errors that occur downstream.

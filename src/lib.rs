@@ -17,7 +17,9 @@
 //! ```no_run
 //! use std::process::ExitCode;
 //! use via::middleware::error_boundary;
-//! use via::{BoxError, Next, Request, Response, Server};
+//! use via::{Next, Request, Response, Server};
+//!
+//! type Error = Box<dyn std::error::Error + Send + Sync>;
 //!
 //! async fn hello(request: Request, _: Next) -> via::Result {
 //!     // Get a reference to the path parameter `name` from the request uri.
@@ -28,7 +30,7 @@
 //! }
 //!
 //! #[tokio::main]
-//! async fn main() -> Result<ExitCode, BoxError> {
+//! async fn main() -> Result<ExitCode, Error> {
 //!     // Create a new application.
 //!     let mut app = via::new(());
 //!
@@ -59,7 +61,7 @@ mod router;
 mod server;
 
 pub use app::{new, App};
-pub use error::{BoxError, Error};
+pub use error::Error;
 pub use middleware::filter_method::{connect, delete, get, head, options, patch, post, put, trace};
 pub use middleware::Next;
 pub use request::Request;

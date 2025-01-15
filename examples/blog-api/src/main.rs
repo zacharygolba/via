@@ -4,18 +4,17 @@ mod database;
 use std::process::ExitCode;
 use std::time::Duration;
 use via::middleware::{error_boundary, timeout};
-use via::{BoxError, Error, Response, Server};
+use via::{Next, Request, Server};
 
 use database::Pool;
 
-type Request = via::Request<BlogApi>;
-type Next = via::Next<BlogApi>;
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
-struct BlogApi {
+struct State {
     pool: Pool,
 }
 
-async fn log_request(request: Request, next: Next) -> Result<Response, Error> {
+async fn log_request(request: Request<State>, next: Next<State>) -> via::Result {
     let method = request.method().clone();
     let path = request.uri().path().to_string();
 
@@ -27,11 +26,11 @@ async fn log_request(request: Request, next: Next) -> Result<Response, Error> {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, BoxError> {
+async fn main() -> Result<ExitCode, Error> {
     dotenvy::dotenv()?;
 
     // Create a new app with our shared state that contains a database pool.
-    let mut app = via::new(BlogApi {
+    let mut app = via::new(State {
         pool: database::pool().await?,
     });
 

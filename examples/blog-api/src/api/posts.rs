@@ -1,21 +1,21 @@
 use http::StatusCode;
-use via::Response;
+use via::{Next, Request, Response};
 
 use crate::database::models::post::*;
-use crate::{Next, Request};
+use crate::State;
 
-pub async fn auth(request: Request, next: Next) -> via::Result {
+pub async fn auth(request: Request<State>, next: Next<State>) -> via::Result {
     println!("authenticate");
     next.call(request).await
 }
 
-pub async fn index(request: Request, _: Next) -> via::Result {
+pub async fn index(request: Request<State>, _: Next<State>) -> via::Result {
     let posts = Post::public(&request.state().pool).await?;
 
     Response::build().json(&posts)
 }
 
-pub async fn create(request: Request, _: Next) -> via::Result {
+pub async fn create(request: Request<State>, _: Next<State>) -> via::Result {
     let state = request.state().clone();
     let payload = request.into_body().read_to_end().await?;
     let new_post = payload.parse_json::<NewPost>()?.insert(&state.pool).await?;
@@ -25,14 +25,14 @@ pub async fn create(request: Request, _: Next) -> via::Result {
         .json(&new_post)
 }
 
-pub async fn show(request: Request, _: Next) -> via::Result {
+pub async fn show(request: Request<State>, _: Next<State>) -> via::Result {
     let id = request.param("id").parse()?;
     let post = Post::find(&request.state().pool, id).await?;
 
     Response::build().json(&post)
 }
 
-pub async fn update(request: Request, _: Next) -> via::Result {
+pub async fn update(request: Request<State>, _: Next<State>) -> via::Result {
     let id = request.param("id").parse()?;
     let state = request.state().clone();
     let payload = request.into_body().read_to_end().await?;
@@ -44,7 +44,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
     Response::build().json(&updated_post)
 }
 
-pub async fn destroy(request: Request, _: Next) -> via::Result {
+pub async fn destroy(request: Request<State>, _: Next<State>) -> via::Result {
     let id = request.param("id").parse()?;
 
     Post::delete(&request.state().pool, id).await?;
