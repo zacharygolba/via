@@ -2,7 +2,9 @@ mod tls;
 
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{BoxError, Next, Request, Response, Server};
+use via::{Next, Request, Response, Server};
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 async fn hello(request: Request, _: Next) -> via::Result {
     // Get a reference to the path parameter `name` from the request uri.
@@ -13,7 +15,7 @@ async fn hello(request: Request, _: Next) -> via::Result {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, BoxError> {
+async fn main() -> Result<ExitCode, Error> {
     // Confirm that our certificate and private key exist and are valid before
     // doing anything else.
     let tls_config = tls::server_config().expect("tls config is invalid or missing");

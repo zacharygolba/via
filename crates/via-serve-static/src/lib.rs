@@ -6,9 +6,11 @@ mod stream_file;
 use bitflags::bitflags;
 use std::path::Path;
 use std::sync::Arc;
-use via::{BoxError, Route};
+use via::Route;
 
 use crate::respond::{respond_to_get_request, respond_to_head_request};
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 pub struct ServeStatic<'a, State> {
     eager_read_threshold: u64,
@@ -88,7 +90,7 @@ where
     /// the provided `public_dir` is a relative path, it will be resolved relative to
     /// the current working directory. If the `public_dir` is not a directory or the
     /// `location` does not have a path parameter, an error will be returned.
-    pub fn serve<P>(mut self, public_dir: P) -> Result<(), BoxError>
+    pub fn serve<P>(mut self, public_dir: P) -> Result<(), Error>
     where
         P: AsRef<Path>,
     {
@@ -102,7 +104,7 @@ where
         let path_param = self.endpoint.param().map_or_else(
             || {
                 let message = "The provided endpoint does not have a path parameter.";
-                Err(BoxError::from(message.to_owned()))
+                Err(Error::from(message.to_owned()))
             },
             |value| Ok(value.to_owned().into_boxed_str()),
         )?;

@@ -15,7 +15,7 @@ Add the following to dependencies section of your `Cargo.toml`:
 
 ```toml
 [dependencies]
-via = "2.0.0-beta.15"
+via = "2.0.0-beta.16"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -26,7 +26,9 @@ Below is a basic example to demonstrate how to use Via to create a simple web se
 ```rust
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{BoxError, Next, Request, Response, Server};
+use via::{Next, Request, Response, Server};
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 async fn hello(request: Request, _: Next) -> via::Result {
     // Get a reference to the path parameter `name` from the request uri.
@@ -37,7 +39,7 @@ async fn hello(request: Request, _: Next) -> via::Result {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, BoxError> {
+async fn main() -> Result<ExitCode, Error> {
     // Create a new application.
     let mut app = via::new(());
 

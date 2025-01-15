@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use super::BoxBody;
-use crate::BoxError;
+use crate::error::BoxError;
 
 /// A sum type that can represent any
 /// [Request](crate::Request)

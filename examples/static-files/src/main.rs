@@ -1,7 +1,9 @@
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{BoxError, Next, Request, Response, Server};
+use via::{Next, Request, Response, Server};
 use via_serve_static::serve_static;
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 async fn not_found(request: Request, _: Next) -> via::Result {
     let path = request.param("path").into_result()?;
@@ -28,7 +30,7 @@ async fn not_found(request: Request, _: Next) -> via::Result {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, BoxError> {
+async fn main() -> Result<ExitCode, Error> {
     let mut app = via::new(());
 
     // Include an error boundary to catch any errors that occur downstream.
