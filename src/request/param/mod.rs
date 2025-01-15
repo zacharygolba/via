@@ -6,7 +6,7 @@ mod query_param;
 mod query_parser;
 
 pub use param::Param;
-pub use query_param::{QueryParam, QueryParamIter};
+pub use query_param::QueryParam;
 
 pub(crate) use path_params::PathParams;
 
