@@ -1,7 +1,7 @@
 use cookie::CookieJar;
 use http::header::SET_COOKIE;
 use http::response::Parts;
-use http::{HeaderMap, HeaderValue, StatusCode, Version};
+use http::{HeaderMap, StatusCode, Version};
 use std::fmt::{self, Debug, Formatter};
 
 use super::Builder;
@@ -476,24 +476,24 @@ impl Response {
     /// client.
     ///
     pub(crate) fn into_inner(mut self) -> http::Response<HttpBody<BufferBody>> {
-        if let Some(cookies) = self.cookies {
-            let set_cookie_headers = cookies.delta().filter_map(|cookie| {
-                // Get a percent-encoded string from cookie.
-                let cookie_str = cookie.encoded().to_string();
-
-                // Attempt to parse cookie_str to a HeaderValue if it fails,
-                // provide a placeholder for tracing.
-                let parse_result = HeaderValue::from_str(&cookie_str).inspect_err(|_| {
-                    // Placeholder for tracing...
-                });
-
-                // Return a HeaderMap entry if cookie_str was parsed successfully.
-                Some(SET_COOKIE).zip(parse_result.ok())
-            });
-
+        if let Some(cookies) = &self.cookies {
             // Extend the response headers with the "Set-Cookie" headers for
             // every cookie that was changed during the request.
-            self.response.headers_mut().extend(set_cookie_headers);
+            self.response
+                .headers_mut()
+                .extend(cookies.delta().filter_map(|cookie| {
+                    // Get a percent-encoded string from cookie.
+                    let cookie_str = cookie.encoded().to_string();
+
+                    // Attempt to parse cookie_str to a HeaderValue if it fails,
+                    // provide a placeholder for tracing.
+                    let parse_result = cookie_str.parse().inspect_err(|_| {
+                        // Placeholder for tracing...
+                    });
+
+                    // Return a HeaderMap entry if cookie_str was parsed successfully.
+                    Some(SET_COOKIE).zip(parse_result.ok())
+                }));
         }
 
         self.response
