@@ -161,7 +161,7 @@ impl<T> Request<T> {
             state,
             mapped: false,
             cookies: None,
-            params: PathParams::new(),
+            params: PathParams::new(Vec::with_capacity(8)),
         }
     }
 
