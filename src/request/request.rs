@@ -2,15 +2,15 @@ use cookie::{Cookie, CookieJar};
 use http::header::AsHeaderName;
 use http::request::Parts;
 use http::{HeaderMap, HeaderValue, Method, Uri, Version};
-use std::fmt::{self, Debug};
+use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
-use super::body::{HyperBody, RequestBody};
+use super::body::RequestBody;
 use super::param::{Param, PathParams, QueryParam};
 use crate::body::{BoxBody, HttpBody};
 
-pub struct Request<State = ()> {
-    did_map: bool,
+pub struct Request<T = ()> {
+    mapped: bool,
 
     /// The component parts of the underlying HTTP request.
     ///
@@ -19,12 +19,12 @@ pub struct Request<State = ()> {
     /// A wrapper around the body of the request. This provides callers with
     /// convienent methods for reading the request body.
     ///
-    body: RequestBody,
+    body: HttpBody<RequestBody>,
 
     /// The shared application state passed to the [`via::new`](crate::app::new)
     /// function.
     ///
-    state: Arc<State>,
+    state: Arc<T>,
 
     /// The cookies associated with the request. If there is not a
     /// [CookieParser](crate::middleware::CookieParser)
@@ -37,42 +37,25 @@ pub struct Request<State = ()> {
     pub(crate) params: PathParams,
 }
 
-impl<State> Request<State> {
+impl<T> Request<T> {
     /// Consumes the request and returns the body.
     ///
-    pub fn into_body(self) -> RequestBody {
+    pub fn into_body(self) -> HttpBody<RequestBody> {
         self.body
-    }
-
-    /// Unwraps `self` into the Request type from the `http` crate.
-    ///
-    pub fn into_inner(self) -> http::Request<RequestBody> {
-        let (parts, body) = self.into_parts();
-        http::Request::from_parts(*parts, body)
-    }
-
-    /// Consumes the request and returns a tuple containing the component
-    /// parts of the request and the request body.
-    ///
-    pub fn into_parts(self) -> (Box<Parts>, RequestBody) {
-        (self.parts, self.body)
     }
 
     /// Consumes the request returning a new request with body mapped to the
     /// return type of the provided closure `map`.
     ///
-    pub fn map<F>(self, map: F) -> Self
-    where
-        F: FnOnce(HttpBody<HyperBody>) -> BoxBody,
-    {
-        if cfg!(debug_assertions) && self.did_map {
+    pub fn map(self, map: impl FnOnce(HttpBody<RequestBody>) -> BoxBody) -> Self {
+        if cfg!(debug_assertions) && self.mapped {
             // TODO: Replace this with tracing and a proper logger.
             eprintln!("calling request.map() more than once can create a reference cycle.",);
         }
 
         Self {
-            did_map: true,
-            body: self.body.map(map),
+            mapped: true,
+            body: HttpBody::Box(map(self.body)),
             ..self
         }
     }
@@ -122,6 +105,7 @@ impl<State> Request<State> {
     ///     Ok(format!("Hello, {}!", name?))
     /// }
     /// ```
+    ///
     pub fn param<'a>(&self, name: &'a str) -> Param<'_, 'a> {
         // Get the path of the request's uri.
         let path = self.parts.uri.path();
@@ -157,6 +141,7 @@ impl<State> Request<State> {
     ///     Ok(message.repeat(n))
     /// }
     /// ```
+    ///
     pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
         let query = self.parts.uri.query().unwrap_or("");
         QueryParam::new(name, query)
@@ -165,28 +150,45 @@ impl<State> Request<State> {
     /// Returns a thread-safe reference-counting pointer to the application
     /// state that was passed as an argument to the [`via::new`](crate::app::new)
     /// function.
-    pub fn state(&self) -> &Arc<State> {
+    ///
+    pub fn state(&self) -> &Arc<T> {
         &self.state
     }
 
     /// Returns a reference to the uri associated with the request.
+    ///
     pub fn uri(&self) -> &Uri {
         &self.parts.uri
     }
 
     /// Returns the HTTP version associated with the request.
+    ///
     pub fn version(&self) -> Version {
         self.parts.version
     }
+
+    /// Consumes the request and returns a tuple containing the component
+    /// parts of the request and the request body.
+    ///
+    pub fn into_parts(self) -> (Box<Parts>, HttpBody<RequestBody>) {
+        (self.parts, self.body)
+    }
+
+    /// Unwraps `self` into the Request type from the `http` crate.
+    ///
+    pub fn into_inner(self) -> http::Request<HttpBody<RequestBody>> {
+        let (parts, body) = self.into_parts();
+        http::Request::from_parts(*parts, body)
+    }
 }
 
-impl<State> Request<State> {
-    pub(crate) fn new(parts: Box<Parts>, body: RequestBody, state: Arc<State>) -> Self {
+impl<T> Request<T> {
+    pub(crate) fn new(parts: Box<Parts>, body: HttpBody<RequestBody>, state: Arc<T>) -> Self {
         Self {
             parts,
             body,
             state,
-            did_map: false,
+            mapped: false,
             cookies: None,
             params: PathParams::new(Vec::new()),
         }
@@ -199,8 +201,8 @@ impl<State> Request<State> {
     }
 }
 
-impl<State> Debug for Request<State> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<T> Debug for Request<T> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Request")
             .field("method", self.method())
             .field("uri", self.uri())

@@ -447,6 +447,7 @@ impl Error {
 }
 
 impl Error {
+    #[inline]
     fn new_with_status(status: StatusCode, source: BoxError) -> Self {
         Self {
             as_json: false,

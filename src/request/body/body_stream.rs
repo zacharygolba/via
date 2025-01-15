@@ -4,15 +4,16 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::length_limit_error::error_from_boxed;
+use super::limit_error::error_from_boxed;
 use super::request_body::RequestBody;
+use crate::body::HttpBody;
 use crate::error::Error;
 
 /// A stream of frames that compose the body and trailers of a request.
 ///
 #[must_use = "streams do nothing unless polled"]
 pub struct BodyStream {
-    body: RequestBody,
+    body: HttpBody<RequestBody>,
 }
 
 fn size_hint_as_usize(hint: SizeHint) -> (Option<usize>, Option<usize>) {
@@ -24,7 +25,7 @@ fn size_hint_as_usize(hint: SizeHint) -> (Option<usize>, Option<usize>) {
 
 impl BodyStream {
     /// Creates a new `BodyStream` with the provided request body.
-    pub(crate) fn new(body: RequestBody) -> Self {
+    pub(crate) fn new(body: HttpBody<RequestBody>) -> Self {
         Self { body }
     }
 }

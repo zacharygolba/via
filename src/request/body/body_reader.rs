@@ -6,80 +6,32 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate::body::HttpBody;
 use crate::Error;
 
 use super::json_payload::JsonPayload;
-use super::length_limit_error::error_from_boxed;
+use super::limit_error::error_from_boxed;
 use super::RequestBody;
+
+#[derive(Debug, Default)]
+pub struct BodyData {
+    payload: Vec<Bytes>,
+    trailers: Option<HeaderMap>,
+}
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct BodyReader {
-    body: RequestBody,
-    payload: Vec<Bytes>,
+    body: HttpBody<RequestBody>,
+    payload: Option<Vec<Bytes>>,
     trailers: Option<HeaderMap>,
 }
 
-#[derive(Debug, Default)]
-pub struct ReadToEnd {
-    payload: Vec<Bytes>,
-    trailers: Option<HeaderMap>,
+fn body_already_read() -> Error {
+    let message = "request body already read".to_owned();
+    Error::internal_server_error(message.into())
 }
 
-impl BodyReader {
-    pub(crate) fn new(body: RequestBody) -> Self {
-        Self {
-            body,
-            payload: Vec::new(),
-            trailers: None,
-        }
-    }
-}
-
-impl Future for BodyReader {
-    type Output = Result<ReadToEnd, Error>;
-
-    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        let mut body = Pin::new(&mut this.body);
-
-        loop {
-            let frame = match body
-                .as_mut()
-                .poll_frame(context)
-                .map_err(error_from_boxed)?
-            {
-                Poll::Ready(Some(frame)) => frame,
-                Poll::Ready(None) => {
-                    let payload = this.payload.to_vec();
-                    let trailers = this.trailers.take();
-                    break Poll::Ready(Ok(ReadToEnd { payload, trailers }));
-                }
-                Poll::Pending => {
-                    break Poll::Pending;
-                }
-            };
-
-            let trailers = match frame.into_data() {
-                Ok(chunk) => {
-                    this.payload.push(chunk);
-                    continue;
-                }
-                Err(frame) => match frame.into_trailers() {
-                    Ok(map) => map,
-                    Err(_) => continue,
-                },
-            };
-
-            if let Some(existing) = this.trailers.as_mut() {
-                existing.extend(trailers);
-            } else {
-                this.trailers = Some(trailers);
-            }
-        }
-    }
-}
-
-impl ReadToEnd {
+impl BodyData {
     pub fn len(&self) -> usize {
         self.payload.iter().map(Bytes::len).sum()
     }
@@ -140,5 +92,57 @@ impl ReadToEnd {
             let source = Box::new(error);
             Error::bad_request(source)
         })
+    }
+}
+
+impl BodyReader {
+    pub(crate) fn new(body: HttpBody<RequestBody>) -> Self {
+        Self {
+            body,
+            payload: Some(vec![]),
+            trailers: None,
+        }
+    }
+}
+
+impl Future for BodyReader {
+    type Output = Result<BodyData, Error>;
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        let mut body = Pin::new(&mut this.body);
+
+        loop {
+            return match body.as_mut().poll_frame(context) {
+                Poll::Ready(Some(Ok(frame))) => {
+                    let payload = this.payload.as_mut().ok_or_else(body_already_read)?;
+                    let frame = match frame.into_data() {
+                        Err(frame) => frame,
+                        Ok(chunk) => {
+                            payload.push(chunk);
+                            continue;
+                        }
+                    };
+
+                    if let Ok(trailers) = frame.into_trailers() {
+                        this.trailers.get_or_insert_default().extend(trailers);
+                    }
+
+                    continue;
+                }
+
+                Poll::Ready(Some(Err(e))) => {
+                    let error = error_from_boxed(e);
+                    Poll::Ready(Err(error))
+                }
+
+                Poll::Ready(None) => Poll::Ready(Ok(BodyData {
+                    payload: this.payload.take().ok_or_else(body_already_read)?,
+                    trailers: this.trailers.take(),
+                })),
+
+                Poll::Pending => Poll::Pending,
+            };
+        }
     }
 }

@@ -39,7 +39,7 @@ struct JsonPayload<'a, T> {
     data: &'a T,
 }
 
-impl Pipe for RequestBody {
+impl Pipe for HttpBody<RequestBody> {
     /// Apply `self` to the provided response builder to generate a response.
     ///
     /// The response body will be streamed back to the client with chunked
@@ -70,6 +70,42 @@ where
 }
 
 impl Builder {
+    #[inline]
+    pub fn body(self, body: HttpBody<BufferBody>) -> Result<Response, Error> {
+        let inner = self.inner.body(body)?;
+        Ok(Response::from_inner(inner))
+    }
+
+    pub fn json(self, data: &impl Serialize) -> Result<Response, Error> {
+        let body = {
+            let mut writer = BytesMut::new().writer();
+            serde_json::to_writer(&mut writer, &JsonPayload { data })?;
+
+            let buf = writer.into_inner().freeze();
+            BufferBody::from_raw(buf)
+        };
+
+        self.header(CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(CONTENT_LENGTH, body.len())
+            .body(HttpBody::Inline(body))
+    }
+
+    pub fn html(self, html: String) -> Result<Response, Error> {
+        let body = BufferBody::from(html);
+
+        self.header(CONTENT_TYPE, "text/html; charset=utf-8")
+            .header(CONTENT_LENGTH, body.len())
+            .body(HttpBody::Inline(body))
+    }
+
+    pub fn text(self, text: String) -> Result<Response, Error> {
+        let body = BufferBody::from(text);
+
+        self.header(CONTENT_TYPE, "text/plain; charset=utf-8")
+            .header(CONTENT_LENGTH, body.len())
+            .body(HttpBody::Inline(body))
+    }
+
     #[inline]
     pub fn header<K, V>(self, key: K, value: V) -> Self
     where
@@ -116,47 +152,11 @@ impl Builder {
         }
     }
 
-    #[inline]
-    pub fn body(self, body: HttpBody<BufferBody>) -> Result<Response, Error> {
-        let inner = self.inner.body(body)?;
-        Ok(Response::from_inner(inner))
-    }
-
     /// Convert self into a [Response] with an empty payload.
     ///
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
         self.body(HttpBody::new())
-    }
-
-    pub fn json<T: Serialize>(self, data: &T) -> Result<Response, Error> {
-        let body = {
-            let mut writer = BytesMut::new().writer();
-            serde_json::to_writer(&mut writer, &JsonPayload { data })?;
-
-            let buf = writer.into_inner().freeze();
-            BufferBody::from_raw(buf)
-        };
-
-        self.header(CONTENT_TYPE, "application/json; charset=utf-8")
-            .header(CONTENT_LENGTH, body.len())
-            .body(HttpBody::Inline(body))
-    }
-
-    pub fn html(self, html: String) -> Result<Response, Error> {
-        let body = BufferBody::from(html);
-
-        self.header(CONTENT_TYPE, "text/html; charset=utf-8")
-            .header(CONTENT_LENGTH, body.len())
-            .body(HttpBody::Inline(body))
-    }
-
-    pub fn text(self, text: String) -> Result<Response, Error> {
-        let body = BufferBody::from(text);
-
-        self.header(CONTENT_TYPE, "text/plain; charset=utf-8")
-            .header(CONTENT_LENGTH, body.len())
-            .body(HttpBody::Inline(body))
     }
 }
 

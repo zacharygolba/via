@@ -1,6 +1,8 @@
+use hyper::body::Incoming;
 use hyper::server::conn;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioTimer;
+use std::future::Future;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,8 +16,9 @@ use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
 use super::io_stream::IoStream;
-use super::shutdown::wait_for_shutdown;
-use crate::error::BoxError;
+use super::shutdown::{wait_for_shutdown, ShutdownTx};
+use crate::body::{BufferBody, HttpBody};
+use crate::error::{BoxError, Error};
 use crate::request::{Request, RequestBody};
 use crate::response::Response;
 use crate::router::Router;
@@ -98,60 +101,14 @@ where
                         }
                     };
 
-                    let service = service_fn(|r| {
-                        // Wrap the incoming request in with `via::Request`.
-                        let mut request = {
-                            // Destructure the incoming request into its
-                            // component parts.
-                            let (parts, incoming) = r.into_parts();
-
-                            // Allocate the metadata associated with the request
-                            // on the heap. This keeps the size of the request
-                            // type small enough to pass around by value.
-                            let parts = Box::new(parts);
-
-                            // Convert the incoming body type to a RequestBody.
-                            let body = RequestBody::new(
-                                max_request_size,
-                                incoming,
-                            );
-
-                            // Clone the shared application state so request can
-                            // own a reference to it. This is a cheaper operation
-                            // than going from Weak to Arc for any application
-                            // that interacts with a connection pool or an
-                            // external service.
-                            let state = Arc::clone(&state);
-
-                            Request::new(parts, body, state)
-                        };
-
-                        let future = match router.lookup(
-                            request.parts.uri.path(),
-                            &mut request.params
-                        ) {
-                            // Call the middleware stack for the resolved routes.
-                            Ok(next) => next.call(request),
-
-                            // Alert the main thread that we encountered an
-                            // unrecoverable error.
-                            Err(error) => {
-                                let _ = shutdown_tx.send(Some(true));
-                                let _ = error; // Placeholder for tracing...
-                                Box::pin(async {
-                                    Response::internal_server_error()
-                                })
-                            }
-                        };
-
-                        async {
-                            Ok::<_, hyper::Error>(match future.await {
-                                // The response was generated successfully.
-                                Ok(response) => response.into_inner(),
-                                // An occurred while generating the response.
-                                Err(error) => Response::from(error).into_inner(),
-                            })
-                        }
+                    let service = service_fn(|incoming_request| {
+                        serve_request(
+                            &router,
+                            &shutdown_tx,
+                            Arc::clone(&state),
+                            max_request_size,
+                            incoming_request,
+                        )
                     });
 
                     // Create a new HTTP/2 connection.
@@ -267,5 +224,53 @@ where
 
             Err(error)
         }
+    }
+}
+
+fn serve_request<T>(
+    router: &Router<T>,
+    shutdown_tx: &ShutdownTx,
+    state: Arc<T>,
+    max_request_size: usize,
+    incoming_request: http::Request<Incoming>,
+) -> impl Future<Output = Result<http::Response<HttpBody<BufferBody>>, hyper::Error>> {
+    // Wrap the incoming request in with `via::Request`.
+    let mut request = {
+        // Destructure the incoming request into its component parts.
+        let (parts, body) = incoming_request.into_parts();
+
+        // Allocate the metadata associated with the request on the heap. This
+        // keeps the size of the request type small enough to pass around by value.
+        let parts = Box::new(parts);
+
+        // Convert the incoming body type to a RequestBody.
+        let body = HttpBody::Inline(RequestBody::new(max_request_size, body));
+
+        Request::new(parts, body, state)
+    };
+
+    let future = match router.lookup(request.parts.uri.path(), &mut request.params) {
+        // Call the middleware stack for the resolved routes.
+        Ok(next) => next.call(request),
+
+        // Alert the main thread that we encountered an
+        // unrecoverable error.
+        Err(error) => {
+            let _ = shutdown_tx.send(Some(true));
+            let _ = error; // Placeholder for tracing...
+            Box::pin(async {
+                let message = "internal server error".to_owned();
+                Err(Error::internal_server_error(message.into()))
+            })
+        }
+    };
+
+    async {
+        Ok::<_, hyper::Error>(match future.await {
+            // The response was generated successfully.
+            Ok(response) => response.into_inner(),
+            // An occurred while generating the response.
+            Err(error) => Response::from(error).into_inner(),
+        })
     }
 }

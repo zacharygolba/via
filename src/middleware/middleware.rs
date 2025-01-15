@@ -1,6 +1,8 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 
-use super::Next;
+use super::next::Next;
 use crate::error::Error;
 use crate::request::Request;
 use crate::response::Response;

@@ -12,11 +12,14 @@ impl<State> Next<State> {
         Self { stack }
     }
 
+    #[inline]
     pub fn call(mut self, request: Request<State>) -> BoxFuture<Result<Response, Error>> {
-        if let Some(middleware) = self.stack.pop() {
-            middleware.call(request, self)
-        } else {
-            Box::pin(async { Response::not_found() })
+        match self.stack.pop() {
+            Some(middleware) => middleware.call(request, self),
+            None => Box::pin(async {
+                let message = "not found".to_owned();
+                Err(Error::not_found(message.into()))
+            }),
         }
     }
 }
