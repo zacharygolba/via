@@ -1,18 +1,9 @@
-use std::fmt::{self, Debug, Display};
-
 #[derive(PartialEq)]
 pub enum Pattern {
     Root,
-    Static(Param),
-    Dynamic(Param),
-    Wildcard(Param),
-}
-
-/// An identifier for a named path segment.
-///
-#[derive(Debug, PartialEq)]
-pub struct Param {
-    ident: Box<str>,
+    Static(String),
+    Dynamic(String),
+    Wildcard(String),
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
@@ -33,62 +24,22 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
             // Path segments that start with a colon are considered a Dynamic
             // pattern. The remaining characters in the segment are considered
             // the name or identifier associated with the parameter.
-            Some(':') => {
-                let param = Param::new(match segment.get(1..) {
-                    None | Some("") => panic!("Dynamic parameters must be named. Found ':'."),
-                    Some(rest) => rest,
-                });
-
-                Pattern::Dynamic(param)
-            }
+            Some(':') => match segment.get(1..) {
+                None | Some("") => panic!("Dynamic parameters must be named. Found ':'."),
+                Some(name) => Pattern::Dynamic(name.into()),
+            },
 
             // Path segments that start with an asterisk are considered CatchAll
             // pattern. The remaining characters in the segment are considered
             // the name or identifier associated with the parameter.
-            Some('*') => {
-                let param = Param::new(match segment.get(1..) {
-                    None | Some("") => panic!("Wildcard parameters must be named. Found '*'."),
-                    Some(rest) => rest,
-                });
-
-                Pattern::Wildcard(param)
-            }
+            Some('*') => match segment.get(1..) {
+                None | Some("") => panic!("Wildcard parameters must be named. Found '*'."),
+                Some(name) => Pattern::Wildcard(name.into()),
+            },
 
             // The segment does not start with a reserved character. We will
             // consider it a static pattern that can be matched by value.
-            _ => {
-                let param = Param::new(segment);
-                Pattern::Static(param)
-            }
+            _ => Pattern::Static(segment.into()),
         }
     })
-}
-
-impl Param {
-    pub fn as_str(&self) -> &str {
-        &self.ident
-    }
-}
-
-impl Param {
-    pub(crate) fn new(ident: &str) -> Self {
-        Self {
-            ident: ident.into(),
-        }
-    }
-}
-
-impl Clone for Param {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            ident: self.ident.clone(),
-        }
-    }
-}
-
-impl Display for Param {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Display::fmt(&self.ident, f)
-    }
 }
