@@ -1,9 +1,9 @@
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{BoxError, Error, Next, Request, Response, Server};
+use via::{BoxError, Next, Request, Response, Server};
 use via_serve_static::serve_static;
 
-async fn not_found(request: Request, _: Next) -> Result<Response, Error> {
+async fn not_found(request: Request, _: Next) -> via::Result {
     let path = request.param("path").into_result()?;
 
     Response::build().status(404).html(format!(

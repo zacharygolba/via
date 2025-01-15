@@ -1,14 +1,14 @@
 use cookie::{Cookie, Key};
 use std::process::ExitCode;
 use via::middleware::{cookie_parser, error_boundary};
-use via::{BoxError, Error, Response, Server};
+use via::{BoxError, Response, Server};
 
-type Request = via::Request<CookiesExample>;
-type Next = via::Next<CookiesExample>;
+type Request = via::Request<Cookies>;
+type Next = via::Next<Cookies>;
 
 /// A struct used to store application state.
 ///
-struct CookiesExample {
+struct Cookies {
     /// The secret key used to sign, verify, and optionally encrypt cookies. The
     /// value of this key should be kept secret and changed periodically.
     ///
@@ -18,7 +18,7 @@ struct CookiesExample {
 /// Responds with a greeting message with the name provided in the request uri
 /// path.
 ///
-async fn hello(request: Request, _: Next) -> Result<Response, Error> {
+async fn hello(request: Request, _: Next) -> via::Result {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").percent_decode().into_result()?;
 
@@ -29,7 +29,7 @@ async fn hello(request: Request, _: Next) -> Result<Response, Error> {
 /// Increments the value of the "n_visits" counter to the console. Returns a
 /// response with a message confirming the operation was successful.
 ///
-async fn count_visits(request: Request, next: Next) -> Result<Response, Error> {
+async fn count_visits(request: Request, next: Next) -> via::Result {
     // Clone the state from the request so we can access the secret key after
     // passing ownership of the request to the next middleware.
     //
@@ -97,7 +97,7 @@ async fn main() -> Result<ExitCode, BoxError> {
     dotenvy::dotenv().ok();
 
     // Create a new app by calling the `via::app` function.
-    let mut app = via::new(CookiesExample {
+    let mut app = via::new(Cookies {
         secret: get_secret_from_env(),
     });
 

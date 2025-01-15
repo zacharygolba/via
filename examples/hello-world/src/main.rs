@@ -1,8 +1,8 @@
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{BoxError, Error, Next, Request, Response, Server};
+use via::{BoxError, Next, Request, Response, Server};
 
-async fn hello(request: Request, _: Next) -> Result<Response, Error> {
+async fn hello(request: Request, _: Next) -> via::Result {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").percent_decode().into_result()?;
 

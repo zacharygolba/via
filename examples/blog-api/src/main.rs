@@ -8,10 +8,10 @@ use via::{BoxError, Error, Response, Server};
 
 use database::Pool;
 
-type Request = via::Request<State>;
-type Next = via::Next<State>;
+type Request = via::Request<BlogApi>;
+type Next = via::Next<BlogApi>;
 
-struct State {
+struct BlogApi {
     pool: Pool,
 }
 
@@ -31,7 +31,7 @@ async fn main() -> Result<ExitCode, BoxError> {
     dotenvy::dotenv()?;
 
     // Create a new app with our shared state that contains a database pool.
-    let mut app = via::new(State {
+    let mut app = via::new(BlogApi {
         pool: database::pool().await?,
     });
 
@@ -58,7 +58,7 @@ async fn main() -> Result<ExitCode, BoxError> {
         // Define the /api/posts resource.
         api.at("/posts").scope(|posts| {
             // A mock authentication middleware that does nothing.
-            posts.include(posts::authenticate);
+            posts.include(posts::auth);
 
             posts.respond(via::get(posts::index));
             posts.respond(via::post(posts::create));

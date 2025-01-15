@@ -17,9 +17,9 @@
 //! ```no_run
 //! use std::process::ExitCode;
 //! use via::middleware::error_boundary;
-//! use via::{BoxError, Error, Next, Request, Response, Server};
+//! use via::{BoxError, Next, Request, Response, Server};
 //!
-//! async fn hello(request: Request, _: Next) -> Result<Response, Error> {
+//! async fn hello(request: Request, _: Next) -> via::Result {
 //!     // Get a reference to the path parameter `name` from the request uri.
 //!     let name = request.param("name").percent_decode().into_result()?;
 //!
@@ -66,3 +66,7 @@ pub use request::Request;
 pub use response::{Pipe, Response};
 pub use router::Route;
 pub use server::Server;
+
+/// The output of the `Future` returned from middleware.
+///
+pub type Result = std::result::Result<Response, Error>;
