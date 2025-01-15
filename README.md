@@ -15,7 +15,7 @@ Add the following to dependencies section of your `Cargo.toml`:
 
 ```toml
 [dependencies]
-via = "2.0.0-beta.17"
+via = "2.0.0-beta.18"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -44,7 +44,7 @@ async fn main() -> Result<ExitCode, Error> {
     let mut app = via::new(());
 
     // Include an error boundary to catch any errors that occur downstream.
-    app.include(error_boundary::catch(|error, _| {
+    app.include(error_boundary::catch(|_, error| {
         eprintln!("Error: {}", error);
     }));
 
