@@ -1,10 +1,10 @@
 pub mod body;
-pub mod params;
+pub mod param;
 
 mod request;
 
-pub(crate) use params::PathParams;
+pub(crate) use param::PathParams;
 
 pub use body::RequestBody;
-pub use params::{Param, QueryParam};
+pub use param::{Param, QueryParam};
 pub use request::Request;

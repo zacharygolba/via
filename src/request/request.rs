@@ -6,7 +6,7 @@ use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use super::body::{HyperBody, RequestBody};
-use super::params::{Param, PathParams, QueryParam};
+use super::param::{Param, PathParams, QueryParam};
 use crate::body::{BoxBody, HttpBody};
 
 pub struct Request<State = ()> {

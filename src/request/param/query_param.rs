@@ -10,7 +10,7 @@ pub struct QueryParam<'a, 'b, T = NoopDecode> {
     _decode: PhantomData<T>,
 }
 
-pub struct QueryParamIter<'a, 'b, T> {
+struct QueryParamIter<'a, 'b, T> {
     name: &'b str,
     parser: QueryParser<'a>,
     _decode: PhantomData<T>,
@@ -37,6 +37,16 @@ impl<'a, 'b, T: DecodeParam> QueryParam<'a, 'b, T> {
     ///
     pub fn percent_decode(self) -> QueryParam<'a, 'b, PercentDecode> {
         self.decode()
+    }
+
+    /// Collects every value for the query param into a vec.
+    ///
+    pub fn into_vec(self) -> Vec<Cow<'a, str>> {
+        Vec::from_iter(QueryParamIter {
+            name: self.name,
+            parser: self.parser,
+            _decode: PhantomData::<T>,
+        })
     }
 
     pub fn exists(mut self) -> bool {
@@ -81,18 +91,5 @@ impl<'a, T: DecodeParam> Iterator for QueryParamIter<'a, '_, T> {
         let encoded = self.parser.input().get(start..end)?;
 
         T::decode(encoded).ok()
-    }
-}
-
-impl<'a, 'b, T: DecodeParam> IntoIterator for QueryParam<'a, 'b, T> {
-    type Item = Cow<'a, str>;
-    type IntoIter = QueryParamIter<'a, 'b, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        QueryParamIter {
-            name: self.name,
-            parser: self.parser,
-            _decode: PhantomData,
-        }
     }
 }
