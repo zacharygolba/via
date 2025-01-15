@@ -44,7 +44,7 @@ async fn main() -> Result<ExitCode, Error> {
 
         // Catch any errors that occur in the API namespace and generate a
         // JSON response from a redacted version of the original error.
-        api.include(error_boundary::map(|error, _| {
+        api.include(error_boundary::map(|_, error| {
             eprintln!("Error: {}", error); // Placeholder for tracing...
             util::map_error(error)
         }));

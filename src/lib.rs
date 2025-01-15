@@ -35,7 +35,7 @@
 //!     let mut app = via::new(());
 //!
 //!     // Include an error boundary to catch any errors that occur downstream.
-//!     app.include(error_boundary::catch(|error, _| {
+//!     app.include(error_boundary::catch(|_, error| {
 //!         eprintln!("Error: {}", error);
 //!     }));
 //!
