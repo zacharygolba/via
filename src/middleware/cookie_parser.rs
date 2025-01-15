@@ -1,17 +1,16 @@
 use cookie::{Cookie, SplitCookies};
 use http::header::COOKIE;
-use std::marker::PhantomData;
 
-use super::middleware::{BoxFuture, Middleware};
+use super::middleware::Middleware;
 use super::next::Next;
-use crate::{Error, Request, Response};
+use crate::{Error, Request};
 
 pub fn parse_encoded<T>() -> impl Middleware<T> {
-    CookieParser::new()
+    cookie_parser::<ParseEncoded, _>()
 }
 
 pub fn parse_unencoded<T>() -> impl Middleware<T> {
-    CookieParser::unencoded()
+    cookie_parser::<ParseUnencoded, _>()
 }
 
 /// Defines how to parse cookies from a cookie string.
@@ -32,44 +31,26 @@ struct ParseEncoded;
 ///
 struct ParseUnencoded;
 
-/// Middleware that parses request cookies and set's the response `Cookie`
-/// header.
-///
-struct CookieParser<T = ParseEncoded> {
-    _parse: PhantomData<T>,
-}
+impl ParseCookies for ParseEncoded {
+    type Iter = SplitCookies<'static>;
+    type Error = cookie::ParseError;
 
-impl CookieParser {
-    pub fn new() -> Self {
-        Self {
-            _parse: PhantomData,
-        }
+    fn parse_cookies(input: String) -> Self::Iter {
+        Cookie::split_parse_encoded(input)
     }
 }
 
-impl Default for CookieParser {
-    fn default() -> Self {
-        Self::new()
+impl ParseCookies for ParseUnencoded {
+    type Iter = SplitCookies<'static>;
+    type Error = cookie::ParseError;
+
+    fn parse_cookies(input: String) -> Self::Iter {
+        Cookie::split_parse(input)
     }
 }
 
-impl CookieParser<ParseUnencoded> {
-    pub fn unencoded() -> Self {
-        Self {
-            _parse: PhantomData,
-        }
-    }
-}
-
-impl<State, T> Middleware<State> for CookieParser<T>
-where
-    T: ParseCookies + Send + Sync,
-{
-    fn call(
-        &self,
-        mut request: Request<State>,
-        next: Next<State>,
-    ) -> BoxFuture<Result<Response, Error>> {
+fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
+    move |mut request: Request<T>, next: Next<T>| {
         // Attempt to parse the value of the `Cookie` header if it exists and
         // contains a valid cookie string.
         //
@@ -81,7 +62,7 @@ where
                 Ok(input) => {
                     let mut cookies = vec![];
 
-                    T::parse_cookies(input).for_each(|result| match result {
+                    P::parse_cookies(input).for_each(|result| match result {
                         Ok(cookie) => cookies.push(cookie),
                         Err(error) => {
                             // Placeholder for tracing...
@@ -112,7 +93,7 @@ where
 
         let future = next.call(request);
 
-        Box::pin(async {
+        async {
             // Call the next middleware to get a response.
             let mut response = future.await?;
 
@@ -125,24 +106,6 @@ where
 
             // Return the response.
             Ok(response)
-        })
-    }
-}
-
-impl ParseCookies for ParseEncoded {
-    type Iter = SplitCookies<'static>;
-    type Error = cookie::ParseError;
-
-    fn parse_cookies(input: String) -> Self::Iter {
-        Cookie::split_parse_encoded(input)
-    }
-}
-
-impl ParseCookies for ParseUnencoded {
-    type Iter = SplitCookies<'static>;
-    type Error = cookie::ParseError;
-
-    fn parse_cookies(input: String) -> Self::Iter {
-        Cookie::split_parse(input)
+        }
     }
 }
