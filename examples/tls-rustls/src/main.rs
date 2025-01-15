@@ -2,14 +2,14 @@ mod tls;
 
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{BoxError, Error, Next, Request, Server};
+use via::{BoxError, Error, Next, Request, Response, Server};
 
-async fn hello(request: Request, _: Next) -> Result<String, Error> {
+async fn hello(request: Request, _: Next) -> Result<Response, Error> {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").percent_decode().into_result()?;
 
     // Send a plain text response with our greeting message.
-    Ok(format!("Hello, {}! (via TLS)", name))
+    Response::build().text(format!("Hello, {}! (via TLS)", name))
 }
 
 #[tokio::main]

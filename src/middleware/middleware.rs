@@ -3,31 +3,21 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use super::Next;
 use crate::error::Error;
 use crate::request::Request;
-use crate::response::{IntoResponse, Response};
+use crate::response::Response;
 
-pub(crate) type ArcMiddleware<State> = Arc<dyn Middleware<State>>;
+pub(crate) type ArcMiddleware<T> = Arc<dyn Middleware<T>>;
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
-pub trait Middleware<State>: Send + Sync {
-    fn call(
-        &self,
-        request: Request<State>,
-        next: Next<State>,
-    ) -> BoxFuture<Result<Response, Error>>;
+pub trait Middleware<T>: Send + Sync {
+    fn call(&self, request: Request<T>, next: Next<T>) -> BoxFuture<Result<Response, Error>>;
 }
 
-impl<State, T, F> Middleware<State> for T
+impl<T, F, M> Middleware<T> for M
 where
-    T: Fn(Request<State>, Next<State>) -> F + Send + Sync + 'static,
-    F: Future + Send + 'static,
-    F::Output: IntoResponse,
+    M: Fn(Request<T>, Next<T>) -> F + Send + Sync,
+    F: Future<Output = Result<Response, Error>> + Send + 'static,
 {
-    fn call(
-        &self,
-        request: Request<State>,
-        next: Next<State>,
-    ) -> BoxFuture<Result<Response, Error>> {
-        let future = self(request, next);
-        Box::pin(async { future.await.into_response() })
+    fn call(&self, request: Request<T>, next: Next<T>) -> BoxFuture<Result<Response, Error>> {
+        Box::pin(self(request, next))
     }
 }

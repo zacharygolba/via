@@ -1,7 +1,6 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
-use http::response::Builder;
 use http::{HeaderName, HeaderValue, StatusCode, Version};
 use http_body::Frame;
 use serde::ser::SerializeStruct;
@@ -12,7 +11,7 @@ use crate::body::{BoxBody, BufferBody, HttpBody, StreamBody};
 use crate::error::{BoxError, Error};
 use crate::request::RequestBody;
 
-/// Defines how a response body source can be applied to a [ResponseBuilder] to
+/// Defines how a response body source can be applied to a [Builder] to
 /// generate a [Response].
 ///
 /// ```
@@ -28,12 +27,12 @@ use crate::request::RequestBody;
 /// ```
 ///
 pub trait Pipe {
-    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error>;
+    fn pipe(self, response: Builder) -> Result<Response, Error>;
 }
 
 #[derive(Debug, Default)]
-pub struct ResponseBuilder {
-    builder: Builder,
+pub struct Builder {
+    inner: http::response::Builder,
 }
 
 struct JsonPayload<'a, T> {
@@ -46,7 +45,7 @@ impl Pipe for RequestBody {
     /// The response body will be streamed back to the client with chunked
     /// transfer encoding.
     ///
-    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
+    fn pipe(self, response: Builder) -> Result<Response, Error> {
         response
             .header(TRANSFER_ENCODING, "chunked")
             .body(HttpBody::Box(BoxBody::new(self)))
@@ -63,14 +62,14 @@ where
     /// The response body will be streamed back to the client with chunked
     /// transfer encoding.
     ///
-    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
+    fn pipe(self, response: Builder) -> Result<Response, Error> {
         response
             .header(TRANSFER_ENCODING, "chunked")
             .body(HttpBody::Box(BoxBody::new(StreamBody::new(self))))
     }
 }
 
-impl ResponseBuilder {
+impl Builder {
     #[inline]
     pub fn header<K, V>(self, key: K, value: V) -> Self
     where
@@ -80,7 +79,7 @@ impl ResponseBuilder {
         <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
     {
         Self {
-            builder: self.builder.header(key, value),
+            inner: self.inner.header(key, value),
         }
     }
 
@@ -106,20 +105,20 @@ impl ResponseBuilder {
         <StatusCode as TryFrom<T>>::Error: Into<http::Error>,
     {
         Self {
-            builder: self.builder.status(status),
+            inner: self.inner.status(status),
         }
     }
 
     #[inline]
     pub fn version(self, version: Version) -> Self {
         Self {
-            builder: self.builder.version(version),
+            inner: self.inner.version(version),
         }
     }
 
     #[inline]
     pub fn body(self, body: HttpBody<BufferBody>) -> Result<Response, Error> {
-        let inner = self.builder.body(body)?;
+        let inner = self.inner.body(body)?;
         Ok(Response::from_inner(inner))
     }
 

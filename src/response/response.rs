@@ -1,10 +1,10 @@
 use cookie::CookieJar;
 use http::header::SET_COOKIE;
 use http::response::Parts;
-use http::{HeaderMap, StatusCode, Version};
+use http::{HeaderMap, HeaderValue, StatusCode, Version};
 use std::fmt::{self, Debug, Formatter};
 
-use super::ResponseBuilder;
+use super::Builder;
 use crate::body::{BoxBody, BufferBody, HttpBody};
 use crate::error::Error;
 
@@ -96,7 +96,7 @@ impl Response {
     }
 
     #[inline]
-    pub fn build() -> ResponseBuilder {
+    pub fn build() -> Builder {
         Default::default()
     }
 
@@ -475,29 +475,28 @@ impl Response {
     /// final processing that may be required before the response is sent to the
     /// client.
     ///
-    pub(crate) fn into_inner(self) -> http::Response<HttpBody<BufferBody>> {
-        // Extract the component parts of the inner response.
-        let (mut parts, body) = self.response.into_parts();
-
+    pub(crate) fn into_inner(mut self) -> http::Response<HttpBody<BufferBody>> {
         if let Some(cookies) = self.cookies {
+            let set_cookie_headers = cookies.delta().filter_map(|cookie| {
+                // Get a percent-encoded string from cookie.
+                let cookie_str = cookie.encoded().to_string();
+
+                // Attempt to parse cookie_str to a HeaderValue if it fails,
+                // provide a placeholder for tracing.
+                let parse_result = HeaderValue::from_str(&cookie_str).inspect_err(|_| {
+                    // Placeholder for tracing...
+                });
+
+                // Return a HeaderMap entry if cookie_str was parsed successfully.
+                Some(SET_COOKIE).zip(parse_result.ok())
+            });
+
             // Extend the response headers with the "Set-Cookie" headers for
             // every cookie that was changed during the request.
-            parts.headers.extend(cookies.delta().filter_map(|cookie| {
-                match cookie.encoded().to_string().parse() {
-                    Ok(header) => Some((SET_COOKIE, header)),
-                    Err(error) => {
-                        let _ = error;
-                        // Placeholder for tracing...
-                        None
-                    }
-                }
-            }));
+            self.response.headers_mut().extend(set_cookie_headers);
         }
 
-        // Reconstruct a http::Response from the component parts and response
-        // body.
-        //
-        http::Response::from_parts(parts, body)
+        self.response
     }
 }
 

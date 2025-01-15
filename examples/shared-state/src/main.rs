@@ -54,7 +54,7 @@ async fn counter(request: Request, next: Next) -> Result<Response, Error> {
 
 /// A responder that will return the total number of `successes` and `errors`
 /// in the `Counter` state.
-async fn totals(request: Request, _: Next) -> Result<String, Error> {
+async fn totals(request: Request, _: Next) -> Result<Response, Error> {
     // Get a reference to the `Counter` state from the request. We don't need
     // to clone the state since we are consuming the request rather than
     // passing it as an argument to `next.call`.
@@ -74,7 +74,7 @@ async fn totals(request: Request, _: Next) -> Result<String, Error> {
     writeln!(&mut message, "Sucesses: {}", successes)?;
 
     // Return a string with the total number of `errors` and `successes`.
-    Ok(message)
+    Response::build().text(message)
 }
 
 #[tokio::main]
