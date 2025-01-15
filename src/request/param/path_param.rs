@@ -2,18 +2,18 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use super::{DecodeParam, NoopDecode, PercentDecode};
+use super::decode::{DecodeParam, NoopDecode, PercentDecode};
 use crate::error::Error;
 
-pub struct Param<'a, 'b, T = NoopDecode> {
-    at: Option<Option<(usize, usize)>>,
+pub struct PathParam<'a, 'b, T = NoopDecode> {
+    at: Option<(usize, usize)>,
     name: &'b str,
     source: &'a str,
     _decode: PhantomData<T>,
 }
 
-impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
-    pub(crate) fn new(at: Option<Option<(usize, usize)>>, name: &'b str, source: &'a str) -> Self {
+impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
+    pub(crate) fn new(at: Option<(usize, usize)>, name: &'b str, source: &'a str) -> Self {
         Self {
             at,
             name,
@@ -22,23 +22,16 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
         }
     }
 
-    /// Returns a new `Param` that will decode the parameter value with
-    /// `U::decode` when the parameter is converted to a result.
+    /// Returns a new `Param` that will percent-decode the parameter value with
+    /// when the parameter is converted to a result.
     ///
-    pub fn decode<U: DecodeParam>(self) -> Param<'a, 'b, U> {
-        Param {
+    pub fn percent_decode(self) -> PathParam<'a, 'b, PercentDecode> {
+        PathParam {
             at: self.at,
             name: self.name,
             source: self.source,
             _decode: PhantomData,
         }
-    }
-
-    /// Returns a new `Param` that will percent-decode the parameter value with
-    /// when the parameter is converted to a result.
-    ///
-    pub fn percent_decode(self) -> Param<'a, 'b, PercentDecode> {
-        self.decode()
     }
 
     /// Calls [`str::parse`] on the parameter value if it exists and returns the
@@ -69,7 +62,7 @@ impl<'a, 'b, T: DecodeParam> Param<'a, 'b, T> {
     ///
     pub fn into_result(self) -> Result<Cow<'a, str>, Error> {
         match self.at.and_then(|at| {
-            let (start, end) = at?;
+            let (start, end) = at;
             self.source.get(start..end)
         }) {
             Some(value) => T::decode(value),

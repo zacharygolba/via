@@ -6,7 +6,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
 use super::body::RequestBody;
-use super::param::{Param, PathParams, QueryParam};
+use super::param::{PathParam, PathParams};
 use crate::body::{BoxBody, HttpBody};
 
 pub struct Request<T = ()> {
@@ -105,45 +105,11 @@ impl<T> Request<T> {
     /// }
     /// ```
     ///
-    pub fn param<'a>(&self, name: &'a str) -> Param<'_, 'a> {
-        // Get the path of the request's uri.
+    pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
         let path = self.parts.uri.path();
-
-        // Get an `Option<[usize; 2]>` that represents the start and end offset
-        // of the path parameter with the provided `name` in the request's uri.
         let at = self.params.get(name);
 
-        Param::new(Some(at), name, path)
-    }
-
-    /// Returns a convenient wrapper around an optional references to the query
-    /// parameters in the request's uri with the provided `name`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use via::{Next, Request, Response};
-    ///
-    /// async fn hello(request: Request, _: Next) -> via::Result {
-    ///     // Attempt to parse the first query parameter named `n` to a `usize`
-    ///     // no greater than 1000. If the query parameter doesn't exist or
-    ///     // can't be converted to a `usize`, default to 1.
-    ///     let n = request.query("n").first().parse().unwrap_or(1).min(1000);
-    ///
-    ///     // Get a reference to the path parameter `name` from the request uri.
-    ///     let name = request.param("name").into_result()?;
-    ///
-    ///     // Create a greeting message with the provided `name`.
-    ///     let message = format!("Hello, {}!\n", name);
-    ///
-    ///     // Send a response with our greeting message, repeated `n` times.
-    ///     Response::build().text(message.repeat(n))
-    /// }
-    /// ```
-    ///
-    pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
-        let query = self.parts.uri.query().unwrap_or("");
-        QueryParam::new(name, query)
+        PathParam::new(at, name, path)
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
@@ -189,7 +155,7 @@ impl<T> Request<T> {
             state,
             mapped: false,
             cookies: None,
-            params: PathParams::new(Vec::new()),
+            params: PathParams::new(vec![]),
         }
     }
 
