@@ -137,7 +137,7 @@ impl<T> Request<T> {
     ///     let message = format!("Hello, {}!\n", name);
     ///
     ///     // Send a response with our greeting message, repeated `n` times.
-    ///     Ok(message.repeat(n))
+    ///     Response::build().text(message.repeat(n))
     /// }
     /// ```
     ///
