@@ -18,12 +18,12 @@ struct CookiesExample {
 /// Responds with a greeting message with the name provided in the request uri
 /// path.
 ///
-async fn hello(request: Request, _: Next) -> Result<String, Error> {
+async fn hello(request: Request, _: Next) -> Result<Response, Error> {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").percent_decode().into_result()?;
 
     // Send a plain text response with our greeting message.
-    Ok(format!("Hello, {}!", name))
+    Response::build().text(format!("Hello, {}!", name))
 }
 
 /// Increments the value of the "n_visits" counter to the console. Returns a
