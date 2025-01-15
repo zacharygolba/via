@@ -97,12 +97,11 @@ impl<T> Request<T> {
     /// # Example
     ///
     /// ```
-    /// use via::{Error, Next, Request};
-    /// use std::borrow::Cow;
+    /// use via::{Next, Request, Response};
     ///
-    /// async fn hello(request: Request, _: Next) -> Result<String, Error> {
-    ///     let name: Result<Cow<str>, Error> = request.param("name").into_result();
-    ///     Ok(format!("Hello, {}!", name?))
+    /// async fn hello(request: Request, _: Next) -> via::Result {
+    ///     let name = request.param("name").into_result()?;
+    ///     Response::build().text(format!("Hello, {}!", name))
     /// }
     /// ```
     ///
@@ -123,9 +122,9 @@ impl<T> Request<T> {
     /// # Example
     ///
     /// ```
-    /// use via::{Error, Next, Request};
+    /// use via::{Next, Request, Response};
     ///
-    /// async fn hello(request: Request, _: Next) -> Result<String, Error> {
+    /// async fn hello(request: Request, _: Next) -> via::Result {
     ///     // Attempt to parse the first query parameter named `n` to a `usize`
     ///     // no greater than 1000. If the query parameter doesn't exist or
     ///     // can't be converted to a `usize`, default to 1.
