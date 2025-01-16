@@ -156,10 +156,10 @@ where
                 // NOOP
                 None => {},
 
-                // An unrecoverable error occurred. An `ExitCode::FAILURE` can be
+                // An unrecoverable error occurred. An `ExitCode(1)` can be
                 // used to initiate restart logic configured in a process
                 // supervisor such as upstart or systemd.
-                Some(true) => break ExitCode::FAILURE,
+                Some(true) => break ExitCode::from(1),
 
                 // A scheduled shutdown was requested. An `ExitCode::SUCCESS` can
                 // be viewed as a confirmation that every request was served
