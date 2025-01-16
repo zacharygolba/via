@@ -48,7 +48,10 @@ impl Pipe for HttpBody<RequestBody> {
     fn pipe(self, response: Builder) -> Result<Response, Error> {
         response
             .header(TRANSFER_ENCODING, "chunked")
-            .body(HttpBody::Box(BoxBody::new(self)))
+            .body(HttpBody::Box(match self {
+                HttpBody::Inline(body) => BoxBody::new(body),
+                HttpBody::Box(body) => body,
+            }))
     }
 }
 
@@ -77,33 +80,29 @@ impl Builder {
     }
 
     pub fn json(self, data: &impl Serialize) -> Result<Response, Error> {
-        let body = {
+        let (len, body) = {
             let mut writer = BytesMut::new().writer();
             serde_json::to_writer(&mut writer, &JsonPayload { data })?;
 
             let buf = writer.into_inner().freeze();
-            BufferBody::from_raw(buf)
+            (buf.len(), BufferBody::from_raw(buf))
         };
 
         self.header(CONTENT_TYPE, "application/json; charset=utf-8")
-            .header(CONTENT_LENGTH, body.len())
+            .header(CONTENT_LENGTH, len)
             .body(HttpBody::Inline(body))
     }
 
-    pub fn html(self, html: String) -> Result<Response, Error> {
-        let body = BufferBody::from(html);
-
+    pub fn html(self, body: String) -> Result<Response, Error> {
         self.header(CONTENT_TYPE, "text/html; charset=utf-8")
             .header(CONTENT_LENGTH, body.len())
-            .body(HttpBody::Inline(body))
+            .body(HttpBody::Inline(body.into()))
     }
 
-    pub fn text(self, text: String) -> Result<Response, Error> {
-        let body = BufferBody::from(text);
-
+    pub fn text(self, body: String) -> Result<Response, Error> {
         self.header(CONTENT_TYPE, "text/plain; charset=utf-8")
             .header(CONTENT_LENGTH, body.len())
-            .body(HttpBody::Inline(body))
+            .body(HttpBody::Inline(body.into()))
     }
 
     #[inline]
@@ -156,7 +155,7 @@ impl Builder {
     ///
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
-        self.body(HttpBody::new())
+        self.body(HttpBody::Inline(BufferBody::default()))
     }
 }
 

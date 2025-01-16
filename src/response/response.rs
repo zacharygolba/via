@@ -9,7 +9,7 @@ use crate::body::{BoxBody, BufferBody, HttpBody};
 
 pub struct Response {
     mapped: bool,
-    cookies: Option<CookieJar>,
+    cookies: Option<Box<CookieJar>>,
     response: http::Response<HttpBody<BufferBody>>,
 }
 
@@ -40,6 +40,7 @@ impl Response {
     /// Consumes the response returning a new response with body mapped to the
     /// return type of the provided closure `map`.
     ///
+    #[inline]
     pub fn map(self, map: impl FnOnce(HttpBody<BufferBody>) -> BoxBody) -> Self {
         if cfg!(debug_assertions) && self.mapped {
             // TODO: Replace this with tracing and a proper logger.
@@ -53,22 +54,26 @@ impl Response {
         }
     }
 
+    #[inline]
     pub fn body(&self) -> &HttpBody<BufferBody> {
         self.response.body()
     }
 
+    #[inline]
     pub fn body_mut(&mut self) -> &mut HttpBody<BufferBody> {
         self.response.body_mut()
     }
 
     /// Returns a reference to the response cookies.
     ///
+    #[inline]
     pub fn cookies(&self) -> Option<&CookieJar> {
-        self.cookies.as_ref()
+        self.cookies.as_deref()
     }
 
     /// Returns a mutable reference to the response cookies.
     ///
+    #[inline]
     pub fn cookies_mut(&mut self) -> &mut CookieJar {
         self.cookies.get_or_insert_default()
     }
@@ -78,6 +83,7 @@ impl Response {
         self.response.headers()
     }
 
+    #[inline]
     pub fn headers_mut(&mut self) -> &mut HeaderMap {
         self.response.headers_mut()
     }
@@ -87,6 +93,7 @@ impl Response {
         self.response.status()
     }
 
+    #[inline]
     pub fn status_mut(&mut self) -> &mut StatusCode {
         self.response.status_mut()
     }
@@ -111,28 +118,27 @@ impl Response {
     /// final processing that may be required before the response is sent to the
     /// client.
     ///
-    pub(crate) fn into_inner(mut self) -> http::Response<HttpBody<BufferBody>> {
-        if let Some(cookies) = &self.cookies {
-            // Extend the response headers with the "Set-Cookie" headers for
-            // every cookie that was changed during the request.
-            self.response
-                .headers_mut()
-                .extend(cookies.delta().filter_map(|cookie| {
-                    // Get a percent-encoded string from cookie.
-                    let cookie_str = cookie.encoded().to_string();
+    pub(crate) fn into_inner(self) -> http::Response<HttpBody<BufferBody>> {
+        self.response
+    }
 
-                    // Attempt to parse cookie_str to a HeaderValue if it fails,
-                    // provide a placeholder for tracing.
-                    let parse_result = cookie_str.parse().inspect_err(|_| {
-                        // Placeholder for tracing...
-                    });
-
-                    // Return a HeaderMap entry if cookie_str was parsed successfully.
-                    Some(SET_COOKIE).zip(parse_result.ok())
-                }));
-        }
+    pub(crate) fn set_cookie_headers(&mut self) {
+        let cookies = match &self.cookies {
+            Some(jar) => jar,
+            None => return,
+        };
 
         self.response
+            .headers_mut()
+            .extend(cookies.delta().filter_map(|cookie| {
+                match cookie.encoded().to_string().parse() {
+                    Ok(header_value) => Some((SET_COOKIE, header_value)),
+                    Err(error) => {
+                        let _ = error; // Placeholder for tracing...
+                        None
+                    }
+                }
+            }));
     }
 }
 
