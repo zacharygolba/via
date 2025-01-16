@@ -19,8 +19,7 @@ use super::io_stream::IoStream;
 use super::shutdown::{wait_for_shutdown, ShutdownTx};
 use crate::body::{BufferBody, HttpBody};
 use crate::error::{BoxError, Error};
-use crate::request::{Request, RequestBody};
-use crate::response::Response;
+use crate::request::{PathParams, Request, RequestBody};
 use crate::router::Router;
 
 pub async fn serve<State, A>(
@@ -101,14 +100,8 @@ where
                         }
                     };
 
-                    let service = service_fn(|incoming_request| {
-                        serve_request(
-                            &router,
-                            &shutdown_tx,
-                            Arc::clone(&state),
-                            max_request_size,
-                            incoming_request,
-                        )
+                    let service = service_fn(|r| {
+                        serve_request(&state, &router, &shutdown_tx, max_request_size, r)
                     });
 
                     // Create a new HTTP/2 connection.
@@ -228,49 +221,64 @@ where
 }
 
 fn serve_request<T>(
+    state: &Arc<T>,
     router: &Router<T>,
     shutdown_tx: &ShutdownTx,
-    state: Arc<T>,
     max_request_size: usize,
-    incoming_request: http::Request<Incoming>,
+    request: http::Request<Incoming>,
 ) -> impl Future<Output = Result<http::Response<HttpBody<BufferBody>>, hyper::Error>> {
-    // Wrap the incoming request in with `via::Request`.
-    let mut request = {
+    let found = {
+        // Preallocate a vec to store up to 8 path parameter ranges. This
+        // reduces the size of allocations for the common use-case.
+        let mut params = PathParams::new(Vec::with_capacity(8));
+
         // Destructure the incoming request into its component parts.
-        let (parts, body) = incoming_request.into_parts();
+        let (parts, body) = request.into_parts();
 
-        // Allocate the metadata associated with the request on the heap. This
-        // keeps the size of the request type small enough to pass around by value.
-        let parts = Box::new(parts);
+        match router.lookup(&mut params, parts.uri.path()) {
+            // Call the middleware stack for the resolved routes.
+            Ok(next) => Some(next.call({
+                // Clone the arc pointer to the global application state so
+                // ownership can be shared with Request.
+                let state = Arc::clone(state);
 
-        // Convert the incoming body type to a RequestBody.
-        let body = HttpBody::Inline(RequestBody::new(max_request_size, body));
+                // Allocate the metadata associated with the request on the
+                // heap. This keeps the size of the request type small enough
+                // to pass around by value.
+                let parts = Box::new(parts);
 
-        Request::new(parts, body, state)
-    };
+                // Limit the length of the incoming request body to the
+                // configured maximum.
+                let body = HttpBody::Inline(RequestBody::new(max_request_size, body));
 
-    let future = match router.lookup(request.parts.uri.path(), &mut request.params) {
-        // Call the middleware stack for the resolved routes.
-        Ok(next) => next.call(request),
+                Request::new(state, parts, params, body)
+            })),
 
-        // Alert the main thread that we encountered an
-        // unrecoverable error.
-        Err(error) => {
-            let _ = shutdown_tx.send(Some(true));
-            let _ = error; // Placeholder for tracing...
-            Box::pin(async {
-                let message = "internal server error".to_owned();
-                Err(Error::internal_server_error(message.into()))
-            })
+            // An error occurred while routing the request.
+            Err(error) => {
+                let _ = shutdown_tx.send(Some(true));
+                let _ = error; // Placeholder for tracing...
+                None
+            }
         }
     };
 
     async {
-        Ok::<_, hyper::Error>(match future.await {
-            // The response was generated successfully.
-            Ok(response) => response.into_inner(),
-            // An occurred while generating the response.
-            Err(error) => Response::from(error).into_inner(),
-        })
+        let response = match found {
+            Some(future) => match future.await {
+                Err(error) => error.into(),
+                Ok(mut response) => {
+                    response.set_cookie_headers();
+                    response
+                }
+            },
+            None => {
+                let message = "internal server error".to_owned();
+                let error = Error::internal_server_error(message.into());
+                error.into()
+            }
+        };
+
+        Ok(response.into_inner())
     }
 }

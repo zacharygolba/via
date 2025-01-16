@@ -12,19 +12,14 @@ use crate::body::{BoxBody, HttpBody};
 pub struct Request<T = ()> {
     mapped: bool,
 
-    /// The component parts of the underlying HTTP request.
-    ///
-    pub(crate) parts: Box<Parts>,
-
-    /// A wrapper around the body of the request. This provides callers with
-    /// convienent methods for reading the request body.
-    ///
-    body: HttpBody<RequestBody>,
-
     /// The shared application state passed to the [`via::new`](crate::app::new)
     /// function.
     ///
     state: Arc<T>,
+
+    /// The component parts of the underlying HTTP request.
+    ///
+    parts: Box<Parts>,
 
     /// The cookies associated with the request. If there is not a
     /// [CookieParser](crate::middleware::CookieParser)
@@ -34,7 +29,12 @@ pub struct Request<T = ()> {
 
     /// The request's path and query parameters.
     ///
-    pub(crate) params: PathParams,
+    params: PathParams,
+
+    /// A wrapper around the body of the request. This provides callers with
+    /// convienent methods for reading the request body.
+    ///
+    body: HttpBody<RequestBody>,
 }
 
 impl<T> Request<T> {
@@ -154,14 +154,19 @@ impl<T> Request<T> {
 }
 
 impl<T> Request<T> {
-    pub(crate) fn new(parts: Box<Parts>, body: HttpBody<RequestBody>, state: Arc<T>) -> Self {
+    pub(crate) fn new(
+        state: Arc<T>,
+        parts: Box<Parts>,
+        params: PathParams,
+        body: HttpBody<RequestBody>,
+    ) -> Self {
         Self {
-            parts,
-            body,
-            state,
             mapped: false,
+            state,
+            parts,
             cookies: None,
-            params: PathParams::new(Vec::with_capacity(8)),
+            params,
+            body,
         }
     }
 

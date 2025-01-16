@@ -3,17 +3,18 @@ use crate::error::Error;
 use crate::request::Request;
 use crate::response::Response;
 
-pub struct Next<State = ()> {
-    stack: Vec<ArcMiddleware<State>>,
+pub struct Next<T = ()> {
+    stack: Vec<ArcMiddleware<T>>,
 }
 
-impl<State> Next<State> {
-    pub(crate) fn new(stack: Vec<ArcMiddleware<State>>) -> Self {
+impl<T> Next<T> {
+    #[inline]
+    pub(crate) fn new(stack: Vec<ArcMiddleware<T>>) -> Self {
         Self { stack }
     }
 
     #[inline]
-    pub fn call(mut self, request: Request<State>) -> BoxFuture<Result<Response, Error>> {
+    pub fn call(mut self, request: Request<T>) -> BoxFuture<Result<Response, Error>> {
         match self.stack.pop() {
             Some(middleware) => middleware.call(request, self),
             None => Box::pin(async {

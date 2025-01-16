@@ -20,7 +20,7 @@ impl<T> Router<T> {
         Route::new(self.inner.at(pattern))
     }
 
-    pub fn lookup(&self, path: &str, params: &mut PathParams) -> Result<Next<T>, VisitError> {
+    pub fn lookup(&self, params: &mut PathParams, path: &str) -> Result<Next<T>, VisitError> {
         let mut stack = Vec::new();
 
         // Iterate over the routes that match the request's path.
