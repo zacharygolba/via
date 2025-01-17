@@ -47,30 +47,65 @@ pub struct Found<'a> {
     pub at: Option<(usize, usize)>,
 }
 
+impl Error for VisitError {}
+
+impl Display for VisitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NodeNotFound => {
+                write!(f, "a node was visited that contains an invalid reference")
+            }
+            Self::RootNotFound => {
+                write!(f, "the route tree is missing the root node")
+            }
+        }
+    }
+}
+
 pub fn visit<'a>(
     results: &mut Vec<Result<Found<'a>, VisitError>>,
     nodes: &'a [Node],
     segments: &[(usize, usize)],
     path: &str,
 ) {
-    let root = match nodes.first() {
-        Some(node) => node,
-        None => return results.push(Err(VisitError::RootNotFound)),
+    let (root, found) = match nodes.first() {
+        Some(node) => (
+            node,
+            Found {
+                is_leaf: segments.is_empty(),
+                param: None,
+                route: node.route,
+                at: None,
+            },
+        ),
+        None => {
+            results.push(Err(VisitError::RootNotFound));
+            return;
+        }
     };
 
+    // Append the root node as a match to the results vector.
+    results.push(Ok(found));
+
     if let Some(range) = segments.first() {
-        results.push(Ok(Found::new(None, None, root.route)));
-        visit_node(results, nodes, root, path, segments, range, 1);
+        // Perform a recursive search for descendants of `root` that match the
+        // first path segment.
+        visit_node(results, nodes, root, path, segments, range, 0);
     } else {
-        results.push(Ok(Found::leaf(None, None, root.route)));
-        #[rustfmt::skip]
-        results.extend(root.entries().filter_map(|key| match nodes.get(*key) {
-            Some(n @ Node { pattern: Pattern::Wildcard(param), .. }) => {
-                Some(Ok(Found::leaf(Some(param), None, n.route)))
-            }
-            Some(_) => None,
-            None => Some(Err(VisitError::NodeNotFound)),
-        }));
+        // Perform a shallow search for descendants of `child` with a wildcard
+        // pattern.
+        for (name, route) in root.entries().filter_map(|k| match nodes.get(*k) {
+            #[rustfmt::skip]
+            Some(Node { pattern: Pattern::Wildcard(n), route, .. }) => Some((n, route)),
+            _ => None,
+        }) {
+            results.push(Ok(Found {
+                is_leaf: true,
+                param: Some(name),
+                route: *route,
+                at: None,
+            }));
+        }
     }
 }
 
@@ -87,7 +122,7 @@ fn visit_node<'a>(
     nodes: &'a [Node],
 
     // A reference to the most recently matched node.
-    node: &'a Node,
+    parent: &'a Node,
 
     // The url path that we are attempting to match against the route tree.
     path: &str,
@@ -95,103 +130,102 @@ fn visit_node<'a>(
     segments: &[(usize, usize)],
 
     // The start and end offset of the current path segment.
-    at: &(usize, usize),
+    range: &(usize, usize),
 
     // The index of the next path segment in `self.segments`.
     index: usize,
 ) {
-    // Get the value of the path segment at `range`. We'll eagerly borrow
-    // and cache this slice from `path` to avoid having to build the ref
-    // for each descendant with a static pattern.
-    let segment = &path[at.0..at.1];
+    let (start, end) = *range;
 
-    let next = segments.get(index);
+    // Build a str with the value of the path segment at `index` from the range argument.
+    let segment = &path[start..end];
+
+    // Cache an option containing the next path segment range to avoid slice access in a
+    // loop.
+    let next = segments.get(index + 1);
 
     // Search for descendant nodes that match `segment`.
-    for option in node.entries().map(|key| nodes.get(*key)) {
+    for key in parent.entries() {
         #[rustfmt::skip]
-        let (mut found, child) = match option {
-            Some(n @ Node { pattern: Pattern::Wildcard(param), .. }) => (
-                Found::leaf(Some(param), Some((at.0, path.len())), n.route),
-                n,
+        let (child, found) = match nodes.get(*key) {
+            // The node has a static pattern. Attempt to match the pattern value against
+            // the current path segment.
+            Some(node @ Node { pattern: Pattern::Static(value), .. }) if value == segment => (
+                node,
+                Found {
+                    is_leaf: next.is_none(),
+                    param: None,
+                    route: node.route,
+                    at: Some((start, end)),
+                },
             ),
 
-            Some(n @ Node { pattern: Pattern::Dynamic(param), .. }) => (
-                Found::new(Some(param), Some((at.0, at.1)), n.route),
-                n,
+            // The node has a wildcard pattern. Consider it a match unconditionally and
+            // use the length of the path as the end offset for the range.
+            Some(node @ Node { pattern: Pattern::Wildcard(name), .. }) => (
+                node,
+                Found {
+                    is_leaf: true,
+                    param: Some(name),
+                    route: node.route,
+                    at: Some((start, path.len())),
+                },
             ),
 
-            // The node has a static pattern. Attempt to match the pattern
-            // value against the current path segment.
-            Some(n @ Node { pattern: Pattern::Static(value), .. }) => {
-                if value == segment {
-                    (Found::new(None, Some((at.0, at.1)), n.route), n)
-                } else {
-                    continue;
-                }
-            }
+            // The node has a dynamic pattern. Consider it a match unconditionally.
+            Some(node @ Node { pattern: Pattern::Dynamic(name), .. }) => (
+                node,
+                Found {
+                    is_leaf: next.is_none(),
+                    param: Some(name),
+                    route: node.route,
+                    at: Some((start, end)),
+                },
+            ),
 
-            Some(Node { pattern: Pattern::Root, .. }) => {
+            // The node does not match the current path segment.
+            Some(_) => {
                 continue;
             }
 
+            // The node at `key` does not exist.
             None => {
+                // Append an error result to the matches vector.
                 results.push(Err(VisitError::NodeNotFound));
-                continue;
+                // Stop searching for nodes because memory is likely corrupt.
+                break;
             }
         };
 
-        if let Some(range) = next {
-            results.push(Ok(found));
-            visit_node(results, nodes, child, path, segments, range, index + 1);
-        } else {
-            found.is_leaf = true;
-            results.push(Ok(found));
-            #[rustfmt::skip]
-            results.extend(child.entries().filter_map(|key| match nodes.get(*key) {
-                Some(n @ Node { pattern: Pattern::Wildcard(param), .. }) => {
-                    Some(Ok(Found::leaf(Some(param), None, n.route)))
+        // Append the match to the results vector.
+        results.push(Ok(found));
+
+        match (next, &child.pattern) {
+            // Wildcard patterns consume the remainder of the path. Continue matching
+            // adjacent nodes.
+            (_, Pattern::Wildcard(_)) => {}
+
+            // Perform a recursive search for descendants of `child` that match the next
+            // path segment.
+            (Some(range), _) => {
+                visit_node(results, nodes, child, path, segments, range, index + 1);
+            }
+
+            // Perform a shallow search for descendants of `child` with a wildcard pattern.
+            (None, _) => {
+                for (name, route) in child.entries().filter_map(|k| match nodes.get(*k) {
+                    #[rustfmt::skip]
+                    Some(Node { pattern: Pattern::Wildcard(n), route, .. }) => Some((n, route)),
+                    _ => None,
+                }) {
+                    results.push(Ok(Found {
+                        is_leaf: true,
+                        param: Some(name),
+                        route: *route,
+                        at: None,
+                    }));
                 }
-                Some(_) => None,
-                None => Some(Err(VisitError::NodeNotFound)),
-            }));
-        }
-    }
-}
-
-impl Display for VisitError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NodeNotFound => {
-                write!(f, "a node was visited that contains an invalid reference")
             }
-            Self::RootNotFound => {
-                write!(f, "the route tree is missing the root node")
-            }
-        }
-    }
-}
-
-impl Error for VisitError {}
-
-impl<'a> Found<'a> {
-    #[inline]
-    fn new(param: Option<&'a str>, at: Option<(usize, usize)>, route: Option<usize>) -> Self {
-        Self {
-            is_leaf: false,
-            route,
-            param,
-            at,
-        }
-    }
-
-    #[inline]
-    fn leaf(param: Option<&'a str>, at: Option<(usize, usize)>, route: Option<usize>) -> Self {
-        Self {
-            is_leaf: true,
-            route,
-            param,
-            at,
         }
     }
 }
