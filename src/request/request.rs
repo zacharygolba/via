@@ -104,17 +104,15 @@ impl<T> Request<T> {
     ///
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
         let path = self.parts.uri.path();
-        let at = self.params.iter().find_map(
-            |(param, range)| {
-                if name == param {
-                    Some(range)
-                } else {
-                    None
-                }
-            },
-        );
+        let at = self.params.iter().rev().find_map(|(param, at)| {
+            if name == param {
+                Some((at.0, at.1))
+            } else {
+                None
+            }
+        });
 
-        PathParam::new(at.copied(), name, path)
+        PathParam::new(at, name, path)
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
