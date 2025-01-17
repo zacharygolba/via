@@ -155,7 +155,7 @@ impl Builder {
     ///
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
-        self.body(HttpBody::Inline(BufferBody::default()))
+        self.body(Default::default())
     }
 }
 

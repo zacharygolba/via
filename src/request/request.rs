@@ -10,8 +10,6 @@ use super::param::{PathParam, PathParams};
 use crate::body::{BoxBody, HttpBody};
 
 pub struct Request<T = ()> {
-    mapped: bool,
-
     /// The shared application state passed to the [`via::new`](crate::app::new)
     /// function.
     ///
@@ -48,13 +46,12 @@ impl<T> Request<T> {
     /// return type of the provided closure `map`.
     ///
     pub fn map(self, map: impl FnOnce(HttpBody<RequestBody>) -> BoxBody) -> Self {
-        if cfg!(debug_assertions) && self.mapped {
+        if cfg!(debug_assertions) && self.body.is_dyn() {
             // TODO: Replace this with tracing and a proper logger.
             eprintln!("calling request.map() more than once can create a reference cycle.",);
         }
 
         Self {
-            mapped: true,
             body: HttpBody::Box(map(self.body)),
             ..self
         }
@@ -107,15 +104,17 @@ impl<T> Request<T> {
     ///
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
         let path = self.parts.uri.path();
-        let at = self.params.iter().find_map(|(param, span)| {
-            if name == param {
-                Some((span.start(), span.end()))
-            } else {
-                None
-            }
-        });
+        let at = self.params.iter().find_map(
+            |(param, range)| {
+                if name == param {
+                    Some(range)
+                } else {
+                    None
+                }
+            },
+        );
 
-        PathParam::new(at, name, path)
+        PathParam::new(at.copied(), name, path)
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
@@ -161,7 +160,6 @@ impl<T> Request<T> {
         body: HttpBody<RequestBody>,
     ) -> Self {
         Self {
-            mapped: false,
             state,
             parts,
             cookies: None,

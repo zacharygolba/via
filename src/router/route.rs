@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use via_router::Endpoint;
 
 use crate::middleware::Middleware;
 
@@ -22,7 +21,7 @@ pub enum MatchWhen<T> {
 }
 
 pub struct Route<'a, T> {
-    inner: Endpoint<'a, Vec<MatchWhen<T>>>,
+    inner: via_router::Route<'a, Vec<MatchWhen<T>>>,
 }
 
 impl<T> Route<'_, T> {
@@ -54,7 +53,7 @@ impl<T> Route<'_, T> {
 
 impl<'a, T> Route<'a, T> {
     #[inline]
-    pub(super) fn new(inner: Endpoint<'a, Vec<MatchWhen<T>>>) -> Self {
+    pub(super) fn new(inner: via_router::Route<'a, Vec<MatchWhen<T>>>) -> Self {
         Self { inner }
     }
 

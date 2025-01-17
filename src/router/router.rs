@@ -31,7 +31,7 @@ impl<T> Router<T> {
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
             if let (Some(param), Some(at)) = (found.param, found.at) {
-                params.push((param, at));
+                params.push((param.to_owned(), at));
             }
 
             let route = match found.route.and_then(|key| self.inner.get(key)) {

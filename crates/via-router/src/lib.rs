@@ -4,11 +4,15 @@ mod path;
 mod routes;
 mod visitor;
 
-pub use path::Span;
 pub use visitor::{Found, VisitError};
 
 use path::Pattern;
 use routes::{Node, RouteEntry};
+
+pub struct Route<'a, T> {
+    router: &'a mut Router<T>,
+    key: usize,
+}
 
 pub struct Router<T> {
     /// A collection of nodes that represent the path segments of a route.
@@ -18,19 +22,12 @@ pub struct Router<T> {
     routes: Vec<T>,
 }
 
-pub struct Endpoint<'a, T> {
-    router: &'a mut Router<T>,
-    key: usize,
-}
-
 impl<T> Router<T> {
     pub fn new() -> Self {
-        let mut nodes = Vec::new();
-        let routes = Vec::new();
-
-        nodes.push(Node::new(Pattern::Root));
-
-        Self { nodes, routes }
+        Self {
+            nodes: vec![Node::new(Pattern::Root)],
+            routes: vec![],
+        }
     }
 
     /// Returns a reference to the route associated with the given key.
@@ -39,20 +36,19 @@ impl<T> Router<T> {
         self.routes.get(key)
     }
 
-    pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
+    pub fn at(&mut self, path: &'static str) -> Route<T> {
         let mut segments = path::patterns(path);
         let key = insert(self, &mut segments, 0);
 
-        Endpoint { router: self, key }
+        Route { router: self, key }
     }
 
     pub fn visit(&self, path: &str) -> Vec<Result<Found, VisitError>> {
         let mut segments = Vec::with_capacity(8);
         let mut results = Vec::with_capacity(8);
-        let nodes = &self.nodes;
 
         path::split(&mut segments, path);
-        visitor::visit(&mut results, nodes, &segments, path);
+        visitor::visit(&mut results, &self.nodes, &segments, path);
 
         results
     }
@@ -104,12 +100,12 @@ impl<T> Default for Router<T> {
     }
 }
 
-impl<T> Endpoint<'_, T> {
-    pub fn at(&mut self, path: &'static str) -> Endpoint<T> {
+impl<T> Route<'_, T> {
+    pub fn at(&mut self, path: &'static str) -> Route<T> {
         let mut segments = path::patterns(path);
         let key = insert(self.router, &mut segments, self.key);
 
-        Endpoint {
+        Route {
             router: self.router,
             key,
         }
@@ -245,8 +241,8 @@ mod tests {
                 let found = matches[1].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
                 let segment = {
-                    let range = found.at.as_ref().unwrap();
-                    &path[range.start()..range.end()]
+                    let (start, end) = found.at.unwrap();
+                    &path[start..end]
                 };
 
                 assert_eq!(route, Some(&()));
@@ -281,8 +277,8 @@ mod tests {
                 let found = matches[1].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
                 let segment = {
-                    let range = found.at.as_ref().unwrap();
-                    &path[range.start()..range.end()]
+                    let (start, end) = found.at.unwrap();
+                    &path[start..end]
                 };
 
                 assert_eq!(route, Some(&()));
@@ -298,8 +294,8 @@ mod tests {
                 let found = matches[2].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
                 let segment = {
-                    let range = found.at.as_ref().unwrap();
-                    &path[range.start()..range.end()]
+                    let (start, end) = found.at.unwrap();
+                    &path[start..end]
                 };
 
                 assert_eq!(route, None);
@@ -314,8 +310,8 @@ mod tests {
                 let found = matches[3].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
                 let segment = {
-                    let range = found.at.as_ref().unwrap();
-                    &path[range.start()..range.end()]
+                    let (start, end) = found.at.unwrap();
+                    &path[start..end]
                 };
 
                 assert_eq!(route, Some(&()));
@@ -349,8 +345,8 @@ mod tests {
                 let found = matches[1].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
                 let segment = {
-                    let range = found.at.as_ref().unwrap();
-                    &path[range.start()..range.end()]
+                    let (start, end) = found.at.unwrap();
+                    &path[start..end]
                 };
 
                 assert_eq!(route, Some(&()));
@@ -366,8 +362,8 @@ mod tests {
                 let found = matches[2].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
                 let segment = {
-                    let range = found.at.as_ref().unwrap();
-                    &path[range.start()..range.end()]
+                    let (start, end) = found.at.unwrap();
+                    &path[start..end]
                 };
 
                 assert_eq!(route, None);
@@ -382,8 +378,8 @@ mod tests {
                 let found = matches[3].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
                 let segment = {
-                    let range = found.at.as_ref().unwrap();
-                    &path[range.start()..range.end()]
+                    let (start, end) = found.at.unwrap();
+                    &path[start..end]
                 };
 
                 assert_eq!(route, Some(&()));
@@ -417,8 +413,8 @@ mod tests {
                 let found = matches[1].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
                 let segment = {
-                    let range = found.at.as_ref().unwrap();
-                    &path[range.start()..range.end()]
+                    let (start, end) = found.at.unwrap();
+                    &path[start..end]
                 };
 
                 assert_eq!(route, Some(&()));
@@ -434,8 +430,8 @@ mod tests {
                 let found = matches[2].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
                 let segment = {
-                    let range = found.at.as_ref().unwrap();
-                    &path[range.start()..range.end()]
+                    let (start, end) = found.at.unwrap();
+                    &path[start..end]
                 };
 
                 assert_eq!(route, None);
@@ -450,8 +446,8 @@ mod tests {
                 let found = matches[3].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
                 let segment = {
-                    let range = found.at.as_ref().unwrap();
-                    &path[range.start()..range.end()]
+                    let (start, end) = found.at.unwrap();
+                    &path[start..end]
                 };
 
                 assert_eq!(route, Some(&()));
@@ -466,8 +462,8 @@ mod tests {
                 let found = matches[4].as_ref().unwrap();
                 let route = found.route.and_then(|key| router.get(key));
                 let segment = {
-                    let range = found.at.as_ref().unwrap();
-                    &path[range.start()..range.end()]
+                    let (start, end) = found.at.unwrap();
+                    &path[start..end]
                 };
 
                 assert_eq!(route, Some(&()));
