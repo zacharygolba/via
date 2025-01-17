@@ -1,3 +1,5 @@
+#![allow(clippy::single_match)]
+
 use std::error::Error;
 use std::fmt::{self, Display};
 
