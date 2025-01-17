@@ -44,11 +44,39 @@ impl<T> Router<T> {
     }
 
     pub fn visit(&self, path: &str) -> Vec<Result<Found, VisitError>> {
-        let mut segments = Vec::with_capacity(8);
-        let mut results = Vec::with_capacity(8);
+        // Get a reference to self.nodes.
+        let nodes = &self.nodes;
 
-        path::split(&mut segments, path);
-        visitor::visit(&mut results, &self.nodes, &segments, path);
+        // Split path into segment ranges and collect them into a vec.
+        let segments = {
+            let mut vec = Vec::with_capacity(8);
+            path::split(&mut vec, path);
+            vec
+        };
+
+        // Allocate a vec to store matched results.
+        let (mut results, root) = match nodes.first() {
+            Some(node) => (Vec::with_capacity(8), node),
+            None => return vec![Err(VisitError::RootNotFound)],
+        };
+
+        // Append the root node as a match to the results vector.
+        results.push(Ok(Found {
+            is_leaf: segments.is_empty(),
+            param: None,
+            route: root.route,
+            at: None,
+        }));
+
+        // If there is at least 1 path segment to match against, perform a recursive
+        // search for descendants of `root` that match the each segment in `segments`.
+        // Otherwise, perform a shallow search for descendants of `root` with a
+        // wildcard pattern.
+        if let Some(range) = segments.first() {
+            visitor::visit_node(&mut results, nodes, root, path, &segments, range, 0);
+        } else {
+            visitor::visit_wildcard(&mut results, nodes, root);
+        }
 
         results
     }
