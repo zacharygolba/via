@@ -1,24 +1,23 @@
 use std::fmt::{self, Debug, Formatter};
 use std::slice::Iter;
-use via_router::Span;
 
 pub struct PathParams {
-    data: Vec<(String, Span)>,
+    data: Vec<(String, (usize, usize))>,
 }
 
 impl PathParams {
     #[inline]
-    pub fn new(data: Vec<(String, Span)>) -> Self {
+    pub fn new(data: Vec<(String, (usize, usize))>) -> Self {
         Self { data }
     }
 
     #[inline]
-    pub fn iter(&self) -> Iter<(String, Span)> {
+    pub fn iter(&self) -> Iter<(String, (usize, usize))> {
         self.data.iter()
     }
 
     #[inline]
-    pub fn push(&mut self, param: (String, Span)) {
+    pub fn push(&mut self, param: (String, (usize, usize))) {
         self.data.push(param);
     }
 }

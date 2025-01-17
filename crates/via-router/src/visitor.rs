@@ -1,20 +1,8 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use crate::path::{Pattern, Span};
+use crate::path::Pattern;
 use crate::routes::Node;
-
-macro_rules! expect_entry {
-    ($results:expr, $nodes:expr, $key:expr) => {
-        match $nodes.get($key) {
-            Some(descendant) => descendant,
-            None => {
-                $results.push(Err(crate::VisitError::NodeNotFound));
-                continue;
-            }
-        }
-    };
-}
 
 #[derive(Clone, Debug)]
 pub enum VisitError {
@@ -39,7 +27,7 @@ pub enum VisitError {
 /// metadata about the match.
 ///
 #[derive(Debug)]
-pub struct Found {
+pub struct Found<'a> {
     /// True if there were no more segments to match against the children of the
     /// matched node. Otherwise, false.
     ///
@@ -52,43 +40,121 @@ pub struct Found {
 
     /// The name of the dynamic parameter that matched the path segment.
     ///
-    pub param: Option<String>,
+    pub param: Option<&'a str>,
 
     /// The range of the path segment that matched the node.
     ///
-    pub at: Option<Span>,
+    pub at: Option<(usize, usize)>,
 }
 
-pub fn visit(
-    results: &mut Vec<Result<Found, VisitError>>,
-    nodes: &[Node],
-    segments: &[Span],
+pub fn visit<'a>(
+    results: &mut Vec<Result<Found<'a>, VisitError>>,
+    nodes: &'a [Node],
+    segments: &[(usize, usize)],
     path: &str,
 ) {
     let root = match nodes.first() {
         Some(node) => node,
-        None => {
-            results.push(Err(VisitError::NodeNotFound));
-            return;
-        }
+        None => return results.push(Err(VisitError::RootNotFound)),
     };
 
-    match segments.first() {
-        Some(range) => {
-            // Append the root match to the results vector.
-            results.push(Ok(Found::new(root.route, None, None)));
+    if let Some(range) = segments.first() {
+        results.push(Ok(Found::new(None, None, root.route)));
+        visit_node(results, nodes, root, path, segments, range, 1);
+    } else {
+        results.push(Ok(Found::leaf(None, None, root.route)));
+        #[rustfmt::skip]
+        results.extend(root.entries().filter_map(|key| match nodes.get(*key) {
+            Some(n @ Node { pattern: Pattern::Wildcard(param), .. }) => {
+                Some(Ok(Found::leaf(Some(param), None, n.route)))
+            }
+            Some(_) => None,
+            None => Some(Err(VisitError::NodeNotFound)),
+        }));
+    }
+}
 
-            // Begin the search for matches recursively starting with descendants of
-            // the root node.
-            visit_node(results, nodes, root, path, segments, range, 0);
-        }
-        None => {
-            // Append the root match to the results vector.
-            results.push(Ok(Found::leaf(root.route, None, None)));
+/// Recursively search for descendants of the node at `key` that have a
+/// pattern that matches the path segment at `index`. If a match is found,
+/// we'll add it to `results` and continue our search with the descendants
+/// of matched node against the path segment at next index.
+fn visit_node<'a>(
+    // A mutable reference to a vector that contains the matches that we
+    // have found so far.
+    results: &mut Vec<Result<Found<'a>, VisitError>>,
 
-            // Perform a shallow search for descendants of the root node that have a
-            // `CatchAll` pattern.
-            visit_index(results, nodes, root);
+    // A reference to the route store that contains the route tree.
+    nodes: &'a [Node],
+
+    // A reference to the most recently matched node.
+    node: &'a Node,
+
+    // The url path that we are attempting to match against the route tree.
+    path: &str,
+
+    segments: &[(usize, usize)],
+
+    // The start and end offset of the current path segment.
+    at: &(usize, usize),
+
+    // The index of the next path segment in `self.segments`.
+    index: usize,
+) {
+    // Get the value of the path segment at `range`. We'll eagerly borrow
+    // and cache this slice from `path` to avoid having to build the ref
+    // for each descendant with a static pattern.
+    let segment = &path[at.0..at.1];
+
+    let next = segments.get(index);
+
+    // Search for descendant nodes that match `segment`.
+    for option in node.entries().map(|key| nodes.get(*key)) {
+        #[rustfmt::skip]
+        let (mut found, child) = match option {
+            Some(n @ Node { pattern: Pattern::Wildcard(param), .. }) => (
+                Found::leaf(Some(param), Some((at.0, path.len())), n.route),
+                n,
+            ),
+
+            Some(n @ Node { pattern: Pattern::Dynamic(param), .. }) => (
+                Found::new(Some(param), Some((at.0, at.1)), n.route),
+                n,
+            ),
+
+            // The node has a static pattern. Attempt to match the pattern
+            // value against the current path segment.
+            Some(n @ Node { pattern: Pattern::Static(value), .. }) => {
+                if value == segment {
+                    (Found::new(None, Some((at.0, at.1)), n.route), n)
+                } else {
+                    continue;
+                }
+            }
+
+            Some(Node { pattern: Pattern::Root, .. }) => {
+                continue;
+            }
+
+            None => {
+                results.push(Err(VisitError::NodeNotFound));
+                continue;
+            }
+        };
+
+        if let Some(range) = next {
+            results.push(Ok(found));
+            visit_node(results, nodes, child, path, segments, range, index + 1);
+        } else {
+            found.is_leaf = true;
+            results.push(Ok(found));
+            #[rustfmt::skip]
+            results.extend(child.entries().filter_map(|key| match nodes.get(*key) {
+                Some(n @ Node { pattern: Pattern::Wildcard(param), .. }) => {
+                    Some(Ok(Found::leaf(Some(param), None, n.route)))
+                }
+                Some(_) => None,
+                None => Some(Err(VisitError::NodeNotFound)),
+            }));
         }
     }
 }
@@ -108,9 +174,9 @@ impl Display for VisitError {
 
 impl Error for VisitError {}
 
-impl Found {
+impl<'a> Found<'a> {
     #[inline]
-    fn new(route: Option<usize>, param: Option<String>, at: Option<Span>) -> Self {
+    fn new(param: Option<&'a str>, at: Option<(usize, usize)>, route: Option<usize>) -> Self {
         Self {
             is_leaf: false,
             route,
@@ -120,157 +186,12 @@ impl Found {
     }
 
     #[inline]
-    fn leaf(route: Option<usize>, param: Option<String>, at: Option<Span>) -> Self {
+    fn leaf(param: Option<&'a str>, at: Option<(usize, usize)>, route: Option<usize>) -> Self {
         Self {
             is_leaf: true,
             route,
             param,
             at,
-        }
-    }
-}
-
-/// Recursively search for descendants of the node at `key` that have a
-/// pattern that matches the path segment at `index`. If a match is found,
-/// we'll add it to `results` and continue our search with the descendants
-/// of matched node against the path segment at next index.
-fn visit_node(
-    // A mutable reference to a vector that contains the matches that we
-    // have found so far.
-    results: &mut Vec<Result<Found, VisitError>>,
-
-    // A reference to the route store that contains the route tree.
-    nodes: &[Node],
-
-    // A reference to the most recently matched node.
-    node: &Node,
-
-    // The url path that we are attempting to match against the route tree.
-    path: &str,
-
-    segments: &[Span],
-
-    // The start and end offset of the path segment at `index` in
-    // `self.path_value`.
-    range: &Span,
-
-    // The index of the path segment in `self.segments` that we are matching
-    // against the node at `key`.
-    index: usize,
-) {
-    // Get the value of the path segment at `range`. We'll eagerly borrow
-    // and cache this slice from `path` to avoid having to build the ref
-    // for each descendant with a static pattern.
-    let segment = &path[range.start()..range.end()];
-
-    // Search for descendant nodes that match `segment`.
-    for key in node.entries().copied() {
-        let entry = expect_entry!(results, nodes, key);
-
-        // Check if `descendant` has a pattern that matches `path_segment`.
-        match &entry.pattern {
-            // The next node has a `Static` pattern that matches the value
-            // of the path segment.
-            Pattern::Static(param) if param == segment => {
-                // Calculate the index of the next path segment.
-                let next_index = index + 1;
-                let at = Some(range.clone());
-
-                match segments.get(next_index) {
-                    Some(next_range) => {
-                        // Append the match to the results vector.
-                        results.push(Ok(Found::new(entry.route, None, at)));
-
-                        // Continue searching for descendants of the current node
-                        // that match the the next path segment.
-                        visit_node(
-                            results, nodes, entry, path, segments, next_range, next_index,
-                        );
-                    }
-                    None => {
-                        // Append the match to the results vector.
-                        results.push(Ok(Found::leaf(entry.route, None, at)));
-
-                        // Perform a shallow search for descendants of the
-                        // current node that have a `CatchAll` pattern.
-                        visit_index(results, nodes, entry);
-                    }
-                }
-            }
-
-            // The next node has a `Dynamic` pattern. Therefore, we consider
-            // it a match regardless of the value of the path segment.
-            Pattern::Dynamic(param) => {
-                // Calculate the index of the next path segment.
-                let next_index = index + 1;
-                let param = Some(param.to_owned());
-                let at = Some(range.clone());
-
-                match segments.get(next_index) {
-                    Some(next_range) => {
-                        // Append the match to the results vector.
-                        results.push(Ok(Found::new(entry.route, param, at)));
-
-                        // Continue searching for descendants of the current node
-                        // that match the the next path segment.
-                        visit_node(
-                            results, nodes, entry, path, segments, next_range, next_index,
-                        );
-                    }
-                    None => {
-                        // Append the match to the results vector.
-                        results.push(Ok(Found::leaf(entry.route, param, at)));
-
-                        // Perform a shallow search for descendants of the
-                        // current node that have a `CatchAll` pattern.
-                        visit_index(results, nodes, entry);
-                    }
-                }
-            }
-
-            // The next node has a `CatchAll` pattern and will be considered
-            // an exact match. Due to the nature of `CatchAll` patterns, we
-            // do not have to continue searching for descendants of this
-            // node that match the remaining path segments.
-            Pattern::Wildcard(param) => {
-                results.push(Ok(Found::leaf(
-                    entry.route,
-                    Some(param.to_owned()),
-                    Some(Span::new(range.start(), path.len())),
-                )));
-            }
-
-            // We don't have to check and see if the pattern is `Pattern::Root`
-            // since we already added our root node to the matches vector.
-            _ => {}
-        }
-    }
-}
-
-/// Perform a shallow search for descendants of the `node` that have a `CatchAll`
-/// pattern.
-///
-fn visit_index(
-    // A mutable reference to a vector that contains the matches that we
-    // have found so far.
-    results: &mut Vec<Result<Found, VisitError>>,
-
-    // A reference to the route store that contains the route tree.
-    nodes: &[Node],
-
-    // A reference to the most recently matched node.
-    node: &Node,
-) {
-    // Perform a shallow search for descendants of the current node that
-    // have a `CatchAll` pattern. This is required to support matching the
-    // "index" path of a descendant node with a `CatchAll` pattern.
-    for key in node.entries().copied() {
-        let entry = expect_entry!(results, nodes, key);
-
-        // Check if `descendant` has a `CatchAll` pattern.
-        if let Pattern::Wildcard(param) = &entry.pattern {
-            // Append the match as a leaf to the results vector.
-            results.push(Ok(Found::leaf(entry.route, Some(param.to_owned()), None)));
         }
     }
 }

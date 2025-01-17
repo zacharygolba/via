@@ -8,8 +8,7 @@ use super::builder::Builder;
 use crate::body::{BoxBody, BufferBody, HttpBody};
 
 pub struct Response {
-    mapped: bool,
-    cookies: Option<Box<CookieJar>>,
+    cookies: Option<CookieJar>,
     response: http::Response<HttpBody<BufferBody>>,
 }
 
@@ -22,7 +21,6 @@ impl Response {
     #[inline]
     pub fn new(body: HttpBody<BufferBody>) -> Self {
         Self {
-            mapped: false,
             cookies: None,
             response: http::Response::new(body),
         }
@@ -31,7 +29,6 @@ impl Response {
     #[inline]
     pub fn from_parts(parts: Parts, body: HttpBody<BufferBody>) -> Self {
         Self {
-            mapped: false,
             cookies: None,
             response: http::Response::from_parts(parts, body),
         }
@@ -42,13 +39,12 @@ impl Response {
     ///
     #[inline]
     pub fn map(self, map: impl FnOnce(HttpBody<BufferBody>) -> BoxBody) -> Self {
-        if cfg!(debug_assertions) && self.mapped {
+        if cfg!(debug_assertions) && self.body().is_dyn() {
             // TODO: Replace this with tracing and a proper logger.
             eprintln!("calling response.map() more than once can create a reference cycle.");
         }
 
         Self {
-            mapped: true,
             cookies: self.cookies,
             response: self.response.map(|body| HttpBody::Box(map(body))),
         }
@@ -68,7 +64,7 @@ impl Response {
     ///
     #[inline]
     pub fn cookies(&self) -> Option<&CookieJar> {
-        self.cookies.as_deref()
+        self.cookies.as_ref()
     }
 
     /// Returns a mutable reference to the response cookies.
@@ -108,7 +104,6 @@ impl Response {
     #[inline]
     pub(crate) fn from_inner(response: http::Response<HttpBody<BufferBody>>) -> Self {
         Self {
-            mapped: false,
             cookies: None,
             response,
         }

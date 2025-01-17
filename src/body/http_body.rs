@@ -25,6 +25,16 @@ pub enum HttpBody<T> {
     Box(BoxBody),
 }
 
+impl<T> HttpBody<T> {
+    #[inline]
+    pub fn is_dyn(&self) -> bool {
+        match self {
+            Self::Inline(_) => false,
+            Self::Box(_) => true,
+        }
+    }
+}
+
 impl<T> Body for HttpBody<T>
 where
     T: Body<Data = Bytes, Error = BoxError> + Unpin,
