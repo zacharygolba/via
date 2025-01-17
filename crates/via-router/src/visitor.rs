@@ -62,58 +62,11 @@ impl Display for VisitError {
     }
 }
 
-pub fn visit<'a>(
-    results: &mut Vec<Result<Found<'a>, VisitError>>,
-    nodes: &'a [Node],
-    segments: &[(usize, usize)],
-    path: &str,
-) {
-    let (root, found) = match nodes.first() {
-        Some(node) => (
-            node,
-            Found {
-                is_leaf: segments.is_empty(),
-                param: None,
-                route: node.route,
-                at: None,
-            },
-        ),
-        None => {
-            results.push(Err(VisitError::RootNotFound));
-            return;
-        }
-    };
-
-    // Append the root node as a match to the results vector.
-    results.push(Ok(found));
-
-    if let Some(range) = segments.first() {
-        // Perform a recursive search for descendants of `root` that match the
-        // first path segment.
-        visit_node(results, nodes, root, path, segments, range, 0);
-    } else {
-        // Perform a shallow search for descendants of `child` with a wildcard
-        // pattern.
-        for (name, route) in root.entries().filter_map(|k| match nodes.get(*k) {
-            #[rustfmt::skip]
-            Some(Node { pattern: Pattern::Wildcard(n), route, .. }) => Some((n, route)),
-            _ => None,
-        }) {
-            results.push(Ok(Found {
-                is_leaf: true,
-                param: Some(name),
-                route: *route,
-                at: None,
-            }));
-        }
-    }
-}
-
 /// Recursively search for descendants of the node at `key` that have a
 /// pattern that matches the path segment at `index`. If a match is found,
 /// we'll add it to `results` and continue our search with the descendants
 /// of matched node against the path segment at next index.
-fn visit_node<'a>(
+pub fn visit_node<'a>(
     // A mutable reference to a vector that contains the matches that we
     // have found so far.
     results: &mut Vec<Result<Found<'a>, VisitError>>,
@@ -145,9 +98,9 @@ fn visit_node<'a>(
     let next = segments.get(index + 1);
 
     // Search for descendant nodes that match `segment`.
-    for key in parent.entries() {
+    for key in parent.entries().copied() {
         #[rustfmt::skip]
-        let (child, found) = match nodes.get(*key) {
+        let (child, found) = match nodes.get(key) {
             // The node has a static pattern. Attempt to match the pattern value against
             // the current path segment.
             Some(node @ Node { pattern: Pattern::Static(value), .. }) if value == segment => (
@@ -213,19 +166,41 @@ fn visit_node<'a>(
 
             // Perform a shallow search for descendants of `child` with a wildcard pattern.
             (None, _) => {
-                for (name, route) in child.entries().filter_map(|k| match nodes.get(*k) {
-                    #[rustfmt::skip]
-                    Some(Node { pattern: Pattern::Wildcard(n), route, .. }) => Some((n, route)),
-                    _ => None,
-                }) {
-                    results.push(Ok(Found {
-                        is_leaf: true,
-                        param: Some(name),
-                        route: *route,
-                        at: None,
-                    }));
-                }
+                visit_wildcard(results, nodes, child);
             }
+        }
+    }
+}
+
+/// Accumulate child nodes with a wildcard pattern in results.
+///
+pub fn visit_wildcard<'a>(
+    // A mutable reference to a vector that contains the matches that we found
+    // so far.
+    results: &mut Vec<Result<Found<'a>, VisitError>>,
+
+    // A slice containing all of the nodes in the route tree.
+    nodes: &'a [Node],
+
+    // A reference to the most recently matched node.
+    parent: &'a Node,
+) {
+    for key in parent.entries().copied() {
+        match nodes.get(key) {
+            #[rustfmt::skip]
+            // The node has a wildcard pattern. Consider it a match unconditionally and
+            // use the length of the path as the end offset for the range.
+            Some(node @ Node { pattern: Pattern::Wildcard(name), .. }) => {
+                results.push(Ok(Found {
+                    is_leaf: true,
+                    param: Some(name),
+                    route: node.route,
+                    at: None,
+                }));
+            }
+
+            // Continue searching for adjacent nodes with a wildcard pattern.
+            Some(_) | None => {}
         }
     }
 }
