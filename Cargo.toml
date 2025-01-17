@@ -1,6 +1,6 @@
 [package]
 name = "via"
-version = "2.0.0-beta.19"
+version = "2.0.0-beta.20"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -26,7 +26,7 @@ percent-encoding = "2.3"
 serde = "1"
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "signal"] }
-via-router = { path = "crates/via-router" }
+via-router = "3.0.0-beta.4"
 
 [dependencies.cookie]
 version = "0.18"
