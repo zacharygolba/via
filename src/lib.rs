@@ -29,7 +29,7 @@
 //!     Response::build().text(format!("Hello, {}!", name))
 //! }
 //!
-//! #[tokio::main]
+//! #[tokio::main(flavor = "current_thread")]
 //! async fn main() -> Result<ExitCode, Error> {
 //!     // Create a new application.
 //!     let mut app = via::new(());
