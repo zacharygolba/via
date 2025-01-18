@@ -110,21 +110,19 @@ impl<'a> Segments<'a> {
     }
 
     #[inline]
-    pub fn first(&self) -> Option<(&'a str, (usize, usize))> {
-        self.at(self.parts.first()?)
+    pub fn first(&self) -> Option<(&'a str, &(usize, usize))> {
+        let at = self.parts.first()?;
+        let segment = &self.value[at.0..at.1];
+
+        Some((segment, at))
     }
 
     #[inline]
-    pub fn get(&self, index: usize) -> Option<(&'a str, (usize, usize))> {
-        self.at(self.parts.get(index)?)
-    }
+    pub fn get(&self, index: usize) -> Option<(&'a str, &(usize, usize))> {
+        let at = self.parts.get(index)?;
+        let segment = &self.value[at.0..at.1];
 
-    #[inline]
-    fn at(&self, range: &(usize, usize)) -> Option<(&'a str, (usize, usize))> {
-        let (start, end) = *range;
-        let segment = &self.value[start..end];
-
-        Some((segment, (start, end)))
+        Some((segment, at))
     }
 }
 
