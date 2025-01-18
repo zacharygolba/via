@@ -1,3 +1,5 @@
+use tinyvec::TinyVec;
+
 #[derive(PartialEq)]
 pub enum Pattern {
     Root,
@@ -6,10 +8,15 @@ pub enum Pattern {
     Wildcard(String),
 }
 
+pub struct Segments<'a> {
+    value: &'a str,
+    parts: TinyVec<[(usize, usize); 2]>,
+}
+
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
-    let mut segments = vec![];
+    let mut segments = TinyVec::new();
 
     split(&mut segments, path);
     segments.into_iter().map(|(start, end)| {
@@ -44,7 +51,10 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
 
 /// Accumulate path segment ranges as a [Span] from path into segments.
 ///
-pub fn split(segments: &mut Vec<(usize, usize)>, path: &str) {
+pub fn split(parts: &mut TinyVec<[(usize, usize); 2]>, path: &str) {
+    // True if parts is allocated on the heap.
+    let mut spilled = false;
+
     // Assume the byte position of the first span in path is `0`. Bounds checks
     // are required before creating a Span with this value.
     let mut start = 0;
@@ -58,7 +68,12 @@ pub fn split(segments: &mut Vec<(usize, usize)>, path: &str) {
         // append a Span to segments. This bounds check prevents an empty range
         // from ending up in segments.
         if end > start {
-            segments.push((start, end));
+            if !spilled && parts.len() == 2 {
+                parts.reserve(6);
+                spilled = true
+            }
+
+            parts.push((start, end));
         }
 
         // Move start to the byte position after end.
@@ -69,12 +84,53 @@ pub fn split(segments: &mut Vec<(usize, usize)>, path: &str) {
     // length of path, append a Span to segments. This condition is true
     // when path does not end with `/`.
     if len > start {
-        segments.push((start, len));
+        if !spilled && parts.len() == 2 {
+            parts.reserve(6);
+        }
+
+        parts.push((start, len));
+    }
+}
+
+impl<'a> Segments<'a> {
+    #[inline]
+    pub fn new(value: &'a str, parts: TinyVec<[(usize, usize); 2]>) -> Self {
+        Self { value, parts }
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.parts.is_empty()
+    }
+
+    #[inline]
+    pub fn path_len(&self) -> usize {
+        self.value.len()
+    }
+
+    #[inline]
+    pub fn first(&self) -> Option<(&'a str, (usize, usize))> {
+        self.at(self.parts.first()?)
+    }
+
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<(&'a str, (usize, usize))> {
+        self.at(self.parts.get(index)?)
+    }
+
+    #[inline]
+    fn at(&self, range: &(usize, usize)) -> Option<(&'a str, (usize, usize))> {
+        let (start, end) = *range;
+        let segment = &self.value[start..end];
+
+        Some((segment, (start, end)))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use tinyvec::TinyVec;
+
     const PATHS: [&str; 16] = [
         "/home/about",
         "/products/item/123",
@@ -120,7 +176,7 @@ mod tests {
         let expected_results = get_expected_results();
 
         for (path_index, path_value) in PATHS.iter().enumerate() {
-            let mut segments = vec![];
+            let mut segments = TinyVec::new();
 
             super::split(&mut segments, path_value);
 

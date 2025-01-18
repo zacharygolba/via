@@ -1,24 +1,23 @@
 use bytes::Bytes;
 use http_body::{self, Body, Frame, SizeHint};
-use hyper::body::Incoming;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use super::body_reader::{BodyData, BodyReader};
 use super::body_stream::BodyStream;
 use super::limit_error::LimitError;
-use crate::body::HttpBody;
+use crate::body::{BoxBody, HttpBody};
 use crate::error::{BoxError, Error};
 
 #[derive(Debug)]
 pub struct RequestBody {
     remaining: usize,
-    body: Incoming,
+    body: BoxBody<Bytes, hyper::Error>,
 }
 
 impl RequestBody {
     #[inline]
-    pub(crate) fn new(remaining: usize, body: Incoming) -> Self {
+    pub(crate) fn new(remaining: usize, body: BoxBody<Bytes, hyper::Error>) -> Self {
         Self { remaining, body }
     }
 }
@@ -43,11 +42,10 @@ impl Body for RequestBody {
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.get_mut();
 
-        match Pin::new(&mut this.body).poll_frame(context) {
+        match Pin::new(&mut this.body).poll_frame(context)? {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e.into()))),
-            Poll::Ready(Some(Ok(frame))) => {
+            Poll::Ready(Some(frame)) => {
                 if let Some(chunk) = frame.data_ref() {
                     let len = chunk.len();
 

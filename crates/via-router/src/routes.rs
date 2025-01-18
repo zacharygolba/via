@@ -1,5 +1,3 @@
-use core::slice::Iter;
-
 use crate::path::Pattern;
 use crate::Router;
 
@@ -12,7 +10,7 @@ pub struct Node {
     pub route: Option<usize>,
 
     /// The indices of the nodes that are reachable from the current node.
-    entries: Vec<usize>,
+    pub entries: Vec<usize>,
 }
 
 /// A mutable representation of a single node the route store. This type is used
@@ -33,12 +31,6 @@ impl Node {
             entries: Vec::new(),
             route: None,
         }
-    }
-
-    /// Returns an iterator that yields the indices of the nodes that are
-    /// reachable from `self`.
-    pub fn entries(&self) -> Iter<usize> {
-        self.entries.iter()
     }
 
     /// Returns an optional reference to the name of the dynamic parameter

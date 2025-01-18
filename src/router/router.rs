@@ -30,8 +30,8 @@ impl<T> Router<T> {
             // If there is a dynamic parameter name associated with the route,
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
-            if let (Some(param), Some(at)) = (found.param, found.at) {
-                params.push((param.to_owned(), at));
+            if let Some((name, Some(at))) = found.param {
+                params.push((name.to_owned(), at));
             }
 
             let route = match found.route.and_then(|key| self.inner.get(key)) {
@@ -45,7 +45,7 @@ impl<T> Router<T> {
                 // Include this middleware in `stack` because it expects an exact
                 // match and the visited node is considered a leaf in this
                 // context.
-                MatchWhen::Exact(exact) if found.is_leaf => Some(exact),
+                MatchWhen::Exact(exact) if found.exact => Some(exact),
 
                 // Include this middleware in `stack` unconditionally because it
                 // targets partial matches.
