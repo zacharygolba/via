@@ -6,6 +6,7 @@ use std::future::Future;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tinyvec::TinyVec;
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -17,7 +18,7 @@ use hyper_util::rt::TokioExecutor;
 use super::acceptor::Acceptor;
 use super::io_stream::IoStream;
 use super::shutdown::{wait_for_shutdown, ShutdownTx};
-use crate::body::{BufferBody, HttpBody};
+use crate::body::{BoxBody, BufferBody, HttpBody};
 use crate::error::{BoxError, Error};
 use crate::request::{PathParams, Request, RequestBody};
 use crate::router::Router;
@@ -230,7 +231,7 @@ fn serve_request<T>(
     let found = {
         // Preallocate a vec to store up to 8 path parameter ranges. This
         // reduces the size of allocations for the common use-case.
-        let mut params = PathParams::new(Vec::with_capacity(8));
+        let mut params = PathParams::new(TinyVec::new());
 
         // Destructure the incoming request into its component parts.
         let (parts, body) = request.into_parts();
@@ -249,7 +250,7 @@ fn serve_request<T>(
 
                 // Limit the length of the incoming request body to the
                 // configured maximum.
-                let body = HttpBody::Inline(RequestBody::new(max_request_size, body));
+                let body = HttpBody::Inline(RequestBody::new(max_request_size, BoxBody::new(body)));
 
                 Request::new(state, parts, params, body)
             })),

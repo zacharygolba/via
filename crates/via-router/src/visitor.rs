@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use crate::path::Pattern;
+use crate::path::{Pattern, Segments};
 use crate::routes::Node;
 
 #[derive(Clone, Debug)]
@@ -33,20 +33,16 @@ pub struct Found<'a> {
     /// True if there were no more segments to match against the children of the
     /// matched node. Otherwise, false.
     ///
-    pub is_leaf: bool,
+    pub exact: bool,
+
+    /// The name of the dynamic parameter that matched the path segment.
+    ///
+    pub param: Option<(&'a str, Option<(usize, usize)>)>,
 
     /// The key of the route associated with the node that matched the path
     /// segment.
     ///
     pub route: Option<usize>,
-
-    /// The name of the dynamic parameter that matched the path segment.
-    ///
-    pub param: Option<&'a str>,
-
-    /// The range of the path segment that matched the node.
-    ///
-    pub at: Option<(usize, usize)>,
 }
 
 impl Error for VisitError {}
@@ -79,39 +75,33 @@ pub fn visit_node<'a>(
     // A reference to the most recently matched node.
     parent: &'a Node,
 
-    // The url path that we are attempting to match against the route tree.
-    path: &str,
-
-    segments: &[(usize, usize)],
+    segments: &Segments,
 
     // The start and end offset of the current path segment.
-    range: &(usize, usize),
+    (segment, at): (&str, (usize, usize)),
 
     // The index of the next path segment in `self.segments`.
-    index: usize,
+    current_index: usize,
 ) {
-    let (start, end) = *range;
-
-    // Build a str with the value of the path segment at `index` from the range argument.
-    let segment = &path[start..end];
+    // Cache the value of the next index to avoid arithmetic errors in a loop.
+    let next_index = current_index + 1;
 
     // Cache an option containing the next path segment range to avoid slice access in a
     // loop.
-    let next = segments.get(index + 1);
+    let next_segment = segments.get(next_index);
 
     // Search for descendant nodes that match `segment`.
-    for key in parent.entries().copied() {
+    for key in &parent.entries {
         #[rustfmt::skip]
-        let (child, found) = match nodes.get(key) {
+        let (child, found) = match nodes.get(*key) {
             // The node has a static pattern. Attempt to match the pattern value against
             // the current path segment.
             Some(node @ Node { pattern: Pattern::Static(value), .. }) if value == segment => (
                 node,
                 Found {
-                    is_leaf: next.is_none(),
+                    exact: next_segment.is_none(),
                     param: None,
                     route: node.route,
-                    at: Some((start, end)),
                 },
             ),
 
@@ -120,10 +110,9 @@ pub fn visit_node<'a>(
             Some(node @ Node { pattern: Pattern::Wildcard(name), .. }) => (
                 node,
                 Found {
-                    is_leaf: true,
-                    param: Some(name),
+                    exact: true,
+                    param: Some((name, Some((at.0, segments.path_len())))),
                     route: node.route,
-                    at: Some((start, path.len())),
                 },
             ),
 
@@ -131,10 +120,9 @@ pub fn visit_node<'a>(
             Some(node @ Node { pattern: Pattern::Dynamic(name), .. }) => (
                 node,
                 Found {
-                    is_leaf: next.is_none(),
-                    param: Some(name),
+                    exact: next_segment.is_none(),
+                    param: Some((name, Some(at))),
                     route: node.route,
-                    at: Some((start, end)),
                 },
             ),
 
@@ -155,15 +143,15 @@ pub fn visit_node<'a>(
         // Append the match to the results vector.
         results.push(Ok(found));
 
-        match (&child.pattern, next) {
+        match (&child.pattern, next_segment) {
             // Wildcard patterns consume the remainder of the path. Continue matching
             // adjacent nodes.
             (Pattern::Wildcard(_), _) => {}
 
             // Perform a recursive search for descendants of `child` that match the next
             // path segment.
-            (_, Some(range)) => {
-                visit_node(results, nodes, child, path, segments, range, index + 1);
+            (_, Some(next_segment)) => {
+                visit_node(results, nodes, child, segments, next_segment, next_index);
             }
 
             // Perform a shallow search for descendants of `child` with a wildcard pattern.
@@ -187,17 +175,16 @@ pub fn visit_wildcard<'a>(
     // A reference to the most recently matched node.
     parent: &'a Node,
 ) {
-    for key in parent.entries().copied() {
-        match nodes.get(key) {
+    for key in &parent.entries {
+        match nodes.get(*key) {
             #[rustfmt::skip]
             // The node has a wildcard pattern. Consider it a match unconditionally and
             // use the length of the path as the end offset for the range.
             Some(node @ Node { pattern: Pattern::Wildcard(name), .. }) => {
                 results.push(Ok(Found {
-                    is_leaf: true,
-                    param: Some(name),
+                    exact: true,
+                    param: Some((name, None)),
                     route: node.route,
-                    at: None,
                 }));
             }
 

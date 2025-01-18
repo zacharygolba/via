@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use http_body::{Body, Frame, SizeHint};
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
@@ -9,14 +9,14 @@ use crate::error::BoxError;
 /// Converts an `impl Body` to a type-erased trait object.
 ///
 #[must_use = "streams do nothing unless polled"]
-pub struct BoxBody {
-    body: Pin<Box<dyn Body<Data = Bytes, Error = BoxError> + Send + Sync>>,
+pub struct BoxBody<D = Bytes, E = BoxError> {
+    body: Pin<Box<dyn Body<Data = D, Error = E> + Send + Sync>>,
 }
 
-impl BoxBody {
+impl<D, E> BoxBody<D, E> {
     pub fn new<T>(body: T) -> Self
     where
-        T: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
+        T: Body<Data = D, Error = E> + Send + Sync + 'static,
     {
         Self {
             body: Box::pin(body),
@@ -24,9 +24,15 @@ impl BoxBody {
     }
 }
 
-impl Body for BoxBody {
-    type Data = Bytes;
-    type Error = BoxError;
+impl<D, E> Debug for BoxBody<D, E> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("BoxBody").finish()
+    }
+}
+
+impl<D: Buf, E> Body for BoxBody<D, E> {
+    type Data = D;
+    type Error = E;
 
     fn poll_frame(
         mut self: Pin<&mut Self>,
@@ -41,11 +47,5 @@ impl Body for BoxBody {
 
     fn size_hint(&self) -> SizeHint {
         self.body.size_hint()
-    }
-}
-
-impl Debug for BoxBody {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BoxBody").finish()
     }
 }

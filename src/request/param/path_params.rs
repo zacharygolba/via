@@ -1,23 +1,28 @@
 use std::fmt::{self, Debug, Formatter};
-use std::slice::Iter;
+use std::slice;
+use tinyvec::TinyVec;
 
 pub struct PathParams {
-    data: Vec<(String, (usize, usize))>,
+    data: TinyVec<[(String, (usize, usize)); 1]>,
 }
 
 impl PathParams {
     #[inline]
-    pub fn new(data: Vec<(String, (usize, usize))>) -> Self {
+    pub fn new(data: TinyVec<[(String, (usize, usize)); 1]>) -> Self {
         Self { data }
     }
 
     #[inline]
-    pub fn iter(&self) -> Iter<(String, (usize, usize))> {
+    pub fn iter(&self) -> slice::Iter<(String, (usize, usize))> {
         self.data.iter()
     }
 
     #[inline]
     pub fn push(&mut self, param: (String, (usize, usize))) {
+        if self.data.len() == 1 {
+            self.data.reserve(7);
+        }
+
         self.data.push(param);
     }
 }

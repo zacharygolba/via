@@ -108,6 +108,19 @@ static ROUTES: [&str; 100] = [
 ];
 
 #[bench]
+fn find_matches_1(b: &mut Bencher) {
+    let mut router: Router<()> = Router::new();
+
+    for path in ROUTES {
+        let _ = router.at(path).get_or_insert_route_with(|| ());
+    }
+
+    b.iter(|| {
+        router.visit("/dashboard");
+    });
+}
+
+#[bench]
 fn find_matches_2(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
