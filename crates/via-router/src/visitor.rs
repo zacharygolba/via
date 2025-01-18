@@ -155,19 +155,19 @@ pub fn visit_node<'a>(
         // Append the match to the results vector.
         results.push(Ok(found));
 
-        match (next, &child.pattern) {
+        match (&child.pattern, next) {
             // Wildcard patterns consume the remainder of the path. Continue matching
             // adjacent nodes.
-            (_, Pattern::Wildcard(_)) => {}
+            (Pattern::Wildcard(_), _) => {}
 
             // Perform a recursive search for descendants of `child` that match the next
             // path segment.
-            (Some(range), _) => {
+            (_, Some(range)) => {
                 visit_node(results, nodes, child, path, segments, range, index + 1);
             }
 
             // Perform a shallow search for descendants of `child` with a wildcard pattern.
-            (None, _) => {
+            (_, None) => {
                 visit_wildcard(results, nodes, child);
             }
         }
