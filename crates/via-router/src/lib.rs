@@ -196,288 +196,274 @@ where
     insert(router, segments, next_index)
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::Router;
+#[cfg(test)]
+mod tests {
+    use super::Router;
 
-//     const PATHS: [&str; 4] = [
-//         "/*path",
-//         "/echo/*path",
-//         "/articles/:id",
-//         "/articles/:id/comments",
-//     ];
+    const PATHS: [&str; 4] = [
+        "/*path",
+        "/echo/*path",
+        "/articles/:id",
+        "/articles/:id/comments",
+    ];
 
-//     #[test]
-//     fn test_router_visit() {
-//         let mut router = Router::new();
+    #[test]
+    fn test_router_visit() {
+        let mut router = Router::new();
 
-//         for path in &PATHS {
-//             let _ = router.at(path).get_or_insert_route_with(|| ());
-//         }
+        for path in &PATHS {
+            let _ = router.at(path).get_or_insert_route_with(|| ());
+        }
 
-//         {
-//             let path = "/";
-//             let matches: Vec<_> = router.visit(path);
+        {
+            let path = "/";
+            let matches: Vec<_> = router.visit(path);
 
-//             assert_eq!(matches.len(), 2);
+            assert_eq!(matches.len(), 2);
 
-//             {
-//                 // /
-//                 // ^ as Pattern::Root
-//                 let found = matches[0].as_ref().unwrap();
+            {
+                // /
+                // ^ as Pattern::Root
+                let found = matches[0].as_ref().unwrap();
 
-//                 assert_eq!(found.route.and_then(|key| router.get(key)), None);
-//                 assert_eq!(found.param, None);
-//                 assert_eq!(found.at, None);
-//                 assert!(found.exact);
-//             }
+                assert_eq!(found.route.and_then(|key| router.get(key)), None);
+                assert_eq!(found.param, None);
+                assert!(found.exact);
+            }
 
-//             {
-//                 // /
-//                 //  ^ as Pattern::CatchAll("*path")
-//                 let found = matches[1].as_ref().unwrap();
+            {
+                // /
+                //  ^ as Pattern::CatchAll("*path")
+                let found = matches[1].as_ref().unwrap();
 
-//                 assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
-//                 assert_eq!(found.param, Some("path".into()));
-//                 // Should be considered exact because of the catch-all pattern.
-//                 assert!(found.exact);
-//             }
-//         }
+                assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
+                assert_eq!(
+                    found.param,
+                    Some((&"path".into(), None)),
+                    "{} => Pattern::CatchAll(path = None)",
+                    path,
+                );
+                // Should be considered exact because of the catch-all pattern.
+                assert!(found.exact);
+            }
+        }
 
-//         {
-//             let path = "/not/a/path";
-//             let matches: Vec<_> = router.visit(path);
+        {
+            let path = "/not/a/path";
+            let matches: Vec<_> = router.visit(path);
 
-//             assert_eq!(matches.len(), 2);
+            assert_eq!(matches.len(), 2);
 
-//             {
-//                 // /not/a/path
-//                 // ^ as Pattern::Root
-//                 let found = matches[0].as_ref().unwrap();
+            {
+                // /not/a/path
+                // ^ as Pattern::Root
+                let found = matches[0].as_ref().unwrap();
 
-//                 assert_eq!(found.route.and_then(|key| router.get(key)), None);
-//                 assert_eq!(found.param, None);
-//                 assert!(!found.exact);
-//             }
+                assert_eq!(found.route.and_then(|key| router.get(key)), None);
+                assert_eq!(found.param, None);
+                assert!(!found.exact);
+            }
 
-//             {
-//                 // /not/a/path
-//                 //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
-//                 let found = matches[1].as_ref().unwrap();
+            {
+                // /not/a/path
+                //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let found = matches[1].as_ref().unwrap();
 
-//                 assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
-//                 assert_eq!(found.param, Some(("path", Some((1, path.len())))));
-//                 // Should be considered exact because of the catch-all pattern.
-//                 assert!(found.exact);
-//             }
-//         }
+                assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
+                assert_eq!(
+                    found.param,
+                    Some((&"path".into(), Some((1, 11)))),
+                    "{} => Pattern::CatchAll(path = not/a/path)",
+                    path,
+                );
+                // Should be considered exact because of the catch-all pattern.
+                assert!(found.exact);
+            }
+        }
 
-//         {
-//             let path = "/echo/hello/world";
-//             let matches: Vec<_> = router.visit(path);
+        {
+            let path = "/echo/hello/world";
+            let matches: Vec<_> = router.visit(path);
 
-//             assert_eq!(matches.len(), 4);
+            assert_eq!(matches.len(), 4);
 
-//             {
-//                 // /echo/hello/world
-//                 // ^ as Pattern::Root
-//                 let found = matches[0].as_ref().unwrap();
+            {
+                // /echo/hello/world
+                // ^ as Pattern::Root
+                let found = matches[0].as_ref().unwrap();
 
-//                 assert_eq!(found.route.and_then(|key| router.get(key)), None);
-//                 assert_eq!(found.at, None);
-//                 assert_eq!(found.param, None);
-//                 assert!(!found.exact);
-//             }
+                assert_eq!(found.route.and_then(|key| router.get(key)), None);
+                assert_eq!(found.param, None);
+                assert!(!found.exact);
+            }
 
-//             {
-//                 // /echo/hello/world
-//                 //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-//                 let found = matches[1].as_ref().unwrap();
+            {
+                // /echo/hello/world
+                //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let found = matches[1].as_ref().unwrap();
 
-//                     let (found.route.and_then(|key| router.get(key)), end) = found.at.unwrap();
-//                     &path[start..end]
-//                 };
+                assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
+                assert_eq!(
+                    found.param,
+                    Some((&"path".into(), Some((1, 17)))),
+                    "{} => Pattern::CatchAll(path = echo/hello/world)",
+                    path
+                );
+                // Should be considered exact because of the catch-all pattern.
+                assert!(found.exact);
+            }
 
-//                 assert_eq!(route, Some(&()));
-//                 assert_eq!(found.param, Some("path".into()));
-//                 assert_eq!(segment, &path[1..]);
-//                 // Should be considered exact because of the catch-all pattern.
-//                 assert!(found.exact);
-//             }
+            {
+                // /echo/hello/world
+                //  ^^^^ as Pattern::Static("echo")
+                let found = matches[2].as_ref().unwrap();
 
-//             {
-//                 // /echo/hello/world
-//                 //  ^^^^ as Pattern::Static("echo")
-//                 let found = matches[2].as_ref().unwrap();
+                assert_eq!(found.route.and_then(|key| router.get(key)), None);
+                assert_eq!(found.param, None);
+                assert!(!found.exact);
+            }
 
-//                     let (found.route.and_then(|key| router.get(key)), end) = found.at.unwrap();
-//                     &path[start..end]
-//                 };
+            {
+                // /echo/hello/world
+                //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let found = matches[3].as_ref().unwrap();
 
-//                 assert_eq!(route, None);
-//                 assert_eq!(found.param, None);
-//                 assert_eq!(segment, "echo");
-//                 assert!(!found.exact);
-//             }
+                assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
+                assert_eq!(
+                    found.param,
+                    Some((&"path".into(), Some((6, 17)))),
+                    "{} => Pattern::CatchAll(path = hello/world)",
+                    path
+                );
+                assert!(found.exact);
+            }
+        }
 
-//             {
-//                 // /echo/hello/world
-//                 //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
-//                 let found = matches[3].as_ref().unwrap();
+        {
+            let path = "/articles/100";
+            let matches: Vec<_> = router.visit(path);
 
-//                     let (found.route.and_then(|key| router.get(key)), end) = found.at.unwrap();
-//                     &path[start..end]
-//                 };
+            assert_eq!(matches.len(), 4);
 
-//                 assert_eq!(route, Some(&()));
-//                 assert_eq!(found.param, Some("path".into()));
-//                 assert_eq!(segment, "hello/world");
-//                 assert!(found.exact);
-//             }
-//         }
+            {
+                // /articles/100
+                // ^ as Pattern::Root
+                let found = matches[0].as_ref().unwrap();
 
-//         {
-//             let path = "/articles/100";
-//             let matches: Vec<_> = router.visit(path);
+                assert_eq!(found.route.and_then(|key| router.get(key)), None);
+                assert_eq!(found.param, None);
+                assert!(!found.exact);
+            }
 
-//             assert_eq!(matches.len(), 4);
+            {
+                // /articles/100
+                //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let found = matches[1].as_ref().unwrap();
 
-//             {
-//                 // /articles/100
-//                 // ^ as Pattern::Root
-//                 let found = matches[0].as_ref().unwrap();
+                assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
+                assert_eq!(
+                    found.param,
+                    Some((&"path".into(), Some((1, 13)))),
+                    "{} => Pattern::CatchAll(path = articles/100)",
+                    path
+                );
+                // Should be considered exact because of the catch-all pattern.
+                assert!(found.exact);
+            }
 
-//                 assert_eq!(found.route.and_then(|key| router.get(key)), None);
-//                 assert_eq!(found.at, None);
-//                 assert_eq!(found.param, None);
-//                 assert!(!found.exact);
-//             }
+            {
+                // /articles/100
+                //  ^^^^^^^^ as Pattern::Static("articles")
+                let found = matches[2].as_ref().unwrap();
 
-//             {
-//                 // /articles/100
-//                 //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-//                 let found = matches[1].as_ref().unwrap();
+                assert_eq!(found.route.and_then(|key| router.get(key)), None);
+                assert_eq!(found.param, None);
+                assert!(!found.exact);
+            }
 
-//                     let (found.route.and_then(|key| router.get(key)), end) = found.at.unwrap();
-//                     &path[start..end]
-//                 };
+            {
+                // /articles/100
+                //           ^^^ as Pattern::Dynamic(":id")
+                let found = matches[3].as_ref().unwrap();
 
-//                 assert_eq!(route, Some(&()));
-//                 assert_eq!(found.param, Some("path".into()));
-//                 assert_eq!(segment, &path[1..]);
-//                 // Should be considered exact because of the catch-all pattern.
-//                 assert!(found.exact);
-//             }
+                assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
+                assert_eq!(
+                    found.param,
+                    Some((&"id".into(), Some((10, 13)))),
+                    "{} => Pattern::Dynamic(id = 100)",
+                    path
+                );
+                assert!(found.exact);
+            }
+        }
 
-//             {
-//                 // /articles/100
-//                 //  ^^^^^^^^ as Pattern::Static("articles")
-//                 let found = matches[2].as_ref().unwrap();
+        {
+            let path = "/articles/100/comments";
+            let matches: Vec<_> = router.visit(path);
 
-//                     let (found.route.and_then(|key| router.get(key)), end) = found.at.unwrap();
-//                     &path[start..end]
-//                 };
+            assert_eq!(matches.len(), 5);
 
-//                 assert_eq!(route, None);
-//                 assert_eq!(found.param, None);
-//                 assert_eq!(segment, "articles");
-//                 assert!(!found.exact);
-//             }
+            {
+                // /articles/100/comments
+                // ^ as Pattern::Root
+                let found = matches[0].as_ref().unwrap();
 
-//             {
-//                 // /articles/100
-//                 //           ^^^ as Pattern::Dynamic(":id")
-//                 let found = matches[3].as_ref().unwrap();
+                assert_eq!(found.route.and_then(|key| router.get(key)), None);
+                assert_eq!(found.param, None);
+                assert!(!found.exact);
+            }
 
-//                     let (found.route.and_then(|key| router.get(key)), end) = found.at.unwrap();
-//                     &path[start..end]
-//                 };
+            {
+                // /articles/100/comments
+                //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
+                let found = matches[1].as_ref().unwrap();
 
-//                 assert_eq!(route, Some(&()));
-//                 assert_eq!(found.param, Some("id".into()));
-//                 assert_eq!(segment, "100");
-//                 assert!(found.exact);
-//             }
-//         }
+                assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
+                assert_eq!(
+                    found.param,
+                    Some((&"path".into(), Some((1, 22)))),
+                    "{} => Pattern::CatchAll(path = articles/100/comments)",
+                    path
+                );
+                // Should be considered exact because of the catch-all pattern.
+                assert!(found.exact);
+            }
 
-//         {
-//             let path = "/articles/100/comments";
-//             let matches: Vec<_> = router.visit(path);
+            {
+                // /articles/100/comments
+                //  ^^^^^^^^ as Pattern::Static("articles")
+                let found = matches[2].as_ref().unwrap();
 
-//             assert_eq!(matches.len(), 5);
+                assert_eq!(found.route.and_then(|key| router.get(key)), None);
+                assert_eq!(found.param, None);
+                assert!(!found.exact);
+            }
 
-//             {
-//                 // /articles/100/comments
-//                 // ^ as Pattern::Root
-//                 let found = matches[0].as_ref().unwrap();
+            {
+                // /articles/100/comments
+                //           ^^^ as Pattern::Dynamic(":id")
+                let found = matches[3].as_ref().unwrap();
 
-//                 assert_eq!(found.route.and_then(|key| router.get(key)), None);
-//                 assert_eq!(found.at, None);
-//                 assert_eq!(found.param, None);
-//                 assert!(!found.exact);
-//             }
+                assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
+                assert_eq!(
+                    found.param,
+                    Some((&"id".into(), Some((10, 13)))),
+                    "{} => Pattern::Dynamic(id = 100)",
+                    path
+                );
+                assert!(!found.exact);
+            }
 
-//             {
-//                 // /articles/100/comments
-//                 //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-//                 let found = matches[1].as_ref().unwrap();
+            {
+                // /articles/100/comments
+                //               ^^^^^^^^ as Pattern::Static("comments")
+                let found = matches[4].as_ref().unwrap();
 
-//                     let (found.route.and_then(|key| router.get(key)), end) = found.at.unwrap();
-//                     &path[start..end]
-//                 };
-
-//                 assert_eq!(route, Some(&()));
-//                 assert_eq!(found.param, Some("path".into()));
-//                 assert_eq!(segment, &path[1..]);
-//                 // Should be considered exact because of the catch-all pattern.
-//                 assert!(found.exact);
-//             }
-
-//             {
-//                 // /articles/100/comments
-//                 //  ^^^^^^^^ as Pattern::Static("articles")
-//                 let found = matches[2].as_ref().unwrap();
-
-//                     let (found.route.and_then(|key| router.get(key)), end) = found.at.unwrap();
-//                     &path[start..end]
-//                 };
-
-//                 assert_eq!(route, None);
-//                 assert_eq!(found.param, None);
-//                 assert_eq!(segment, "articles");
-//                 assert!(!found.exact);
-//             }
-
-//             {
-//                 // /articles/100/comments
-//                 //           ^^^ as Pattern::Dynamic(":id")
-//                 let found = matches[3].as_ref().unwrap();
-
-//                     let (found.route.and_then(|key| router.get(key)), end) = found.at.unwrap();
-//                     &path[start..end]
-//                 };
-
-//                 assert_eq!(route, Some(&()));
-//                 assert_eq!(found.param, Some("id".into()));
-//                 assert_eq!(segment, "100");
-//                 assert!(!found.exact);
-//             }
-
-//             {
-//                 // /articles/100/comments
-//                 //               ^^^^^^^^ as Pattern::Static("comments")
-//                 let found = matches[4].as_ref().unwrap();
-
-//                     let (found.route.and_then(|key| router.get(key)), end) = found.at.unwrap();
-//                     &path[start..end]
-//                 };
-
-//                 assert_eq!(route, Some(&()));
-//                 assert_eq!(found.param, None);
-//                 assert_eq!(segment, "comments");
-//                 // Should be considered exact because it is the last path segment.
-//                 assert!(found.exact);
-//             }
-//         }
-//     }
-// }
+                assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
+                assert_eq!(found.param, None);
+                // Should be considered exact because it is the last path segment.
+                assert!(found.exact);
+            }
+        }
+    }
+}
