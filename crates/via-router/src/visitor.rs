@@ -80,7 +80,7 @@ pub fn visit_node<'a>(
     segments: &Segments,
 
     // The start and end offset of the current path segment.
-    (segment, at): (&str, (usize, usize)),
+    (segment, at): (&str, &(usize, usize)),
 
     // The index of the next path segment in `self.segments`.
     current_index: usize,
@@ -123,7 +123,7 @@ pub fn visit_node<'a>(
                 node,
                 Found {
                     exact: next_segment.is_none(),
-                    param: Some((name, Some(at))),
+                    param: Some((name, Some(*at))),
                     route: node.route,
                 },
             ),
