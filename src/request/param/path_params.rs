@@ -1,24 +1,27 @@
+#![allow(clippy::type_complexity)]
+
 use std::fmt::{self, Debug, Formatter};
 use std::slice;
+use std::sync::Arc;
 use tinyvec::TinyVec;
 
 pub struct PathParams {
-    data: TinyVec<[(String, (usize, usize)); 1]>,
+    data: TinyVec<[(Arc<str>, (usize, usize)); 1]>,
 }
 
 impl PathParams {
     #[inline]
-    pub fn new(data: TinyVec<[(String, (usize, usize)); 1]>) -> Self {
+    pub fn new(data: TinyVec<[(Arc<str>, (usize, usize)); 1]>) -> Self {
         Self { data }
     }
 
     #[inline]
-    pub fn iter(&self) -> slice::Iter<(String, (usize, usize))> {
+    pub fn iter(&self) -> slice::Iter<(Arc<str>, (usize, usize))> {
         self.data.iter()
     }
 
     #[inline]
-    pub fn push(&mut self, param: (String, (usize, usize))) {
+    pub fn push(&mut self, param: (Arc<str>, (usize, usize))) {
         if self.data.len() == 1 {
             self.data.reserve(7);
         }

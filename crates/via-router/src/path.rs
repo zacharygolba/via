@@ -1,11 +1,12 @@
+use std::sync::Arc;
 use tinyvec::TinyVec;
 
 #[derive(PartialEq)]
 pub enum Pattern {
     Root,
-    Static(String),
-    Dynamic(String),
-    Wildcard(String),
+    Static(Arc<str>),
+    Dynamic(Arc<str>),
+    Wildcard(Arc<str>),
 }
 
 pub struct Segments<'a> {

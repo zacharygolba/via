@@ -105,7 +105,7 @@ impl<T> Request<T> {
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
         let path = self.parts.uri.path();
         let at = self.params.iter().rev().find_map(|(param, at)| {
-            if name == param {
+            if &**param == name {
                 Some((at.0, at.1))
             } else {
                 None

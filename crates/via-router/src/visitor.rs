@@ -2,6 +2,7 @@
 
 use std::error::Error;
 use std::fmt::{self, Display};
+use std::sync::Arc;
 
 use crate::path::{Pattern, Segments};
 use crate::routes::Node;
@@ -37,7 +38,8 @@ pub struct Found<'a> {
 
     /// The name of the dynamic parameter that matched the path segment.
     ///
-    pub param: Option<(&'a str, Option<(usize, usize)>)>,
+    #[allow(clippy::type_complexity)]
+    pub param: Option<(&'a Arc<str>, Option<(usize, usize)>)>,
 
     /// The key of the route associated with the node that matched the path
     /// segment.
@@ -96,7 +98,7 @@ pub fn visit_node<'a>(
         let (child, found) = match nodes.get(*key) {
             // The node has a static pattern. Attempt to match the pattern value against
             // the current path segment.
-            Some(node @ Node { pattern: Pattern::Static(value), .. }) if value == segment => (
+            Some(node @ Node { pattern: Pattern::Static(value), .. }) if &**value == segment => (
                 node,
                 Found {
                     exact: next_segment.is_none(),

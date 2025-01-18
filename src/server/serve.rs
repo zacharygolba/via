@@ -234,11 +234,11 @@ fn serve_request<T>(
         let mut params = PathParams::new(TinyVec::new());
 
         // Destructure the incoming request into its component parts.
-        let (parts, body) = request.into_parts();
+        let (parts, incoming) = request.into_parts();
 
         match router.lookup(&mut params, parts.uri.path()) {
-            // Call the middleware stack for the resolved routes.
-            Ok(next) => Some(next.call({
+            // The request was routed successfully.
+            Ok(next) => {
                 // Clone the arc pointer to the global application state so
                 // ownership can be shared with Request.
                 let state = Arc::clone(state);
@@ -248,12 +248,21 @@ fn serve_request<T>(
                 // to pass around by value.
                 let parts = Box::new(parts);
 
-                // Limit the length of the incoming request body to the
-                // configured maximum.
-                let body = HttpBody::Inline(RequestBody::new(max_request_size, BoxBody::new(body)));
+                // Limit the length of the incoming request body to the configured max.
+                let body = if parts.method.is_safe() {
+                    // The request method implies no body. Do not allocate.
+                    HttpBody::Inline(RequestBody::new(max_request_size, None))
+                } else {
+                    // Allocate the request body on the heap.
+                    HttpBody::Inline(RequestBody::new(
+                        max_request_size,
+                        Some(BoxBody::new(incoming)),
+                    ))
+                };
 
-                Request::new(state, parts, params, body)
-            })),
+                // Call the middleware stack for the matched routes.
+                Some(next.call(Request::new(state, parts, params, body)))
+            }
 
             // An error occurred while routing the request.
             Err(error) => {
