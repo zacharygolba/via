@@ -18,7 +18,7 @@ use hyper_util::rt::TokioExecutor;
 use super::acceptor::Acceptor;
 use super::io_stream::IoStream;
 use super::shutdown::{wait_for_shutdown, ShutdownTx};
-use crate::body::{BoxBody, BufferBody, HttpBody};
+use crate::body::{BufferBody, HttpBody};
 use crate::error::{BoxError, Error};
 use crate::request::{PathParams, Request, RequestBody};
 use crate::router::Router;
@@ -249,8 +249,7 @@ fn serve_request<T>(
                 let parts = Box::new(parts);
 
                 // Limit the length of the incoming request body to the configured max.
-                let body =
-                    HttpBody::Inline(RequestBody::new(max_request_size, BoxBody::new(incoming)));
+                let body = HttpBody::Inline(RequestBody::new(max_request_size, incoming));
 
                 // Call the middleware stack for the matched routes.
                 Some(next.call(Request::new(state, parts, params, body)))

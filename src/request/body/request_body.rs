@@ -1,23 +1,24 @@
 use bytes::Bytes;
 use http_body::{self, Body, Frame, SizeHint};
+use hyper::body::Incoming;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use super::body_reader::{BodyData, BodyReader};
 use super::body_stream::BodyStream;
 use super::limit_error::LimitError;
-use crate::body::{BoxBody, HttpBody};
+use crate::body::HttpBody;
 use crate::error::{BoxError, Error};
 
 #[derive(Debug)]
 pub struct RequestBody {
     remaining: usize,
-    body: BoxBody<Bytes, hyper::Error>,
+    body: Incoming,
 }
 
 impl RequestBody {
     #[inline]
-    pub(crate) fn new(remaining: usize, body: BoxBody<Bytes, hyper::Error>) -> Self {
+    pub(crate) fn new(remaining: usize, body: Incoming) -> Self {
         Self { remaining, body }
     }
 }
