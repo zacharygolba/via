@@ -1,3 +1,5 @@
+#![allow(private_bounds)]
+
 use bytes::Bytes;
 use futures_core::Stream;
 use http::header::TRANSFER_ENCODING;
@@ -7,7 +9,9 @@ use crate::body::{BoxBody, HttpBody, RequestBody, StreamBody};
 use crate::error::{BoxError, Error};
 use crate::response::{Builder, Response};
 
-/// Defines how a [`Stream`]-like type can be used as a response body.
+trait Sealed {}
+
+/// Pipe frames from a [`Stream`]-like type to a response body.
 ///
 /// ```
 /// use http::header::CONTENT_TYPE;
@@ -21,9 +25,11 @@ use crate::response::{Builder, Response};
 /// }
 /// ```
 ///
-pub trait Pipe {
+pub trait Pipe: Sealed {
     fn pipe(self, response: Builder) -> Result<Response, Error>;
 }
+
+impl Sealed for HttpBody<RequestBody> {}
 
 impl Pipe for HttpBody<RequestBody> {
     fn pipe(self, response: Builder) -> Result<Response, Error> {
@@ -35,6 +41,8 @@ impl Pipe for HttpBody<RequestBody> {
             }))
     }
 }
+
+impl<T> Sealed for T where T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static {}
 
 impl<T> Pipe for T
 where
