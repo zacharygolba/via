@@ -29,6 +29,10 @@
 //!     Response::build().text(format!("Hello, {}!", name))
 //! }
 //!
+//! // For the sake of simplifying doctests, we're specifying that we want to
+//! // use the "current_thread" runtime flavor. You'll most likely not want to
+//! // specify a runtime flavor and simpy use #[tokio::main] if your deployment
+//! // target has more than one CPU core.
 //! #[tokio::main(flavor = "current_thread")]
 //! async fn main() -> Result<ExitCode, Error> {
 //!     // Create a new application.
