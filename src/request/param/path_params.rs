@@ -2,26 +2,26 @@
 
 use std::fmt::{self, Debug, Formatter};
 use std::slice;
-use std::sync::Arc;
 use tinyvec::TinyVec;
+use via_router::Param;
 
 pub struct PathParams {
-    data: TinyVec<[(Arc<str>, (usize, usize)); 1]>,
+    data: TinyVec<[(Param, (usize, usize)); 1]>,
 }
 
 impl PathParams {
     #[inline]
-    pub fn new(data: TinyVec<[(Arc<str>, (usize, usize)); 1]>) -> Self {
+    pub fn new(data: TinyVec<[(Param, (usize, usize)); 1]>) -> Self {
         Self { data }
     }
 
     #[inline]
-    pub fn iter(&self) -> slice::Iter<(Arc<str>, (usize, usize))> {
+    pub fn iter(&self) -> slice::Iter<(Param, (usize, usize))> {
         self.data.iter()
     }
 
     #[inline]
-    pub fn push(&mut self, param: (Arc<str>, (usize, usize))) {
+    pub fn push(&mut self, param: (Param, (usize, usize))) {
         if self.data.len() == 1 {
             self.data.reserve(7);
         }

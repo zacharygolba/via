@@ -25,6 +25,7 @@ impl DecodeParam for NoopDecode {
 }
 
 impl DecodeParam for PercentDecode {
+    #[inline]
     fn decode(encoded: &str) -> Result<Cow<str>, Error> {
         Ok(percent_decode_str(encoded).decode_utf8()?)
     }

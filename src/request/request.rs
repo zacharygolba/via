@@ -38,6 +38,7 @@ pub struct Request<T = ()> {
 impl<T> Request<T> {
     /// Consumes the request and returns the body.
     ///
+    #[inline]
     pub fn into_body(self) -> HttpBody<RequestBody> {
         self.body
     }
@@ -45,6 +46,7 @@ impl<T> Request<T> {
     /// Consumes the request returning a new request with body mapped to the
     /// return type of the provided closure `map`.
     ///
+    #[inline]
     pub fn map(self, map: impl FnOnce(HttpBody<RequestBody>) -> BoxBody) -> Self {
         if cfg!(debug_assertions) && self.body.is_dyn() {
             // TODO: Replace this with tracing and a proper logger.
@@ -59,18 +61,21 @@ impl<T> Request<T> {
 
     /// Returns an optional reference to the cookie with the provided `name`.
     ///
+    #[inline]
     pub fn cookie(&self, name: &str) -> Option<&Cookie<'static>> {
         self.cookies.as_ref()?.get(name)
     }
 
     /// Returns an optional reference to the cookies associated with the request.
     ///
+    #[inline]
     pub fn cookies(&self) -> Option<&CookieJar> {
         self.cookies.as_deref()
     }
 
     /// Returns a reference to the header value associated with the key.
     ///
+    #[inline]
     pub fn header<K: AsHeaderName>(&self, key: K) -> Option<&HeaderValue> {
         self.parts.headers.get(key)
     }
@@ -78,12 +83,14 @@ impl<T> Request<T> {
     /// Returns a reference to a map that contains the headers associated with
     /// the request.
     ///
+    #[inline]
     pub fn headers(&self) -> &HeaderMap {
         &self.parts.headers
     }
 
     /// Returns a reference to the HTTP method associated with the request.
     ///
+    #[inline]
     pub fn method(&self) -> &Method {
         &self.parts.method
     }
@@ -102,35 +109,40 @@ impl<T> Request<T> {
     /// }
     /// ```
     ///
+    #[inline]
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
-        let path = self.parts.uri.path();
-        let at = self.params.iter().rev().find_map(|(param, at)| {
-            if &**param == name {
-                Some((at.0, at.1))
-            } else {
-                None
-            }
-        });
-
-        PathParam::new(at, name, path)
+        PathParam::new(
+            name,
+            self.parts.uri.path(),
+            self.params.iter().rev().find_map(|(param, at)| {
+                if param == name {
+                    Some((at.0, at.1))
+                } else {
+                    None
+                }
+            }),
+        )
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
     /// state that was passed as an argument to the [`via::new`](crate::app::new)
     /// function.
     ///
+    #[inline]
     pub fn state(&self) -> &Arc<T> {
         &self.state
     }
 
     /// Returns a reference to the uri associated with the request.
     ///
+    #[inline]
     pub fn uri(&self) -> &Uri {
         &self.parts.uri
     }
 
     /// Returns the HTTP version associated with the request.
     ///
+    #[inline]
     pub fn version(&self) -> Version {
         self.parts.version
     }

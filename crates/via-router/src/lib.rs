@@ -4,6 +4,7 @@ mod path;
 mod routes;
 mod visitor;
 
+pub use path::Param;
 pub use visitor::{Found, VisitError};
 
 use tinyvec::TinyVec;
@@ -46,8 +47,15 @@ impl<T> Router<T> {
     }
 
     pub fn visit(&self, path: &str) -> Vec<Result<Found, VisitError>> {
-        // Get a reference to self.nodes.
+        // Get a shared reference to self.nodes.
         let nodes = &self.nodes;
+
+        // Verify that the root node is present. If so, allocate a vec to store
+        // the results that match `path`.
+        let (mut results, root) = match nodes.first() {
+            Some(node) => (Vec::with_capacity(8), node),
+            None => return vec![Err(VisitError::RootNotFound)],
+        };
 
         // Split path into segment ranges and collect them into a vec.
         let segments = {
@@ -57,11 +65,8 @@ impl<T> Router<T> {
             Segments::new(path, parts)
         };
 
-        // Allocate a vec to store matched results.
-        let (mut results, root) = match nodes.first() {
-            Some(node) => (Vec::with_capacity(8), node),
-            None => return vec![Err(VisitError::RootNotFound)],
-        };
+        // Get a shared reference to the segments in `path`.
+        let segments_ref = &segments;
 
         // Append the root node as a match to the results vector.
         results.push(Ok(Found {
@@ -74,10 +79,19 @@ impl<T> Router<T> {
         // search for descendants of `root` that match the each segment in `segments`.
         // Otherwise, perform a shallow search for descendants of `root` with a
         // wildcard pattern.
-        if let Some(next) = segments.first() {
-            visitor::visit_node(&mut results, nodes, root, &segments, next, 0);
-        } else {
-            visitor::visit_wildcard(&mut results, nodes, root);
+        match (&root.children, segments_ref.first()) {
+            // Perform a recursive search for descendants of `child` that match the next
+            // path segment.
+            (Some(children), Some(segment)) => {
+                visitor::visit_node(&mut results, nodes, children, segments_ref, segment, 0);
+            }
+
+            // Perform a shallow search for descendants of `child` with a wildcard pattern.
+            (Some(children), None) => {
+                visitor::visit_wildcard(&mut results, nodes, children);
+            }
+
+            _ => {}
         }
 
         results
@@ -141,7 +155,7 @@ impl<T> Route<'_, T> {
         }
     }
 
-    pub fn param(&self) -> Option<&str> {
+    pub fn param(&self) -> Option<&Param> {
         self.router.node(self.key).param()
     }
 
@@ -161,7 +175,7 @@ impl<T> Route<'_, T> {
     }
 }
 
-fn insert<T, I>(router: &mut Router<T>, segments: &mut I, into_index: usize) -> usize
+fn insert<T, I>(router: &mut Router<T>, segments: &mut I, parent_key: usize) -> usize
 where
     I: Iterator<Item = Pattern>,
 {
@@ -169,31 +183,35 @@ where
     // In the future we may want to panic if the caller tries to insert a node
     // into a catch-all node rather than silently ignoring the rest of the
     // segments.
-    if let Pattern::Wildcard(_) = router.node(into_index).pattern {
-        for _ in segments {}
-        return into_index;
+    if let Pattern::Wildcard(_) = router.node(parent_key).pattern {
+        return parent_key;
     }
 
     // If there are no more segments, we can return the current key.
     let pattern = match segments.next() {
         Some(value) => value,
-        None => return into_index,
+        None => return parent_key,
     };
 
-    // Check if the pattern already exists in the node at `current_key`. If it does,
-    // we can continue to the next segment.
-    for next_index in &router.node(into_index).entries {
-        if pattern == router.node(*next_index).pattern {
-            return insert(router, segments, *next_index);
+    // Check if the pattern already exists in the node at `current_key`. If it
+    // does, we can continue to the next segment.
+    if let Some(children) = &router.node(parent_key).children {
+        let existing = children.iter().find(|key| {
+            let child = router.node(**key);
+            child.pattern == pattern
+        });
+
+        if let Some(next_key) = existing {
+            return insert(router, segments, *next_key);
         }
     }
 
-    let next_index = router.entry(into_index).push(Node::new(pattern));
+    let next_key = router.entry(parent_key).push(Node::new(pattern));
 
     // If the pattern does not exist in the node at `current_key`, we need to create
     // a new node as a descendant of the node at `current_key` and then insert it
     // into the store.
-    insert(router, segments, next_index)
+    insert(router, segments, next_key)
 }
 
 #[cfg(test)]
@@ -239,7 +257,7 @@ mod tests {
                 assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
                 assert_eq!(
                     found.param,
-                    Some((&"path".into(), None)),
+                    Some(("path".into(), None)),
                     "{} => Pattern::CatchAll(path = None)",
                     path,
                 );
@@ -272,7 +290,7 @@ mod tests {
                 assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
                 assert_eq!(
                     found.param,
-                    Some((&"path".into(), Some((1, 11)))),
+                    Some(("path".into(), Some((1, 11)))),
                     "{} => Pattern::CatchAll(path = not/a/path)",
                     path,
                 );
@@ -305,7 +323,7 @@ mod tests {
                 assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
                 assert_eq!(
                     found.param,
-                    Some((&"path".into(), Some((1, 17)))),
+                    Some(("path".into(), Some((1, 17)))),
                     "{} => Pattern::CatchAll(path = echo/hello/world)",
                     path
                 );
@@ -331,7 +349,7 @@ mod tests {
                 assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
                 assert_eq!(
                     found.param,
-                    Some((&"path".into(), Some((6, 17)))),
+                    Some(("path".into(), Some((6, 17)))),
                     "{} => Pattern::CatchAll(path = hello/world)",
                     path
                 );
@@ -363,7 +381,7 @@ mod tests {
                 assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
                 assert_eq!(
                     found.param,
-                    Some((&"path".into(), Some((1, 13)))),
+                    Some(("path".into(), Some((1, 13)))),
                     "{} => Pattern::CatchAll(path = articles/100)",
                     path
                 );
@@ -389,7 +407,7 @@ mod tests {
                 assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
                 assert_eq!(
                     found.param,
-                    Some((&"id".into(), Some((10, 13)))),
+                    Some(("id".into(), Some((10, 13)))),
                     "{} => Pattern::Dynamic(id = 100)",
                     path
                 );
@@ -421,7 +439,7 @@ mod tests {
                 assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
                 assert_eq!(
                     found.param,
-                    Some((&"path".into(), Some((1, 22)))),
+                    Some(("path".into(), Some((1, 22)))),
                     "{} => Pattern::CatchAll(path = articles/100/comments)",
                     path
                 );
@@ -447,7 +465,7 @@ mod tests {
                 assert_eq!(found.route.and_then(|key| router.get(key)), Some(&()));
                 assert_eq!(
                     found.param,
-                    Some((&"id".into(), Some((10, 13)))),
+                    Some(("id".into(), Some((10, 13)))),
                     "{} => Pattern::Dynamic(id = 100)",
                     path
                 );

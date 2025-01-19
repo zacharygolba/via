@@ -249,16 +249,8 @@ fn serve_request<T>(
                 let parts = Box::new(parts);
 
                 // Limit the length of the incoming request body to the configured max.
-                let body = if parts.method.is_safe() {
-                    // The request method implies no body. Do not allocate.
-                    HttpBody::Inline(RequestBody::new(max_request_size, None))
-                } else {
-                    // Allocate the request body on the heap.
-                    HttpBody::Inline(RequestBody::new(
-                        max_request_size,
-                        Some(BoxBody::new(incoming)),
-                    ))
-                };
+                let body =
+                    HttpBody::Inline(RequestBody::new(max_request_size, BoxBody::new(incoming)));
 
                 // Call the middleware stack for the matched routes.
                 Some(next.call(Request::new(state, parts, params, body)))
