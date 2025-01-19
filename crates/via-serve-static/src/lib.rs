@@ -106,7 +106,7 @@ where
                 let message = "The provided endpoint does not have a path parameter.";
                 Err(Error::from(message.to_owned()))
             },
-            |value| Ok(value.to_owned().into_boxed_str()),
+            |value| Ok(value.to_string().into_boxed_str()),
         )?;
 
         if public_dir.is_relative() {

@@ -12,12 +12,12 @@ use crate::error::{BoxError, Error};
 #[derive(Debug)]
 pub struct RequestBody {
     remaining: usize,
-    body: Option<BoxBody<Bytes, hyper::Error>>,
+    body: BoxBody<Bytes, hyper::Error>,
 }
 
 impl RequestBody {
     #[inline]
-    pub(crate) fn new(remaining: usize, body: Option<BoxBody<Bytes, hyper::Error>>) -> Self {
+    pub(crate) fn new(remaining: usize, body: BoxBody<Bytes, hyper::Error>) -> Self {
         Self { remaining, body }
     }
 }
@@ -41,12 +41,8 @@ impl Body for RequestBody {
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.get_mut();
-        let body = match &mut this.body {
-            Some(body) => body,
-            None => return Poll::Ready(None),
-        };
 
-        match Pin::new(body).poll_frame(context)? {
+        match Pin::new(&mut this.body).poll_frame(context)? {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(frame)) => {
@@ -67,16 +63,10 @@ impl Body for RequestBody {
     }
 
     fn is_end_stream(&self) -> bool {
-        match &self.body {
-            Some(body) => body.is_end_stream(),
-            None => true,
-        }
+        self.body.is_end_stream()
     }
 
     fn size_hint(&self) -> SizeHint {
-        match &self.body {
-            Some(body) => body.size_hint(),
-            None => SizeHint::new(),
-        }
+        self.body.size_hint()
     }
 }

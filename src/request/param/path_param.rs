@@ -13,7 +13,8 @@ pub struct PathParam<'a, 'b, T = NoopDecode> {
 }
 
 impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
-    pub(crate) fn new(at: Option<(usize, usize)>, name: &'b str, source: &'a str) -> Self {
+    #[inline]
+    pub(crate) fn new(name: &'b str, source: &'a str, at: Option<(usize, usize)>) -> Self {
         Self {
             at,
             name,
@@ -25,6 +26,7 @@ impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
     /// Returns a new `Param` that will percent-decode the parameter value with
     /// when the parameter is converted to a result.
     ///
+    #[inline]
     pub fn percent_decode(self) -> PathParam<'a, 'b, PercentDecode> {
         PathParam {
             at: self.at,
@@ -37,6 +39,7 @@ impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
     /// Calls [`str::parse`] on the parameter value if it exists and returns the
     /// result. If the param is encoded, it will be decoded before it is parsed.
     ///
+    #[inline]
     pub fn parse<U>(self) -> Result<U, Error>
     where
         U: FromStr,
@@ -60,6 +63,7 @@ impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
     /// implementation of `T::decode`, an error is returned with a 400 Bad
     /// Request status code.
     ///
+    #[inline]
     pub fn into_result(self) -> Result<Cow<'a, str>, Error> {
         match self.at.and_then(|at| {
             let (start, end) = at;

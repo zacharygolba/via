@@ -1,12 +1,18 @@
+use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
 use tinyvec::TinyVec;
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Pattern {
     Root,
-    Static(Arc<str>),
-    Dynamic(Arc<str>),
-    Wildcard(Arc<str>),
+    Static(Param),
+    Dynamic(Param),
+    Wildcard(Param),
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct Param {
+    value: Arc<str>,
 }
 
 pub struct Segments<'a> {
@@ -32,7 +38,7 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
             // the name or identifier associated with the parameter.
             Some(':') => match segment.get(1..) {
                 None | Some("") => panic!("Dynamic parameters must be named. Found ':'."),
-                Some(name) => Pattern::Dynamic(name.into()),
+                Some(name) => Pattern::Dynamic(Param { value: name.into() }),
             },
 
             // Path segments that start with an asterisk are considered CatchAll
@@ -40,12 +46,14 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
             // the name or identifier associated with the parameter.
             Some('*') => match segment.get(1..) {
                 None | Some("") => panic!("Wildcard parameters must be named. Found '*'."),
-                Some(name) => Pattern::Wildcard(name.into()),
+                Some(name) => Pattern::Wildcard(Param { value: name.into() }),
             },
 
             // The segment does not start with a reserved character. We will
             // consider it a static pattern that can be matched by value.
-            _ => Pattern::Static(segment.into()),
+            _ => Pattern::Static(Param {
+                value: segment.into(),
+            }),
         }
     })
 }
@@ -90,6 +98,39 @@ pub fn split(parts: &mut TinyVec<[(usize, usize); 2]>, path: &str) {
         }
 
         parts.push((start, len));
+    }
+}
+
+impl Clone for Param {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            value: Arc::clone(&self.value),
+        }
+    }
+}
+
+impl Display for Param {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Display::fmt(&self.value, f)
+    }
+}
+
+impl<T> From<T> for Param
+where
+    Arc<str>: From<T>,
+{
+    fn from(value: T) -> Self {
+        Self {
+            value: value.into(),
+        }
+    }
+}
+
+impl PartialEq<str> for Param {
+    #[inline]
+    fn eq(&self, other: &str) -> bool {
+        *self.value == *other
     }
 }
 

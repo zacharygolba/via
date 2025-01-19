@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use via_router::Param;
 
 use crate::middleware::Middleware;
 
@@ -36,7 +37,7 @@ impl<T> Route<'_, T> {
         self
     }
 
-    pub fn param(&self) -> Option<&str> {
+    pub fn param(&self) -> Option<&Param> {
         self.inner.param()
     }
 

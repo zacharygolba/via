@@ -1,16 +1,16 @@
 use crate::path::Pattern;
-use crate::Router;
+use crate::{Param, Router};
 
 /// A node in the route tree that represents a single path segment.
 pub struct Node {
-    /// The pattern used to match the node against a path segment.
-    pub pattern: Pattern,
-
     /// The index of the route in the route store associated with the node.
     pub route: Option<usize>,
 
+    /// The pattern used to match the node against a path segment.
+    pub pattern: Pattern,
+
     /// The indices of the nodes that are reachable from the current node.
-    pub entries: Vec<usize>,
+    pub children: Option<Vec<usize>>,
 }
 
 /// A mutable representation of a single node the route store. This type is used
@@ -27,16 +27,16 @@ pub struct RouteEntry<'a, T> {
 impl Node {
     pub fn new(pattern: Pattern) -> Self {
         Self {
-            pattern,
-            entries: Vec::new(),
+            children: None,
             route: None,
+            pattern,
         }
     }
 
     /// Returns an optional reference to the name of the dynamic parameter
     /// associated with the node. The returned value will be `None` if the
     /// node has a `Root` or `Static` pattern.
-    pub fn param(&self) -> Option<&str> {
+    pub fn param(&self) -> Option<&Param> {
         match &self.pattern {
             Pattern::Wildcard(param) | Pattern::Dynamic(param) => Some(param),
             _ => None,
@@ -47,7 +47,7 @@ impl Node {
 impl Node {
     /// Pushes a new key into the entries of the node and return it.
     fn push(&mut self, key: usize) -> usize {
-        self.entries.push(key);
+        self.children.get_or_insert_default().push(key);
         key
     }
 }

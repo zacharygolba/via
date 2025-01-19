@@ -27,7 +27,7 @@ serde = "1"
 serde_json = "1"
 tinyvec = { version = "1.8", features = ["alloc"] }
 tokio = { version = "1", features = ["macros", "signal"] }
-via-router = "3.0.0-beta.9"
+via-router = { path = "crates/via-router" }
 
 [dependencies.cookie]
 version = "0.18"
