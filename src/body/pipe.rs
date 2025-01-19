@@ -5,7 +5,8 @@ use futures_core::Stream;
 use http::header::TRANSFER_ENCODING;
 use http_body::Frame;
 
-use crate::body::{BoxBody, HttpBody, RequestBody, StreamBody};
+use super::stream_body::StreamBody;
+use crate::body::{BoxBody, HttpBody, RequestBody};
 use crate::error::{BoxError, Error};
 use crate::response::{Builder, Response};
 

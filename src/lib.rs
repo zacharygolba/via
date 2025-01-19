@@ -61,15 +61,14 @@ pub mod response;
 
 mod app;
 mod error;
-mod pipe;
 mod router;
 mod server;
 
 pub use app::{new, App};
+pub use body::Pipe;
 pub use error::Error;
 pub use middleware::filter_method::{connect, delete, get, head, options, patch, post, put, trace};
-pub use middleware::{Next, Result};
-pub use pipe::Pipe;
+pub use middleware::{Middleware, Next, Result};
 pub use request::Request;
 pub use response::Response;
 pub use router::Route;
