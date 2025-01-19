@@ -15,7 +15,7 @@ Add the following to dependencies section of your `Cargo.toml`:
 
 ```toml
 [dependencies]
-via = "2.0.0-beta.25"
+via = "2.0.0-beta.26"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
