@@ -1,7 +1,7 @@
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, ETAG, LAST_MODIFIED};
 use httpdate::HttpDate;
 use std::path::PathBuf;
-use via::body::{BufferBody, HttpBody};
+use via::body::{HttpBody, ResponseBody};
 use via::{Error, Next, Pipe, Request, Response};
 
 use crate::{static_file::StaticFile, stream_file::StreamFile, Flags, ServerConfig};
@@ -107,7 +107,7 @@ pub async fn respond_to_get_request<T>(
         return Response::build()
             .header(CONTENT_LENGTH, file.size)
             .headers(headers)
-            .body(HttpBody::Inline(BufferBody::from(data)));
+            .body(HttpBody::Original(ResponseBody::from(data)));
     }
 
     // The file is too large to be eagerly read into memory. Stream the

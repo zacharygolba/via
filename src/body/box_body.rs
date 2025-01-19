@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 
 use crate::error::BoxError;
 
-/// Converts an `impl Body` to a type-erased trait object.
+/// Wrap an `impl Body` in a type-erased trait object.
 ///
 #[must_use = "streams do nothing unless polled"]
 pub struct BoxBody<D = Bytes, E = BoxError> {

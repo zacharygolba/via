@@ -61,18 +61,16 @@ pub mod response;
 
 mod app;
 mod error;
+mod pipe;
 mod router;
 mod server;
 
 pub use app::{new, App};
 pub use error::Error;
 pub use middleware::filter_method::{connect, delete, get, head, options, patch, post, put, trace};
-pub use middleware::Next;
+pub use middleware::{Next, Result};
+pub use pipe::Pipe;
 pub use request::Request;
-pub use response::{Pipe, Response};
+pub use response::Response;
 pub use router::Route;
 pub use server::Server;
-
-/// The output of the `Future` returned from middleware.
-///
-pub type Result = std::result::Result<Response, Error>;

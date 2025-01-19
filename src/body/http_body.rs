@@ -6,33 +6,19 @@ use std::task::{Context, Poll};
 use super::BoxBody;
 use crate::error::BoxError;
 
-/// A sum type that can represent any
-/// [Request](crate::Request)
-/// or
-/// [Response](crate::Response)
-/// body.
+/// The body of a request or response.
 ///
 #[non_exhaustive]
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub enum HttpBody<T> {
-    /// A statically dispatched `impl Body + Send + Sync`.
+    /// The original body of a request or response.
     ///
-    Inline(T),
+    Original(T),
 
-    /// A dynamically dispatched `dyn Body + Send + Sync`.
+    /// A boxed request or response body that was returned from a map function.
     ///
-    Box(BoxBody),
-}
-
-impl<T> HttpBody<T> {
-    #[inline]
-    pub fn is_dyn(&self) -> bool {
-        match self {
-            Self::Inline(_) => false,
-            Self::Box(_) => true,
-        }
-    }
+    Mapped(BoxBody),
 }
 
 impl<T> Body for HttpBody<T>
@@ -47,28 +33,28 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.get_mut() {
-            Self::Inline(ptr) => Pin::new(ptr).poll_frame(cx),
-            Self::Box(ptr) => Pin::new(ptr).poll_frame(cx),
+            Self::Original(ptr) => Pin::new(ptr).poll_frame(cx),
+            Self::Mapped(ptr) => Pin::new(ptr).poll_frame(cx),
         }
     }
 
     fn is_end_stream(&self) -> bool {
         match self {
-            Self::Inline(body) => body.is_end_stream(),
-            Self::Box(body) => body.is_end_stream(),
+            Self::Original(body) => body.is_end_stream(),
+            Self::Mapped(body) => body.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match self {
-            Self::Inline(body) => body.size_hint(),
-            Self::Box(body) => body.size_hint(),
+            Self::Original(body) => body.size_hint(),
+            Self::Mapped(body) => body.size_hint(),
         }
     }
 }
 
 impl<T> From<BoxBody> for HttpBody<T> {
     fn from(body: BoxBody) -> Self {
-        Self::Box(body)
+        Self::Mapped(body)
     }
 }

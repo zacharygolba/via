@@ -9,13 +9,14 @@ use super::request_body::RequestBody;
 use crate::body::HttpBody;
 use crate::error::Error;
 
-/// A stream of frames that compose the body and trailers of a request.
+/// A stream of frames that compose the payload and trailers of a request body.
 ///
 #[must_use = "streams do nothing unless polled"]
 pub struct BodyStream {
     body: HttpBody<RequestBody>,
 }
 
+#[inline]
 fn size_hint_as_usize(hint: SizeHint) -> (Option<usize>, Option<usize>) {
     (
         hint.lower().try_into().ok(),

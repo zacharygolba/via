@@ -5,9 +5,8 @@ use http::{HeaderMap, HeaderValue, Method, Uri, Version};
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
-use super::body::RequestBody;
 use super::param::{PathParam, PathParams};
-use crate::body::{BoxBody, HttpBody};
+use crate::body::{BoxBody, HttpBody, RequestBody};
 
 pub struct Request<T = ()> {
     /// The shared application state passed to the [`via::new`](crate::app::new)
@@ -41,13 +40,13 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn map(self, map: impl FnOnce(HttpBody<RequestBody>) -> BoxBody) -> Self {
-        if cfg!(debug_assertions) && self.body.is_dyn() {
+        if cfg!(debug_assertions) && matches!(&self.body, HttpBody::Mapped(_)) {
             // TODO: Replace this with tracing and a proper logger.
             eprintln!("calling request.map() more than once can create a reference cycle.",);
         }
 
         Self {
-            body: HttpBody::Box(map(self.body)),
+            body: HttpBody::Mapped(map(self.body)),
             ..self
         }
     }
@@ -63,8 +62,8 @@ impl<T> Request<T> {
     /// parts of the request and the request body.
     ///
     #[inline]
-    pub fn into_parts(self) -> (Box<Parts>, HttpBody<RequestBody>) {
-        (self.parts, self.body)
+    pub fn into_parts(self) -> (Parts, HttpBody<RequestBody>) {
+        (*self.parts, self.body)
     }
 
     /// Returns an optional reference to the cookie with the provided `name`.
