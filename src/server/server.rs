@@ -17,15 +17,15 @@ use crate::router::Router;
 ///
 const DEFAULT_MAX_CONNECTIONS: usize = 256;
 
-/// The default value of the maximum request body size in bytes (100MB).
+/// The default value of the maximum request body size in bytes (10MB).
 ///
-const DEFAULT_MAX_REQUEST_SIZE: usize = 104_576_000;
+const DEFAULT_MAX_REQUEST_SIZE: usize = 10_485_760;
 
 /// The default value of the shutdown timeout in seconds.
 ///
 const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
 
-/// Serve an [`App`] over HTTP or HTTPS.
+/// Serve an app over HTTP.
 ///
 pub struct Server<State> {
     state: Arc<State>,

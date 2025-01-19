@@ -10,6 +10,11 @@ use super::limit_error::LimitError;
 use crate::body::HttpBody;
 use crate::error::{BoxError, Error};
 
+/// A length-limited request body. The default limit is `10MB`.
+///
+/// The maximum length can be configured with
+/// [`Server::max_request_size`](crate::Server::max_request_size).
+///
 #[derive(Debug)]
 pub struct RequestBody {
     remaining: usize,

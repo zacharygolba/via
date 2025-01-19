@@ -18,9 +18,9 @@ use hyper_util::rt::TokioExecutor;
 use super::acceptor::Acceptor;
 use super::io_stream::IoStream;
 use super::shutdown::{wait_for_shutdown, ShutdownTx};
-use crate::body::{BufferBody, HttpBody};
+use crate::body::{ResponseBody, HttpBody, RequestBody};
 use crate::error::{BoxError, Error};
-use crate::request::{PathParams, Request, RequestBody};
+use crate::request::{PathParams, Request};
 use crate::router::Router;
 
 pub async fn serve<State, A>(
@@ -227,7 +227,7 @@ fn serve_request<T>(
     shutdown_tx: &ShutdownTx,
     max_request_size: usize,
     request: http::Request<Incoming>,
-) -> impl Future<Output = Result<http::Response<HttpBody<BufferBody>>, hyper::Error>> {
+) -> impl Future<Output = Result<http::Response<HttpBody<ResponseBody>>, hyper::Error>> {
     let found = {
         // Preallocate a vec to store up to 8 path parameter ranges. This
         // reduces the size of allocations for the common use-case.
@@ -249,7 +249,7 @@ fn serve_request<T>(
                 let parts = Box::new(parts);
 
                 // Limit the length of the incoming request body to the configured max.
-                let body = HttpBody::Inline(RequestBody::new(max_request_size, incoming));
+                let body = HttpBody::Original(RequestBody::new(max_request_size, incoming));
 
                 // Call the middleware stack for the matched routes.
                 Some(next.call(Request::new(state, parts, params, body)))

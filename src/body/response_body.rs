@@ -11,10 +11,10 @@ use crate::error::BoxError;
 ///
 const MAX_FRAME_LEN: usize = 8192; // 8KB
 
-/// An in-memory byte buffer that is read in 8KB chunks.
+/// An in-memory response body that is read in `8KB` chunks.
 ///
 #[must_use = "streams do nothing unless polled"]
-pub struct BufferBody {
+pub struct ResponseBody {
     /// The buffer containing the body data.
     ///
     buf: Bytes,
@@ -24,7 +24,7 @@ pub struct BufferBody {
     pos: usize,
 }
 
-impl BufferBody {
+impl ResponseBody {
     #[inline]
     pub fn new(data: &[u8]) -> Self {
         Self {
@@ -54,7 +54,7 @@ impl BufferBody {
     }
 }
 
-impl Body for BufferBody {
+impl Body for ResponseBody {
     type Data = Bytes;
     type Error = BoxError;
 
@@ -98,67 +98,67 @@ impl Body for BufferBody {
     }
 }
 
-impl Debug for BufferBody {
+impl Debug for ResponseBody {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("BufferBody").finish()
     }
 }
 
-impl Default for BufferBody {
+impl Default for ResponseBody {
     fn default() -> Self {
         Self::from_raw(Bytes::new())
     }
 }
 
-impl From<Bytes> for BufferBody {
+impl From<Bytes> for ResponseBody {
     fn from(buf: Bytes) -> Self {
         Self::from_raw(buf)
     }
 }
 
-impl From<Vec<u8>> for BufferBody {
+impl From<Vec<u8>> for ResponseBody {
     fn from(vec: Vec<u8>) -> Self {
         Self::from_raw(Bytes::from(vec))
     }
 }
 
-impl From<&'static [u8]> for BufferBody {
+impl From<&'static [u8]> for ResponseBody {
     fn from(slice: &'static [u8]) -> Self {
         Self::new(slice)
     }
 }
 
-impl From<String> for BufferBody {
+impl From<String> for ResponseBody {
     fn from(string: String) -> Self {
         Self::from_raw(Bytes::from(string))
     }
 }
 
-impl From<&'static str> for BufferBody {
+impl From<&'static str> for ResponseBody {
     fn from(slice: &'static str) -> Self {
         Self::new(slice.as_bytes())
     }
 }
 
-impl HttpBody<BufferBody> {
+impl HttpBody<ResponseBody> {
     #[inline]
     pub fn new() -> Self {
         Default::default()
     }
 }
 
-impl Default for HttpBody<BufferBody> {
+impl Default for HttpBody<ResponseBody> {
     #[inline]
     fn default() -> Self {
-        HttpBody::Inline(Default::default())
+        HttpBody::Original(Default::default())
     }
 }
 
-impl<T> From<T> for HttpBody<BufferBody>
+impl<T> From<T> for HttpBody<ResponseBody>
 where
-    BufferBody: From<T>,
+    ResponseBody: From<T>,
 {
     fn from(body: T) -> Self {
-        HttpBody::Inline(BufferBody::from(body))
+        HttpBody::Original(ResponseBody::from(body))
     }
 }

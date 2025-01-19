@@ -1,34 +1,11 @@
-use bytes::{BufMut, Bytes, BytesMut};
-use futures_core::Stream;
-use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use http::{HeaderName, HeaderValue, StatusCode, Version};
-use http_body::Frame;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
 use super::Response;
-use crate::body::{BoxBody, BufferBody, HttpBody, StreamBody};
-use crate::error::{BoxError, Error};
-use crate::request::RequestBody;
-
-/// Defines how a response body source can be applied to a [Builder] to
-/// generate a [Response].
-///
-/// ```
-/// use http::header::CONTENT_TYPE;
-/// use via::{Next, Request, Response, Pipe};
-///
-/// async fn echo(request: Request, _: Next) -> via::Result {
-///     let content_type = request.header(CONTENT_TYPE).cloned();
-///     let response = Response::build().headers([(CONTENT_TYPE, content_type)]);
-///
-///     request.into_body().pipe(response)
-/// }
-/// ```
-///
-pub trait Pipe {
-    fn pipe(self, response: Builder) -> Result<Response, Error>;
-}
+use crate::body::{HttpBody, ResponseBody};
+use crate::error::Error;
 
 #[derive(Debug, Default)]
 pub struct Builder {
@@ -39,72 +16,7 @@ struct JsonPayload<'a, T> {
     data: &'a T,
 }
 
-impl Pipe for HttpBody<RequestBody> {
-    /// Apply `self` to the provided response builder to generate a response.
-    ///
-    /// The response body will be streamed back to the client with chunked
-    /// transfer encoding.
-    ///
-    fn pipe(self, response: Builder) -> Result<Response, Error> {
-        response
-            .header(TRANSFER_ENCODING, "chunked")
-            .body(HttpBody::Box(match self {
-                HttpBody::Inline(body) => BoxBody::new(body),
-                HttpBody::Box(body) => body,
-            }))
-    }
-}
-
-impl<T> Pipe for T
-where
-    T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static,
-{
-    /// Create a [`StreamBody`] from self and apply it to the provided response
-    /// builder to generate a response.
-    ///
-    /// The response body will be streamed back to the client with chunked
-    /// transfer encoding.
-    ///
-    fn pipe(self, response: Builder) -> Result<Response, Error> {
-        response
-            .header(TRANSFER_ENCODING, "chunked")
-            .body(HttpBody::Box(BoxBody::new(StreamBody::new(self))))
-    }
-}
-
 impl Builder {
-    #[inline]
-    pub fn body(self, body: HttpBody<BufferBody>) -> Result<Response, Error> {
-        let inner = self.inner.body(body)?;
-        Ok(Response::from_inner(inner))
-    }
-
-    pub fn json(self, data: &impl Serialize) -> Result<Response, Error> {
-        let (len, body) = {
-            let mut writer = BytesMut::new().writer();
-            serde_json::to_writer(&mut writer, &JsonPayload { data })?;
-
-            let buf = writer.into_inner().freeze();
-            (buf.len(), BufferBody::from_raw(buf))
-        };
-
-        self.header(CONTENT_TYPE, "application/json; charset=utf-8")
-            .header(CONTENT_LENGTH, len)
-            .body(HttpBody::Inline(body))
-    }
-
-    pub fn html(self, body: String) -> Result<Response, Error> {
-        self.header(CONTENT_TYPE, "text/html; charset=utf-8")
-            .header(CONTENT_LENGTH, body.len())
-            .body(HttpBody::Inline(body.into()))
-    }
-
-    pub fn text(self, body: String) -> Result<Response, Error> {
-        self.header(CONTENT_TYPE, "text/plain; charset=utf-8")
-            .header(CONTENT_LENGTH, body.len())
-            .body(HttpBody::Inline(body.into()))
-    }
-
     #[inline]
     pub fn header<K, V>(self, key: K, value: V) -> Self
     where
@@ -149,6 +61,32 @@ impl Builder {
         Self {
             inner: self.inner.version(version),
         }
+    }
+
+    #[inline]
+    pub fn body(self, data: HttpBody<ResponseBody>) -> Result<Response, Error> {
+        let inner = self.inner.body(data)?;
+        Ok(Response::from_inner(inner))
+    }
+
+    pub fn json(self, data: &impl Serialize) -> Result<Response, Error> {
+        let json = serde_json::to_string(&JsonPayload { data })?;
+
+        self.header(CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(CONTENT_LENGTH, json.len())
+            .body(HttpBody::Original(json.into()))
+    }
+
+    pub fn html(self, data: String) -> Result<Response, Error> {
+        self.header(CONTENT_TYPE, "text/html; charset=utf-8")
+            .header(CONTENT_LENGTH, data.len())
+            .body(HttpBody::Original(data.into()))
+    }
+
+    pub fn text(self, data: String) -> Result<Response, Error> {
+        self.header(CONTENT_TYPE, "text/plain; charset=utf-8")
+            .header(CONTENT_LENGTH, data.len())
+            .body(HttpBody::Original(data.into()))
     }
 
     /// Convert self into a [Response] with an empty payload.

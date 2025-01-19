@@ -29,10 +29,7 @@ impl<T> StreamBody<T> {
 
 impl<T> StreamBody<T> {
     fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
-        unsafe {
-            let this = self.get_unchecked_mut();
-            Pin::new_unchecked(&mut this.stream)
-        }
+        unsafe { Pin::map_unchecked_mut(self, |this| &mut this.stream) }
     }
 }
 
@@ -48,6 +45,10 @@ where
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         self.project().poll_next(context)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        false
     }
 
     fn size_hint(&self) -> SizeHint {

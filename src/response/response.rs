@@ -5,11 +5,11 @@ use http::{HeaderMap, StatusCode, Version};
 use std::fmt::{self, Debug, Formatter};
 
 use super::builder::Builder;
-use crate::body::{BoxBody, BufferBody, HttpBody};
+use crate::body::{BoxBody, HttpBody, ResponseBody};
 
 pub struct Response {
     cookies: Option<CookieJar>,
-    response: http::Response<HttpBody<BufferBody>>,
+    response: http::Response<HttpBody<ResponseBody>>,
 }
 
 impl Response {
@@ -19,7 +19,7 @@ impl Response {
     }
 
     #[inline]
-    pub fn new(body: HttpBody<BufferBody>) -> Self {
+    pub fn new(body: HttpBody<ResponseBody>) -> Self {
         Self {
             cookies: None,
             response: http::Response::new(body),
@@ -27,7 +27,7 @@ impl Response {
     }
 
     #[inline]
-    pub fn from_parts(parts: Parts, body: HttpBody<BufferBody>) -> Self {
+    pub fn from_parts(parts: Parts, body: HttpBody<ResponseBody>) -> Self {
         Self {
             cookies: None,
             response: http::Response::from_parts(parts, body),
@@ -38,25 +38,25 @@ impl Response {
     /// return type of the provided closure `map`.
     ///
     #[inline]
-    pub fn map(self, map: impl FnOnce(HttpBody<BufferBody>) -> BoxBody) -> Self {
-        if cfg!(debug_assertions) && self.body().is_dyn() {
+    pub fn map(self, map: impl FnOnce(HttpBody<ResponseBody>) -> BoxBody) -> Self {
+        if cfg!(debug_assertions) && matches!(self.body(), HttpBody::Mapped(_)) {
             // TODO: Replace this with tracing and a proper logger.
             eprintln!("calling response.map() more than once can create a reference cycle.");
         }
 
         Self {
             cookies: self.cookies,
-            response: self.response.map(|body| HttpBody::Box(map(body))),
+            response: self.response.map(|body| HttpBody::Mapped(map(body))),
         }
     }
 
     #[inline]
-    pub fn body(&self) -> &HttpBody<BufferBody> {
+    pub fn body(&self) -> &HttpBody<ResponseBody> {
         self.response.body()
     }
 
     #[inline]
-    pub fn body_mut(&mut self) -> &mut HttpBody<BufferBody> {
+    pub fn body_mut(&mut self) -> &mut HttpBody<ResponseBody> {
         self.response.body_mut()
     }
 
@@ -102,7 +102,7 @@ impl Response {
 
 impl Response {
     #[inline]
-    pub(crate) fn from_inner(response: http::Response<HttpBody<BufferBody>>) -> Self {
+    pub(crate) fn from_inner(response: http::Response<HttpBody<ResponseBody>>) -> Self {
         Self {
             cookies: None,
             response,
@@ -113,7 +113,7 @@ impl Response {
     /// final processing that may be required before the response is sent to the
     /// client.
     ///
-    pub(crate) fn into_inner(self) -> http::Response<HttpBody<BufferBody>> {
+    pub(crate) fn into_inner(self) -> http::Response<HttpBody<ResponseBody>> {
         self.response
     }
 
