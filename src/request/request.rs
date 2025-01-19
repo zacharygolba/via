@@ -36,13 +36,6 @@ pub struct Request<T = ()> {
 }
 
 impl<T> Request<T> {
-    /// Consumes the request and returns the body.
-    ///
-    #[inline]
-    pub fn into_body(self) -> HttpBody<RequestBody> {
-        self.body
-    }
-
     /// Consumes the request returning a new request with body mapped to the
     /// return type of the provided closure `map`.
     ///
@@ -57,6 +50,21 @@ impl<T> Request<T> {
             body: HttpBody::Box(map(self.body)),
             ..self
         }
+    }
+
+    /// Consumes the request and returns the body.
+    ///
+    #[inline]
+    pub fn into_body(self) -> HttpBody<RequestBody> {
+        self.body
+    }
+
+    /// Consumes the request and returns a tuple containing the component
+    /// parts of the request and the request body.
+    ///
+    #[inline]
+    pub fn into_parts(self) -> (Box<Parts>, HttpBody<RequestBody>) {
+        (self.parts, self.body)
     }
 
     /// Returns an optional reference to the cookie with the provided `name`.
@@ -145,20 +153,6 @@ impl<T> Request<T> {
     #[inline]
     pub fn version(&self) -> Version {
         self.parts.version
-    }
-
-    /// Consumes the request and returns a tuple containing the component
-    /// parts of the request and the request body.
-    ///
-    pub fn into_parts(self) -> (Box<Parts>, HttpBody<RequestBody>) {
-        (self.parts, self.body)
-    }
-
-    /// Unwraps `self` into the Request type from the `http` crate.
-    ///
-    pub fn into_inner(self) -> http::Request<HttpBody<RequestBody>> {
-        let (parts, body) = self.into_parts();
-        http::Request::from_parts(*parts, body)
     }
 }
 
