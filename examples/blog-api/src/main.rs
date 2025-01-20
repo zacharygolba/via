@@ -30,7 +30,7 @@ async fn main() -> Result<ExitCode, Error> {
     dotenvy::dotenv()?;
 
     // Create a new app with our shared state that contains a database pool.
-    let mut app = via::new(State {
+    let mut app = via::app(State {
         pool: database::pool().await?,
     });
 

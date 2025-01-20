@@ -36,7 +36,7 @@
 //! #[tokio::main(flavor = "current_thread")]
 //! async fn main() -> Result<ExitCode, Error> {
 //!     // Create a new application.
-//!     let mut app = via::new(());
+//!     let mut app = via::app(());
 //!
 //!     // Include an error boundary to catch any errors that occur downstream.
 //!     app.include(error_boundary::catch(|_, error| {
@@ -64,7 +64,7 @@ mod error;
 mod router;
 mod server;
 
-pub use app::{new, App};
+pub use app::{app, App};
 pub use body::Pipe;
 pub use error::Error;
 pub use middleware::filter_method::{connect, delete, get, head, options, patch, post, put, trace};

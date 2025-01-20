@@ -19,7 +19,7 @@ async fn echo(request: Request, _: Next) -> via::Result {
 
 #[tokio::main]
 async fn main() -> Result<ExitCode, Error> {
-    let mut app = via::new(());
+    let mut app = via::app(());
 
     // Include an error boundary to catch any errors that occur downstream.
     app.include(error_boundary::catch(|_, error| {

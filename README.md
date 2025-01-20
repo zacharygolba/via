@@ -41,7 +41,7 @@ async fn hello(request: Request, _: Next) -> via::Result {
 #[tokio::main]
 async fn main() -> Result<ExitCode, Error> {
     // Create a new application.
-    let mut app = via::new(());
+    let mut app = via::app(());
 
     // Include an error boundary to catch any errors that occur downstream.
     app.include(error_boundary::catch(|_, error| {
@@ -60,7 +60,7 @@ async fn main() -> Result<ExitCode, Error> {
 
 1. **Define a Handler**: The `hello` function is an asynchronous handler that receives a `Request` and a `Next` middleware chain. It extracts the `name` parameter from the URL and returns a `Response` with a personalized greeting.
 
-2. **Create the Application**: Using `via::new(())`, you can create a new instance of the application. This function can also accept shared state.
+2. **Create the Application**: Using `via::app(())`, you can create a new instance of the application. This function can also accept shared state.
 
 3. **Define an ErrorBoundary**: Define an `ErrorBoundary` middleware to catch errors that occur downstream and convert them to a response. Middleware can be added at any depth of the route tree with the `.include(middleware)` method.
 

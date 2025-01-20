@@ -10,7 +10,7 @@ pub struct App<T> {
 
 /// Constructs a new [`App`] with the provided `state` argument.
 ///
-pub fn new<T>(state: T) -> App<T> {
+pub fn app<T>(state: T) -> App<T> {
     App {
         state: Arc::new(state),
         router: Router::new(),

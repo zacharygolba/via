@@ -21,7 +21,7 @@ async fn main() -> Result<ExitCode, Error> {
     let tls_config = tls::server_config().expect("tls config is invalid or missing");
 
     // Create a new app by calling the `via::app` function.
-    let mut app = via::new(());
+    let mut app = via::app(());
 
     // Include an error boundary to catch any errors that occur downstream.
     app.include(error_boundary::catch(|_, error| {
