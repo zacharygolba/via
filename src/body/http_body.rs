@@ -30,11 +30,11 @@ where
 
     fn poll_frame(
         self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.get_mut() {
-            Self::Original(ptr) => Pin::new(ptr).poll_frame(cx),
-            Self::Mapped(ptr) => Pin::new(ptr).poll_frame(cx),
+            Self::Original(ptr) => Pin::new(ptr).poll_frame(context),
+            Self::Mapped(ptr) => Pin::new(ptr).poll_frame(context),
         }
     }
 
