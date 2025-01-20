@@ -161,16 +161,16 @@ where
                     // Return the permit back to the semaphore.
                     drop(permit);
 
+                    if let Err(error) = result {
+                        // Placeholder for tracing...
+                        let _ = error;
+                    }
+
                     // Assert that the connection did not move in debug mode by
                     // attempting to borrow it mutably.
                     if cfg!(debug_assertions) {
                         #[allow(clippy::let_underscore_future)]
                         let _ = &mut connection;
-                    }
-
-                    if let Err(error) = result {
-                        // Placeholder for tracing...
-                        let _ = error;
                     }
                 });
             }
