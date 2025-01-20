@@ -27,9 +27,9 @@ const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
 
 /// Serve an app over HTTP.
 ///
-pub struct Server<State> {
-    state: Arc<State>,
-    router: Arc<Router<State>>,
+pub struct Server<T> {
+    state: Arc<T>,
+    router: Arc<Router<T>>,
     max_connections: Option<usize>,
     max_request_size: Option<usize>,
     shutdown_timeout: Option<u64>,
@@ -38,17 +38,17 @@ pub struct Server<State> {
     rustls_config: Option<rustls::ServerConfig>,
 }
 
-async fn listen<State, A>(
+async fn listen<T, A>(
     acceptor: A,
     address: impl ToSocketAddrs,
-    state: Arc<State>,
-    router: Arc<Router<State>>,
+    state: Arc<T>,
+    router: Arc<Router<T>>,
     max_connections: Option<usize>,
     max_request_size: Option<usize>,
     shutdown_timeout: Option<u64>,
 ) -> Result<ExitCode, BoxError>
 where
-    State: Send + Sync + 'static,
+    T: Send + Sync + 'static,
     A: Acceptor + Send + Sync + 'static,
 {
     let listener = TcpListener::bind(address).await?;

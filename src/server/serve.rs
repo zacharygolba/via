@@ -23,17 +23,17 @@ use crate::error::{BoxError, Error};
 use crate::request::{PathParams, Request};
 use crate::router::Router;
 
-pub async fn serve<State, A>(
+pub async fn serve<T, A>(
     listener: TcpListener,
     acceptor: A,
-    state: Arc<State>,
-    router: Arc<Router<State>>,
+    state: Arc<T>,
+    router: Arc<Router<T>>,
     max_connections: usize,
     max_request_size: usize,
     shutdown_timeout: Duration,
 ) -> Result<ExitCode, BoxError>
 where
-    State: Send + Sync + 'static,
+    T: Send + Sync + 'static,
     A: Acceptor + Send + Sync + 'static,
 {
     let (shutdown_tx, shutdown_rx, shutdown_task) = wait_for_shutdown();
