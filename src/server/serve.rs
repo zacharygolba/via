@@ -20,10 +20,11 @@ use super::acceptor::Acceptor;
 use super::io_stream::IoStream;
 use super::shutdown::{wait_for_shutdown, ShutdownTx};
 use crate::body::{HttpBody, RequestBody, ResponseBody};
-use crate::error::{BoxError, Error};
+use crate::error::BoxError;
 use crate::middleware::Next;
-use crate::request::{PathParams, Request};
+use crate::request::Request;
 use crate::router::Router;
+use crate::Error;
 
 pub async fn serve<T, A>(
     listener: TcpListener,
@@ -103,22 +104,35 @@ where
                         }
                     };
 
-                    let service = service_fn(|r| {
-                        serve_request(&state, &router, &shutdown_tx, max_request_size, r)
-                    });
 
                     // Create a new HTTP/2 connection.
                     #[cfg(feature = "http2")]
                     let mut connection =
                         conn::http2::Builder::new(TokioExecutor::new())
                             .timer(TokioTimer::new())
-                            .serve_connection(io, service);
+                            .serve_connection(io, service_fn(|request| {
+                                serve_request(
+                                    &state,
+                                    &router,
+                                    &shutdown_tx,
+                                    max_request_size,
+                                    request,
+                                )
+                            }));
 
                     // Create a new HTTP/1.1 connection.
                     #[cfg(all(feature = "http1", not(feature = "http2")))]
                     let mut connection = conn::http1::Builder::new()
                         .timer(TokioTimer::new())
-                        .serve_connection(io, service)
+                        .serve_connection(io, service_fn(|request| {
+                            serve_request(
+                                &state,
+                                &router,
+                                &shutdown_tx,
+                                max_request_size,
+                                request,
+                            )
+                        }))
                         .with_upgrades();
 
                     // Poll the connection until it is closed or a graceful
@@ -237,32 +251,40 @@ fn serve_request<T>(
     max_request_size: usize,
     request: http::Request<Incoming>,
 ) -> impl Future<Output = Result<http::Response<HttpBody<ResponseBody>>, Infallible>> {
-    // Store path params in a vec.
-    let mut params = PathParams::new(Vec::new());
-
     // Allocate a vec to store matched middleware.
-    let mut stack = Vec::new();
+    let mut middlewares = Vec::new();
 
-    // Destructure the incoming request into its component parts.
-    let (head, body) = request.into_parts();
+    // Wrap the incoming request in our Request type.
+    let mut request = {
+        // Destructure the incoming request into its component parts.
+        let (head, body) = request.into_parts();
 
-    // Allocate the metadata associated with the request on the heap. This
-    // keeps the size of the request type small enough to pass around by value.
-    let head = Box::new(head);
+        Request::new(
+            // Ownership of the global state passed to via::app is shared by
+            // cloning the arc pointer to it.
+            Arc::clone(state),
+            // Allocate the metadata associated with this request on the heap.
+            // This keeps the size of this type small enough to pass around by
+            // value.
+            Box::new(head),
+            // Limit the length of the request body to the configured max.
+            HttpBody::Original(RequestBody::new(max_request_size, body)),
+        )
+    };
 
-    // Limit the length of the incoming request body to the configured max.
-    let body = HttpBody::Original(RequestBody::new(max_request_size, body));
-
-    // Route the request to the corrosponding middleware stack.
-    let future = match router.lookup(&mut params, &mut stack, head.uri.path()) {
+    // Route the request to the corresponding middleware stack.
+    let future = match router.lookup(
+        &mut middlewares,
+        &mut request.params,
+        request.head.uri.path(),
+    ) {
         // Call the middleware stack for the matched routes.
-        Ok(()) => Next::new(stack).call(Request::new(params, Arc::clone(state), head, body)),
+        Ok(()) => Next::new(middlewares).call(request),
 
         // An error occurred while routing the request.
         Err(error) => {
             let _ = shutdown_tx.send(Some(true));
             let _ = error; // Placeholder for tracing...
-
             Box::pin(async {
                 let message = "internal server error".to_owned();
                 Err(Error::internal_server_error(message.into()))

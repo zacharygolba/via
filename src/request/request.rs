@@ -11,7 +11,7 @@ use crate::body::{BoxBody, HttpBody, RequestBody};
 pub struct Request<T = ()> {
     /// The request's path and query parameters.
     ///
-    params: PathParams,
+    pub(crate) params: PathParams,
 
     /// The shared application state passed to the
     /// [`via::app`](crate::app::app)
@@ -21,7 +21,7 @@ pub struct Request<T = ()> {
 
     /// The component parts of the underlying HTTP request.
     ///
-    head: Box<Parts>,
+    pub(crate) head: Box<Parts>,
 
     /// The cookies associated with the request. If there is not a
     /// [CookieParser](crate::middleware::CookieParser)
@@ -161,18 +161,13 @@ impl<T> Request<T> {
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(
-        params: PathParams,
-        state: Arc<T>,
-        head: Box<Parts>,
-        body: HttpBody<RequestBody>,
-    ) -> Self {
+    pub(crate) fn new(state: Arc<T>, head: Box<Parts>, body: HttpBody<RequestBody>) -> Self {
         Self {
-            params,
             state,
             head,
             cookies: None,
             body,
+            params: PathParams::new(Vec::new()),
         }
     }
 

@@ -22,8 +22,8 @@ impl<T> Router<T> {
 
     pub fn lookup(
         &self,
+        middlewares: &mut Vec<Arc<dyn Middleware<T>>>,
         params: &mut PathParams,
-        stack: &mut Vec<Arc<dyn Middleware<T>>>,
         path: &str,
     ) -> Result<(), VisitError> {
         // Iterate over the routes that match the request's path.
@@ -58,7 +58,7 @@ impl<T> Router<T> {
                 // exact match and the visited node is not a leaf.
                 MatchWhen::Exact(_) => None,
             }) {
-                stack.push(Arc::clone(middleware));
+                middlewares.push(Arc::clone(middleware));
             }
         }
 
