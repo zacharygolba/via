@@ -39,7 +39,7 @@ impl Response {
     ///
     #[inline]
     pub fn map(self, map: impl FnOnce(HttpBody<ResponseBody>) -> BoxBody) -> Self {
-        if cfg!(debug_assertions) && matches!(self.body(), HttpBody::Mapped(_)) {
+        if cfg!(debug_assertions) && matches!(self.response.body(), HttpBody::Mapped(_)) {
             // TODO: Replace this with tracing and a proper logger.
             eprintln!("calling response.map() more than once can create a reference cycle.");
         }
@@ -48,16 +48,6 @@ impl Response {
             cookies: self.cookies,
             response: self.response.map(|body| HttpBody::Mapped(map(body))),
         }
-    }
-
-    #[inline]
-    pub fn body(&self) -> &HttpBody<ResponseBody> {
-        self.response.body()
-    }
-
-    #[inline]
-    pub fn body_mut(&mut self) -> &mut HttpBody<ResponseBody> {
-        self.response.body_mut()
     }
 
     /// Returns a reference to the response cookies.
@@ -113,10 +103,12 @@ impl Response {
     /// final processing that may be required before the response is sent to the
     /// client.
     ///
+    #[inline]
     pub(crate) fn into_inner(self) -> http::Response<HttpBody<ResponseBody>> {
         self.response
     }
 
+    #[inline]
     pub(crate) fn set_cookie_headers(&mut self) {
         let cookies = match &self.cookies {
             Some(jar) => jar,
@@ -150,7 +142,7 @@ impl Debug for Response {
             .field("status", &self.status())
             .field("headers", self.headers())
             .field("cookies", &self.cookies)
-            .field("body", self.body())
+            .field("body", self.response.body())
             .finish()
     }
 }
