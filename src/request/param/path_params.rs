@@ -2,16 +2,15 @@
 
 use std::fmt::{self, Debug, Formatter};
 use std::slice;
-use tinyvec::TinyVec;
 use via_router::Param;
 
 pub struct PathParams {
-    data: TinyVec<[(Param, (usize, usize)); 1]>,
+    data: Vec<(Param, (usize, usize))>,
 }
 
 impl PathParams {
     #[inline]
-    pub fn new(data: TinyVec<[(Param, (usize, usize)); 1]>) -> Self {
+    pub const fn new(data: Vec<(Param, (usize, usize))>) -> Self {
         Self { data }
     }
 
