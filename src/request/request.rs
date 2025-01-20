@@ -9,6 +9,10 @@ use super::param::{PathParam, PathParams};
 use crate::body::{BoxBody, HttpBody, RequestBody};
 
 pub struct Request<T = ()> {
+    /// The request's path and query parameters.
+    ///
+    params: PathParams,
+
     /// The shared application state passed to the
     /// [`via::app`](crate::app::app)
     /// function.
@@ -19,20 +23,16 @@ pub struct Request<T = ()> {
     ///
     head: Box<Parts>,
 
-    /// A wrapper around the body of the request. This provides callers with
-    /// convienent methods for reading the request body.
-    ///
-    body: HttpBody<RequestBody>,
-
     /// The cookies associated with the request. If there is not a
     /// [CookieParser](crate::middleware::CookieParser)
     /// middleware in the middleware stack for the request, this will be empty.
     ///
     cookies: Option<Box<CookieJar>>,
 
-    /// The request's path and query parameters.
+    /// A wrapper around the body of the request. This provides callers with
+    /// convienent methods for reading the request body.
     ///
-    params: PathParams,
+    body: HttpBody<RequestBody>,
 }
 
 impl<T> Request<T> {
@@ -162,16 +162,16 @@ impl<T> Request<T> {
 impl<T> Request<T> {
     #[inline]
     pub(crate) fn new(
+        params: PathParams,
         state: Arc<T>,
         head: Box<Parts>,
         body: HttpBody<RequestBody>,
-        params: PathParams,
     ) -> Self {
         Self {
+            params,
             state,
             head,
             cookies: None,
-            params,
             body,
         }
     }
@@ -187,11 +187,11 @@ impl<T> Request<T> {
 impl<T> Debug for Request<T> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Request")
+            .field("version", &self.version())
             .field("method", self.method())
             .field("uri", self.uri())
-            .field("params", &self.params)
-            .field("version", &self.version())
             .field("headers", self.headers())
+            .field("params", &self.params)
             .field("cookies", &self.cookies)
             .field("body", &self.body)
             .finish()

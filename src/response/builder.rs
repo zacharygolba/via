@@ -65,8 +65,10 @@ impl Builder {
 
     #[inline]
     pub fn body(self, data: HttpBody<ResponseBody>) -> Result<Response, Error> {
-        let inner = self.inner.body(data)?;
-        Ok(Response::from_inner(inner))
+        Ok(Response {
+            cookies: None,
+            inner: self.inner.body(data)?,
+        })
     }
 
     pub fn json(self, data: &impl Serialize) -> Result<Response, Error> {

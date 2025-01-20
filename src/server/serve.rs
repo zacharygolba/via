@@ -1,3 +1,4 @@
+use http::header::SET_COOKIE;
 use hyper::body::Incoming;
 use hyper::server::conn;
 use hyper::service::service_fn;
@@ -20,6 +21,7 @@ use super::io_stream::IoStream;
 use super::shutdown::{wait_for_shutdown, ShutdownTx};
 use crate::body::{HttpBody, RequestBody, ResponseBody};
 use crate::error::{BoxError, Error};
+use crate::middleware::Next;
 use crate::request::{PathParams, Request};
 use crate::router::Router;
 
@@ -145,6 +147,13 @@ where
                     // Return the permit back to the semaphore.
                     drop(permit);
 
+                    // Assert that the connection did not move in debug mode by
+                    // attempting to borrow it mutably.
+                    if cfg!(debug_assertions) {
+                        #[allow(clippy::let_underscore_future)]
+                        let _ = &mut connection;
+                    }
+
                     if let Err(error) = result {
                         // Placeholder for tracing...
                         let _ = error;
@@ -231,6 +240,9 @@ fn serve_request<T>(
     // Store path params in a vec.
     let mut params = PathParams::new(Vec::new());
 
+    // Allocate a vec to store matched middleware.
+    let mut stack = Vec::new();
+
     // Destructure the incoming request into its component parts.
     let (head, body) = request.into_parts();
 
@@ -242,9 +254,9 @@ fn serve_request<T>(
     let body = HttpBody::Original(RequestBody::new(max_request_size, body));
 
     // Route the request to the corrosponding middleware stack.
-    let future = match router.lookup(&mut params, head.uri.path()) {
+    let future = match router.lookup(&mut params, &mut stack, head.uri.path()) {
         // Call the middleware stack for the matched routes.
-        Ok(next) => next.call(Request::new(Arc::clone(state), head, body, params)),
+        Ok(()) => Next::new(stack).call(Request::new(params, Arc::clone(state), head, body)),
 
         // An error occurred while routing the request.
         Err(error) => {
@@ -264,10 +276,25 @@ fn serve_request<T>(
         let mut response = future.await.unwrap_or_else(|e| e.into());
 
         // If any cookies changed during the request, serialize them to
-        // Set-Cookie headers and include them in the response.
-        response.set_cookie_headers();
+        // Set-Cookie headers and include them in the response headers.
+        if let Some(jar) = &response.cookies {
+            let headers = response.inner.headers_mut();
 
-        // Unwrap the inner http::Response from via::Response.
-        Ok(response.into_inner())
+            for cookie in jar.delta() {
+                let set_cookie = match cookie.encoded().to_string().parse() {
+                    Ok(header_value) => header_value,
+                    Err(error) => {
+                        let _ = error; // Placeholder for tracing
+                        continue;
+                    }
+                };
+
+                if let Err(error) = headers.try_append(SET_COOKIE, set_cookie) {
+                    let _ = error; // Placeholder for tracing
+                }
+            }
+        }
+
+        Ok(response.inner)
     }
 }

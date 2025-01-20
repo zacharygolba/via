@@ -1,5 +1,4 @@
 use cookie::CookieJar;
-use http::header::SET_COOKIE;
 use http::response::Parts;
 use http::{HeaderMap, StatusCode, Version};
 use std::fmt::{self, Debug, Formatter};
@@ -8,8 +7,8 @@ use super::builder::Builder;
 use crate::body::{BoxBody, HttpBody, ResponseBody};
 
 pub struct Response {
-    cookies: Option<CookieJar>,
-    response: http::Response<HttpBody<ResponseBody>>,
+    pub(crate) cookies: Option<Box<CookieJar>>,
+    pub(crate) inner: http::Response<HttpBody<ResponseBody>>,
 }
 
 impl Response {
@@ -22,7 +21,7 @@ impl Response {
     pub fn new(body: HttpBody<ResponseBody>) -> Self {
         Self {
             cookies: None,
-            response: http::Response::new(body),
+            inner: http::Response::new(body),
         }
     }
 
@@ -30,7 +29,7 @@ impl Response {
     pub fn from_parts(parts: Parts, body: HttpBody<ResponseBody>) -> Self {
         Self {
             cookies: None,
-            response: http::Response::from_parts(parts, body),
+            inner: http::Response::from_parts(parts, body),
         }
     }
 
@@ -39,14 +38,14 @@ impl Response {
     ///
     #[inline]
     pub fn map(self, map: impl FnOnce(HttpBody<ResponseBody>) -> BoxBody) -> Self {
-        if cfg!(debug_assertions) && matches!(self.response.body(), HttpBody::Mapped(_)) {
+        if cfg!(debug_assertions) && matches!(self.inner.body(), HttpBody::Mapped(_)) {
             // TODO: Replace this with tracing and a proper logger.
             eprintln!("calling response.map() more than once can create a reference cycle.");
         }
 
         Self {
             cookies: self.cookies,
-            response: self.response.map(|body| HttpBody::Mapped(map(body))),
+            inner: self.inner.map(|body| HttpBody::Mapped(map(body))),
         }
     }
 
@@ -54,7 +53,7 @@ impl Response {
     ///
     #[inline]
     pub fn cookies(&self) -> Option<&CookieJar> {
-        self.cookies.as_ref()
+        self.cookies.as_deref()
     }
 
     /// Returns a mutable reference to the response cookies.
@@ -66,66 +65,27 @@ impl Response {
 
     #[inline]
     pub fn headers(&self) -> &HeaderMap {
-        self.response.headers()
+        self.inner.headers()
     }
 
     #[inline]
     pub fn headers_mut(&mut self) -> &mut HeaderMap {
-        self.response.headers_mut()
+        self.inner.headers_mut()
     }
 
     #[inline]
     pub fn status(&self) -> StatusCode {
-        self.response.status()
+        self.inner.status()
     }
 
     #[inline]
     pub fn status_mut(&mut self) -> &mut StatusCode {
-        self.response.status_mut()
+        self.inner.status_mut()
     }
 
     #[inline]
     pub fn version(&self) -> Version {
-        self.response.version()
-    }
-}
-
-impl Response {
-    #[inline]
-    pub(crate) fn from_inner(response: http::Response<HttpBody<ResponseBody>>) -> Self {
-        Self {
-            cookies: None,
-            response,
-        }
-    }
-
-    /// Consumes the response and returns the inner value after performing any
-    /// final processing that may be required before the response is sent to the
-    /// client.
-    ///
-    #[inline]
-    pub(crate) fn into_inner(self) -> http::Response<HttpBody<ResponseBody>> {
-        self.response
-    }
-
-    #[inline]
-    pub(crate) fn set_cookie_headers(&mut self) {
-        let cookies = match &self.cookies {
-            Some(jar) => jar,
-            None => return,
-        };
-
-        self.response
-            .headers_mut()
-            .extend(cookies.delta().filter_map(|cookie| {
-                match cookie.encoded().to_string().parse() {
-                    Ok(header_value) => Some((SET_COOKIE, header_value)),
-                    Err(error) => {
-                        let _ = error; // Placeholder for tracing...
-                        None
-                    }
-                }
-            }));
+        self.inner.version()
     }
 }
 
@@ -142,7 +102,7 @@ impl Debug for Response {
             .field("status", &self.status())
             .field("headers", self.headers())
             .field("cookies", &self.cookies)
-            .field("body", self.response.body())
+            .field("body", self.inner.body())
             .finish()
     }
 }
