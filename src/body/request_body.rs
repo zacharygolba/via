@@ -6,8 +6,8 @@ use std::task::{Context, Poll};
 
 use super::body_reader::{BodyData, BodyReader};
 use super::body_stream::BodyStream;
+use super::http_body::HttpBody;
 use super::limit_error::LimitError;
-use crate::body::HttpBody;
 use crate::error::{BoxError, Error};
 
 /// A length-limited request body. The default limit is `10MB`.
