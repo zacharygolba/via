@@ -2,8 +2,8 @@ use std::sync::Arc;
 use via_router::VisitError;
 
 use super::route::{MatchWhen, Route};
-use crate::middleware::Next;
 use crate::request::PathParams;
+use crate::Middleware;
 
 pub struct Router<T> {
     inner: via_router::Router<Vec<MatchWhen<T>>>,
@@ -20,9 +20,12 @@ impl<T> Router<T> {
         Route::new(self.inner.at(pattern))
     }
 
-    pub fn lookup(&self, params: &mut PathParams, path: &str) -> Result<Next<T>, VisitError> {
-        let mut stack = Vec::new();
-
+    pub fn lookup(
+        &self,
+        params: &mut PathParams,
+        stack: &mut Vec<Arc<dyn Middleware<T>>>,
+        path: &str,
+    ) -> Result<(), VisitError> {
         // Iterate over the routes that match the request's path.
         for result in self.inner.visit(path).into_iter().rev() {
             let found = result?;
@@ -59,6 +62,6 @@ impl<T> Router<T> {
             }
         }
 
-        Ok(Next::new(stack))
+        Ok(())
     }
 }
