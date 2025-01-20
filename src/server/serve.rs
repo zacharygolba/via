@@ -242,9 +242,9 @@ fn serve_request<T>(
     let body = HttpBody::Original(RequestBody::new(max_request_size, body));
 
     // Route the request to the corrosponding middleware stack.
-    let fut = match router.lookup(&mut params, head.uri.path()) {
+    let future = match router.lookup(&mut params, head.uri.path()) {
         // Call the middleware stack for the matched routes.
-        Ok(next) => next.call(Request::new(Arc::clone(state), head, params, body)),
+        Ok(next) => next.call(Request::new(Arc::clone(state), head, body, params)),
 
         // An error occurred while routing the request.
         Err(error) => {
@@ -261,7 +261,7 @@ fn serve_request<T>(
     async {
         // Await the response future. If an error occurs, generate a response
         // from the error.
-        let mut response = fut.await.unwrap_or_else(|e| e.into());
+        let mut response = future.await.unwrap_or_else(|e| e.into());
 
         // If any cookies changed during the request, serialize them to
         // Set-Cookie headers and include them in the response.

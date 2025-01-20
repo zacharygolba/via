@@ -28,6 +28,7 @@ impl<T> StreamBody<T> {
 }
 
 impl<T> StreamBody<T> {
+    #[inline]
     fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
         unsafe { Pin::map_unchecked_mut(self, |this| &mut this.stream) }
     }

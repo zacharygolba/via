@@ -99,8 +99,8 @@ impl Body for ResponseBody {
 }
 
 impl Debug for ResponseBody {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BufferBody").finish()
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("ResponseBody").finish()
     }
 }
 
