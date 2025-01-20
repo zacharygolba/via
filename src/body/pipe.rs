@@ -36,10 +36,7 @@ impl Pipe for HttpBody<RequestBody> {
     fn pipe(self, response: Builder) -> Result<Response, Error> {
         response
             .header(TRANSFER_ENCODING, "chunked")
-            .body(HttpBody::Mapped(match self {
-                HttpBody::Original(body) => BoxBody::new(body),
-                HttpBody::Mapped(body) => body,
-            }))
+            .body(HttpBody::Mapped(self.boxed()))
     }
 }
 

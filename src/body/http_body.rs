@@ -21,6 +21,19 @@ pub enum HttpBody<T> {
     Mapped(BoxBody),
 }
 
+impl<T> HttpBody<T>
+where
+    T: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
+{
+    #[inline]
+    pub fn boxed(self) -> BoxBody {
+        match self {
+            Self::Original(body) => BoxBody::new(body),
+            Self::Mapped(body) => body,
+        }
+    }
+}
+
 impl<T> Body for HttpBody<T>
 where
     T: Body<Data = Bytes, Error = BoxError> + Unpin,
