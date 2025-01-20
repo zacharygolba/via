@@ -96,7 +96,7 @@ async fn main() -> Result<ExitCode, Error> {
     dotenvy::dotenv().ok();
 
     // Create a new app by calling the `via::app` function.
-    let mut app = via::new(State {
+    let mut app = via::app(State {
         secret: get_secret_from_env(),
     });
 

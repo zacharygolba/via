@@ -65,7 +65,7 @@ impl Error {
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), Error> {
-    ///     let mut app = via::new(());
+    ///     let mut app = via::app(());
     ///
     ///     // Add an `ErrorBoundary` middleware to the route tree that maps
     ///     // errors that occur in subsequent middleware by calling the `redact`
@@ -137,7 +137,7 @@ impl Error {
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), Error> {
-    ///     let mut app = via::new(());
+    ///     let mut app = via::app(());
     ///
     ///     // Add an `ErrorBoundary` middleware to the route tree that maps
     ///     // errors that occur in subsequent middleware by calling the

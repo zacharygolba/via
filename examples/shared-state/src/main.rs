@@ -74,7 +74,7 @@ async fn totals(request: Request<State>, _: Next<State>) -> via::Result {
 #[tokio::main]
 async fn main() -> Result<ExitCode, Error> {
     // Create a new application with a `Counter` as state.
-    let mut app = via::new(State {
+    let mut app = via::app(State {
         errors: Arc::new(AtomicU32::new(0)),
         sucesses: Arc::new(AtomicU32::new(0)),
     });
