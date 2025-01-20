@@ -21,10 +21,6 @@ impl PathParams {
 
     #[inline]
     pub fn push(&mut self, param: (Param, (usize, usize))) {
-        if self.data.len() == 1 {
-            self.data.reserve(7);
-        }
-
         self.data.push(param);
     }
 }

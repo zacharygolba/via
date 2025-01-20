@@ -1,4 +1,3 @@
-use http::header::SET_COOKIE;
 use hyper::body::Incoming;
 use hyper::server::conn;
 use hyper::service::service_fn;
@@ -22,7 +21,7 @@ use super::shutdown::{wait_for_shutdown, ShutdownTx};
 use crate::body::{HttpBody, RequestBody, ResponseBody};
 use crate::error::BoxError;
 use crate::middleware::Next;
-use crate::request::Request;
+use crate::request::{PathParams, Request};
 use crate::router::Router;
 use crate::Error;
 
@@ -251,35 +250,33 @@ fn serve_request<T>(
     max_request_size: usize,
     request: http::Request<Incoming>,
 ) -> impl Future<Output = Result<http::Response<HttpBody<ResponseBody>>, Infallible>> {
-    // Allocate a vec to store matched middleware.
+    // Destructure the incoming request to it's component parts.
+    let (head, body) = request.into_parts();
+
+    // Allocate the metadata associated with this request on the heap. This
+    // keeps the size of this type small enough to pass around by value.
+    let head = Box::new(head);
+
+    // A wrapper around a vec to store path params.
+    let mut params = PathParams::new(Vec::new());
+
+    // A vec to store middleware that match the request's path.
     let mut middlewares = Vec::new();
 
-    // Wrap the incoming request in our Request type.
-    let mut request = {
-        // Destructure the incoming request into its component parts.
-        let (head, body) = request.into_parts();
-
-        Request::new(
-            // Ownership of the global state passed to via::app is shared by
-            // cloning the arc pointer to it.
+    // Route the request to the corresponding middleware stack.
+    let future = match router.lookup(&mut middlewares, &mut params, head.uri.path()) {
+        // Call the middleware stack for the matched routes.
+        Ok(()) => Next::new(middlewares).call(Request::new(
+            // Clone the arc pointer to the global app state so ownership can
+            // be shared with the request.
             Arc::clone(state),
-            // Allocate the metadata associated with this request on the heap.
-            // This keeps the size of this type small enough to pass around by
-            // value.
-            Box::new(head),
+            // Take ownership of the heap-allocated request head.
+            head,
+            // Take ownership of path params.
+            params,
             // Limit the length of the request body to the configured max.
             HttpBody::Original(RequestBody::new(max_request_size, body)),
-        )
-    };
-
-    // Route the request to the corresponding middleware stack.
-    let future = match router.lookup(
-        &mut middlewares,
-        &mut request.params,
-        request.head.uri.path(),
-    ) {
-        // Call the middleware stack for the matched routes.
-        Ok(()) => Next::new(middlewares).call(request),
+        )),
 
         // An error occurred while routing the request.
         Err(error) => {
@@ -299,24 +296,9 @@ fn serve_request<T>(
 
         // If any cookies changed during the request, serialize them to
         // Set-Cookie headers and include them in the response headers.
-        if let Some(jar) = &response.cookies {
-            let headers = response.inner.headers_mut();
+        response.set_cookie_headers();
 
-            for cookie in jar.delta() {
-                let set_cookie = match cookie.encoded().to_string().parse() {
-                    Ok(header_value) => header_value,
-                    Err(error) => {
-                        let _ = error; // Placeholder for tracing
-                        continue;
-                    }
-                };
-
-                if let Err(error) = headers.try_append(SET_COOKIE, set_cookie) {
-                    let _ = error; // Placeholder for tracing
-                }
-            }
-        }
-
-        Ok(response.inner)
+        // Unwrap the inner http::Response from via::Response.
+        Ok(response.into_inner())
     }
 }
