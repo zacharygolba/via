@@ -251,21 +251,13 @@ fn serve_request<T>(
     request: http::Request<Incoming>,
 ) -> impl Future<Output = Result<http::Response<HttpBody<ResponseBody>>, Infallible>> {
     // Wrap the incoming request in via::Request.
-    let mut request = {
-        // Destructure the incoming request to it's component parts.
-        let (head, body) = request.into_parts();
-
-        Request::new(
-            // Clone the arc pointer to the global app state so ownership can
-            // be shared with the request.
-            Arc::clone(state),
-            // Allocate the metadata associated with this request on the heap. This
-            // keeps the size of this type small enough to pass around by value.
-            Box::new(head),
-            // Limit the length of the request body to the configured max.
-            HttpBody::Original(RequestBody::new(max_request_size, body)),
-        )
-    };
+    let mut request = Request::new(
+        // Clone the arc pointer to the global app state so ownership can be
+        // shared with the request.
+        Arc::clone(state),
+        // Limit the length of the request body to the configured max.
+        request.map(|body| HttpBody::Original(RequestBody::new(max_request_size, body))),
+    );
 
     // Route the request to the corresponding middleware stack.
     let future = {
