@@ -30,16 +30,20 @@ pub enum VisitError {
 /// metadata about the match.
 ///
 #[derive(Debug)]
-pub struct Found {
-    /// True if there were no more segments to match against the children of the
-    /// matched node. Otherwise, false.
+pub struct Found<'a> {
+    /// True if there were no more segments to match against the children of
+    /// the matched node. Otherwise, false.
     ///
     pub exact: bool,
 
     /// The name of the dynamic parameter that matched the path segment.
     ///
-    #[allow(clippy::type_complexity)]
-    pub param: Option<(Param, Option<(usize, usize)>)>,
+    pub param: Option<&'a Param>,
+
+    /// The start and end offset of the parameter that matched the path
+    /// segment.
+    ///
+    pub range: Option<(usize, usize)>,
 
     /// The key of the route associated with the node that matched the path
     /// segment.
@@ -66,13 +70,13 @@ impl Display for VisitError {
 /// pattern that matches the path segment at `index`. If a match is found,
 /// we'll add it to `results` and continue our search with the descendants
 /// of matched node against the path segment at next index.
-pub fn visit_node(
+pub fn visit_node<'a>(
     // A mutable reference to a vector that contains the matches that we
     // have found so far.
-    results: &mut Vec<Result<Found, VisitError>>,
+    results: &mut Vec<Result<Found<'a>, VisitError>>,
 
     // A reference to the route store that contains the route tree.
-    nodes: &[Node],
+    nodes: &'a [Node],
 
     children: &[usize],
 
@@ -102,6 +106,7 @@ pub fn visit_node(
                 Found {
                     exact: next_segment.is_none(),
                     param: None,
+                    range: None,
                     route: node.route,
                 },
             ),
@@ -112,7 +117,8 @@ pub fn visit_node(
                 node,
                 Found {
                     exact: true,
-                    param: Some((name.clone(), Some((at.0, segments.path_len())))),
+                    param: Some(name),
+                    range: Some((at.0, segments.path_len())),
                     route: node.route,
                 },
             ),
@@ -122,7 +128,8 @@ pub fn visit_node(
                 node,
                 Found {
                     exact: next_segment.is_none(),
-                    param: Some((name.clone(), Some(*at))),
+                    param: Some(name),
+                    range: Some(*at),
                     route: node.route,
                 },
             ),
@@ -145,9 +152,8 @@ pub fn visit_node(
         results.push(Ok(found));
 
         match (&child.pattern, &child.children, next_segment) {
-            // Wildcard patterns consume the remainder of the path. Continue matching
-            // adjacent nodes.
-            (Pattern::Wildcard(_), _, _) => {}
+            // Continue matching adjacent nodes.
+            (Pattern::Wildcard(_), _, _) | (_, None, _) => {}
 
             // Perform a recursive search for descendants of `child` that match the next
             // path segment.
@@ -159,21 +165,19 @@ pub fn visit_node(
             (_, Some(children), None) => {
                 visit_wildcard(results, nodes, children);
             }
-
-            _ => {}
         }
     }
 }
 
 /// Accumulate child nodes with a wildcard pattern in results.
 ///
-pub fn visit_wildcard(
-    // A mutable reference to a vector that contains the matches that we found
-    // so far.
-    results: &mut Vec<Result<Found, VisitError>>,
+pub fn visit_wildcard<'a>(
+    // A mutable reference to a vector that contains the matches that we
+    // have found so far.
+    results: &mut Vec<Result<Found<'a>, VisitError>>,
 
-    // A slice containing all of the nodes in the route tree.
-    nodes: &[Node],
+    // A reference to the route store that contains the route tree.
+    nodes: &'a [Node],
 
     children: &[usize],
 ) {
@@ -185,7 +189,8 @@ pub fn visit_wildcard(
             Some(node @ Node { pattern: Pattern::Wildcard(name), .. }) => {
                 results.push(Ok(Found {
                     exact: true,
-                    param: Some((name.clone(), None)),
+                    param: Some(name),
+                    range: None,
                     route: node.route,
                 }));
             }

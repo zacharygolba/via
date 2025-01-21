@@ -33,8 +33,8 @@ impl<T> Router<T> {
             // If there is a dynamic parameter name associated with the route,
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
-            if let Some((name, Some(at))) = found.param {
-                params.push((name, at));
+            if let Some(name) = found.param {
+                params.push((name.clone(), found.range));
             }
 
             let route = match found.route.and_then(|key| self.inner.get(key)) {
