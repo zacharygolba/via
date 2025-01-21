@@ -1,9 +1,7 @@
-use hyper::body::Incoming;
 use hyper::server::conn;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioTimer;
 use std::convert::Infallible;
-use std::future::Future;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,8 +15,8 @@ use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
 use super::io_stream::IoStream;
-use super::shutdown::{wait_for_shutdown, ShutdownTx};
-use crate::body::{HttpBody, RequestBody, ResponseBody};
+use super::shutdown::wait_for_shutdown;
+use crate::body::{HttpBody, RequestBody};
 use crate::error::BoxError;
 use crate::middleware::Next;
 use crate::request::Request;
@@ -54,22 +52,6 @@ where
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
 
-        // Clone the Arc around the router so it can be moved into the connection
-        // task.
-        let router = Arc::clone(&router);
-
-        // Clone the Arc around the shared application state so it can be moved
-        // into the connection task.
-        let state = Arc::clone(&state);
-
-        // Clone the acceptor so it can be moved into the task responsible for
-        // serving individual connections.
-        let acceptor = acceptor.clone();
-
-        // Clone the watch sender so connections can notify the main thread if an
-        // unrecoverable error is encountered.
-        let shutdown_tx = shutdown_tx.clone();
-
         // Clone the watch channel so that we can notify the connection task when
         // initiate a graceful shutdown process before the server exits.
         let mut shutdown_rx = shutdown_rx.clone();
@@ -84,6 +66,22 @@ where
                         continue;
                     }
                 };
+
+                // Clone the watch sender so connections can notify the main thread if an
+                // unrecoverable error is encountered.
+                let shutdown_tx = shutdown_tx.clone();
+
+                // Clone the acceptor so it can be moved into the task responsible for
+                // serving individual connections.
+                let acceptor = acceptor.clone();
+
+                // Clone the Arc around the router so it can be moved into the connection
+                // task.
+                let router = Arc::clone(&router);
+
+                // Clone the Arc around the shared application state so it can be moved
+                // into the connection task.
+                let state = Arc::clone(&state);
 
                 // Spawn a task to serve the connection.
                 connections.spawn(async move {
@@ -103,35 +101,76 @@ where
                         }
                     };
 
+                    let service = service_fn(|incoming| {
+                        // Wrap the incoming request in our request type.
+                        let mut request = {
+                            // Destructure the incoming request into it's component parts.
+                            let (head, body) = incoming.into_parts();
+
+                            Request::new(
+                                // Share ownership of the global application state passed to
+                                // via::app with the request.
+                                Arc::clone(&state),
+                                // Allocate the metadata associated with this request on the heap.
+                                // This keeps the size of this type small enough to pass around by
+                                // value.
+                                Box::new(head),
+                                // Limit the length of the request body to the configured max.
+                                HttpBody::Original(RequestBody::new(max_request_size, body)),
+                            )
+                        };
+
+                        // Route the request to the corresponding middleware stack.
+                        let future = {
+                            // Allocate a vec to store refs to middleware that match the uri path.
+                            let mut middlewares = Vec::new();
+
+                            // Get a mutable reference to the request's path parameters as well as
+                            // a shared reference to the uri path in the request head.
+                            let (params, path) = request.params_mut();
+
+                            match router.lookup(&mut middlewares, params, path) {
+                                // Call the middleware stack for the matched routes.
+                                Ok(()) => Next::new(middlewares).call(request),
+
+                                // An error occurred while routing the request.
+                                Err(error) => {
+                                    let _ = shutdown_tx.send(Some(true));
+                                    let _ = error; // Placeholder for tracing...
+                                    Box::pin(async {
+                                        let message = "internal server error".to_owned();
+                                        Err(Error::internal_server_error(message.into()))
+                                    })
+                                }
+                            }
+                        };
+
+                        async {
+                            // Await the response future. If an error occurs, generate a response
+                            // from the error.
+                            let mut response = future.await.unwrap_or_else(|e| e.into());
+
+                            // If any cookies changed during the request, serialize them to
+                            // Set-Cookie headers and include them in the response headers.
+                            response.set_cookie_headers();
+
+                            // Unwrap the inner response type and let hyper it from here.
+                            Ok::<_, Infallible>(response.into_inner())
+                        }
+                    });
 
                     // Create a new HTTP/2 connection.
                     #[cfg(feature = "http2")]
                     let mut connection =
                         conn::http2::Builder::new(TokioExecutor::new())
                             .timer(TokioTimer::new())
-                            .serve_connection(io, service_fn(|request| {
-                                serve_request(
-                                    &state,
-                                    &router,
-                                    &shutdown_tx,
-                                    max_request_size,
-                                    request,
-                                )
-                            }));
+                            .serve_connection(io, service);
 
                     // Create a new HTTP/1.1 connection.
                     #[cfg(all(feature = "http1", not(feature = "http2")))]
                     let mut connection = conn::http1::Builder::new()
                         .timer(TokioTimer::new())
-                        .serve_connection(io, service_fn(|request| {
-                            serve_request(
-                                &state,
-                                &router,
-                                &shutdown_tx,
-                                max_request_size,
-                                request,
-                            )
-                        }))
+                        .serve_connection(io, service)
                         .with_upgrades();
 
                     // Poll the connection until it is closed or a graceful
@@ -240,60 +279,5 @@ where
 
             Err(error)
         }
-    }
-}
-
-fn serve_request<T>(
-    state: &Arc<T>,
-    router: &Router<T>,
-    shutdown_tx: &ShutdownTx,
-    max_request_size: usize,
-    request: http::Request<Incoming>,
-) -> impl Future<Output = Result<http::Response<HttpBody<ResponseBody>>, Infallible>> {
-    // Wrap the incoming request in via::Request.
-    let mut request = Request::new(
-        // Clone the arc pointer to the global app state so ownership can be
-        // shared with the request.
-        Arc::clone(state),
-        // Limit the length of the request body to the configured max.
-        request.map(|body| HttpBody::Original(RequestBody::new(max_request_size, body))),
-    );
-
-    // Route the request to the corresponding middleware stack.
-    let future = {
-        // Allocate a vec to store refs to middleware that match the uri path.
-        let mut middlewares = Vec::new();
-
-        // Get a mutable reference to the request's path parameters as well as
-        // a shared reference to the uri path in the request head.
-        let (params, path) = request.params_mut();
-
-        match router.lookup(&mut middlewares, params, path) {
-            // Call the middleware stack for the matched routes.
-            Ok(()) => Next::new(middlewares).call(request),
-
-            // An error occurred while routing the request.
-            Err(error) => {
-                let _ = shutdown_tx.send(Some(true));
-                let _ = error; // Placeholder for tracing...
-                Box::pin(async {
-                    let message = "internal server error".to_owned();
-                    Err(Error::internal_server_error(message.into()))
-                })
-            }
-        }
-    };
-
-    async {
-        // Await the response future. If an error occurs, generate a response
-        // from the error.
-        let mut response = future.await.unwrap_or_else(|e| e.into());
-
-        // If any cookies changed during the request, serialize them to
-        // Set-Cookie headers and include them in the response headers.
-        response.set_cookie_headers();
-
-        // Unwrap the inner http::Response from via::Response.
-        Ok(response.into_inner())
     }
 }
