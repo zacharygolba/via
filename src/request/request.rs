@@ -6,6 +6,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
 use super::param::{PathParam, PathParams};
+use super::QueryParam;
 use crate::body::{BoxBody, HttpBody, RequestBody};
 
 pub struct Request<T = ()> {
@@ -141,6 +142,36 @@ impl<T> Request<T> {
         )
     }
 
+    /// Returns a convenient wrapper around an optional references to the query
+    /// parameters in the request's uri with the provided `name`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use via::{Next, Request, Response};
+    ///
+    /// async fn hello(request: Request, _: Next) -> via::Result {
+    ///     // Attempt to parse the first query parameter named `n` to a `usize`
+    ///     // no greater than 1000. If the query parameter doesn't exist or
+    ///     // can't be converted to a `usize`, default to 1.
+    ///     let n = request.query("n").first().parse().unwrap_or(1).min(1000);
+    ///
+    ///     // Get a reference to the path parameter `name` from the request uri.
+    ///     let name = request.param("name").into_result()?;
+    ///
+    ///     // Create a greeting message with the provided `name`.
+    ///     let message = format!("Hello, {}!\n", name);
+    ///
+    ///     // Send a response with our greeting message, repeated `n` times.
+    ///     Response::build().text(message.repeat(n))
+    /// }
+    /// ```
+    ///
+    #[inline]
+    pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
+        QueryParam::new(name, self.head.uri.query().unwrap_or(""))
+    }
+
     /// Returns a thread-safe reference-counting pointer to the application
     /// state that was passed as an argument to the
     /// [`via::app`](crate::app::app)
@@ -168,17 +199,12 @@ impl<T> Request<T> {
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(
-        state: Arc<T>,
-        head: Box<Parts>,
-        params: PathParams,
-        body: HttpBody<RequestBody>,
-    ) -> Self {
+    pub(crate) fn new(state: Arc<T>, head: Box<Parts>, body: HttpBody<RequestBody>) -> Self {
         Self {
+            params: PathParams::new(Vec::new()),
             state,
             head,
             cookies: None,
-            params,
             body,
         }
     }
@@ -188,6 +214,13 @@ impl<T> Request<T> {
     #[inline]
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
         self.cookies.get_or_insert_default()
+    }
+
+    /// Returns a mutable reference to the cookies associated with the request.
+    ///
+    #[inline]
+    pub(crate) fn params_mut(&mut self) -> (&mut PathParams, &str) {
+        (&mut self.params, self.head.uri.path())
     }
 }
 

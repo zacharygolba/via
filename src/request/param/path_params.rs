@@ -5,22 +5,22 @@ use std::slice;
 use via_router::Param;
 
 pub struct PathParams {
-    data: Vec<(Param, (usize, usize))>,
+    data: Vec<(Param, Option<(usize, usize)>)>,
 }
 
 impl PathParams {
     #[inline]
-    pub const fn new(data: Vec<(Param, (usize, usize))>) -> Self {
+    pub const fn new(data: Vec<(Param, Option<(usize, usize)>)>) -> Self {
         Self { data }
     }
 
     #[inline]
-    pub fn iter(&self) -> slice::Iter<(Param, (usize, usize))> {
+    pub fn iter(&self) -> slice::Iter<(Param, Option<(usize, usize)>)> {
         self.data.iter()
     }
 
     #[inline]
-    pub fn push(&mut self, param: (Param, (usize, usize))) {
+    pub fn push(&mut self, param: (Param, Option<(usize, usize)>)) {
         self.data.push(param);
     }
 }

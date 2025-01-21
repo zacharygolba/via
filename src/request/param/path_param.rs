@@ -6,7 +6,7 @@ use super::decode::{DecodeParam, NoopDecode, PercentDecode};
 use crate::error::Error;
 
 pub struct PathParam<'a, 'b, T = NoopDecode> {
-    at: Option<(usize, usize)>,
+    at: Option<Option<(usize, usize)>>,
     name: &'b str,
     source: &'a str,
     _decode: PhantomData<T>,
@@ -14,7 +14,7 @@ pub struct PathParam<'a, 'b, T = NoopDecode> {
 
 impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
     #[inline]
-    pub(crate) fn new(name: &'b str, source: &'a str, at: Option<(usize, usize)>) -> Self {
+    pub(crate) fn new(name: &'b str, source: &'a str, at: Option<Option<(usize, usize)>>) -> Self {
         Self {
             at,
             name,
@@ -65,15 +65,11 @@ impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
     ///
     #[inline]
     pub fn into_result(self) -> Result<Cow<'a, str>, Error> {
-        match self.at.and_then(|at| {
-            let (start, end) = at;
-            self.source.get(start..end)
-        }) {
-            Some(value) => T::decode(value),
+        match self.at {
+            Some(Some((start, end))) => T::decode(&self.source[start..end]),
+            Some(None) => Ok("".into()),
             None => {
-                let name = self.name;
-                let message = format!("missing required parameter: \"{}\"", name);
-
+                let message = format!("missing required parameter '{}'", self.name);
                 Err(Error::bad_request(message.into()))
             }
         }

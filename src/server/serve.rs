@@ -21,7 +21,7 @@ use super::shutdown::{wait_for_shutdown, ShutdownTx};
 use crate::body::{HttpBody, RequestBody, ResponseBody};
 use crate::error::BoxError;
 use crate::middleware::Next;
-use crate::request::{PathParams, Request};
+use crate::request::Request;
 use crate::router::Router;
 use crate::Error;
 
@@ -250,42 +250,45 @@ fn serve_request<T>(
     max_request_size: usize,
     request: http::Request<Incoming>,
 ) -> impl Future<Output = Result<http::Response<HttpBody<ResponseBody>>, Infallible>> {
-    // Destructure the incoming request to it's component parts.
-    let (head, body) = request.into_parts();
+    // Wrap the incoming request in via::Request.
+    let mut request = {
+        // Destructure the incoming request to it's component parts.
+        let (head, body) = request.into_parts();
 
-    // Allocate the metadata associated with this request on the heap. This
-    // keeps the size of this type small enough to pass around by value.
-    let head = Box::new(head);
-
-    // A wrapper around a vec to store path params.
-    let mut params = PathParams::new(Vec::new());
-
-    // A vec to store middleware that match the request's path.
-    let mut middlewares = Vec::new();
-
-    // Route the request to the corresponding middleware stack.
-    let future = match router.lookup(&mut middlewares, &mut params, head.uri.path()) {
-        // Call the middleware stack for the matched routes.
-        Ok(()) => Next::new(middlewares).call(Request::new(
+        Request::new(
             // Clone the arc pointer to the global app state so ownership can
             // be shared with the request.
             Arc::clone(state),
-            // Take ownership of the heap-allocated request head.
-            head,
-            // Take ownership of path params.
-            params,
+            // Allocate the metadata associated with this request on the heap. This
+            // keeps the size of this type small enough to pass around by value.
+            Box::new(head),
             // Limit the length of the request body to the configured max.
             HttpBody::Original(RequestBody::new(max_request_size, body)),
-        )),
+        )
+    };
 
-        // An error occurred while routing the request.
-        Err(error) => {
-            let _ = shutdown_tx.send(Some(true));
-            let _ = error; // Placeholder for tracing...
-            Box::pin(async {
-                let message = "internal server error".to_owned();
-                Err(Error::internal_server_error(message.into()))
-            })
+    // Route the request to the corresponding middleware stack.
+    let future = {
+        // Allocate a vec to store refs to middleware that match the uri path.
+        let mut middlewares = Vec::new();
+
+        // Get a mutable reference to the request's path parameters as well as
+        // a shared reference to the uri path in the request head.
+        let (params, path) = request.params_mut();
+
+        match router.lookup(&mut middlewares, params, path) {
+            // Call the middleware stack for the matched routes.
+            Ok(()) => Next::new(middlewares).call(request),
+
+            // An error occurred while routing the request.
+            Err(error) => {
+                let _ = shutdown_tx.send(Some(true));
+                let _ = error; // Placeholder for tracing...
+                Box::pin(async {
+                    let message = "internal server error".to_owned();
+                    Err(Error::internal_server_error(message.into()))
+                })
+            }
         }
     };
 
