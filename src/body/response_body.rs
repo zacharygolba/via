@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use http_body::{Body, Frame, SizeHint};
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
@@ -17,40 +17,20 @@ const MAX_FRAME_LEN: usize = 8192; // 8KB
 pub struct ResponseBody {
     /// The buffer containing the body data.
     ///
-    buf: Bytes,
-
-    /// The byte offset of the next data frame in `self.buf`.
-    ///
-    pos: usize,
+    buf: BytesMut,
 }
 
 impl ResponseBody {
     #[inline]
     pub fn new(data: &[u8]) -> Self {
+        Self::from_raw(Bytes::copy_from_slice(data))
+    }
+
+    #[inline]
+    pub fn from_raw(bytes: Bytes) -> Self {
         Self {
-            buf: Bytes::copy_from_slice(data),
-            pos: 0,
+            buf: BytesMut::from(bytes),
         }
-    }
-
-    #[inline]
-    pub fn from_raw(buf: Bytes) -> Self {
-        Self { buf, pos: 0 }
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.buf.is_empty()
-    }
-
-    #[inline]
-    pub fn remaining(&self) -> usize {
-        self.buf.len() - self.pos
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.buf.len()
     }
 }
 
@@ -63,38 +43,36 @@ impl Body for ResponseBody {
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.get_mut();
-        let remaining = this.remaining();
+        let len = this.buf.len();
 
         // Check if the buffer has any data.
-        if remaining == 0 {
+        if len == 0 {
             // The buffer is empty. Signal that the stream has ended.
-            return Poll::Ready(None);
+            Poll::Ready(None)
+        } else {
+            // Split the buffer at the frame length. This will give us an owned
+            // view of the frame at 0..frame_len and advance the buffer to the
+            // offset of the next frame.
+            let next = this.buf.split_to(len.min(MAX_FRAME_LEN)).freeze();
+
+            Poll::Ready(Some(Ok(Frame::data(next))))
         }
-
-        let lower = this.pos;
-        let upper = lower + remaining.min(MAX_FRAME_LEN);
-        let slice = this.buf.slice(lower..upper);
-
-        this.pos = upper;
-
-        // Split the buffer at the frame length. This will give us an owned
-        // view of the frame at 0..frame_len and advance the buffer to the
-        // offset of the next frame.
-        Poll::Ready(Some(Ok(Frame::data(slice))))
     }
 
     fn is_end_stream(&self) -> bool {
-        self.remaining() == 0
+        self.buf.is_empty()
     }
 
     fn size_hint(&self) -> SizeHint {
         // Get the length of the buffer and attempt to cast it to a
-        // `u64`. If the cast fails, `len` will be `None`.
-        let len = self.len().try_into().ok();
-
-        // If `len` is `None`, return a size hint with no bounds. Otherwise,
-        // map the remaining length to a size hint with the exact size.
-        len.map_or_else(SizeHint::new, SizeHint::with_exact)
+        // `u64`. If the cast fails, return a size hint with no bounds.
+        match self.buf.len().try_into() {
+            Ok(exact) => SizeHint::with_exact(exact),
+            Err(error) => {
+                let _ = error; // Placeholder for tracing...
+                SizeHint::new()
+            }
+        }
     }
 }
 
