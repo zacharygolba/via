@@ -16,24 +16,20 @@ pub struct Request<T = ()> {
     ///
     state: Arc<T>,
 
-    /// The component parts of the underlying HTTP request.
-    ///
-    head: Box<Parts>,
-
     /// The cookies associated with the request. If there is not a
     /// [CookieParser](crate::middleware::CookieParser)
     /// middleware in the middleware stack for the request, this will be empty.
     ///
-    cookies: Option<Box<CookieJar>>,
-
-    /// A wrapper around the body of the request. This provides callers with
-    /// convienent methods for reading the request body.
-    ///
-    body: HttpBody<RequestBody>,
+    cookies: Option<CookieJar>,
 
     /// The request's path and query parameters.
     ///
     params: PathParams,
+
+    /// A wrapper around the body of the request. This provides callers with
+    /// convienent methods for reading the request body.
+    ///
+    inner: http::Request<HttpBody<RequestBody>>,
 }
 
 impl<T> Request<T> {
@@ -42,13 +38,13 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn map(self, map: impl FnOnce(HttpBody<RequestBody>) -> BoxBody) -> Self {
-        if cfg!(debug_assertions) && matches!(&self.body, HttpBody::Mapped(_)) {
+        if cfg!(debug_assertions) && matches!(self.inner.body(), HttpBody::Mapped(_)) {
             // TODO: Replace this with tracing and a proper logger.
             eprintln!("calling request.map() more than once can create a reference cycle.",);
         }
 
         Self {
-            body: HttpBody::Mapped(map(self.body)),
+            inner: self.inner.map(|body| HttpBody::Mapped(map(body))),
             ..self
         }
     }
@@ -57,7 +53,7 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn into_body(self) -> HttpBody<RequestBody> {
-        self.body
+        self.inner.into_body()
     }
 
     /// Consumes the request and returns a tuple containing the component
@@ -65,14 +61,14 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn into_parts(self) -> (Parts, HttpBody<RequestBody>) {
-        (*self.head, self.body)
+        self.inner.into_parts()
     }
 
     /// Returns a reference to the body associated with the request.
     ///
     #[inline]
     pub fn body(&self) -> &HttpBody<RequestBody> {
-        &self.body
+        self.inner.body()
     }
 
     /// Returns an optional reference to the cookie with the provided `name`.
@@ -86,14 +82,14 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn cookies(&self) -> Option<&CookieJar> {
-        self.cookies.as_deref()
+        self.cookies.as_ref()
     }
 
     /// Returns a reference to the header value associated with the key.
     ///
     #[inline]
     pub fn header<K: AsHeaderName>(&self, key: K) -> Option<&HeaderValue> {
-        self.head.headers.get(key)
+        self.inner.headers().get(key)
     }
 
     /// Returns a reference to a map that contains the headers associated with
@@ -101,14 +97,14 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn headers(&self) -> &HeaderMap {
-        &self.head.headers
+        self.inner.headers()
     }
 
     /// Returns a reference to the HTTP method associated with the request.
     ///
     #[inline]
     pub fn method(&self) -> &Method {
-        &self.head.method
+        self.inner.method()
     }
 
     /// Returns a convenient wrapper around an optional reference to the path
@@ -129,7 +125,7 @@ impl<T> Request<T> {
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
         PathParam::new(
             name,
-            self.head.uri.path(),
+            self.inner.uri().path(),
             self.params.iter().rev().find_map(
                 |(param, at)| {
                     if param == name {
@@ -169,7 +165,7 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
-        QueryParam::new(name, self.head.uri.query().unwrap_or(""))
+        QueryParam::new(name, self.inner.uri().query().unwrap_or(""))
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
@@ -186,26 +182,29 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn uri(&self) -> &Uri {
-        &self.head.uri
+        self.inner.uri()
     }
 
     /// Returns the HTTP version associated with the request.
     ///
     #[inline]
     pub fn version(&self) -> Version {
-        self.head.version
+        self.inner.version()
     }
 }
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(state: Arc<T>, head: Box<Parts>, body: HttpBody<RequestBody>) -> Self {
+    pub(crate) fn new(
+        state: Arc<T>,
+        params: PathParams,
+        request: http::Request<HttpBody<RequestBody>>,
+    ) -> Self {
         Self {
             state,
-            head,
             cookies: None,
-            body,
-            params: PathParams::new(Vec::new()),
+            params,
+            inner: request,
         }
     }
 
@@ -215,25 +214,18 @@ impl<T> Request<T> {
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
         self.cookies.get_or_insert_default()
     }
-
-    /// Returns a mutable reference to the cookies associated with the request.
-    ///
-    #[inline]
-    pub(crate) fn params_mut(&mut self) -> (&mut PathParams, &str) {
-        (&mut self.params, self.head.uri.path())
-    }
 }
 
 impl<T> Debug for Request<T> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Request")
-            .field("version", &self.version())
-            .field("method", self.method())
-            .field("uri", self.uri())
-            .field("headers", self.headers())
+            .field("version", &self.inner.version())
+            .field("method", self.inner.method())
+            .field("uri", self.inner.uri())
+            .field("headers", self.inner.headers())
             .field("params", &self.params)
             .field("cookies", &self.cookies)
-            .field("body", &self.body)
+            .field("body", self.inner.body())
             .finish()
     }
 }

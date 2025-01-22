@@ -1,20 +1,21 @@
-use super::middleware::{ArcMiddleware, BoxFuture};
+use std::sync::Arc;
+
+use super::middleware::{FutureResponse, Middleware};
 use crate::error::Error;
 use crate::request::Request;
-use crate::response::Response;
 
 pub struct Next<T = ()> {
-    stack: Vec<ArcMiddleware<T>>,
+    stack: Vec<Arc<dyn Middleware<T>>>,
 }
 
 impl<T> Next<T> {
     #[inline]
-    pub(crate) fn new(stack: Vec<ArcMiddleware<T>>) -> Self {
+    pub(crate) fn new(stack: Vec<Arc<dyn Middleware<T>>>) -> Self {
         Self { stack }
     }
 
     #[inline]
-    pub fn call(mut self, request: Request<T>) -> BoxFuture<Result<Response, Error>> {
+    pub fn call(mut self, request: Request<T>) -> FutureResponse {
         match self.stack.pop() {
             Some(middleware) => middleware.call(request, self),
             None => Box::pin(async {
