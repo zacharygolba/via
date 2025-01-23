@@ -23,13 +23,13 @@ http2 = ["hyper/http2"]
 rustls = ["dep:tokio-rustls"]
 
 [dependencies]
-bytes = "1.9"
+bytes = "1"
 futures-core = { version = "0.3", default-features = false }
 http = "1"
 http-body = "1"
-hyper = { version = "1.4", features = ["server"] }
+hyper = { version = "1", features = ["server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
-percent-encoding = "2.3"
+percent-encoding = "2"
 serde = "1"
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "signal"] }
