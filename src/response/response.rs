@@ -8,7 +8,7 @@ use super::builder::Builder;
 use crate::body::{BoxBody, HttpBody, ResponseBody};
 
 pub struct Response {
-    pub(super) cookies: Option<CookieJar>,
+    pub(super) cookies: Option<Box<CookieJar>>,
     pub(super) inner: http::Response<HttpBody<ResponseBody>>,
 }
 
@@ -54,7 +54,7 @@ impl Response {
     ///
     #[inline]
     pub fn cookies(&self) -> Option<&CookieJar> {
-        self.cookies.as_ref()
+        self.cookies.as_deref()
     }
 
     /// Returns a mutable reference to the response cookies.
