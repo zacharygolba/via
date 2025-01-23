@@ -20,8 +20,7 @@ impl<T> Router<T> {
         Route::new(self.inner.at(pattern))
     }
 
-    pub fn lookup(&self, path: &str) -> Result<(PathParams, Next<T>), VisitError> {
-        let mut params = PathParams::new(Vec::with_capacity(3));
+    pub fn lookup(&self, path: &str, params: &mut PathParams) -> Result<Next<T>, VisitError> {
         let mut next = Next::new(Vec::with_capacity(8));
 
         // Iterate over the routes that match the request's path.
@@ -60,6 +59,6 @@ impl<T> Router<T> {
             }
         }
 
-        Ok((params, next))
+        Ok(next)
     }
 }

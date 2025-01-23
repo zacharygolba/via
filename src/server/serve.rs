@@ -1,7 +1,9 @@
+use hyper::body::Incoming;
 use hyper::server::conn;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioTimer;
-use std::convert::Infallible;
+use std::error::Error;
+use std::future::Future;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -16,11 +18,61 @@ use hyper_util::rt::TokioExecutor;
 use super::acceptor::Acceptor;
 use super::io_stream::IoStream;
 use super::shutdown::wait_for_shutdown;
-use crate::body::{HttpBody, RequestBody};
+use crate::body::{HttpBody, RequestBody, ResponseBody};
 use crate::error::BoxError;
 use crate::request::Request;
 use crate::router::Router;
-use crate::Error;
+use crate::server::error::ServiceError;
+
+fn via_service<T>(
+    state: Arc<T>,
+    router: &Router<T>,
+    request: http::Request<Incoming>,
+    max_request_size: usize,
+) -> impl Future<Output = Result<http::Response<HttpBody<ResponseBody>>, ServiceError>> {
+    let mut request = {
+        // Destructure the incoming request into it's component parts.
+        let (head, body) = request.into_parts();
+
+        // Limit the length of the request body to the configured max.
+        let body = HttpBody::Original(RequestBody::new(max_request_size, body));
+
+        Request::new(state, head, body)
+    };
+
+    // An optional future that resolves to a Result<Response, Error>.
+    let called = {
+        let (path, params) = request.path_and_params_mut();
+
+        // Route the request to the corresponding middleware stack.
+        match router.lookup(path, params) {
+            // Call the middleware stack for the matched routes.
+            Ok(next) => Some(next.call(request)),
+            // An error occurred while routing the request.
+            Err(error) => {
+                let _ = error; // Placeholder for tracing...
+                None
+            }
+        }
+    };
+
+    async {
+        if let Some(future) = called {
+            // Await the future response. If an error occured, generate a
+            // response from it.
+            let mut response = future.await.unwrap_or_else(|e| e.into());
+
+            // If any cookies changed during the request, serialize them to
+            // Set-Cookie headers and include them in the response headers.
+            response.set_cookie_headers();
+
+            // Unwrap the inner response type and let hyper it from here.
+            Ok(response.into_inner())
+        } else {
+            Err(ServiceError)
+        }
+    }
+}
 
 pub async fn serve<T, A>(
     listener: TcpListener,
@@ -51,6 +103,13 @@ where
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
 
+        // Remove any handles that may have finished.
+        while let Some(result) = connections.try_join_next() {
+            if let Err(error) = result {
+                let _ = error; // Placeholder for tracing...
+            }
+        }
+
         // Clone the acceptor so it can be moved into the task responsible for
         // serving individual connections.
         let acceptor = acceptor.clone();
@@ -76,8 +135,9 @@ where
             result = listener.accept() => {
                 let (stream, _addr) = match result {
                     Ok(accepted) => accepted,
-                    Err(_) => {
-                        // Placeholder for tracing...
+                    Err(error) => {
+                        let _ = error; // Placeholder for tracing...
+                        drop(permit);
                         continue;
                     }
                 };
@@ -94,119 +154,65 @@ where
                     // TlsAcceptor.
                     let io = match acceptor.accept(stream).await {
                         Ok(accepted) => IoStream::new(accepted),
-                        Err(_) => {
-                            // Placeholder for tracing...
+                        Err(error) => {
+                            let _ = error; // Placeholder for tracing...
+                            drop(permit);
                             return;
                         }
                     };
 
                     let service = service_fn(|request| {
-                        // A future that resolves to a Result<Response, Error>.
-                        let future = {
-                            // Clone the arc pointer to the global application state passed
-                            // to the via::app function. Ownership is shared with request.
-                            let state = Arc::clone(&state);
-
-                            // Destructure the incoming request into it's component parts.
-                            let (head, body) = request.into_parts();
-
-                            // Optionally allocate the request head on the heap. This is
-                            // an optimization for routes with many middleware functions.
-                            #[cfg(feature = "box-request-head")]
-                            let head = Box::new(head);
-
-                            // Limit the length of the request body to the configured max.
-                            let body = HttpBody::Original(
-                                RequestBody::new(max_request_size, body),
-                            );
-
-                            // Route the request to the corresponding middleware stack.
-                            match router.lookup(head.uri.path()) {
-                                // Call the middleware stack for the matched routes.
-                                Ok((params, next)) => {
-                                    next.call(Request::new(state, params, head, body))
-                                }
-
-                                // An error occurred while routing the request.
-                                Err(error) => {
-                                    // Take ownership of request as we would if everything
-                                    // worked as expected. This should result in less
-                                    // branching in the machine code.
-                                    let _ = (head, body);
-
-                                    // Start a graceful shutdown process for the server. The
-                                    // router memory has become corrupt and the server should
-                                    // be restarted to rebuild the route tree. This is why we
-                                    // recommend setting up restart logic for server process
-                                    // in production.
-                                    let _ = shutdown_tx.send(Some(true));
-
-                                    let _ = error; // Placeholder for tracing...
-                                    Box::pin(async {
-                                        let message = "internal server error".to_owned();
-                                        Err(Error::internal_server_error(message.into()))
-                                    })
-                                }
-                            }
-                        };
-
-                        async {
-                            // Await the future response. If an error occured, generate a
-                            // response from it.
-                            let mut response = future.await.unwrap_or_else(|e| e.into());
-
-                            // If any cookies changed during the request, serialize them to
-                            // Set-Cookie headers and include them in the response headers.
-                            response.set_cookie_headers();
-
-                            // Unwrap the inner response type and let hyper it from here.
-                            Ok::<_, Infallible>(response.into_inner())
-                        }
+                        via_service(Arc::clone(&state), &router, request, max_request_size)
                     });
 
                     // Create a new HTTP/2 connection.
                     #[cfg(feature = "http2")]
-                    let mut connection =
+                    let mut connection = Box::pin(
                         conn::http2::Builder::new(TokioExecutor::new())
                             .timer(TokioTimer::new())
-                            .serve_connection(io, service);
+                            .serve_connection(io, service),
+                    );
 
                     // Create a new HTTP/1.1 connection.
                     #[cfg(all(feature = "http1", not(feature = "http2")))]
-                    let mut connection = conn::http1::Builder::new()
-                        .timer(TokioTimer::new())
-                        .serve_connection(io, service)
-                        .with_upgrades();
+                    let mut connection = Box::pin(
+                        conn::http1::Builder::new()
+                            .timer(TokioTimer::new())
+                            .serve_connection(io, service)
+                            .with_upgrades()
+                    );
 
                     // Poll the connection until it is closed or a graceful
                     // shutdown process is initiated.
-                    let result = tokio::select! {
+                    if let Err(error) = tokio::select! {
                         // Pin the connection on the stack so it can be polled
                         // to completion. This is the typical path that the code
                         // should take while the server is running.
-                        result = Pin::new(&mut connection) => result,
+                        result = &mut connection => result,
 
                         // Otherwise, wait until `shutdown_rx` is notified that
                         // the server will shutdown and initiate a graceful
                         // shutdown process for the connection.
                         _ = shutdown_rx.changed() => {
-                            let mut connection = Pin::new(&mut connection);
+                            // Get a mutable reference to the pinned connection.
+                            let conn_mut = &mut connection;
 
-                            // Initiate the graceful shutdown process for the
-                            // connection.
-                            connection.as_mut().graceful_shutdown();
+                            // Initiate the graceful shutdown process for the connection.
+                            Pin::as_mut(conn_mut).graceful_shutdown();
 
                             // Wait for the connection to close.
-                            connection.await
+                            conn_mut.await
                         }
-                    };
+                    } {
+                        let _ = &error; // Placeholder for tracing...
 
-                    // Return the permit back to the semaphore.
-                    drop(permit);
-
-                    if let Err(error) = result {
-                        // Placeholder for tracing...
-                        let _ = error;
+                        if error
+                            .source()
+                            .and_then(|e| e.downcast_ref::<ServiceError>())
+                            .is_some()
+                        {
+                            let _ = shutdown_tx.send(Some(true));
+                        }
                     }
 
                     // Assert that the connection did not move in debug mode by
@@ -215,6 +221,9 @@ where
                         #[allow(clippy::let_underscore_future)]
                         let _ = &mut connection;
                     }
+
+                    // Return the permit back to the semaphore.
+                    drop(permit);
                 });
             }
 
@@ -236,15 +245,7 @@ where
                 // `ExitCode::SUCCESS`.
                 Some(false) => break ExitCode::SUCCESS,
             }
-        }
-
-        // Remove any handles that may have finished.
-        while let Some(result) = connections.try_join_next() {
-            if let Err(error) = result {
-                // Placeholder for tracing...
-                let _ = error;
-            }
-        }
+        };
     };
 
     let shutdown_started_at = Instant::now();
