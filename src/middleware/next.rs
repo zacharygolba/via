@@ -25,3 +25,10 @@ impl<T> Next<T> {
         }
     }
 }
+
+impl<T> Next<T> {
+    #[inline]
+    pub(crate) fn push(&mut self, middleware: Arc<dyn Middleware<T>>) {
+        self.stack.push(middleware);
+    }
+}

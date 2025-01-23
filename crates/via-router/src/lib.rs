@@ -7,7 +7,7 @@ mod visitor;
 pub use path::Param;
 pub use visitor::{Found, VisitError};
 
-use tinyvec::TinyVec;
+use smallvec::SmallVec;
 
 use path::{Pattern, Segments};
 use routes::{Node, RouteEntry};
@@ -59,7 +59,7 @@ impl<T> Router<T> {
 
         // Split path into segment ranges and collect them into a vec.
         let segments = {
-            let mut parts = TinyVec::new();
+            let mut parts = SmallVec::new();
 
             path::split(&mut parts, path);
             Segments::new(path, parts)

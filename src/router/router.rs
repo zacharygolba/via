@@ -21,8 +21,8 @@ impl<T> Router<T> {
     }
 
     pub fn lookup(&self, path: &str) -> Result<(PathParams, Next<T>), VisitError> {
-        let mut params = Vec::new();
-        let mut stack = Vec::new();
+        let mut params = PathParams::new(Vec::with_capacity(3));
+        let mut next = Next::new(Vec::with_capacity(8));
 
         // Iterate over the routes that match the request's path.
         for result in self.inner.visit(path).into_iter().rev() {
@@ -56,10 +56,10 @@ impl<T> Router<T> {
                 // exact match and the visited node is not a leaf.
                 MatchWhen::Exact(_) => None,
             }) {
-                stack.push(Arc::clone(middleware));
+                next.push(Arc::clone(middleware));
             }
         }
 
-        Ok((PathParams::new(params), Next::new(stack)))
+        Ok((params, next))
     }
 }

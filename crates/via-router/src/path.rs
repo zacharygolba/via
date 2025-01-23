@@ -1,6 +1,6 @@
+use smallvec::SmallVec;
 use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
-use tinyvec::TinyVec;
 
 #[derive(Debug, PartialEq)]
 pub enum Pattern {
@@ -17,13 +17,13 @@ pub struct Param {
 
 pub struct Segments<'a> {
     value: &'a str,
-    parts: TinyVec<[(usize, usize); 2]>,
+    parts: SmallVec<[(usize, usize); 2]>,
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
-    let mut segments = TinyVec::new();
+    let mut segments = SmallVec::new();
 
     split(&mut segments, path);
     segments.into_iter().map(|(start, end)| {
@@ -60,7 +60,7 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
 
 /// Accumulate path segment ranges as a [Span] from path into segments.
 ///
-pub fn split(parts: &mut TinyVec<[(usize, usize); 2]>, path: &str) {
+pub fn split(parts: &mut SmallVec<[(usize, usize); 2]>, path: &str) {
     // True if parts is allocated on the heap.
     let mut spilled = false;
 
@@ -136,7 +136,7 @@ impl PartialEq<str> for Param {
 
 impl<'a> Segments<'a> {
     #[inline]
-    pub fn new(value: &'a str, parts: TinyVec<[(usize, usize); 2]>) -> Self {
+    pub fn new(value: &'a str, parts: SmallVec<[(usize, usize); 2]>) -> Self {
         Self { value, parts }
     }
 
@@ -169,7 +169,7 @@ impl<'a> Segments<'a> {
 
 #[cfg(test)]
 mod tests {
-    use tinyvec::TinyVec;
+    use smallvec::SmallVec;
 
     const PATHS: [&str; 16] = [
         "/home/about",
@@ -216,7 +216,7 @@ mod tests {
         let expected_results = get_expected_results();
 
         for (path_index, path_value) in PATHS.iter().enumerate() {
-            let mut segments = TinyVec::new();
+            let mut segments = SmallVec::new();
 
             super::split(&mut segments, path_value);
 

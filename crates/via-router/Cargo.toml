@@ -9,5 +9,4 @@ homepage = "https://github.com/zacharygolba/via"
 repository = "https://github.com/zacharygolba/via"
 
 [dependencies]
-tinyvec = { version = "1.8", features = ["alloc"] }
-
+smallvec = "1.13.2"
