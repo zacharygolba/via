@@ -1,5 +1,3 @@
-#![allow(clippy::type_complexity)]
-
 use std::fmt::{self, Debug, Formatter};
 use std::slice;
 use via_router::Param;
@@ -17,6 +15,11 @@ impl PathParams {
     #[inline]
     pub fn iter(&self) -> slice::Iter<(Param, Option<(usize, usize)>)> {
         self.data.iter()
+    }
+
+    #[inline]
+    pub fn push(&mut self, param: (Param, Option<(usize, usize)>)) {
+        self.data.push(param);
     }
 }
 

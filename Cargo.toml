@@ -10,9 +10,15 @@ homepage = "https://github.com/zacharygolba/via"
 repository = "https://github.com/zacharygolba/via"
 
 [features]
-default = ["http1"]
+default = ["box-request-head", "http1"]
+
+# Allocate the request head on the heap to reduce the size of Request. This is
+# an optimization.
+box-request-head = []
+
 http1 = ["hyper/http1"]
 http2 = ["hyper/http2"]
+
 rustls = ["dep:tokio-rustls"]
 
 [dependencies]
@@ -26,7 +32,7 @@ percent-encoding = "2.3"
 serde = "1"
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "signal"] }
-via-router = "3.0.0-beta.11"
+via-router = { path = "crates/via-router" }
 
 [dependencies.cookie]
 version = "0.18"

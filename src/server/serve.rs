@@ -103,23 +103,45 @@ where
                     let service = service_fn(|request| {
                         // A future that resolves to a Result<Response, Error>.
                         let future = {
+                            // Clone the arc pointer to the global application state passed
+                            // to the via::app function. Ownership is shared with request.
+                            let state = Arc::clone(&state);
+
+                            // Destructure the incoming request into it's component parts.
+                            let (head, body) = request.into_parts();
+
+                            // Optionally allocate the request head on the heap. This is
+                            // an optimization for routes with many middleware functions.
+                            #[cfg(feature = "box-request-head")]
+                            let head = Box::new(head);
+
                             // Limit the length of the request body to the configured max.
-                            let request = request.map(|body| {
-                                HttpBody::Original(RequestBody::new(max_request_size, body))
-                            });
+                            let body = HttpBody::Original(
+                                RequestBody::new(max_request_size, body),
+                            );
 
                             // Route the request to the corresponding middleware stack.
-                            match router.lookup(request.uri().path()) {
+                            match router.lookup(head.uri.path()) {
                                 // Call the middleware stack for the matched routes.
                                 Ok((params, next)) => {
-                                    next.call(Request::new(Arc::clone(&state), params, request))
+                                    next.call(Request::new(state, params, head, body))
                                 }
 
                                 // An error occurred while routing the request.
                                 Err(error) => {
-                                    let _ = shutdown_tx.send(Some(true));
-                                    let _ = error; // Placeholder for tracing...
+                                    // Take ownership of request as we would if everything
+                                    // worked as expected. This should result in less
+                                    // branching in the machine code.
+                                    let _ = (head, body);
 
+                                    // Start a graceful shutdown process for the server. The
+                                    // router memory has become corrupt and the server should
+                                    // be restarted to rebuild the route tree. This is why we
+                                    // recommend setting up restart logic for server process
+                                    // in production.
+                                    let _ = shutdown_tx.send(Some(true));
+
+                                    let _ = error; // Placeholder for tracing...
                                     Box::pin(async {
                                         let message = "internal server error".to_owned();
                                         Err(Error::internal_server_error(message.into()))
