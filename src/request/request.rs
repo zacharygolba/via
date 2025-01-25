@@ -214,15 +214,35 @@ impl<T> Request<T> {
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(state: Arc<T>, head: Parts, body: HttpBody<RequestBody>) -> Self {
+    #[cfg(feature = "box-request-head")]
+    pub(crate) fn new(
+        state: Arc<T>,
+        head: Box<Parts>,
+        body: HttpBody<RequestBody>,
+        params: PathParams,
+    ) -> Self {
         Self {
             state,
             cookies: None,
-            params: PathParams::new(Vec::with_capacity(3)),
-            #[cfg(not(feature = "box-request-head"))]
+            params,
             head,
-            #[cfg(feature = "box-request-head")]
-            head: Box::new(head),
+            body,
+        }
+    }
+
+    #[inline]
+    #[cfg(not(feature = "box-request-head"))]
+    pub(crate) fn new(
+        state: Arc<T>,
+        head: Parts,
+        body: HttpBody<RequestBody>,
+        params: PathParams,
+    ) -> Self {
+        Self {
+            state,
+            cookies: None,
+            params,
+            head,
             body,
         }
     }
@@ -232,13 +252,6 @@ impl<T> Request<T> {
     #[inline]
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
         self.cookies.get_or_insert_default()
-    }
-
-    /// Returns a mutable reference to the cookies associated with the request.
-    ///
-    #[inline]
-    pub(crate) fn path_and_params_mut(&mut self) -> (&str, &mut PathParams) {
-        (self.head.uri.path(), &mut self.params)
     }
 }
 
