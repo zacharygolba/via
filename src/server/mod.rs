@@ -2,7 +2,6 @@
 //!
 
 mod acceptor;
-mod error;
 mod io_stream;
 mod serve;
 mod server;

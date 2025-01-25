@@ -1,6 +1,6 @@
 [package]
 name = "via"
-version = "2.0.0-rc.7"
+version = "2.0.0-rc.8"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -10,7 +10,7 @@ homepage = "https://github.com/zacharygolba/via"
 repository = "https://github.com/zacharygolba/via"
 
 [features]
-default = ["box-request-head", "http1"]
+default = ["http1"]
 
 # Allocate the request head on the heap to reduce the size of Request. This is
 # an optimization for apps that typically have 3 or more middleware functions
