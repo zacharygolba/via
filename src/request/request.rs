@@ -18,12 +18,6 @@ pub struct Request<T = ()> {
 
     /// The component parts of the HTTP request.
     ///
-    #[cfg(feature = "box-request-head")]
-    head: Box<Parts>,
-
-    /// The component parts of the HTTP request.
-    ///
-    #[cfg(not(feature = "box-request-head"))]
     head: Parts,
 
     /// A length-limited, mappable wrapper around [hyper::body::Incoming].
@@ -68,16 +62,6 @@ impl<T> Request<T> {
     /// Consumes the request and returns a tuple containing the component
     /// parts of the request and the request body.
     ///
-    #[cfg(feature = "box-request-head")]
-    #[inline]
-    pub fn into_parts(self) -> (Parts, HttpBody<RequestBody>) {
-        (*self.head, self.body)
-    }
-
-    /// Consumes the request and returns a tuple containing the component
-    /// parts of the request and the request body.
-    ///
-    #[cfg(not(feature = "box-request-head"))]
     #[inline]
     pub fn into_parts(self) -> (Parts, HttpBody<RequestBody>) {
         (self.head, self.body)
@@ -214,29 +198,11 @@ impl<T> Request<T> {
 
 impl<T> Request<T> {
     #[inline]
-    #[cfg(feature = "box-request-head")]
     pub(crate) fn new(
         state: Arc<T>,
-        head: Box<Parts>,
-        body: HttpBody<RequestBody>,
         params: PathParams,
-    ) -> Self {
-        Self {
-            state,
-            cookies: None,
-            params,
-            head,
-            body,
-        }
-    }
-
-    #[inline]
-    #[cfg(not(feature = "box-request-head"))]
-    pub(crate) fn new(
-        state: Arc<T>,
         head: Parts,
         body: HttpBody<RequestBody>,
-        params: PathParams,
     ) -> Self {
         Self {
             state,
@@ -252,6 +218,13 @@ impl<T> Request<T> {
     #[inline]
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
         self.cookies.get_or_insert_default()
+    }
+
+    /// Returns a mutable reference to the cookies associated with the request.
+    ///
+    #[inline]
+    pub(crate) fn params_mut_with_path(&mut self) -> (&mut PathParams, &str) {
+        (&mut self.params, self.head.uri.path())
     }
 }
 
