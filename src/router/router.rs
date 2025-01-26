@@ -20,10 +20,12 @@ impl<T> Router<T> {
         Route::new(self.inner.at(pattern))
     }
 
-    pub fn lookup(&self, path: &str) -> Result<(PathParams, Next<T>), VisitError> {
-        let mut params = PathParams::new(Vec::with_capacity(3));
-        let mut next = Next::new(Vec::with_capacity(8));
-
+    pub fn lookup(
+        &self,
+        path: &str,
+        path_params: &mut PathParams,
+        matched_routes: &mut Next<T>,
+    ) -> Result<(), VisitError> {
         // Iterate over the routes that match the request's path.
         for result in self.inner.visit(path).into_iter().rev() {
             let found = result?;
@@ -32,7 +34,7 @@ impl<T> Router<T> {
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
             if let Some(name) = found.param {
-                params.push((name.clone(), found.range));
+                path_params.push((name.clone(), found.range));
             }
 
             let route = match found.route.and_then(|key| self.inner.get(key)) {
@@ -56,10 +58,10 @@ impl<T> Router<T> {
                 // exact match and the visited node is not a leaf.
                 MatchWhen::Exact(_) => None,
             }) {
-                next.push(Arc::clone(middleware));
+                matched_routes.push(Arc::clone(middleware));
             }
         }
 
-        Ok((params, next))
+        Ok(())
     }
 }

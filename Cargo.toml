@@ -12,11 +12,6 @@ repository = "https://github.com/zacharygolba/via"
 [features]
 default = ["http1"]
 
-# Allocate the request head on the heap to reduce the size of Request. This is
-# an optimization for apps that typically have 3 or more middleware functions
-# on average per-route.
-box-request-head = []
-
 http1 = ["hyper/http1"]
 http2 = ["hyper/http2"]
 
