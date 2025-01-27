@@ -155,7 +155,7 @@ where
                         // state that was passed to the via::app function.
                         Arc::clone(&state),
                         // Allocate for path params.
-                        PathParams::new(Vec::with_capacity(3)),
+                        PathParams::new(Vec::new()),
                         // Take ownership of the request head.
                         head,
                         // Limit the length of the request body to max_request_size.
@@ -165,7 +165,7 @@ where
 
                 let result = {
                     // Allocate a vec to store matched routes.
-                    let mut next = Next::new(Vec::with_capacity(8));
+                    let mut next = Next::new(Vec::new());
 
                     // Get a mutable ref to path params and a str containing
                     // the request uri.
