@@ -26,8 +26,8 @@ use crate::router::Router;
 pub async fn serve<T, A>(
     listener: TcpListener,
     acceptor: A,
-    state: Arc<T>,
-    router: Arc<Router<T>>,
+    state: T,
+    router: Router<T>,
     max_connections: usize,
     max_request_size: usize,
     shutdown_timeout: Duration,
@@ -36,13 +36,13 @@ where
     T: Send + Sync + 'static,
     A: Acceptor + Send + Sync + 'static,
 {
-    // Create a watch channel to notify the connections to initiate a
-    // graceful shutdown process when the `ctrl_c` future resolves.
-    let (shutdown_tx, mut shutdown_rx) = watch::channel(None);
-
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
     let mut connections = JoinSet::new();
+
+    // Create a watch channel to notify the connections to initiate a
+    // graceful shutdown process when the `ctrl_c` future resolves.
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(None);
 
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
@@ -50,12 +50,21 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
+    // Wrap the global application state in an arc so ownership can be shared
+    // with the request in the connection task.
+    let state = Arc::new(state);
+
+    // Wrap the router in an arc so requests can be routed within the
+    // connection task.
+    let router = Arc::new(router);
+
     // Spawn a task to wait for the `ctrl_c` future to resolve.
     tokio::spawn({
+        let ctrl_c_future = signal::ctrl_c();
         let shutdown_tx = shutdown_tx.clone();
 
         async move {
-            if signal::ctrl_c().await.is_err() {
+            if ctrl_c_future.await.is_err() {
                 eprintln!("unable to register the 'ctrl-c' signal.");
             } else if shutdown_tx.send(Some(false)).is_err() {
                 eprintln!("unable to notify connections to shutdown.");
@@ -102,30 +111,30 @@ where
 
         // Clone the acceptor so it can be moved into the task responsible
         // for serving individual connections.
-        let mut stream_acceptor = acceptor.clone();
+        let mut acceptor = acceptor.clone();
+
+        // Clone the watch sender so connections can notify the main thread
+        // if an unrecoverable error is encountered.
+        let shutdown_tx = shutdown_tx.clone();
 
         // Clone the watch channel so that we can notify the connection
         // task when initiate a graceful shutdown process before the server
         // exits.
         let mut shutdown_rx = shutdown_rx.clone();
 
-        // Clone the watch sender so connections can notify the main thread
-        // if an unrecoverable error is encountered.
-        let shutdown_tx = shutdown_tx.clone();
+        // Clone the Arc around the shared application state so it can be
+        // moved into the connection task.
+        let state = Arc::clone(&state);
 
         // Clone the Arc around the router so it can be moved into the
         // connection task.
         let router = Arc::clone(&router);
 
-        // Clone the Arc around the shared application state so it can be
-        // moved into the connection task.
-        let state = Arc::clone(&state);
-
         // Spawn a task to serve the connection.
         connections.spawn(async move {
             // Accept the stream from the acceptor. This is where the TLS
             // handshake occurs if the acceptor is a TlsAcceptor.
-            let io = match stream_acceptor.accept(stream).await {
+            let io = match acceptor.accept(stream).await {
                 Ok(accepted) => IoStream::new(accepted),
                 Err(error) => {
                     let _ = error; // Placeholder for tracing...
@@ -166,29 +175,23 @@ where
                     match router.lookup(path, params, &mut next) {
                         // Call the middleware stack for the matched routes.
                         Ok(_) => Ok(next.call(request)),
-
                         // Close the connection and stop the server.
-                        Err(e) => Err(e),
+                        Err(error) => Err(error),
                     }
                 };
 
                 async {
-                    // If the request was routed successfully, await the
-                    // response future. If the future resolved with an error,
-                    // generate a response from it.
-                    //
-                    // If the request was not routed successfully, immediately
-                    // return so the connection can be closed and the server
-                    // exit.
-                    let mut response = result?.await.unwrap_or_else(|e| e.into());
+                    match result {
+                        // The request was routed successfully, await the future
+                        // response. If the future resolves with an error,
+                        // generate a response from it.
+                        Ok(f) => Ok(f.await.unwrap_or_else(|e| e.into()).into_inner()),
 
-                    // If any cookies changed during the request, serialize them to
-                    // Set-Cookie headers and include them in the response headers.
-                    response.set_cookie_headers();
-
-                    // Unwrap the inner http::Response so it can be sent back
-                    // to the client via IoStream.
-                    Ok::<_, VisitError>(response.into_inner())
+                        // The request was not routed successfully, immediately
+                        // return so the connection can be closed and the
+                        // server can exit.
+                        Err(e) => Err(e),
+                    }
                 }
             });
 
@@ -239,30 +242,14 @@ where
         });
     };
 
-    if cfg!(debug_assertions) {
-        // TODO: Replace this with tracing.
-        eprintln!(
-            "waiting for {} inflight connection(s) to close...",
-            connections.len()
-        );
-    }
-
     tokio::select! {
-        // Wait for all inflight connection to finish. If all connections close
-        // before the graceful shutdown timeout, return without an error. For
-        // unix-based systems, this translates to a 0 exit code.
-        _ = connections.join_all() => {
-            Ok(exit_code)
-        }
+        // Wait for inflight connection to close within the configured timeout.
+        _ = connections.join_all() => Ok(exit_code),
 
-        // Otherwise, return an error if we're unable to close all connections
-        // before the graceful shutdown timeout, return an error. For unix-based
-        // systems, this translates to a 1 exit code.
+        // Otherwise, return an error.
         _ = time::sleep(shutdown_timeout) => {
             let message = "server exited before all connections were closed".to_owned();
-            let error = BoxError::from(message);
-
-            Err(error)
+            Err(BoxError::from(message))
         }
     }
 }
