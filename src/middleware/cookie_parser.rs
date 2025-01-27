@@ -91,10 +91,11 @@ fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
             }
         }
 
+        // Call the next middleware to get a response.
         let future = next.call(request);
 
         async {
-            // Call the next middleware to get a response.
+            // Await the response future.
             let mut response = future.await?;
 
             if let Some(cookies) = existing {
@@ -103,6 +104,10 @@ fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
                     jar.add_original(cookie);
                 }
             }
+
+            // If any cookies changed during the request, serialize them to
+            // Set-Cookie headers and include them in the response headers.
+            response.set_cookie_headers();
 
             // Return the response.
             Ok(response)

@@ -1,6 +1,5 @@
 use std::future::Future;
 use std::process::ExitCode;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, ToSocketAddrs};
 
@@ -28,8 +27,8 @@ const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
 /// Serve an app over HTTP.
 ///
 pub struct Server<T> {
-    state: Arc<T>,
-    router: Arc<Router<T>>,
+    state: T,
+    router: Router<T>,
     max_connections: Option<usize>,
     max_request_size: Option<usize>,
     shutdown_timeout: Option<u64>,
@@ -41,8 +40,8 @@ pub struct Server<T> {
 async fn listen<T, A>(
     acceptor: A,
     address: impl ToSocketAddrs,
-    state: Arc<T>,
-    router: Arc<Router<T>>,
+    state: T,
+    router: Router<T>,
     max_connections: Option<usize>,
     max_request_size: Option<usize>,
     shutdown_timeout: Option<u64>,
@@ -87,7 +86,7 @@ where
     pub fn new(app: App<State>) -> Self {
         Self {
             state: app.state,
-            router: Arc::new(app.router),
+            router: app.router,
             #[cfg(feature = "rustls")]
             rustls_config: None,
             max_connections: None,
@@ -150,7 +149,7 @@ where
         // Confirm that rustls_config exists before proceeding.
 
         let tls_config = match self.rustls_config {
-            Some(config) => Arc::new(config),
+            Some(config) => config.into(),
             None => panic!("rustls_config is required to use the 'rustls' feature"),
         };
 

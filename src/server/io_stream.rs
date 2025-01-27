@@ -24,18 +24,15 @@ impl<T> IoStream<T> {
 
 impl<T> IoStream<T> {
     fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
-        // Get a pinned mutable reference to `self.stream` from a pinned mutable
-        // reference to `self`.
+        // Get a pinned mutable reference to `self.stream` from a pinned
+        // mutable reference to `self`.
         //
         // Safety:
         //
         // This is safe because data is never moved out of self or
         // `self.stream`.
         //
-        unsafe {
-            let this = self.get_unchecked_mut();
-            Pin::new_unchecked(&mut this.stream)
-        }
+        unsafe { Pin::map_unchecked_mut(self, |this| &mut this.stream) }
     }
 }
 
