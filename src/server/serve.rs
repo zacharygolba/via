@@ -130,8 +130,7 @@ where
 
                     // Construct a via::Request from the component parts of r.
                     Request::new(
-                        // Clone the arc pointer around the global application
-                        // state that was passed to the via::app function.
+                        // Get a weak ref to the app state argument.
                         Arc::downgrade(&app.state),
                         // Allocate for path params.
                         PathParams::new(Vec::new()),
