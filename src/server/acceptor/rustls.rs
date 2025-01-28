@@ -6,7 +6,6 @@ use tokio_rustls::{Accept, TlsAcceptor};
 
 use super::Acceptor;
 
-#[derive(Clone)]
 pub struct RustlsAcceptor {
     acceptor: TlsAcceptor,
 }
