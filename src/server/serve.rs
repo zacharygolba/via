@@ -42,6 +42,9 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
+    // Wrap the app in arc so it can be moved into the service function.
+    let app = Arc::new(app);
+
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
     let mut connections = JoinSet::new();
@@ -64,70 +67,10 @@ where
         }
     });
 
-    // Wrap the app in arc so it can be moved into the service function.
-    let app = Arc::new(app);
-
     // Start accepting incoming connections.
     let exit_code = 'accept: loop {
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
-
-        // Define a hyper service to serve the incoming request.
-        let service = {
-            let app = Arc::clone(&app);
-
-            service_fn(move |r| {
-                let mut request = {
-                    // Destructure the incoming request into it's component parts.
-                    let (head, body) = r.into_parts();
-
-                    // Construct a via::Request from the component parts of r.
-                    Request::new(
-                        // Clone the arc pointer around the global application
-                        // state that was passed to the via::app function.
-                        Arc::clone(&app.state),
-                        // Allocate for path params.
-                        PathParams::new(Vec::new()),
-                        // Take ownership of the request head.
-                        head,
-                        // Limit the length of the request body to max_request_size.
-                        HttpBody::Original(RequestBody::new(max_request_size, body)),
-                    )
-                };
-
-                let result = {
-                    // Allocate a vec to store matched routes.
-                    let mut next = Next::new(Vec::new());
-
-                    // Get a mutable ref to path params and a str containing
-                    // the request uri.
-                    let (params, path) = request.params_mut_with_path();
-
-                    // Route the request to the corresponding middleware stack.
-                    match app.router.lookup(path, params, &mut next) {
-                        // Call the middleware stack for the matched routes.
-                        Ok(_) => Ok(next.call(request)),
-                        // Close the connection and stop the server.
-                        Err(error) => Err(error),
-                    }
-                };
-
-                async {
-                    // If the request was routed successfully, await the
-                    // response future. If the future resolved with an error,
-                    // generate a response from it.
-                    //
-                    // If the request was not routed successfully, immediately
-                    // return so the connection can be closed and the server
-                    // exit.
-                    let response = result?.await.unwrap_or_else(|e| e.into());
-
-                    // Unwrap the inner http::Response so it can be sent back
-                    // to the client via IoStream.
-                    Ok::<_, VisitError>(response.into_inner())
-                }
-            })
-        };
 
         // Wait for something interesting to happen.
         let io = loop {
@@ -164,6 +107,10 @@ where
             }
         };
 
+        // Clone the app so it can be moved into the connection task to serve
+        // the connection.
+        let app = Arc::clone(&app);
+
         // Clone the watch sender so connections can notify the main thread
         // if an unrecoverable error is encountered.
         let shutdown_tx = shutdown_tx.clone();
@@ -175,6 +122,69 @@ where
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
+            // Define a hyper service to serve the incoming request.
+            let service = service_fn(|r| {
+                let mut request = {
+                    // Destructure the incoming request into it's component parts.
+                    let (head, body) = r.into_parts();
+
+                    // Construct a via::Request from the component parts of r.
+                    Request::new(
+                        // Clone the arc pointer around the global application
+                        // state that was passed to the via::app function.
+                        Arc::downgrade(&app.state),
+                        // Allocate for path params.
+                        PathParams::new(Vec::new()),
+                        // Take ownership of the request head.
+                        head,
+                        // Limit the length of the request body to max_request_size.
+                        HttpBody::Original(RequestBody::new(max_request_size, body)),
+                    )
+                };
+
+                let result = {
+                    // Allocate a vec to store matched routes.
+                    let mut next = Next::new(Vec::new());
+
+                    // Get a mutable ref to path params and a str containing
+                    // the request uri.
+                    let (params, path) = request.params_mut_with_path();
+
+                    // Route the request to the corresponding middleware stack.
+                    match app.router.lookup(path, params, &mut next) {
+                        // Call the middleware stack for the matched routes.
+                        Ok(_) => Ok(next.call(request)),
+                        // Close the connection and stop the server.
+                        Err(error) => Err(error),
+                    }
+                };
+
+                async {
+                    // If the request was routed successfully, await the
+                    // response future. If the future resolved with an error,
+                    // generate a response from it.
+                    //
+                    // If the request was not routed successfully, immediately
+                    // return so the connection can be closed and the server
+                    // exit.
+                    let response = match result?.await {
+                        Ok(response) => response,
+                        Err(error) => {
+                            // Placeholder for tracing...
+                            if cfg!(debug_assertions) {
+                                eprintln!("warn: app is missing error boundary");
+                            }
+
+                            error.into()
+                        }
+                    };
+
+                    // Unwrap the inner http::Response so it can be sent back
+                    // to the client via IoStream.
+                    Ok::<_, VisitError>(response.into_inner())
+                }
+            });
+
             // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
             let mut connection = conn::http2::Builder::new(TokioExecutor::new())
