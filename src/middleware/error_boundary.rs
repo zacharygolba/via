@@ -1,6 +1,8 @@
 use super::middleware::Middleware;
 use super::next::Next;
-use crate::{Error, Request, Response};
+use crate::error::Error;
+use crate::request::{Request, State};
+use crate::response::Response;
 
 /// A middleware that catches errors that occur downstream and then calls the
 /// provided closure to inspect the error to another error. Think of this as a
@@ -8,13 +10,13 @@ use crate::{Error, Request, Response};
 ///
 pub fn catch<T, F>(inspect: F) -> impl Middleware<T>
 where
-    F: Fn(&T, &Error) + Copy + Send + Sync + 'static,
+    F: Fn(State<T>, &Error) + Copy + Send + Sync + 'static,
     T: Send + Sync + 'static,
 {
     move |request: Request<T>, next: Next<T>| {
         // Clone `request.state` so it can be used after ownership of `request`
         // is transfered to `next.call()`.
-        let state = request.state().clone();
+        let state = request.state();
 
         // Call the next middleware to get a future that will resolve to a
         // response.
@@ -25,7 +27,7 @@ where
             // provided inspect fn with a reference to the contained error and
             // the global application state.
             future.await.or_else(|error| {
-                inspect(&state, &error);
+                inspect(state, &error);
                 Ok(error.into())
             })
         }
@@ -42,13 +44,13 @@ where
 ///
 pub fn map<T, F>(map: F) -> impl Middleware<T>
 where
-    F: Fn(&T, Error) -> Error + Copy + Send + Sync + 'static,
+    F: Fn(State<T>, Error) -> Error + Copy + Send + Sync + 'static,
     T: Send + Sync + 'static,
 {
     move |request: Request<T>, next: Next<T>| {
         // Clone `request.state` so it can be used after ownership of `request`
         // is transfered to `next.call()`.
-        let state = request.state().clone();
+        let state = request.state();
 
         // Call the next middleware to get a future that will resolve to a
         // response.
@@ -59,7 +61,7 @@ where
             // provided map function with the error and a reference to the global
             // application state. Then generate a response from the returned
             // error.
-            future.await.or_else(|error| Ok(map(&state, error).into()))
+            future.await.or_else(|error| Ok(map(state, error).into()))
         }
     }
 }
@@ -74,13 +76,13 @@ where
 ///
 pub fn or_else<T, F>(or_else: F) -> impl Middleware<T>
 where
-    F: Fn(&T, Error) -> Result<Response, Error> + Copy + Send + Sync + 'static,
+    F: Fn(State<T>, Error) -> Result<Response, Error> + Copy + Send + Sync + 'static,
     T: Send + Sync + 'static,
 {
     move |request: Request<T>, next: Next<T>| {
         // Clone `request.state` so it can be used after ownership of `request`
         // is transfered to `next.call()`.
-        let state = request.state().clone();
+        let state = request.state();
 
         // Call the next middleware to get a future that will resolve to a
         // response.
@@ -90,7 +92,7 @@ where
             // Await the future. If it resolves to a `Result::Err`, call the p
             // provided or_else function with the error and a reference to the
             // global application state.
-            future.await.or_else(|error| or_else(&state, error))
+            future.await.or_else(|error| or_else(state, error))
         }
     }
 }

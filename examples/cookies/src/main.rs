@@ -32,7 +32,7 @@ async fn count_visits(request: Request<State>, next: Next<State>) -> via::Result
     // Clone the state from the request so we can access the secret key after
     // passing ownership of the request to the next middleware.
     //
-    let state = request.state().clone();
+    let state = request.state().try_upgrade()?;
 
     // Get a reference to the secret key from state.
     let secret = &state.secret;
@@ -101,8 +101,9 @@ async fn main() -> Result<ExitCode, Error> {
     });
 
     // Include an error boundary to catch any errors that occur downstream.
-    app.include(error_boundary::catch(|_, error| {
+    app.include(error_boundary::map(|_, error| {
         eprintln!("Error: {}", error);
+        error.use_canonical_reason()
     }));
 
     // The CookieParser middleware can be added at any depth of the route tree.

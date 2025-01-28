@@ -30,7 +30,7 @@ async fn counter(request: Request<State>, next: Next<State>) -> via::Result {
     // Clone the `Counter` state by incrementing the reference count of the
     // outer `Arc`. This will allow us to modify the `state` after we pass
     // ownership of `request` to the `next` middleware.
-    let state = request.state().clone();
+    let state = request.state().try_upgrade()?;
 
     // Call the next middleware in the app and await the response.
     let response = next.call(request).await?;
@@ -52,7 +52,7 @@ async fn totals(request: Request<State>, _: Next<State>) -> via::Result {
     // Get a reference to the `Counter` state from the request. We don't need
     // to clone the state since we are consuming the request rather than
     // passing it as an argument to `next.call`.
-    let state = request.state();
+    let state = request.state().try_upgrade()?;
 
     // Load the current value of `errors` from the atomic integer.
     let errors = state.errors.load(Ordering::Relaxed);
@@ -80,8 +80,9 @@ async fn main() -> Result<ExitCode, Error> {
     });
 
     // Include an error boundary to catch any errors that occur downstream.
-    app.include(error_boundary::catch(|_, error| {
+    app.include(error_boundary::map(|_, error| {
         eprintln!("Error: {}", error);
+        error.use_canonical_reason()
     }));
 
     // Add the `counter` middleware to the application. Since we are not

@@ -3,18 +3,19 @@ use http::header::AsHeaderName;
 use http::request::Parts;
 use http::{HeaderMap, HeaderValue, Method, Uri, Version};
 use std::fmt::{self, Debug, Formatter};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use super::param::{PathParam, PathParams};
 use super::QueryParam;
 use crate::body::{BoxBody, HttpBody, RequestBody};
+use crate::Error;
 
 pub struct Request<T = ()> {
     /// The shared application state passed to the
     /// [`via::app`](crate::app::app)
     /// function.
     ///
-    state: Arc<T>,
+    state: Weak<T>,
 
     /// The component parts of the HTTP request.
     ///
@@ -33,6 +34,13 @@ pub struct Request<T = ()> {
     /// The request's path and query parameters.
     ///
     params: PathParams,
+}
+
+/// A wrapper around a weak reference to the state argument passed to
+/// [`via::app`](crate::app::app).
+///
+pub struct State<T> {
+    ptr: Weak<T>,
 }
 
 impl<T> Request<T> {
@@ -177,8 +185,10 @@ impl<T> Request<T> {
     /// function.
     ///
     #[inline]
-    pub fn state(&self) -> &Arc<T> {
-        &self.state
+    pub fn state(&self) -> State<T> {
+        State {
+            ptr: Weak::clone(&self.state),
+        }
     }
 
     /// Returns a reference to the uri associated with the request.
@@ -199,7 +209,7 @@ impl<T> Request<T> {
 impl<T> Request<T> {
     #[inline]
     pub(crate) fn new(
-        state: Arc<T>,
+        state: Weak<T>,
         params: PathParams,
         head: Parts,
         body: HttpBody<RequestBody>,
@@ -239,5 +249,23 @@ impl<T> Debug for Request<T> {
             .field("cookies", &self.cookies)
             .field("body", self.body())
             .finish()
+    }
+}
+
+impl<T> State<T> {
+    /// Attempt to upgrade the weak reference to a strong reference.
+    ///
+    pub fn upgrade(self) -> Option<Arc<T>> {
+        Weak::upgrade(&self.ptr)
+    }
+
+    /// Attempt to upgrade the weak referene to a strong reference. If the
+    /// value was dropped, an error is returned.
+    ///
+    pub fn try_upgrade(self) -> Result<Arc<T>, Error> {
+        self.upgrade().ok_or_else(|| {
+            let message = "the application state is unavailable".to_string();
+            Error::internal_server_error(message.into())
+        })
     }
 }
