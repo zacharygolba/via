@@ -10,7 +10,6 @@ use super::acceptor::{self, Acceptor};
 use super::serve::serve;
 use crate::app::App;
 use crate::error::BoxError;
-use crate::router::Router;
 
 /// The default value of the maximum number of concurrent connections.
 ///
@@ -27,8 +26,7 @@ const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
 /// Serve an app over HTTP.
 ///
 pub struct Server<T> {
-    state: T,
-    router: Router<T>,
+    app: App<T>,
     max_connections: Option<usize>,
     max_request_size: Option<usize>,
     shutdown_timeout: Option<u64>,
@@ -40,8 +38,7 @@ pub struct Server<T> {
 async fn listen<T, A>(
     acceptor: A,
     address: impl ToSocketAddrs,
-    state: T,
-    router: Router<T>,
+    app: App<T>,
     max_connections: Option<usize>,
     max_request_size: Option<usize>,
     shutdown_timeout: Option<u64>,
@@ -67,8 +64,7 @@ where
     let server = serve(
         listener,
         acceptor,
-        state,
-        router,
+        app,
         max_connections,
         max_content_length,
         shutdown_timeout,
@@ -85,8 +81,7 @@ where
     ///
     pub fn new(app: App<State>) -> Self {
         Self {
-            state: app.state,
-            router: app.router,
+            app,
             #[cfg(feature = "rustls")]
             rustls_config: None,
             max_connections: None,
@@ -156,8 +151,7 @@ where
         // Create the RustlsAcceptor to serve connections over HTTPS.
         let acceptor = acceptor::rustls::RustlsAcceptor::new(tls_config);
 
-        let state = self.state;
-        let router = self.router;
+        let app = self.app;
         let max_connections = self.max_connections;
         let max_request_size = self.max_request_size;
         let shutdown_timeout = self.shutdown_timeout;
@@ -165,8 +159,7 @@ where
         listen(
             acceptor,
             address,
-            state,
-            router,
+            app,
             max_connections,
             max_request_size,
             shutdown_timeout,
@@ -221,8 +214,7 @@ where
         // Create a HttpAcceptor to serve connections over HTTP.
         let acceptor = acceptor::http::HttpAcceptor;
 
-        let state = self.state;
-        let router = self.router;
+        let app = self.app;
         let max_connections = self.max_connections;
         let max_request_size = self.max_request_size;
         let shutdown_timeout = self.shutdown_timeout;
@@ -230,8 +222,7 @@ where
         listen(
             acceptor,
             address,
-            state,
-            router,
+            app,
             max_connections,
             max_request_size,
             shutdown_timeout,

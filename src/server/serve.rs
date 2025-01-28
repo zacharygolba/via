@@ -15,19 +15,19 @@ use via_router::VisitError;
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
 
-use super::acceptor::Acceptor;
-use super::io_stream::IoStream;
+use crate::app::App;
 use crate::body::{HttpBody, RequestBody};
 use crate::error::BoxError;
 use crate::middleware::Next;
 use crate::request::{PathParams, Request};
-use crate::router::Router;
+use crate::server::io_stream::IoStream;
+
+use super::acceptor::Acceptor;
 
 pub async fn serve<T, A>(
     listener: TcpListener,
-    acceptor: A,
-    state: T,
-    router: Router<T>,
+    mut acceptor: A,
+    app: App<T>,
     max_connections: usize,
     max_request_size: usize,
     shutdown_timeout: Duration,
@@ -36,6 +36,12 @@ where
     T: Send + Sync + 'static,
     A: Acceptor + Send + Sync + 'static,
 {
+    // Create a semaphore with a number of permits equal to the maximum number
+    // of connections that the server can handle concurrently. If the maximum
+    // number of connections is reached, we'll wait until a permit is available
+    // before accepting a new connection.
+    let semaphore = Arc::new(Semaphore::new(max_connections));
+
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
     let mut connections = JoinSet::new();
@@ -43,20 +49,6 @@ where
     // Create a watch channel to notify the connections to initiate a
     // graceful shutdown process when the `ctrl_c` future resolves.
     let (shutdown_tx, mut shutdown_rx) = watch::channel(None);
-
-    // Create a semaphore with a number of permits equal to the maximum number
-    // of connections that the server can handle concurrently. If the maximum
-    // number of connections is reached, we'll wait until a permit is available
-    // before accepting a new connection.
-    let semaphore = Arc::new(Semaphore::new(max_connections));
-
-    // Wrap the global application state in an arc so ownership can be shared
-    // with the request in the connection task.
-    let state = Arc::new(state);
-
-    // Wrap the router in an arc so requests can be routed within the
-    // connection task.
-    let router = Arc::new(router);
 
     // Spawn a task to wait for the `ctrl_c` future to resolve.
     tokio::spawn({
@@ -72,79 +64,19 @@ where
         }
     });
 
+    // Wrap the app in arc so it can be moved into the service function.
+    let app = Arc::new(app);
+
     // Start accepting incoming connections.
     let exit_code = 'accept: loop {
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
 
-        // Wait for something interesting to happen.
-        let stream = loop {
-            tokio::select! {
-                // A graceful shutdown was requested.
-                _ = shutdown_rx.changed() => {
-                    // Return the permit back to the semaphore.
-                    drop(permit);
+        // Define a hyper service to serve the incoming request.
+        let service = {
+            let app = Arc::clone(&app);
 
-                    // Break out of the accept loop with the corrosponding exit code.
-                    break 'accept match *shutdown_rx.borrow_and_update() {
-                        Some(false) => ExitCode::from(0),
-                        Some(true) | None => ExitCode::from(1),
-                    }
-                }
-
-                // A new connection is ready to be accepted.
-                result = listener.accept() => match result {
-                    Ok((stream, _address)) => break stream,
-                    Err(error) => {
-                        let _ = error; // Placeholder for tracing...
-                        // Continue to the next iteration.
-                    }
-                },
-
-                // We have idle time. Join any inflight connections that may
-                // have finished.
-                _ = connections.join_next(), if !connections.is_empty() => {
-                    while connections.try_join_next().is_some() {}
-                }
-            }
-        };
-
-        // Clone the acceptor so it can be moved into the task responsible
-        // for serving individual connections.
-        let mut acceptor = acceptor.clone();
-
-        // Clone the watch sender so connections can notify the main thread
-        // if an unrecoverable error is encountered.
-        let shutdown_tx = shutdown_tx.clone();
-
-        // Clone the watch channel so that we can notify the connection
-        // task when initiate a graceful shutdown process before the server
-        // exits.
-        let mut shutdown_rx = shutdown_rx.clone();
-
-        // Clone the Arc around the shared application state so it can be
-        // moved into the connection task.
-        let state = Arc::clone(&state);
-
-        // Clone the Arc around the router so it can be moved into the
-        // connection task.
-        let router = Arc::clone(&router);
-
-        // Spawn a task to serve the connection.
-        connections.spawn(async move {
-            // Accept the stream from the acceptor. This is where the TLS
-            // handshake occurs if the acceptor is a TlsAcceptor.
-            let io = match acceptor.accept(stream).await {
-                Ok(accepted) => IoStream::new(accepted),
-                Err(error) => {
-                    let _ = error; // Placeholder for tracing...
-                    drop(permit);
-                    return;
-                }
-            };
-
-            // Define a hyper service to serve the incoming request.
-            let service = service_fn(|r| {
+            service_fn(move |r| {
                 let mut request = {
                     // Destructure the incoming request into it's component parts.
                     let (head, body) = r.into_parts();
@@ -153,7 +85,7 @@ where
                     Request::new(
                         // Clone the arc pointer around the global application
                         // state that was passed to the via::app function.
-                        Arc::clone(&state),
+                        Arc::clone(&app.state),
                         // Allocate for path params.
                         PathParams::new(Vec::new()),
                         // Take ownership of the request head.
@@ -172,7 +104,7 @@ where
                     let (params, path) = request.params_mut_with_path();
 
                     // Route the request to the corresponding middleware stack.
-                    match router.lookup(path, params, &mut next) {
+                    match app.router.lookup(path, params, &mut next) {
                         // Call the middleware stack for the matched routes.
                         Ok(_) => Ok(next.call(request)),
                         // Close the connection and stop the server.
@@ -181,20 +113,68 @@ where
                 };
 
                 async {
-                    match result {
-                        // The request was routed successfully, await the future
-                        // response. If the future resolves with an error,
-                        // generate a response from it.
-                        Ok(f) => Ok(f.await.unwrap_or_else(|e| e.into()).into_inner()),
+                    // If the request was routed successfully, await the
+                    // response future. If the future resolved with an error,
+                    // generate a response from it.
+                    //
+                    // If the request was not routed successfully, immediately
+                    // return so the connection can be closed and the server
+                    // exit.
+                    let response = result?.await.unwrap_or_else(|e| e.into());
 
-                        // The request was not routed successfully, immediately
-                        // return so the connection can be closed and the
-                        // server can exit.
-                        Err(e) => Err(e),
+                    // Unwrap the inner http::Response so it can be sent back
+                    // to the client via IoStream.
+                    Ok::<_, VisitError>(response.into_inner())
+                }
+            })
+        };
+
+        // Wait for something interesting to happen.
+        let io = loop {
+            tokio::select! {
+                // A graceful shutdown was requested.
+                _ = shutdown_rx.changed() => {
+                    // Break out of the accept loop with the corrosponding exit code.
+                    break 'accept match *shutdown_rx.borrow_and_update() {
+                        Some(false) => ExitCode::from(0),
+                        Some(true) | None => ExitCode::from(1),
                     }
                 }
-            });
 
+                // A new connection is ready to be accepted.
+                result = listener.accept() => match result {
+                    // Accept the stream from the acceptor.
+                    Ok((stream, _addr)) => break match acceptor.accept(stream).await {
+                        Ok(accepted) => IoStream::new(accepted),
+                        Err(error) => {
+                            let _ = error; // Placeholder for tracing...
+                            continue;
+                        }
+                    },
+                    Err(error) => {
+                        let _ = error; // Placeholder for tracing...
+                    }
+                },
+
+                // We have idle time. Join any inflight connections that may
+                // have finished.
+                _ = connections.join_next(), if !connections.is_empty() => {
+                    while connections.try_join_next().is_some() {}
+                }
+            }
+        };
+
+        // Clone the watch sender so connections can notify the main thread
+        // if an unrecoverable error is encountered.
+        let shutdown_tx = shutdown_tx.clone();
+
+        // Clone the watch channel so that we can notify the connection
+        // task when initiate a graceful shutdown process before the server
+        // exits.
+        let mut shutdown_rx = shutdown_rx.clone();
+
+        // Spawn a task to serve the connection.
+        connections.spawn(async move {
             // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
             let mut connection = conn::http2::Builder::new(TokioExecutor::new())
