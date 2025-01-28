@@ -234,12 +234,20 @@ where
 
     tokio::select! {
         // Wait for inflight connection to close within the configured timeout.
-        _ = connections.join_all() => Ok(exit_code),
+        _ = shutdown(&mut connections) => Ok(exit_code),
 
         // Otherwise, return an error.
         _ = time::sleep(shutdown_timeout) => {
             let message = "server exited before all connections were closed".to_owned();
             Err(BoxError::from(message))
+        }
+    }
+}
+
+async fn shutdown(connections: &mut JoinSet<()>) {
+    while let Some(result) = connections.join_next().await {
+        if let Err(error) = result {
+            let _ = &error; // Placeholder for tracing...
         }
     }
 }
