@@ -72,6 +72,10 @@ where
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
 
+        // Clone the app so it can be moved into the connection task to serve
+        // the connection.
+        let app = Arc::clone(&app);
+
         // Wait for something interesting to happen.
         let io = loop {
             tokio::select! {
@@ -106,10 +110,6 @@ where
                 }
             }
         };
-
-        // Clone the app so it can be moved into the connection task to serve
-        // the connection.
-        let app = Arc::clone(&app);
 
         // Clone the watch sender so connections can notify the main thread
         // if an unrecoverable error is encountered.
