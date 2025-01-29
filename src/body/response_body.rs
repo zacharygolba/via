@@ -69,7 +69,7 @@ impl Body for ResponseBody {
         match self.buf.len().try_into() {
             Ok(exact) => SizeHint::with_exact(exact),
             Err(error) => {
-                let _ = error; // Placeholder for tracing...
+                let _ = &error; // Placeholder for tracing...
                 SizeHint::new()
             }
         }

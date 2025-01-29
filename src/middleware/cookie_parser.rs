@@ -66,7 +66,7 @@ fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
                         Ok(cookie) => cookies.push(cookie),
                         Err(error) => {
                             // Placeholder for tracing...
-                            let _ = error;
+                            let _ = &error;
                         }
                     });
 
@@ -79,7 +79,7 @@ fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
 
                 // The cookie header contains characters that are not visible ASCII.
                 Err(error) => {
-                    let _ = error; // Placeholder for tracing...
+                    let _ = &error; // Placeholder for tracing...
                     None
                 }
             });

@@ -107,13 +107,13 @@ impl Response {
             let set_cookie = match cookie.encoded().to_string().parse() {
                 Ok(header_value) => header_value,
                 Err(error) => {
-                    let _ = error; // Placeholder for tracing
+                    let _ = &error; // Placeholder for tracing
                     continue;
                 }
             };
 
             if let Err(error) = headers.try_append(SET_COOKIE, set_cookie) {
-                let _ = error; // Placeholder for tracing
+                let _ = &error; // Placeholder for tracing
             }
         }
     }

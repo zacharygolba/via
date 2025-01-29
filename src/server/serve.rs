@@ -94,12 +94,12 @@ where
                     Ok((stream, _addr)) => break match acceptor.accept(stream).await {
                         Ok(accepted) => IoStream::new(accepted),
                         Err(error) => {
-                            let _ = error; // Placeholder for tracing...
+                            let _ = &error; // Placeholder for tracing...
                             continue;
                         }
                     },
                     Err(error) => {
-                        let _ = error; // Placeholder for tracing...
+                        let _ = &error; // Placeholder for tracing...
                     }
                 },
 
