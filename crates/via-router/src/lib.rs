@@ -159,7 +159,7 @@ impl<T> Router<T> {
     #[cfg(feature = "lru-cache")]
     fn try_write_to_cache(&self, path: &str, matches: &Vec<Match>) {
         if let Ok(mut guard) = self.cache.try_write() {
-            if guard.len() == 100 {
+            if guard.len() == 1000 {
                 guard.pop_back();
             }
 
@@ -190,7 +190,7 @@ impl<T> Router<T> {
                 println!("cache hit");
             }
 
-            if index > 50 {
+            if index > 500 {
                 if let Ok(mut guard) = lock.try_write() {
                     guard.swap_remove_front(index);
                 }

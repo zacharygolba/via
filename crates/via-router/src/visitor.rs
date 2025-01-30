@@ -66,7 +66,7 @@ impl Match {
 
     #[inline]
     pub(crate) fn try_load(self) -> Result<(bool, usize, Option<[usize; 2]>), VisitError> {
-        let Match { range, value } = self;
+        let Self { range, value } = self;
 
         if value & 0b01 == 0 {
             Err(VisitError::NodeNotFound)
