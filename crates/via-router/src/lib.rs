@@ -70,6 +70,7 @@ pub fn search<T>(nodes: &[Node<T>], path: &str) -> Vec<Match> {
             match_next.push(child);
         }
 
+        match_asap.clear();
         match_asap = match_next;
         match_next = SmallVec::new();
     }
@@ -85,6 +86,8 @@ pub fn search<T>(nodes: &[Node<T>], path: &str) -> Vec<Match> {
             Some(_) => {}
         }
     }
+
+    match_asap.clear();
 
     results
 }
