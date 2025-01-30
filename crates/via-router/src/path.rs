@@ -1,5 +1,5 @@
-use smallvec::SmallVec;
 use std::fmt::{self, Display, Formatter};
+use std::str::MatchIndices;
 use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
@@ -15,18 +15,16 @@ pub struct Param {
     value: Arc<str>,
 }
 
-pub struct Segments<'a> {
-    value: &'a str,
-    parts: SmallVec<[(usize, usize); 2]>,
+pub struct Split<'a> {
+    len: usize,
+    offset: usize,
+    indices: MatchIndices<'a, char>,
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
-    let mut segments = SmallVec::new();
-
-    split(&mut segments, path);
-    segments.into_iter().map(|(start, end)| {
+    Split::new(path).map(|[start, end]| {
         let segment = match path.get(start..end) {
             Some(slice) => slice,
             None => panic!("Path segments cannot be empty when defining a route."),
@@ -56,49 +54,6 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
             }),
         }
     })
-}
-
-/// Accumulate path segment ranges as a [Span] from path into segments.
-///
-pub fn split(parts: &mut SmallVec<[(usize, usize); 2]>, path: &str) {
-    // True if parts is allocated on the heap.
-    let mut spilled = false;
-
-    // Assume the byte position of the first span in path is `0`. Bounds checks
-    // are required before creating a Span with this value.
-    let mut start = 0;
-
-    // The length of path could be the end offset of the last Span from path.
-    let len = path.len();
-
-    // Iterate over the byte position of each occurrence of '/' in path.
-    for (end, _) in path.match_indices('/') {
-        // If a range exists with a length greater than `0` from start to end,
-        // append a Span to segments. This bounds check prevents an empty range
-        // from ending up in segments.
-        if end > start {
-            if !spilled && parts.len() == 2 {
-                parts.reserve(6);
-                spilled = true
-            }
-
-            parts.push((start, end));
-        }
-
-        // Move start to the byte position after end.
-        start = end + 1;
-    }
-
-    // If a range exists with a length greater than `0` from start to the
-    // length of path, append a Span to segments. This condition is true
-    // when path does not end with `/`.
-    if len > start {
-        if !spilled && parts.len() == 2 {
-            parts.reserve(6);
-        }
-
-        parts.push((start, len));
-    }
 }
 
 impl Clone for Param {
@@ -134,42 +89,50 @@ impl PartialEq<str> for Param {
     }
 }
 
-impl<'a> Segments<'a> {
+impl<'a> Split<'a> {
     #[inline]
-    pub fn new(value: &'a str, parts: SmallVec<[(usize, usize); 2]>) -> Self {
-        Self { value, parts }
+    pub fn new(path: &'a str) -> Self {
+        Self {
+            len: path.len(),
+            offset: 0,
+            indices: path.match_indices('/'),
+        }
     }
+}
+
+impl Iterator for Split<'_> {
+    type Item = [usize; 2];
 
     #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.parts.is_empty()
-    }
+    fn next(&mut self) -> Option<Self::Item> {
+        let len = self.len;
+        let offset = &mut self.offset;
+        let indices = &mut self.indices;
 
-    #[inline]
-    pub fn path_len(&self) -> usize {
-        self.value.len()
-    }
+        loop {
+            let start = *offset;
+            let end = match indices.next() {
+                None if len > start => len,
+                Some((index, _)) => index,
+                None => return None,
+            };
 
-    #[inline]
-    pub fn first(&self) -> Option<(&'a str, &(usize, usize))> {
-        let at = self.parts.first()?;
-        let segment = &self.value[at.0..at.1];
+            // Move start to the byte position after end.
+            *offset = end + 1;
 
-        Some((segment, at))
-    }
-
-    #[inline]
-    pub fn get(&self, index: usize) -> Option<(&'a str, &(usize, usize))> {
-        let at = self.parts.get(index)?;
-        let segment = &self.value[at.0..at.1];
-
-        Some((segment, at))
+            // If a range exists with a length greater than `0` from start to end,
+            // append a Span to segments. This bounds check prevents an empty range
+            // from ending up in segments.
+            if end > start {
+                return Some([start, end]);
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use smallvec::SmallVec;
+    use super::Split;
 
     const PATHS: [&str; 16] = [
         "/home/about",
@@ -190,23 +153,23 @@ mod tests {
         "/",
     ];
 
-    fn get_expected_results() -> [Vec<(usize, usize)>; 16] {
+    fn get_expected_results() -> [Vec<[usize; 2]>; 16] {
         [
-            vec![(1, 5), (6, 11)],
-            vec![(1, 9), (10, 14), (15, 18)],
-            vec![(1, 5), (6, 11), (12, 16), (17, 21)],
-            vec![(1, 5), (6, 13), (14, 22)],
-            vec![(1, 9), (10, 17)],
-            vec![(1, 7), (8, 23)],
-            vec![(1, 5), (6, 12)],
-            vec![(1, 10), (11, 18)],
-            vec![(1, 4)],
-            vec![(1, 8), (9, 16)],
-            vec![(2, 6), (8, 13)],
-            vec![(1, 9), (11, 15), (16, 19)],
-            vec![(1, 5), (6, 11), (12, 16), (18, 22)],
-            vec![(1, 5), (7, 14), (15, 23)],
-            vec![(1, 9), (10, 17), (19, 21)],
+            vec![[1, 5], [6, 11]],
+            vec![[1, 9], [10, 14], [15, 18]],
+            vec![[1, 5], [6, 11], [12, 16], [17, 21]],
+            vec![[1, 5], [6, 13], [14, 22]],
+            vec![[1, 9], [10, 17]],
+            vec![[1, 7], [8, 23]],
+            vec![[1, 5], [6, 12]],
+            vec![[1, 10], [11, 18]],
+            vec![[1, 4]],
+            vec![[1, 8], [9, 16]],
+            vec![[2, 6], [8, 13]],
+            vec![[1, 9], [11, 15], [16, 19]],
+            vec![[1, 5], [6, 11], [12, 16], [18, 22]],
+            vec![[1, 5], [7, 14], [15, 23]],
+            vec![[1, 9], [10, 17], [19, 21]],
             vec![],
         ]
     }
@@ -215,17 +178,10 @@ mod tests {
     fn test_split_into() {
         let expected_results = get_expected_results();
 
-        for (path_index, path_value) in PATHS.iter().enumerate() {
-            let mut segments = SmallVec::new();
-
-            super::split(&mut segments, path_value);
-
-            for (segment_index, segment_value) in segments.into_iter().enumerate() {
-                assert_eq!(
-                    segment_value, expected_results[path_index][segment_index],
-                    "{} ({}, {:?})",
-                    path_value, segment_index, segment_value
-                );
+        for (i, path) in PATHS.iter().enumerate() {
+            for (j, segment) in Split::new(path).enumerate() {
+                let expect = expected_results[i][j];
+                assert_eq!(segment, expect, "{} ({}, {:?})", path, j, segment);
             }
         }
     }

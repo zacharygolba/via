@@ -18,7 +18,6 @@ use hyper_util::rt::TokioExecutor;
 use crate::app::App;
 use crate::body::{HttpBody, RequestBody};
 use crate::error::BoxError;
-use crate::middleware::Next;
 use crate::request::{PathParams, Request};
 use crate::server::io_stream::IoStream;
 
@@ -142,17 +141,14 @@ where
                 };
 
                 let result = {
-                    // Allocate a vec to store matched routes.
-                    let mut next = Next::new(Vec::new());
-
                     // Get a mutable ref to path params and a str containing
                     // the request uri.
                     let (params, path) = request.params_mut_with_path();
 
                     // Route the request to the corresponding middleware stack.
-                    match app.router.lookup(path, params, &mut next) {
+                    match app.router.lookup(path, params) {
                         // Call the middleware stack for the matched routes.
-                        Ok(_) => Ok(next.call(request)),
+                        Ok(next) => Ok(next.call(request)),
                         // Close the connection and stop the server.
                         Err(error) => Err(error),
                     }

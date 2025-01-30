@@ -20,30 +20,25 @@ impl<T> Router<T> {
         Route::new(self.inner.at(pattern))
     }
 
-    pub fn lookup(
-        &self,
-        path: &str,
-        path_params: &mut PathParams,
-        matched_routes: &mut Next<T>,
-    ) -> Result<(), VisitError> {
+    pub fn lookup(&self, path: &str, params: &mut PathParams) -> Result<Next<T>, VisitError> {
+        let mut next = Next::new(Vec::new());
+
         // Iterate over the routes that match the request's path.
-        for result in self.inner.visit(path).into_iter().rev() {
-            let found = result?;
+        for matching in self.inner.visit(path).into_iter().rev() {
+            let found = self.inner.resolve(matching)?;
 
             // If there is a dynamic parameter name associated with the route,
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
             if let Some(name) = found.param {
-                path_params.push((name.clone(), found.range));
+                params.push((name.clone(), found.range));
             }
 
-            let route = match found.route.and_then(|key| self.inner.get(key)) {
+            let route = match found.route {
                 Some(route) => route,
                 None => continue,
             };
 
-            // Extend `stack` with middleware in `matched` depending on whether
-            // or not the middleware expects a partial or exact match.
             for middleware in route.iter().rev().filter_map(|when| match when {
                 // Include this middleware in `stack` because it expects an exact
                 // match and the visited node is considered a leaf in this
@@ -58,10 +53,10 @@ impl<T> Router<T> {
                 // exact match and the visited node is not a leaf.
                 MatchWhen::Exact(_) => None,
             }) {
-                matched_routes.push(Arc::clone(middleware));
+                next.push(Arc::clone(middleware));
             }
         }
 
-        Ok(())
+        Ok(next)
     }
 }

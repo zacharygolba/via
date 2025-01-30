@@ -116,7 +116,9 @@ fn find_matches_1(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/dashboard");
+        for _ in router.visit("/dashboard") {
+            // noop
+        }
     });
 }
 
@@ -129,7 +131,9 @@ fn find_matches_2(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/dashboard/overview");
+        for _ in router.visit("/dashboard/overview") {
+            // noop
+        }
     });
 }
 
@@ -142,7 +146,9 @@ fn find_matches_3(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/help/article/12345678987654321");
+        for _ in router.visit("/help/article/12345678987654321") {
+            // noop
+        }
     });
 }
 
@@ -155,7 +161,9 @@ fn find_matches_4(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/api/v1/products/12345678987654321");
+        for _ in router.visit("/api/v1/products/12345678987654321") {
+            // noop
+        }
     });
 }
 
@@ -168,7 +176,9 @@ fn find_matches_5(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/api/v1/products/12345678987654321/comments/12345678987654321");
+        for _ in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321") {
+            // noop
+        }
     });
 }
 
@@ -181,7 +191,9 @@ fn find_matches_6(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/api/v1/products/12345678987654321/comments/12345678987654321");
+        for _ in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321") {
+            // noop
+        }
     });
 }
 
@@ -194,6 +206,9 @@ fn find_matches_7(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit");
+        for _ in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
+        {
+            // noop
+        }
     });
 }
