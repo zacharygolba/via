@@ -35,8 +35,8 @@ pub struct Router<T> {
 pub fn search<T>(nodes: &[Node<T>], path: &str) -> Vec<Match> {
     let mut results = Vec::new();
     let mut segments = Split::new(path).peekable();
-    let mut match_asap = SmallVec::<[&Node<T>; 2]>::new();
-    let mut match_next = SmallVec::<[&Node<T>; 2]>::new();
+    let mut match_asap = SmallVec::<[&Node<T>; 1]>::new();
+    let mut match_next = SmallVec::<[&Node<T>; 1]>::new();
 
     if let Some(root) = nodes.first() {
         results.push(Match::new(segments.peek().is_none(), 0, None));

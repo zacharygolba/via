@@ -1,8 +1,6 @@
 use std::iter::Copied;
 use std::slice;
 
-use smallvec::SmallVec;
-
 use crate::path::Pattern;
 use crate::Param;
 
@@ -15,13 +13,13 @@ pub struct Node<T> {
     pub pattern: Pattern,
 
     /// The indices of the nodes that are reachable from the current node.
-    children: SmallVec<[usize; 2]>,
+    children: Option<Vec<usize>>,
 }
 
 impl<T> Node<T> {
     pub fn new(pattern: Pattern) -> Self {
         Self {
-            children: SmallVec::new(),
+            children: None,
             route: None,
             pattern,
         }
@@ -37,15 +35,19 @@ impl<T> Node<T> {
         }
     }
 
+    #[inline]
     pub fn children(&self) -> Copied<slice::Iter<usize>> {
-        self.children.iter().copied()
+        match &self.children {
+            Some(slice) => slice.iter().copied(),
+            None => [].iter().copied(),
+        }
     }
 }
 
 impl<T> Node<T> {
     /// Pushes a new key into the entries of the node and return it.
     pub(crate) fn push(&mut self, key: usize) -> usize {
-        self.children.push(key);
+        self.children.get_or_insert_default().push(key);
         key
     }
 }
