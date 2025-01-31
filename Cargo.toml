@@ -30,7 +30,7 @@ percent-encoding = "2"
 serde = "1"
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "signal"] }
-via-router = { path = "crates/via-router" }
+via-router = "2.0.0-rc.15"
 
 [dependencies.cookie]
 version = "0.18"
