@@ -148,7 +148,7 @@ where
                     let matches = app.router.visit(request.uri().path());
                     let params = request.params_mut();
 
-                    for matching in matches {
+                    for matching in matches.into_iter().rev() {
                         let found = match app.router.resolve(matching) {
                             Ok(resolved) => resolved,
                             Err(error) => break 'call Err(error),
