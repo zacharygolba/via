@@ -10,7 +10,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinSet;
 use tokio::{signal, time};
-use via_router::VisitError;
+use via_router::RouterError;
 
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
@@ -18,7 +18,9 @@ use hyper_util::rt::TokioExecutor;
 use crate::app::App;
 use crate::body::{HttpBody, RequestBody};
 use crate::error::BoxError;
+use crate::middleware::Next;
 use crate::request::{PathParams, Request};
+use crate::router::MatchWhen;
 use crate::server::io_stream::IoStream;
 
 use super::acceptor::Acceptor;
@@ -140,18 +142,49 @@ where
                     )
                 };
 
-                let result = {
-                    // Get a mutable ref to path params and a str containing
-                    // the request uri.
-                    let (params, path) = request.params_mut_with_path();
+                // Route the request to the corresponding middleware stack.
+                let result = 'call: {
+                    let mut next = Next::new(Vec::with_capacity(8));
+                    let matches = app.router.visit(request.uri().path());
+                    let params = request.params_mut();
 
-                    // Route the request to the corresponding middleware stack.
-                    match app.router.lookup(path, params) {
-                        // Call the middleware stack for the matched routes.
-                        Ok(next) => Ok(next.call(request)),
-                        // Close the connection and stop the server.
-                        Err(error) => Err(error),
+                    for matching in matches {
+                        let found = match app.router.resolve(matching) {
+                            Ok(resolved) => resolved,
+                            Err(error) => break 'call Err(error),
+                        };
+
+                        // If there is a dynamic parameter name associated with the route,
+                        // build a tuple containing the name and the range of the parameter
+                        // value in the request's path.
+                        if let Some(name) = found.param {
+                            params.push((name.clone(), found.range));
+                        }
+
+                        let route = match found.route {
+                            Some(route) => route,
+                            None => continue,
+                        };
+
+                        for middleware in route.iter().rev().filter_map(|when| match when {
+                            // Include this middleware in `stack` because it expects an exact
+                            // match and the visited node is considered a leaf in this
+                            // context.
+                            MatchWhen::Exact(exact) if found.exact => Some(exact),
+
+                            // Include this middleware in `stack` unconditionally because it
+                            // targets partial matches.
+                            MatchWhen::Partial(partial) => Some(partial),
+
+                            // Exclude this middleware from `stack` because it expects an
+                            // exact match and the visited node is not a leaf.
+                            MatchWhen::Exact(_) => None,
+                        }) {
+                            next.push(Arc::downgrade(middleware));
+                        }
                     }
+
+                    Ok(next.call(request))
                 };
 
                 async {
@@ -176,7 +209,7 @@ where
 
                     // Unwrap the inner http::Response so it can be sent back
                     // to the client via IoStream.
-                    Ok::<_, VisitError>(response.into_inner())
+                    Ok::<_, RouterError>(response.into_inner())
                 }
             });
 
@@ -211,7 +244,7 @@ where
                 }
             ) {
                 let _ = &error; // Placeholder for tracing...
-                if error.source().is_some_and(|e| e.is::<VisitError>()) {
+                if error.source().is_some_and(|e| e.is::<RouterError>()) {
                     let _ = shutdown_tx.send(Some(true));
                 }
             }

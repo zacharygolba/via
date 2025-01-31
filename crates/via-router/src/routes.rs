@@ -13,7 +13,7 @@ pub struct Node<T> {
     pub pattern: Pattern,
 
     /// The indices of the nodes that are reachable from the current node.
-    children: Option<Vec<usize>>,
+    pub children: Option<Vec<usize>>,
 }
 
 impl<T> Node<T> {

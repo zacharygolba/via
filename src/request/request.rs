@@ -230,11 +230,11 @@ impl<T> Request<T> {
         self.cookies.get_or_insert_default()
     }
 
-    /// Returns a mutable reference to the cookies associated with the request.
+    /// Returns a mutable reference to the path params associated with the request.
     ///
     #[inline]
-    pub(crate) fn params_mut_with_path(&mut self) -> (&mut PathParams, &str) {
-        (&mut self.params, self.head.uri.path())
+    pub(crate) fn params_mut(&mut self) -> &mut PathParams {
+        &mut self.params
     }
 }
 

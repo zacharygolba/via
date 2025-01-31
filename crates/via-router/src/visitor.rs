@@ -1,26 +1,16 @@
 #![allow(clippy::single_match)]
 
-use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
 use crate::Param;
 
+/// The route tree is missing a node that is referenced by another node.
+//
+// This is an unlikely error that could indicate that the memory where the
+// route tree is stored has been corrupted.
+//
 #[derive(Clone, Debug)]
-pub enum VisitError {
-    /// The route tree is missing a node that is referenced by another node.
-    //
-    // This is an unlikely error that could indicate that the memory where the
-    // route tree is stored has been corrupted.
-    //
-    NodeNotFound,
-
-    /// The route tree is missing the root node.
-    //
-    // This is a *very* unlikely error that could indicate that the memory where
-    // the route tree is stored has been corrupted.
-    //
-    RootNotFound,
-}
+pub struct RouterError;
 
 /// A matched node in the route tree.
 ///
@@ -55,9 +45,17 @@ pub struct Match {
     range: Option<[usize; 2]>,
 }
 
+impl std::error::Error for RouterError {}
+
+impl Display for RouterError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "a node was visited that contains an invalid reference")
+    }
+}
+
 impl Match {
     #[inline]
-    pub(crate) fn new(exact: bool, key: usize, range: Option<[usize; 2]>) -> Self {
+    pub(crate) fn found(exact: bool, key: usize, range: Option<[usize; 2]>) -> Self {
         Self {
             range,
             value: (key << 2) | (1 << 0) | (if exact { 1 } else { 0 } << 1),
@@ -65,38 +63,21 @@ impl Match {
     }
 
     #[inline]
-    pub(crate) fn try_load(self) -> Result<(bool, usize, Option<[usize; 2]>), VisitError> {
-        let Self { range, value } = self;
-
-        if value & 0b01 == 0 {
-            Err(VisitError::NodeNotFound)
-        } else {
-            Ok(((value & 0b10) != 0, value >> 2, range))
-        }
-    }
-}
-
-impl Default for Match {
-    #[inline]
-    fn default() -> Self {
+    pub(crate) fn not_found() -> Self {
         Self {
             value: 0,
             range: None,
         }
     }
-}
 
-impl Error for VisitError {}
+    #[inline]
+    pub(crate) fn try_load(self) -> Result<(bool, usize, Option<[usize; 2]>), RouterError> {
+        let Self { range, value } = self;
 
-impl Display for VisitError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Self::NodeNotFound => {
-                write!(f, "a node was visited that contains an invalid reference")
-            }
-            Self::RootNotFound => {
-                write!(f, "the route tree is missing the root node")
-            }
+        if value & 0b01 != 0 {
+            Ok(((value & 0b10) != 0, value >> 2, range))
+        } else {
+            Err(RouterError)
         }
     }
 }

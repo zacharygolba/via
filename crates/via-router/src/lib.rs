@@ -5,9 +5,10 @@ mod routes;
 mod visitor;
 
 pub use path::Param;
-pub use visitor::{Found, VisitError};
+pub use visitor::{Found, Match, RouterError};
 
 use smallvec::SmallVec;
+use std::mem;
 
 #[cfg(feature = "lru-cache")]
 use std::collections::VecDeque;
@@ -16,7 +17,6 @@ use std::sync::RwLock;
 
 use path::{Pattern, Split};
 use routes::Node;
-use visitor::Match;
 
 pub struct Route<'a, T> {
     router: &'a mut Router<T>,
@@ -33,63 +33,98 @@ pub struct Router<T> {
 }
 
 pub fn search<T>(nodes: &[Node<T>], path: &str) -> Vec<Match> {
-    let mut results = Vec::new();
-    let mut segments = Split::new(path).peekable();
-    let mut match_asap = SmallVec::<[&Node<T>; 1]>::new();
-    let mut match_next = SmallVec::<[&Node<T>; 1]>::new();
+    let mut results = Vec::with_capacity(8);
+    let mut match_now = SmallVec::<[&[usize]; 1]>::new();
+    let mut match_next = SmallVec::<[&[usize]; 1]>::new();
+    let mut path_segments = Split::new(path).peekable();
 
-    if let Some(root) = nodes.first() {
-        results.push(Match::new(segments.peek().is_none(), 0, None));
-        match_asap.push(root);
-    } else {
-        results.push(Match::default());
-        return results;
+    match nodes.first() {
+        Some(root) => {
+            results.push(Match::found(path_segments.peek().is_none(), 0, None));
+            if let Some(next) = &root.children {
+                match_now.push(next);
+            }
+        }
+        None => {
+            results.push(Match::not_found());
+            return results;
+        }
     }
 
-    while let Some(range) = segments.next() {
-        let segment = &path[range[0]..range[1]];
-        let is_last = segments.peek().is_none();
+    loop {
+        let path_segment = path_segments.next().map(|range| {
+            let [from, to] = range;
+            path.get(from..to).map(|value| (range, value))
+        });
 
-        for key in match_asap.iter().flat_map(|node| node.children()) {
-            let child = match nodes.get(key) {
-                Some(node) => node,
-                None => {
-                    results.push(Match::default());
-                    continue;
+        let has_remaining = path_segments.peek().is_none();
+
+        let mut match_count = 0;
+
+        for children in &match_now {
+            for key in children.iter() {
+                let node = match nodes.get(*key) {
+                    Some(child) => child,
+                    None => {
+                        results.push(Match::not_found());
+                        continue;
+                    }
+                };
+
+                let matching = match (&node.pattern, path_segment) {
+                    // The node has a dynamic pattern that can match any value.
+                    (Pattern::Dynamic(_), Some(Some((range, _)))) => {
+                        Match::found(has_remaining, *key, Some(range))
+                    }
+
+                    // The node has a static pattern that matches the path segment.
+                    (Pattern::Static(name), Some(Some((_, value)))) if name == value => {
+                        Match::found(has_remaining, *key, None)
+                    }
+
+                    // The node has a wildcard pattern that can match any value
+                    // and consume the remainder of the uri path.
+                    (Pattern::Wildcard(_), option @ (Some(Some(_)) | None)) => {
+                        let range = option.and_then(|get| get.map(|([i, _], _)| [i, path.len()]));
+                        Match::found(true, *key, range)
+                    }
+
+                    // A root node cannot be an edge. This branch is unreachable.
+                    (Pattern::Root, _) => {
+                        // Placeholder for tracing...
+                        continue;
+                    }
+
+                    // The range for the current path segment is out of bounds.
+                    (_, Some(None)) => {
+                        // Placeholder for tracing...
+                        continue;
+                    }
+
+                    // The node didn't match the path segment.
+                    _ => {
+                        continue;
+                    }
+                };
+
+                match_count += 1;
+                results.push(matching);
+
+                if !has_remaining {
+                    if let Some(next) = &node.children {
+                        match_next.push(next);
+                    }
                 }
-            };
-
-            let (exact, range) = match &child.pattern {
-                Pattern::Static(value) if value == segment => (is_last, None),
-                Pattern::Static(_) | Pattern::Root => continue,
-                Pattern::Wildcard(_) => (true, Some([range[0], path.len()])),
-                Pattern::Dynamic(_) => (is_last, Some(range)),
-            };
-
-            results.push(Match::new(exact, key, range));
-            match_next.push(child);
+            }
         }
 
-        match_asap.clear();
-        match_asap = match_next;
-        match_next = SmallVec::new();
-    }
+        mem::swap(&mut match_now, &mut match_next);
+        match_next.clear();
 
-    for key in match_asap.iter().flat_map(|node| node.children()) {
-        match nodes.get(key) {
-            Some(node) if matches!(&node.pattern, Pattern::Wildcard(_)) => {
-                results.push(Match::new(true, key, None));
-            }
-            None => {
-                results.push(Match::default());
-            }
-            Some(_) => {}
+        if match_count == 0 {
+            return results;
         }
     }
-
-    match_asap.clear();
-
-    results
 }
 
 impl<T> Router<T> {
@@ -124,9 +159,10 @@ impl<T> Router<T> {
         search(&self.nodes, path)
     }
 
-    pub fn resolve(&self, matching: Match) -> Result<Found<T>, VisitError> {
+    #[inline]
+    pub fn resolve(&self, matching: Match) -> Result<Found<T>, RouterError> {
         let (exact, key, range) = matching.try_load()?;
-        let node = self.nodes.get(key).ok_or(VisitError::NodeNotFound)?;
+        let node = self.nodes.get(key).ok_or(RouterError)?;
 
         Ok(Found {
             exact,
@@ -163,7 +199,7 @@ impl<T> Router<T> {
                 guard.pop_back();
             }
 
-            guard.push_front((path.into(), matches.clone()));
+            guard.push_front((path.into(), matches.to_vec()));
         }
     }
 
@@ -178,7 +214,7 @@ impl<T> Router<T> {
 
             guard.iter().enumerate().find_map(|(index, (key, cached))| {
                 if **key == *path {
-                    Some((index, cached.clone()))
+                    Some((index, cached.to_vec()))
                 } else {
                     None
                 }
@@ -187,7 +223,7 @@ impl<T> Router<T> {
 
         if let Some((index, matches)) = cached {
             if cfg!(debug_assertions) {
-                println!("cache hit");
+                println!("via-router: cache hit");
             }
 
             if index > 500 {
@@ -199,7 +235,7 @@ impl<T> Router<T> {
             Some(matches)
         } else {
             if cfg!(debug_assertions) {
-                println!("cache miss");
+                println!("via-router: cache miss");
             }
 
             None
@@ -300,11 +336,12 @@ mod tests {
 
         {
             let path = "/";
-            let matches: Vec<_> = router
+            let matches = router
                 .visit(path)
                 .into_iter()
-                .map(|matched| router.resolve(matched).unwrap())
-                .collect();
+                .map(|matched| router.resolve(matched))
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
 
             assert_eq!(matches.len(), 2);
 
@@ -334,11 +371,12 @@ mod tests {
 
         {
             let path = "/not/a/path";
-            let matches: Vec<_> = router
+            let matches = router
                 .visit(path)
                 .into_iter()
-                .map(|matched| router.resolve(matched).unwrap())
-                .collect();
+                .map(|matched| router.resolve(matched))
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
 
             assert_eq!(matches.len(), 2);
 
@@ -372,11 +410,12 @@ mod tests {
 
         {
             let path = "/echo/hello/world";
-            let matches: Vec<_> = router
+            let matches = router
                 .visit(path)
                 .into_iter()
-                .map(|matched| router.resolve(matched).unwrap())
-                .collect();
+                .map(|matched| router.resolve(matched))
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
 
             assert_eq!(matches.len(), 4);
 
@@ -435,11 +474,12 @@ mod tests {
 
         {
             let path = "/articles/100";
-            let matches: Vec<_> = router
+            let matches = router
                 .visit(path)
                 .into_iter()
-                .map(|matched| router.resolve(matched).unwrap())
-                .collect();
+                .map(|matched| router.resolve(matched))
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
 
             assert_eq!(matches.len(), 4);
 
@@ -498,11 +538,12 @@ mod tests {
 
         {
             let path = "/articles/100/comments";
-            let matches: Vec<_> = router
+            let matches = router
                 .visit(path)
                 .into_iter()
-                .map(|matched| router.resolve(matched).unwrap())
-                .collect();
+                .map(|matched| router.resolve(matched))
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
 
             assert_eq!(matches.len(), 5);
 

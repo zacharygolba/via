@@ -116,8 +116,8 @@ fn find_matches_1(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for _ in router.visit("/dashboard") {
-            // noop
+        for matching in router.visit("/dashboard").iter() {
+            let _ = router.resolve(matching);
         }
     });
 }
@@ -131,8 +131,8 @@ fn find_matches_2(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for _ in router.visit("/dashboard/overview") {
-            // noop
+        for matching in router.visit("/dashboard/overview").iter() {
+            let _ = router.resolve(matching);
         }
     });
 }
@@ -146,8 +146,8 @@ fn find_matches_3(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for _ in router.visit("/help/article/12345678987654321") {
-            // noop
+        for matching in router.visit("/help/article/12345678987654321").iter() {
+            let _ = router.resolve(matching);
         }
     });
 }
@@ -161,8 +161,8 @@ fn find_matches_4(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for _ in router.visit("/api/v1/products/12345678987654321") {
-            // noop
+        for matching in router.visit("/api/v1/products/12345678987654321").iter() {
+            let _ = router.resolve(matching);
         }
     });
 }
@@ -176,8 +176,11 @@ fn find_matches_5(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for _ in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321") {
-            // noop
+        for matching in router
+            .visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+            .iter()
+        {
+            let _ = router.resolve(matching);
         }
     });
 }
@@ -191,8 +194,11 @@ fn find_matches_6(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for _ in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321") {
-            // noop
+        for matching in router
+            .visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+            .iter()
+        {
+            let _ = router.resolve(matching);
         }
     });
 }
@@ -206,9 +212,11 @@ fn find_matches_7(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for _ in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
+        for matching in router
+            .visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
+            .iter()
         {
-            // noop
+            let _ = router.resolve(matching);
         }
     });
 }
