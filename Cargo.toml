@@ -40,4 +40,4 @@ optional = true
 default-features = false
 
 [workspace]
-members = ["crates/*", "examples/*"]
+members = ["via-router", "examples/*"]
