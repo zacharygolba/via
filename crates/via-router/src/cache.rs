@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::RwLock;
 
-use crate::search::Match;
+use crate::router::Match;
 
 pub struct Cache {
     capacity: usize,

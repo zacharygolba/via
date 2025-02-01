@@ -5,8 +5,6 @@ mod cache;
 
 mod path;
 mod router;
-mod search;
 
 pub use path::Param;
-pub use router::{Route, Router};
-pub use search::{Found, Match};
+pub use router::{Found, Match, Route, Router};

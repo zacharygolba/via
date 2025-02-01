@@ -1,19 +1,51 @@
-use crate::path::{self, Param, Pattern};
-use crate::search::{search, Found, Match};
+use crate::path::{self, Param, Pattern, Split};
 
 #[cfg(feature = "lru-cache")]
 use crate::cache::Cache;
 
+/// A matched node in the route tree.
+///
+/// Contains a reference to the route associated with the node and additional
+/// metadata about the match.
+///
+#[derive(Debug)]
+pub struct Found<'a, T> {
+    /// True if there were no more segments to match against the children of
+    /// the matched node. Otherwise, false.
+    ///
+    pub exact: bool,
+
+    /// The name of the dynamic parameter that matched the path segment.
+    ///
+    pub param: Option<&'a Param>,
+
+    /// The start and end offset of the parameter that matched the path
+    /// segment.
+    ///
+    pub range: Option<[usize; 2]>,
+
+    /// The key of the route associated with the node that matched the path
+    /// segment.
+    ///
+    pub route: Option<&'a T>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Match {
+    value: usize,
+    range: Option<[usize; 2]>,
+}
+
 /// A node in the route tree that represents a single path segment.
 pub struct Node<T> {
     /// The index of the route in the route store associated with the node.
-    pub route: Option<T>,
+    route: Option<T>,
 
     /// The pattern used to match the node against a path segment.
-    pub pattern: Pattern,
+    pattern: Pattern,
 
     /// The indices of the nodes that are reachable from the current node.
-    pub children: Option<Vec<usize>>,
+    children: Option<Vec<usize>>,
 }
 
 pub struct Route<'a, T> {
@@ -33,44 +65,35 @@ pub struct Router<T> {
     nodes: Vec<Node<T>>,
 }
 
-fn insert<T, I>(router: &mut Router<T>, segments: &mut I, parent_key: usize) -> usize
-where
-    I: Iterator<Item = Pattern>,
-{
-    // If the current node is a catch-all, we can skip the rest of the segments.
-    // In the future we may want to panic if the caller tries to insert a node
-    // into a catch-all node rather than silently ignoring the rest of the
-    // segments.
-    if let Pattern::Wildcard(_) = &router.nodes[parent_key].pattern {
-        return parent_key;
-    }
-
-    // If there are no more segments, we can return the current key.
-    let pattern = match segments.next() {
-        Some(value) => value,
-        None => return parent_key,
-    };
-
-    // Check if the pattern already exists in the node at `current_key`. If it
-    // does, we can continue to the next segment.
-    if let Some(children) = &router.nodes[parent_key].children {
-        for key in children.iter().copied() {
-            if pattern == router.nodes[key].pattern {
-                return insert(router, segments, key);
-            }
+impl Match {
+    #[inline]
+    fn found(exact: bool, key: usize, range: Option<[usize; 2]>) -> Self {
+        Self {
+            range,
+            value: (key << 2) | (1 << 0) | (if exact { 1 } else { 0 } << 1),
         }
     }
 
-    let next_key = router.nodes.len();
-    router.nodes.push(Node::new(pattern));
+    #[inline]
+    fn not_found() -> Self {
+        Self {
+            value: 0,
+            range: None,
+        }
+    }
+}
 
-    let parent = &mut router.nodes[parent_key];
-    parent.children.get_or_insert_default().push(next_key);
+impl Match {
+    #[inline]
+    fn try_load(self) -> Option<(bool, usize, Option<[usize; 2]>)> {
+        let Self { range, value } = self;
 
-    // If the pattern does not exist in the node at `current_key`, we need to create
-    // a new node as a descendant of the node at `current_key` and then insert it
-    // into the store.
-    insert(router, segments, next_key)
+        if value & 0b01 != 0 {
+            Some(((value & 0b10) != 0, value >> 2, range))
+        } else {
+            None
+        }
+    }
 }
 
 impl<T> Node<T> {
@@ -183,6 +206,153 @@ impl<T> Router<T> {
 impl<T> Default for Router<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn insert<T, I>(router: &mut Router<T>, segments: &mut I, parent_key: usize) -> usize
+where
+    I: Iterator<Item = Pattern>,
+{
+    // If the current node is a catch-all, we can skip the rest of the segments.
+    // In the future we may want to panic if the caller tries to insert a node
+    // into a catch-all node rather than silently ignoring the rest of the
+    // segments.
+    if let Pattern::Wildcard(_) = &router.nodes[parent_key].pattern {
+        return parent_key;
+    }
+
+    // If there are no more segments, we can return the current key.
+    let pattern = match segments.next() {
+        Some(value) => value,
+        None => return parent_key,
+    };
+
+    // Check if the pattern already exists in the node at `current_key`. If it
+    // does, we can continue to the next segment.
+    if let Some(children) = &router.nodes[parent_key].children {
+        for key in children.iter().copied() {
+            if pattern == router.nodes[key].pattern {
+                return insert(router, segments, key);
+            }
+        }
+    }
+
+    let next_key = router.nodes.len();
+    router.nodes.push(Node::new(pattern));
+
+    let parent = &mut router.nodes[parent_key];
+    parent.children.get_or_insert_default().push(next_key);
+
+    // If the pattern does not exist in the node at `current_key`, we need to create
+    // a new node as a descendant of the node at `current_key` and then insert it
+    // into the store.
+    insert(router, segments, next_key)
+}
+
+fn search<T>(nodes: &[Node<T>], path: &str) -> Vec<Match> {
+    let (key, children) = match nodes.first() {
+        Some(node) => (0, &node.children),
+        None => return vec![Match::not_found()],
+    };
+
+    let mut results = Vec::with_capacity(8);
+    let mut segments = Vec::with_capacity(8);
+
+    for range in Split::new(path) {
+        segments.push(range);
+    }
+
+    results.push(Match::found(segments.is_empty(), key, None));
+
+    if let Some(match_next) = &children {
+        rsearch(
+            &mut results,
+            nodes,
+            match_next,
+            path,
+            &segments,
+            key,
+            segments.get(key),
+        );
+    }
+
+    results
+}
+
+/// Recursively search for nodes that match the uri path.
+fn rsearch<T>(
+    // A mutable reference to a vector that contains the matches that we
+    // have found so far.
+    results: &mut Vec<Match>,
+
+    // A reference to the route store that contains the route tree.
+    nodes: &[Node<T>],
+
+    // A slice containing the indices of the nodes to match against the current
+    // path segment at `index`.
+    match_now: &[usize],
+
+    // A str containing the entire url path.
+    path: &str,
+
+    // A reference to the range of each segment separated by / in `path`.
+    segments: &[[usize; 2]],
+
+    // The index of the path segment to match against `match_now` in `segments`.
+    index: usize,
+
+    range: Option<&[usize; 2]>,
+) {
+    for key in match_now {
+        let (pattern, children) = match nodes.get(*key) {
+            Some(node) => (&node.pattern, &node.children),
+            None => {
+                results.push(Match::not_found());
+                continue;
+            }
+        };
+
+        let (index, range) = match pattern {
+            Pattern::Static(name) => match range {
+                // The node has a static pattern that matches the path segment.
+                Some(at) if name == &path[at[0]..at[1]] => {
+                    let next_index = index + 1;
+                    let next_range = segments.get(next_index);
+
+                    results.push(Match::found(next_range.is_none(), *key, None));
+                    (next_index, next_range)
+                }
+                Some(_) | None => continue,
+            },
+
+            // The node has a dynamic pattern that can match any value.
+            Pattern::Dynamic(_) => {
+                let next_index = index + 1;
+                let next_range = segments.get(next_index);
+
+                results.push(Match::found(next_range.is_none(), *key, range.copied()));
+                (next_index, next_range)
+            }
+
+            // The node has a wildcard pattern that can match any value
+            // and consume the remainder of the uri path.
+            Pattern::Wildcard(_) => {
+                let range = range.map(|at| [at[0], path.len()]);
+                results.push(Match::found(true, *key, range));
+                continue;
+            }
+
+            // A root node cannot be an edge. If this branch is matched, it is
+            // indicative of a bug in this crate.
+            Pattern::Root => {
+                // Placeholder for tracing...
+                continue;
+            }
+        };
+
+        if let Some(match_next) = children {
+            rsearch(results, nodes, match_next, path, segments, index, range);
+        }
     }
 }
 
