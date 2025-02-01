@@ -16,11 +16,6 @@ impl PathParams {
     pub fn iter(&self) -> slice::Iter<(Param, Option<[usize; 2]>)> {
         self.data.iter()
     }
-
-    #[inline]
-    pub fn push(&mut self, param: (Param, Option<[usize; 2]>)) {
-        self.data.push(param);
-    }
 }
 
 impl Debug for PathParams {

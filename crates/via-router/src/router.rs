@@ -163,25 +163,20 @@ impl<T> Router<T> {
 
     #[cfg(feature = "lru-cache")]
     pub fn visit(&self, path: &str) -> Vec<Match> {
-        match self.cache.try_read(path) {
-            Some(Some(matches)) => {
-                if cfg!(debug_assertions) {
-                    // Placeholder for tracing...
-                    println!("via-router: cache hit {}", path);
-                }
-                matches
-            }
-            Some(None) | None => {
-                if cfg!(debug_assertions) {
-                    // Placeholder for tracing...
-                    println!("via-router: cache miss {}", path);
-                }
+        let cache = &self.cache;
+        let nodes = &self.nodes;
 
-                let matches = search(&self.nodes, path);
-                self.cache.try_write(path, &matches);
-                matches
-            }
-        }
+        #[allow(clippy::never_loop)]
+        let first = loop {
+            return match cache.read(path) {
+                Some(Some(matches)) => matches,
+                Some(None) => search(nodes, path),
+                None => break search(nodes, path),
+            };
+        };
+
+        cache.write(path.into(), first.clone());
+        first
     }
 
     #[cfg(not(feature = "lru-cache"))]

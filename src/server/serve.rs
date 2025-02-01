@@ -10,20 +10,18 @@ use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinSet;
 use tokio::{signal, time};
-use via_router::RouterError;
 
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
 
+use super::acceptor::Acceptor;
 use crate::app::App;
 use crate::body::{HttpBody, RequestBody};
 use crate::error::BoxError;
-use crate::middleware::Next;
-use crate::request::{PathParams, Request};
-use crate::router::MatchWhen;
+use crate::request::Request;
+use crate::router::RouterError;
 use crate::server::io_stream::IoStream;
-
-use super::acceptor::Acceptor;
+use crate::Response;
 
 pub async fn serve<T, A>(
     listener: TcpListener,
@@ -43,8 +41,9 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
-    // Wrap the app in arc so it can be moved into the service function.
-    let app = Arc::new(app);
+    let router = Arc::new(app.router);
+
+    let state = Arc::new(app.state);
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
@@ -75,7 +74,11 @@ where
 
         // Clone the app so it can be moved into the connection task to serve
         // the connection.
-        let app = Arc::clone(&app);
+        let router = Arc::clone(&router);
+
+        // Clone the app so it can be moved into the connection task to serve
+        // the connection.
+        let state = Arc::clone(&state);
 
         // Wait for something interesting to happen.
         let io = loop {
@@ -124,92 +127,25 @@ where
         // Spawn a task to serve the connection.
         connections.spawn(async move {
             // Define a hyper service to serve the incoming request.
-            let service = service_fn(|r| {
-                let mut request = {
+            let service = service_fn(|request| {
+                let state = Arc::downgrade(&state);
+                let result = router.visit(request.uri().path()).map(|(params, next)| {
                     // Destructure the incoming request into it's component parts.
-                    let (head, body) = r.into_parts();
+                    let (head, body) = request.into_parts();
 
-                    // Construct a via::Request from the component parts of r.
-                    Request::new(
-                        // Get a weak ref to the app state argument.
-                        Arc::downgrade(&app.state),
-                        // Allocate for path params.
-                        PathParams::new(Vec::new()),
-                        // Take ownership of the request head.
-                        head,
-                        // Limit the length of the request body to max_request_size.
-                        HttpBody::Original(RequestBody::new(max_request_size, body)),
-                    )
-                };
+                    // Limit the length of the request body to max_request_size.
+                    let body = HttpBody::Original(RequestBody::new(max_request_size, body));
 
-                // Route the request to the corresponding middleware stack.
-                let result = 'call: {
-                    let mut next = Next::new(Vec::with_capacity(8));
-                    let matches = app.router.visit(request.uri().path());
-                    let params = request.params_mut();
-
-                    for matching in matches.into_iter().rev() {
-                        let found = match app.router.resolve(matching) {
-                            Ok(resolved) => resolved,
-                            Err(error) => break 'call Err(error),
-                        };
-
-                        // If there is a dynamic parameter name associated with the route,
-                        // build a tuple containing the name and the range of the parameter
-                        // value in the request's path.
-                        if let Some(name) = found.param {
-                            params.push((name.clone(), found.range));
-                        }
-
-                        let route = match found.route {
-                            Some(route) => route,
-                            None => continue,
-                        };
-
-                        for middleware in route.iter().rev().filter_map(|when| match when {
-                            // Include this middleware in `stack` because it expects an exact
-                            // match and the visited node is considered a leaf in this
-                            // context.
-                            MatchWhen::Exact(exact) if found.exact => Some(exact),
-
-                            // Include this middleware in `stack` unconditionally because it
-                            // targets partial matches.
-                            MatchWhen::Partial(partial) => Some(partial),
-
-                            // Exclude this middleware from `stack` because it expects an
-                            // exact match and the visited node is not a leaf.
-                            MatchWhen::Exact(_) => None,
-                        }) {
-                            next.push(Arc::downgrade(middleware));
-                        }
-                    }
-
-                    Ok(next.call(request))
-                };
+                    (Request::new(state, params, head, body), next)
+                });
 
                 async {
-                    // If the request was routed successfully, await the
-                    // response future. If the future resolved with an error,
-                    // generate a response from it.
-                    //
-                    // If the request was not routed successfully, immediately
-                    // return so the connection can be closed and the server
-                    // exit.
-                    let response = match result?.await {
-                        Ok(response) => response,
-                        Err(error) => {
-                            // Placeholder for tracing...
-                            if cfg!(debug_assertions) {
-                                eprintln!("warn: app is missing error boundary");
-                            }
+                    let (request, next) = result?;
 
-                            error.into()
-                        }
-                    };
-
-                    // Unwrap the inner http::Response so it can be sent back
-                    // to the client via IoStream.
-                    Ok::<_, RouterError>(response.into_inner())
+                    Ok::<_, RouterError>(next.call(request).await.map_or_else(
+                        |error| Response::from(error).into_inner(),
+                        Response::into_inner,
+                    ))
                 }
             });
 
