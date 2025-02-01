@@ -10,19 +10,18 @@ use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinSet;
 use tokio::{signal, time};
-use via_router::VisitError;
 
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
 
+use super::acceptor::Acceptor;
 use crate::app::App;
 use crate::body::{HttpBody, RequestBody};
 use crate::error::BoxError;
-use crate::middleware::Next;
-use crate::request::{PathParams, Request};
+use crate::request::Request;
+use crate::router::RouterError;
 use crate::server::io_stream::IoStream;
-
-use super::acceptor::Acceptor;
+use crate::Response;
 
 pub async fn serve<T, A>(
     listener: TcpListener,
@@ -42,8 +41,9 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
-    // Wrap the app in arc so it can be moved into the service function.
-    let app = Arc::new(app);
+    let router = Arc::new(app.router);
+
+    let state = Arc::new(app.state);
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
@@ -72,6 +72,14 @@ where
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
 
+        // Clone the app so it can be moved into the connection task to serve
+        // the connection.
+        let router = Arc::clone(&router);
+
+        // Clone the app so it can be moved into the connection task to serve
+        // the connection.
+        let state = Arc::clone(&state);
+
         // Wait for something interesting to happen.
         let io = loop {
             tokio::select! {
@@ -90,12 +98,12 @@ where
                     Ok((stream, _addr)) => break match acceptor.accept(stream).await {
                         Ok(accepted) => IoStream::new(accepted),
                         Err(error) => {
-                            let _ = error; // Placeholder for tracing...
+                            let _ = &error; // Placeholder for tracing...
                             continue;
                         }
                     },
                     Err(error) => {
-                        let _ = error; // Placeholder for tracing...
+                        let _ = &error; // Placeholder for tracing...
                     }
                 },
 
@@ -106,10 +114,6 @@ where
                 }
             }
         };
-
-        // Clone the app so it can be moved into the connection task to serve
-        // the connection.
-        let app = Arc::clone(&app);
 
         // Clone the watch sender so connections can notify the main thread
         // if an unrecoverable error is encountered.
@@ -123,64 +127,25 @@ where
         // Spawn a task to serve the connection.
         connections.spawn(async move {
             // Define a hyper service to serve the incoming request.
-            let service = service_fn(|r| {
-                let mut request = {
+            let service = service_fn(|request| {
+                let state = Arc::downgrade(&state);
+                let result = router.visit(request.uri().path()).map(|(params, next)| {
                     // Destructure the incoming request into it's component parts.
-                    let (head, body) = r.into_parts();
+                    let (head, body) = request.into_parts();
 
-                    // Construct a via::Request from the component parts of r.
-                    Request::new(
-                        // Get a weak ref to the app state argument.
-                        Arc::downgrade(&app.state),
-                        // Allocate for path params.
-                        PathParams::new(Vec::new()),
-                        // Take ownership of the request head.
-                        head,
-                        // Limit the length of the request body to max_request_size.
-                        HttpBody::Original(RequestBody::new(max_request_size, body)),
-                    )
-                };
+                    // Limit the length of the request body to max_request_size.
+                    let body = HttpBody::Original(RequestBody::new(max_request_size, body));
 
-                let result = {
-                    // Allocate a vec to store matched routes.
-                    let mut next = Next::new(Vec::new());
-
-                    // Get a mutable ref to path params and a str containing
-                    // the request uri.
-                    let (params, path) = request.params_mut_with_path();
-
-                    // Route the request to the corresponding middleware stack.
-                    match app.router.lookup(path, params, &mut next) {
-                        // Call the middleware stack for the matched routes.
-                        Ok(_) => Ok(next.call(request)),
-                        // Close the connection and stop the server.
-                        Err(error) => Err(error),
-                    }
-                };
+                    (Request::new(state, params, head, body), next)
+                });
 
                 async {
-                    // If the request was routed successfully, await the
-                    // response future. If the future resolved with an error,
-                    // generate a response from it.
-                    //
-                    // If the request was not routed successfully, immediately
-                    // return so the connection can be closed and the server
-                    // exit.
-                    let response = match result?.await {
-                        Ok(response) => response,
-                        Err(error) => {
-                            // Placeholder for tracing...
-                            if cfg!(debug_assertions) {
-                                eprintln!("warn: app is missing error boundary");
-                            }
+                    let (request, next) = result?;
 
-                            error.into()
-                        }
-                    };
-
-                    // Unwrap the inner http::Response so it can be sent back
-                    // to the client via IoStream.
-                    Ok::<_, VisitError>(response.into_inner())
+                    Ok::<_, RouterError>(next.call(request).await.map_or_else(
+                        |error| Response::from(error).into_inner(),
+                        Response::into_inner,
+                    ))
                 }
             });
 
@@ -215,7 +180,7 @@ where
                 }
             ) {
                 let _ = &error; // Placeholder for tracing...
-                if error.source().is_some_and(|e| e.is::<VisitError>()) {
+                if error.source().is_some_and(|e| e.is::<RouterError>()) {
                     let _ = shutdown_tx.send(Some(true));
                 }
             }

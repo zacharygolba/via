@@ -1,7 +1,7 @@
 use percent_encoding::percent_decode_str;
 use std::borrow::Cow;
 
-type QueryParserOutput<'a> = (Cow<'a, str>, Option<(usize, usize)>);
+type QueryParserOutput<'a> = (Cow<'a, str>, Option<[usize; 2]>);
 
 pub struct QueryParser<'a> {
     input: &'a str,
@@ -23,19 +23,19 @@ fn take_name(input: &str, from: usize) -> (usize, Option<Cow<str>>) {
         // Continue consuming the input until we reach the terminating `=`.
         match take_while(input, start, |byte| byte != b'=') {
             // If we find the terminating `=`, return the complete range.
-            Some(end) => (start, end),
+            Some(end) => [start, end],
             // Otherwise, return the start index and the length of the input.
-            None => (start, len),
+            None => [start, len],
         }
     });
 
     match at {
-        Some((start, end)) => (end, input.get(start..end).map(decode)),
+        Some([start, end]) => (end, input.get(start..end).map(decode)),
         None => (len, None),
     }
 }
 
-fn take_value(input: &str, from: usize) -> (usize, Option<(usize, usize)>) {
+fn take_value(input: &str, from: usize) -> (usize, Option<[usize; 2]>) {
     // Get the length of the input. We'll use this value as the end index if we
     // reach the end of the input.
     let len = input.len();
@@ -46,14 +46,14 @@ fn take_value(input: &str, from: usize) -> (usize, Option<(usize, usize)>) {
         // Continue consuming the input until we reach the terminating `&`.
         match take_while(input, start, |byte| byte != b'&') {
             // If we find the terminating `&`, return the complete range.
-            Some(end) => (start, end),
+            Some(end) => [start, end],
             // Otherwise, return the start index and the length of the input.
-            None => (start, len),
+            None => [start, len],
         }
     });
 
-    match at {
-        Some((_, end)) => (end, at),
+    match &at {
+        Some([_, end]) => (*end, at),
         None => (len, None),
     }
 }
@@ -120,41 +120,41 @@ mod tests {
         "query%C3%28=books&category=%C3%28", // Invalid UTF-8 sequence in key
     ];
 
-    fn get_expected_results() -> [Vec<(&'static str, Option<(usize, usize)>)>; 21] {
+    fn get_expected_results() -> [Vec<(&'static str, Option<[usize; 2]>)>; 21] {
         [
             vec![
-                ("query", Some((6, 11))),
-                ("category", Some((21, 28))),
-                ("sort", Some((34, 37))),
+                ("query", Some([6, 11])),
+                ("category", Some([21, 28])),
+                ("sort", Some([34, 37])),
             ],
-            vec![("query", Some((6, 19))), ("category", Some((29, 38)))],
+            vec![("query", Some([6, 19])), ("category", Some([29, 38]))],
             vec![
-                ("category", Some((9, 14))),
-                ("category", Some((24, 35))),
-                ("category", Some((45, 53))),
+                ("category", Some([9, 14])),
+                ("category", Some([24, 35])),
+                ("category", Some([45, 53])),
             ],
-            vec![("query", Some((6, 11))), ("category", None)],
-            vec![("query", Some((6, 22))), ("category", Some((32, 36)))],
-            vec![("query", Some((6, 11))), ("filter", Some((19, 45)))],
+            vec![("query", Some([6, 11])), ("category", None)],
+            vec![("query", Some([6, 22])), ("category", Some([32, 36]))],
+            vec![("query", Some([6, 11])), ("filter", Some([19, 45]))],
             vec![
-                ("items[]", Some((8, 12))),
-                ("items[]", Some((21, 24))),
-                ("items[]", Some((33, 41))),
+                ("items[]", Some([8, 12])),
+                ("items[]", Some([21, 24])),
+                ("items[]", Some([33, 41])),
             ],
             vec![],
-            vec![("data", Some((5, 47)))],
-            vec![("query", Some((6, 11))), ("category", Some((21, 37)))],
-            vec![("query", Some((6, 11))), ("category", Some((22, 29)))],
-            vec![("query", Some((7, 12))), ("category", Some((22, 29)))],
-            vec![("query", Some((6, 11))), ("category", None)],
-            vec![("query", Some((6, 11))), ("", Some((13, 20)))],
-            vec![("query", Some((6, 11))), ("category", Some((21, 28)))],
-            vec![("query", Some((8, 13))), ("category", Some((25, 32)))],
-            vec![("query", Some((8, 13))), ("category", Some((25, 32)))],
-            vec![("query", Some((6, 11))), ("category", Some((23, 32)))],
-            vec![("query", Some((6, 11))), ("category", Some((21, 30)))],
-            vec![("query", Some((6, 11))), ("category", Some((21, 27)))],
-            vec![("query�(", Some((12, 17))), ("category", Some((27, 33)))],
+            vec![("data", Some([5, 47]))],
+            vec![("query", Some([6, 11])), ("category", Some([21, 37]))],
+            vec![("query", Some([6, 11])), ("category", Some([22, 29]))],
+            vec![("query", Some([7, 12])), ("category", Some([22, 29]))],
+            vec![("query", Some([6, 11])), ("category", None)],
+            vec![("query", Some([6, 11])), ("", Some([13, 20]))],
+            vec![("query", Some([6, 11])), ("category", Some([21, 28]))],
+            vec![("query", Some([8, 13])), ("category", Some([25, 32]))],
+            vec![("query", Some([8, 13])), ("category", Some([25, 32]))],
+            vec![("query", Some([6, 11])), ("category", Some([23, 32]))],
+            vec![("query", Some([6, 11])), ("category", Some([21, 30]))],
+            vec![("query", Some([6, 11])), ("category", Some([21, 27]))],
+            vec![("query�(", Some([12, 17])), ("category", Some([27, 33]))],
         ]
     }
 

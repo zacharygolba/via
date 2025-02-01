@@ -1,9 +1,12 @@
+use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
-use via_router::VisitError;
 
 use super::route::{MatchWhen, Route};
 use crate::middleware::Next;
 use crate::request::PathParams;
+
+#[derive(Debug)]
+pub struct RouterError;
 
 pub struct Router<T> {
     inner: via_router::Router<Vec<MatchWhen<T>>>,
@@ -20,24 +23,26 @@ impl<T> Router<T> {
         Route::new(self.inner.at(pattern))
     }
 
-    pub fn lookup(
-        &self,
-        path: &str,
-        path_params: &mut PathParams,
-        matched_routes: &mut Next<T>,
-    ) -> Result<(), VisitError> {
+    #[inline]
+    pub fn visit(&self, path: &str) -> Result<(PathParams, Next<T>), RouterError> {
+        let mut params = Vec::with_capacity(8);
+        let mut stack = Vec::with_capacity(8);
+
         // Iterate over the routes that match the request's path.
-        for result in self.inner.visit(path).into_iter().rev() {
-            let found = result?;
+        for matching in self.inner.visit(path).into_iter().rev() {
+            let found = match self.inner.resolve(matching) {
+                Some(resolved) => resolved,
+                None => return Err(RouterError),
+            };
 
             // If there is a dynamic parameter name associated with the route,
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
             if let Some(name) = found.param {
-                path_params.push((name.clone(), found.range));
+                params.push((name.clone(), found.range));
             }
 
-            let route = match found.route.and_then(|key| self.inner.get(key)) {
+            let route = match found.route {
                 Some(route) => route,
                 None => continue,
             };
@@ -58,10 +63,18 @@ impl<T> Router<T> {
                 // exact match and the visited node is not a leaf.
                 MatchWhen::Exact(_) => None,
             }) {
-                matched_routes.push(Arc::clone(middleware));
+                stack.push(Arc::downgrade(middleware));
             }
         }
 
-        Ok(())
+        Ok((PathParams::new(params), Next::new(stack)))
+    }
+}
+
+impl std::error::Error for RouterError {}
+
+impl Display for RouterError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "an error occured when routing the request.")
     }
 }

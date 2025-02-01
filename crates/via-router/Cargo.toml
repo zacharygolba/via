@@ -1,6 +1,6 @@
 [package]
 name = "via-router"
-version = "3.0.0-beta.12"
+version = "3.0.0-beta.16"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -8,5 +8,6 @@ description = "A fast and flexible http router."
 homepage = "https://github.com/zacharygolba/via"
 repository = "https://github.com/zacharygolba/via"
 
-[dependencies]
-smallvec = "1.13.2"
+[features]
+default = []
+lru-cache = []

@@ -56,7 +56,7 @@ where
     );
 
     if let Err(error) = listener.local_addr() {
-        let _ = error;
+        let _ = &error;
         // Placeholder for tracing...
     }
 

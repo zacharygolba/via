@@ -116,7 +116,9 @@ fn find_matches_1(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/dashboard");
+        for matching in router.visit("/dashboard") {
+            let _ = router.resolve(matching);
+        }
     });
 }
 
@@ -129,7 +131,9 @@ fn find_matches_2(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/dashboard/overview");
+        for matching in router.visit("/dashboard/overview") {
+            let _ = router.resolve(matching);
+        }
     });
 }
 
@@ -142,7 +146,9 @@ fn find_matches_3(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/help/article/12345678987654321");
+        for matching in router.visit("/help/article/12345678987654321") {
+            let _ = router.resolve(matching);
+        }
     });
 }
 
@@ -155,7 +161,9 @@ fn find_matches_4(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/api/v1/products/12345678987654321");
+        for matching in router.visit("/api/v1/products/12345678987654321") {
+            let _ = router.resolve(matching);
+        }
     });
 }
 
@@ -168,7 +176,11 @@ fn find_matches_5(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/api/v1/products/12345678987654321/comments/12345678987654321");
+        for matching in
+            router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+        {
+            let _ = router.resolve(matching);
+        }
     });
 }
 
@@ -181,7 +193,11 @@ fn find_matches_6(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/api/v1/products/12345678987654321/comments/12345678987654321");
+        for matching in
+            router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+        {
+            let _ = router.resolve(matching);
+        }
     });
 }
 
@@ -194,6 +210,10 @@ fn find_matches_7(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        router.visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit");
+        for matching in
+            router.visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
+        {
+            let _ = router.resolve(matching);
+        }
     });
 }
