@@ -10,7 +10,7 @@ pub enum Pattern {
     Wildcard(Param),
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Param {
     value: Arc<str>,
 }
