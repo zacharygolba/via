@@ -64,7 +64,8 @@ where
     let server = serve(
         listener,
         acceptor,
-        app,
+        app.state,
+        app.router,
         max_connections,
         max_content_length,
         shutdown_timeout,

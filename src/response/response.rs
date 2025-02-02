@@ -9,7 +9,7 @@ use crate::body::{BoxBody, HttpBody, ResponseBody};
 
 pub struct Response {
     pub(super) cookies: Option<Box<CookieJar>>,
-    pub(super) inner: http::Response<HttpBody<ResponseBody>>,
+    pub(crate) inner: http::Response<HttpBody<ResponseBody>>,
 }
 
 impl Response {
@@ -92,7 +92,7 @@ impl Response {
 
 impl Response {
     #[inline]
-    pub(crate) fn into_inner(self) -> http::Response<HttpBody<ResponseBody>> {
+    pub(crate) fn into_http_response(self) -> http::Response<HttpBody<ResponseBody>> {
         self.inner
     }
 

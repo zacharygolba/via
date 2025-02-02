@@ -3,7 +3,7 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::BoxBody;
+use super::{BoxBody, RequestBody};
 use crate::error::BoxError;
 
 /// The body of a request or response.
@@ -69,5 +69,12 @@ where
 impl<T> From<BoxBody> for HttpBody<T> {
     fn from(body: BoxBody) -> Self {
         Self::Mapped(body)
+    }
+}
+
+impl From<RequestBody> for HttpBody<RequestBody> {
+    #[inline]
+    fn from(body: RequestBody) -> Self {
+        Self::Original(body)
     }
 }
