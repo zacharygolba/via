@@ -4,7 +4,7 @@ use hyper_util::rt::TokioTimer;
 use std::error::Error;
 use std::pin::Pin;
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
@@ -15,18 +15,17 @@ use tokio::{signal, time};
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
-use crate::app::App;
-use crate::body::{HttpBody, RequestBody};
+use crate::body::RequestBody;
 use crate::error::BoxError;
 use crate::request::Request;
-use crate::router::RouterError;
+use crate::router::{Router, RouterError};
 use crate::server::io_stream::IoStream;
-use crate::Response;
 
 pub async fn serve<T, A>(
     listener: TcpListener,
     mut acceptor: A,
-    app: App<T>,
+    state: T,
+    router: Router<T>, // Router holds no references to T.
     max_connections: usize,
     max_request_size: usize,
     shutdown_timeout: Duration,
@@ -41,9 +40,9 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
-    let router = Arc::new(app.router);
+    let state = Arc::new(state);
 
-    let state = Arc::new(app.state);
+    let router = Arc::new(router);
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
@@ -72,13 +71,13 @@ where
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
 
-        // Clone the app so it can be moved into the connection task to serve
-        // the connection.
-        let router = Arc::clone(&router);
+        // Get a weak reference to the state passed to the via::app function so
+        // it can be moved in to the connection task.
+        let state = Arc::downgrade(&state);
 
         // Clone the app so it can be moved into the connection task to serve
         // the connection.
-        let state = Arc::clone(&state);
+        let router = Arc::clone(&router);
 
         // Wait for something interesting to happen.
         let io = loop {
@@ -128,24 +127,32 @@ where
         connections.spawn(async move {
             // Define a hyper service to serve the incoming request.
             let service = service_fn(|request| {
-                let state = Arc::downgrade(&state);
-                let result = router.visit(request.uri().path()).map(|(params, next)| {
-                    // Destructure the incoming request into it's component parts.
-                    let (head, body) = request.into_parts();
-
-                    // Limit the length of the request body to max_request_size.
-                    let body = HttpBody::Original(RequestBody::new(max_request_size, body));
-
-                    (Request::new(state, params, head, body), next)
+                // Route request to the corresponding middleware stack.
+                let future = router.visit(request.uri().path()).map(|(params, next)| {
+                    // Call the corresponding middleware stack to get a future
+                    // that resolves to a response.
+                    next.call(Request::new(
+                        // Share a weak reference of state with Request.
+                        Weak::clone(&state),
+                        // Ownership of path params is given to Request.
+                        params,
+                        // Limit the length of the request body to max_request_size.
+                        request.map(|body| RequestBody::new(max_request_size, body).into()),
+                    ))
                 });
 
                 async {
-                    let (request, next) = result?;
+                    // If the request was routed successfully, await the response
+                    // future. If the future resolved with an error, generate a
+                    // response from it.
+                    //
+                    // If the request was not routed successfully, immediately
+                    // return so the connection can be closed and the server
+                    // exit.
+                    let response = future?.await.unwrap_or_else(|error| error.into());
 
-                    Ok::<_, RouterError>(next.call(request).await.map_or_else(
-                        |error| Response::from(error).into_inner(),
-                        Response::into_inner,
-                    ))
+                    // Send the generated http::Response over the socket.
+                    Ok::<_, RouterError>(response.into_http_response())
                 }
             });
 
