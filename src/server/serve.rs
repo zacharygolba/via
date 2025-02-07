@@ -2,9 +2,8 @@ use hyper::server::conn;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioTimer;
 use std::error::Error;
-use std::pin::Pin;
 use std::process::ExitCode;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
@@ -73,14 +72,14 @@ where
 
         // Get a weak reference to the state passed to the via::app function so
         // it can be moved in to the connection task.
-        let state = Arc::downgrade(&state);
+        let state = Arc::clone(&state);
 
         // Clone the app so it can be moved into the connection task to serve
         // the connection.
         let router = Arc::clone(&router);
 
         // Wait for something interesting to happen.
-        let io = loop {
+        let stream = loop {
             tokio::select! {
                 // A graceful shutdown was requested.
                 _ = shutdown_rx.changed() => {
@@ -94,13 +93,7 @@ where
                 // A new connection is ready to be accepted.
                 result = listener.accept() => match result {
                     // Accept the stream from the acceptor.
-                    Ok((stream, _addr)) => break match acceptor.accept(stream).await {
-                        Ok(accepted) => IoStream::new(accepted),
-                        Err(error) => {
-                            let _ = &error; // Placeholder for tracing...
-                            continue;
-                        }
-                    },
+                    Ok((stream, _addr)) => break stream,
                     Err(error) => {
                         let _ = &error; // Placeholder for tracing...
                     }
@@ -123,23 +116,28 @@ where
         // exits.
         let mut shutdown_rx = shutdown_rx.clone();
 
+        let handshake_future = acceptor.accept(stream);
+
         // Spawn a task to serve the connection.
         connections.spawn(async move {
+            let io = match handshake_future.await {
+                Ok(accepted) => IoStream::new(accepted),
+                Err(error) => {
+                    let _ = &error; // Placeholder for tracing...
+                    drop(permit);
+                    return;
+                }
+            };
+
             // Define a hyper service to serve the incoming request.
-            let service = service_fn(|request| {
-                // Route request to the corresponding middleware stack.
-                let future = router.visit(request.uri().path()).map(|(params, next)| {
-                    // Call the corresponding middleware stack to get a future
-                    // that resolves to a response.
-                    next.call(Request::new(
-                        // Share a weak reference of state with Request.
-                        Weak::clone(&state),
-                        // Ownership of path params is given to Request.
-                        params,
-                        // Limit the length of the request body to max_request_size.
-                        request.map(|body| RequestBody::new(max_request_size, body).into()),
-                    ))
-                });
+            let service = service_fn(|r| {
+                let mut request = Request::new(
+                    Arc::clone(&state),
+                    r.map(|body| RequestBody::new(max_request_size, body).into()),
+                );
+
+                let matches = router.visit(request.uri().path());
+                let next = router.resolve(&matches, request.params_mut());
 
                 async {
                     // If the request was routed successfully, await the response
@@ -149,10 +147,10 @@ where
                     // If the request was not routed successfully, immediately
                     // return so the connection can be closed and the server
                     // exit.
-                    let response = future?.await.unwrap_or_else(|error| error.into());
+                    let response = next?.call(request).await.unwrap_or_else(|e| e.into());
 
                     // Send the generated http::Response over the socket.
-                    Ok::<_, RouterError>(response.into_http_response())
+                    Ok::<_, RouterError>(response.inner)
                 }
             });
 
@@ -169,21 +167,21 @@ where
                 .serve_connection(io, service)
                 .with_upgrades();
 
-            let mut pin_conn = Pin::new(&mut connection);
-
             // Serve the connection.
             if let Err(error) = tokio::select!(
                 // Wait for the connection to close.
-                result = &mut pin_conn => result,
+                result = Pin::new(&mut connection) => result,
 
                 // Wait for the server to start a graceful shutdown. Then
                 // initiate the same for the individual connection.
                 _ = shutdown_rx.changed() => {
+                    let mut connection = Pin::new(&mut connection);
+
                     // The graceful_shutdown fn requires Pin<&mut Self>.
-                    Pin::as_mut(&mut pin_conn).graceful_shutdown();
+                    connection.as_mut().graceful_shutdown();
 
                     // Wait for the connection to close.
-                    (&mut pin_conn).await
+                    (&mut connection).await
                 }
             ) {
                 let _ = &error; // Placeholder for tracing...

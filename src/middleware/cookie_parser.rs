@@ -1,5 +1,5 @@
 use cookie::{Cookie, SplitCookies};
-use http::header::COOKIE;
+use http::header::{COOKIE, SET_COOKIE};
 
 use super::middleware::Middleware;
 use super::next::Next;
@@ -105,9 +105,26 @@ fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
                 }
             }
 
-            // If any cookies changed during the request, serialize them to
-            // Set-Cookie headers and include them in the response headers.
-            response.set_cookie_headers();
+            let delta = match &response.cookies {
+                Some(jar) => jar.delta(),
+                None => return Ok(response),
+            };
+
+            let headers = response.inner.headers_mut();
+
+            for cookie in delta {
+                let set_cookie = match cookie.encoded().to_string().parse() {
+                    Ok(header_value) => header_value,
+                    Err(error) => {
+                        let _ = &error; // Placeholder for tracing
+                        continue;
+                    }
+                };
+
+                if let Err(error) = headers.try_append(SET_COOKIE, set_cookie) {
+                    let _ = &error; // Placeholder for tracing
+                }
+            }
 
             // Return the response.
             Ok(response)
