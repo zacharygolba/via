@@ -32,7 +32,7 @@ async fn count_visits(request: Request<State>, next: Next<State>) -> via::Result
     // Clone the state from the request so we can access the secret key after
     // passing ownership of the request to the next middleware.
     //
-    let state = request.state().try_upgrade()?;
+    let state = request.state().clone();
 
     // Get a reference to the secret key from state.
     let secret = &state.secret;

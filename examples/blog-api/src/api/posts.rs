@@ -10,14 +10,13 @@ pub async fn auth(request: Request<State>, next: Next<State>) -> via::Result {
 }
 
 pub async fn index(request: Request<State>, _: Next<State>) -> via::Result {
-    let state = request.state().try_upgrade()?;
-    let posts = Post::public(&state.pool).await?;
+    let posts = Post::public(&request.state().pool).await?;
 
     Response::build().json(&posts)
 }
 
 pub async fn create(request: Request<State>, _: Next<State>) -> via::Result {
-    let state = request.state().try_upgrade()?;
+    let state = request.state().clone();
     let payload = request.into_body().read_to_end().await?;
     let new_post = payload.parse_json::<NewPost>()?.insert(&state.pool).await?;
 
@@ -28,15 +27,14 @@ pub async fn create(request: Request<State>, _: Next<State>) -> via::Result {
 
 pub async fn show(request: Request<State>, _: Next<State>) -> via::Result {
     let id = request.param("id").parse()?;
-    let state = request.state().try_upgrade()?;
-    let post = Post::find(&state.pool, id).await?;
+    let post = Post::find(&request.state().pool, id).await?;
 
     Response::build().json(&post)
 }
 
 pub async fn update(request: Request<State>, _: Next<State>) -> via::Result {
     let id = request.param("id").parse()?;
-    let state = request.state().try_upgrade()?;
+    let state = request.state().clone();
     let payload = request.into_body().read_to_end().await?;
     let updated_post = payload
         .parse_json::<ChangeSet>()?
@@ -48,8 +46,7 @@ pub async fn update(request: Request<State>, _: Next<State>) -> via::Result {
 
 pub async fn destroy(request: Request<State>, _: Next<State>) -> via::Result {
     let id = request.param("id").parse()?;
-    let state = request.state().try_upgrade()?;
 
-    Post::delete(&state.pool, id).await?;
+    Post::delete(&request.state().pool, id).await?;
     Response::build().status(StatusCode::NO_CONTENT).finish()
 }
