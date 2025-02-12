@@ -3,27 +3,19 @@ use http::header::AsHeaderName;
 use http::request::Parts;
 use http::{HeaderMap, HeaderValue, Method, Uri, Version};
 use std::fmt::{self, Debug, Formatter};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
-use super::param::{PathParam, PathParams};
-use super::QueryParam;
+use super::param::{PathParam, PathParams, QueryParam};
 use crate::body::{BoxBody, HttpBody, RequestBody};
-use crate::Error;
 
 pub struct Request<T = ()> {
     /// The shared application state passed to the
     /// [`via::app`](crate::app::app)
     /// function.
     ///
-    state: Weak<T>,
+    state: Arc<T>,
 
-    /// The component parts of the HTTP request.
-    ///
-    head: Parts,
-
-    /// A length-limited, mappable wrapper around [hyper::body::Incoming].
-    ///
-    body: HttpBody<RequestBody>,
+    inner: http::Request<HttpBody<RequestBody>>,
 
     /// The cookies associated with the request. If there is not a
     /// [CookieParser](crate::middleware::CookieParser)
@@ -36,26 +28,19 @@ pub struct Request<T = ()> {
     params: PathParams,
 }
 
-/// A wrapper around a weak reference to the state argument passed to
-/// [`via::app`](crate::app::app).
-///
-pub struct State<T> {
-    ptr: Weak<T>,
-}
-
 impl<T> Request<T> {
     /// Consumes the request returning a new request with body mapped to the
     /// return type of the provided closure `map`.
     ///
     #[inline]
     pub fn map(self, map: impl FnOnce(HttpBody<RequestBody>) -> BoxBody) -> Self {
-        if cfg!(debug_assertions) && matches!(&self.body, HttpBody::Mapped(_)) {
+        if cfg!(debug_assertions) && matches!(self.body(), HttpBody::Mapped(_)) {
             // TODO: Replace this with tracing and a proper logger.
             eprintln!("calling request.map() more than once can create a reference cycle.",);
         }
 
         Self {
-            body: HttpBody::Mapped(map(self.body)),
+            inner: self.inner.map(|body| HttpBody::Mapped(map(body))),
             ..self
         }
     }
@@ -64,7 +49,14 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn into_body(self) -> HttpBody<RequestBody> {
-        self.body
+        self.inner.into_body()
+    }
+
+    /// Returns the inner [http::Request].
+    ///
+    #[inline]
+    pub fn into_inner(self) -> http::Request<HttpBody<RequestBody>> {
+        self.inner
     }
 
     /// Consumes the request and returns a tuple containing the component
@@ -72,14 +64,14 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn into_parts(self) -> (Parts, HttpBody<RequestBody>) {
-        (self.head, self.body)
+        self.inner.into_parts()
     }
 
     /// Returns a reference to the body associated with the request.
     ///
     #[inline]
     pub fn body(&self) -> &HttpBody<RequestBody> {
-        &self.body
+        self.inner.body()
     }
 
     /// Returns an optional reference to the cookie with the provided `name`.
@@ -100,7 +92,7 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn header<K: AsHeaderName>(&self, key: K) -> Option<&HeaderValue> {
-        self.head.headers.get(key)
+        self.inner.headers().get(key)
     }
 
     /// Returns a reference to a map that contains the headers associated with
@@ -108,14 +100,14 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn headers(&self) -> &HeaderMap {
-        &self.head.headers
+        self.inner.headers()
     }
 
     /// Returns a reference to the HTTP method associated with the request.
     ///
     #[inline]
     pub fn method(&self) -> &Method {
-        &self.head.method
+        self.inner.method()
     }
 
     /// Returns a convenient wrapper around an optional reference to the path
@@ -136,7 +128,7 @@ impl<T> Request<T> {
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
         PathParam::new(
             name,
-            self.head.uri.path(),
+            self.inner.uri().path(),
             self.params.iter().rev().find_map(
                 |(param, at)| {
                     if param == name {
@@ -176,7 +168,7 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
-        QueryParam::new(name, self.head.uri.query().unwrap_or(""))
+        QueryParam::new(name, self.inner.uri().query().unwrap_or(""))
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
@@ -185,41 +177,33 @@ impl<T> Request<T> {
     /// function.
     ///
     #[inline]
-    pub fn state(&self) -> State<T> {
-        State {
-            ptr: Weak::clone(&self.state),
-        }
+    pub fn state(&self) -> &Arc<T> {
+        &self.state
     }
 
     /// Returns a reference to the uri associated with the request.
     ///
     #[inline]
     pub fn uri(&self) -> &Uri {
-        &self.head.uri
+        self.inner.uri()
     }
 
     /// Returns the HTTP version associated with the request.
     ///
     #[inline]
     pub fn version(&self) -> Version {
-        self.head.version
+        self.inner.version()
     }
 }
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(
-        state: Weak<T>,
-        params: PathParams,
-        head: Parts,
-        body: HttpBody<RequestBody>,
-    ) -> Self {
+    pub(crate) fn new(state: Arc<T>, request: http::Request<HttpBody<RequestBody>>) -> Self {
         Self {
             state,
             cookies: None,
-            params,
-            head,
-            body,
+            inner: request,
+            params: PathParams::new(Vec::with_capacity(8)),
         }
     }
 
@@ -228,6 +212,11 @@ impl<T> Request<T> {
     #[inline]
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
         self.cookies.get_or_insert_default()
+    }
+
+    #[inline]
+    pub(crate) fn params_mut(&mut self) -> &mut PathParams {
+        &mut self.params
     }
 }
 
@@ -242,23 +231,5 @@ impl<T> Debug for Request<T> {
             .field("cookies", &self.cookies)
             .field("body", self.body())
             .finish()
-    }
-}
-
-impl<T> State<T> {
-    /// Attempt to upgrade the weak reference to a strong reference.
-    ///
-    pub fn upgrade(self) -> Option<Arc<T>> {
-        Weak::upgrade(&self.ptr)
-    }
-
-    /// Attempt to upgrade the weak referene to a strong reference. If the
-    /// value was dropped, an error is returned.
-    ///
-    pub fn try_upgrade(self) -> Result<Arc<T>, Error> {
-        self.upgrade().ok_or_else(|| {
-            let message = "the application state is unavailable".to_string();
-            Error::internal_server_error(message.into())
-        })
     }
 }

@@ -8,13 +8,18 @@ pub struct PathParams {
 
 impl PathParams {
     #[inline]
-    pub const fn new(data: Vec<(Param, Option<[usize; 2]>)>) -> Self {
+    pub fn new(data: Vec<(Param, Option<[usize; 2]>)>) -> Self {
         Self { data }
     }
 
     #[inline]
     pub fn iter(&self) -> slice::Iter<(Param, Option<[usize; 2]>)> {
         self.data.iter()
+    }
+
+    #[inline]
+    pub fn push(&mut self, name: &Param, range: Option<[usize; 2]>) {
+        self.data.push((name.clone(), range));
     }
 }
 

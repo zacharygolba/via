@@ -1,5 +1,4 @@
 use cookie::CookieJar;
-use http::header::SET_COOKIE;
 use http::response::Parts;
 use http::{HeaderMap, StatusCode, Version};
 use std::fmt::{self, Debug, Formatter};
@@ -8,8 +7,8 @@ use super::builder::Builder;
 use crate::body::{BoxBody, HttpBody, ResponseBody};
 
 pub struct Response {
-    pub(super) cookies: Option<Box<CookieJar>>,
-    pub(super) inner: http::Response<HttpBody<ResponseBody>>,
+    pub(crate) cookies: Option<Box<CookieJar>>,
+    pub(crate) inner: http::Response<HttpBody<ResponseBody>>,
 }
 
 impl Response {
@@ -90,36 +89,8 @@ impl Response {
     }
 }
 
-impl Response {
-    #[inline]
-    pub(crate) fn into_inner(self) -> http::Response<HttpBody<ResponseBody>> {
-        self.inner
-    }
-
-    pub(crate) fn set_cookie_headers(&mut self) {
-        let headers = self.inner.headers_mut();
-        let delta = match &self.cookies {
-            Some(jar) => jar.delta(),
-            None => return,
-        };
-
-        for cookie in delta {
-            let set_cookie = match cookie.encoded().to_string().parse() {
-                Ok(header_value) => header_value,
-                Err(error) => {
-                    let _ = &error; // Placeholder for tracing
-                    continue;
-                }
-            };
-
-            if let Err(error) = headers.try_append(SET_COOKIE, set_cookie) {
-                let _ = &error; // Placeholder for tracing
-            }
-        }
-    }
-}
-
 impl Default for Response {
+    #[inline]
     fn default() -> Self {
         Self::new(HttpBody::new())
     }

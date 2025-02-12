@@ -8,32 +8,21 @@ use crate::cache::Cache;
 /// Contains a reference to the route associated with the node and additional
 /// metadata about the match.
 ///
-#[derive(Debug)]
-pub struct Found<'a, T> {
+#[derive(Clone, Debug)]
+pub struct Match {
     /// True if there were no more segments to match against the children of
     /// the matched node. Otherwise, false.
     ///
     pub exact: bool,
-
-    /// The name of the dynamic parameter that matched the path segment.
-    ///
-    pub param: Option<&'a Param>,
 
     /// The start and end offset of the parameter that matched the path
     /// segment.
     ///
     pub range: Option<[usize; 2]>,
 
-    /// The key of the route associated with the node that matched the path
-    /// segment.
+    /// The key of the node that matched the path segment.
     ///
-    pub route: Option<&'a T>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Match {
-    value: usize,
-    range: Option<[usize; 2]>,
+    key: usize,
 }
 
 /// A node in the route tree that represents a single path segment.
@@ -67,32 +56,8 @@ pub struct Router<T> {
 
 impl Match {
     #[inline]
-    fn found(exact: bool, key: usize, range: Option<[usize; 2]>) -> Self {
-        Self {
-            range,
-            value: (key << 2) | (1 << 0) | (if exact { 1 } else { 0 } << 1),
-        }
-    }
-
-    #[inline]
-    fn not_found() -> Self {
-        Self {
-            value: 0,
-            range: None,
-        }
-    }
-}
-
-impl Match {
-    #[inline]
-    fn try_load(self) -> Option<(bool, usize, Option<[usize; 2]>)> {
-        let Self { range, value } = self;
-
-        if value & 0b01 != 0 {
-            Some(((value & 0b10) != 0, value >> 2, range))
-        } else {
-            None
-        }
+    fn new(exact: bool, key: usize, range: Option<[usize; 2]>) -> Self {
+        Self { exact, range, key }
     }
 }
 
@@ -115,6 +80,11 @@ impl<T> Node<T> {
         } else {
             None
         }
+    }
+
+    #[inline]
+    fn route(&self) -> Option<&T> {
+        self.route.as_ref()
     }
 }
 
@@ -162,7 +132,7 @@ impl<T> Router<T> {
     }
 
     #[cfg(feature = "lru-cache")]
-    pub fn visit(&self, path: &str) -> Vec<Match> {
+    pub fn visit(&self, path: &str) -> Vec<Option<Match>> {
         let cache = &self.cache;
         let nodes = &self.nodes;
 
@@ -170,8 +140,8 @@ impl<T> Router<T> {
         let first = loop {
             return match cache.read(path) {
                 Some(Some(matches)) => matches,
-                Some(None) => search(nodes, path),
-                None => break search(nodes, path),
+                Some(None) => break lookup(nodes, path),
+                None => lookup(nodes, path),
             };
         };
 
@@ -180,21 +150,14 @@ impl<T> Router<T> {
     }
 
     #[cfg(not(feature = "lru-cache"))]
-    pub fn visit(&self, path: &str) -> Vec<Match> {
-        search(&self.nodes, path)
+    pub fn visit(&self, path: &str) -> Vec<Option<Match>> {
+        lookup(&self.nodes, path)
     }
 
     #[inline]
-    pub fn resolve(&self, matching: Match) -> Option<Found<T>> {
-        let (exact, key, range) = matching.try_load()?;
-        let node = self.nodes.get(key)?;
-
-        Some(Found {
-            exact,
-            range,
-            param: node.param(),
-            route: node.route.as_ref(),
-        })
+    pub fn resolve(&self, matching: &Match) -> (Option<&Param>, Option<&T>) {
+        let node = self.nodes.get(matching.key);
+        (node.and_then(Node::param), node.and_then(Node::route))
     }
 }
 
@@ -244,41 +207,30 @@ where
     insert(router, segments, next_key)
 }
 
-fn search<T>(nodes: &[Node<T>], path: &str) -> Vec<Match> {
-    let (key, children) = match nodes.first() {
-        Some(node) => (0, &node.children),
-        None => return vec![Match::not_found()],
+fn lookup<T>(nodes: &[Node<T>], path: &str) -> Vec<Option<Match>> {
+    let root = match nodes.first() {
+        Some(next) => next,
+        None => return vec![None],
     };
 
     let mut results = Vec::with_capacity(8);
     let mut segments = Vec::with_capacity(8);
 
-    for range in Split::new(path) {
-        segments.push(range);
-    }
+    segments.extend(Split::new(path));
+    results.push(Some(Match::new(segments.is_empty(), 0, None)));
 
-    results.push(Match::found(segments.is_empty(), key, None));
-
-    if let Some(match_next) = &children {
-        rsearch(
-            &mut results,
-            nodes,
-            match_next,
-            path,
-            &segments,
-            key,
-            segments.get(key),
-        );
+    if let Some(match_next) = &root.children {
+        rlookup(&mut results, nodes, match_next, path, &segments, 0);
     }
 
     results
 }
 
 /// Recursively search for nodes that match the uri path.
-fn rsearch<T>(
+fn rlookup<T>(
     // A mutable reference to a vector that contains the matches that we
     // have found so far.
-    results: &mut Vec<Match>,
+    results: &mut Vec<Option<Match>>,
 
     // A reference to the route store that contains the route tree.
     nodes: &[Node<T>],
@@ -295,45 +247,40 @@ fn rsearch<T>(
 
     // The index of the path segment to match against `match_now` in `segments`.
     index: usize,
-
-    range: Option<&[usize; 2]>,
 ) {
-    for key in match_now {
-        let (pattern, children) = match nodes.get(*key) {
-            Some(node) => (&node.pattern, &node.children),
+    let next_index = index + 1;
+    let match_range = segments.get(index).copied();
+    let has_remaining = segments.get(next_index).is_none();
+
+    for key in match_now.iter().cloned() {
+        let node = match nodes.get(key) {
+            Some(next) => next,
             None => {
-                results.push(Match::not_found());
+                results.push(None);
                 continue;
             }
         };
 
-        let (index, range) = match pattern {
-            Pattern::Static(name) => match range {
+        match &node.pattern {
+            Pattern::Static(name) => match match_range {
                 // The node has a static pattern that matches the path segment.
-                Some(at) if name == &path[at[0]..at[1]] => {
-                    let next_index = index + 1;
-                    let next_range = segments.get(next_index);
-
-                    results.push(Match::found(next_range.is_none(), *key, None));
-                    (next_index, next_range)
+                Some([start, end]) if name == &path[start..end] => {
+                    results.push(Some(Match::new(has_remaining, key, match_range)));
                 }
-                Some(_) | None => continue,
+                Some(_) => continue,
+                None => break,
             },
 
             // The node has a dynamic pattern that can match any value.
             Pattern::Dynamic(_) => {
-                let next_index = index + 1;
-                let next_range = segments.get(next_index);
-
-                results.push(Match::found(next_range.is_none(), *key, range.copied()));
-                (next_index, next_range)
+                results.push(Some(Match::new(has_remaining, key, match_range)));
             }
 
             // The node has a wildcard pattern that can match any value
             // and consume the remainder of the uri path.
             Pattern::Wildcard(_) => {
-                let range = range.map(|at| [at[0], path.len()]);
-                results.push(Match::found(true, *key, range));
+                let match_range = match_range.map(|[start, _]| [start, path.len()]);
+                results.push(Some(Match::new(true, key, match_range)));
                 continue;
             }
 
@@ -343,10 +290,10 @@ fn rsearch<T>(
                 // Placeholder for tracing...
                 continue;
             }
-        };
+        }
 
-        if let Some(match_next) = children {
-            rsearch(results, nodes, match_next, path, segments, index, range);
+        if let Some(match_next) = &node.children {
+            rlookup(results, nodes, match_next, path, segments, next_index)
         }
     }
 }
@@ -375,7 +322,11 @@ mod tests {
             let matches: Vec<_> = router
                 .visit(path)
                 .into_iter()
-                .map(|matched| router.resolve(matched).unwrap())
+                .map(|result| {
+                    let matched = result.unwrap();
+                    let (param, route) = router.resolve(&matched);
+                    (matched, param, route)
+                })
                 .collect();
 
             assert_eq!(matches.len(), 2);
@@ -383,10 +334,10 @@ mod tests {
             {
                 // /
                 // ^ as Pattern::Root
-                let found = &matches[0];
+                let (found, param, route) = &matches[0];
 
-                assert_eq!(found.route, None);
-                assert_eq!(found.param, None);
+                assert_eq!(*route, None);
+                assert_eq!(*param, None);
                 assert_eq!(found.range, None);
                 assert!(found.exact);
             }
@@ -394,10 +345,10 @@ mod tests {
             {
                 // /
                 //  ^ as Pattern::CatchAll("*path")
-                let found = &matches[1];
+                let (found, param, route) = &matches[1];
 
-                assert_eq!(found.route, Some(&()));
-                assert_eq!(found.param, Some(&"path".into()));
+                assert_eq!(*route, Some(&()));
+                assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(found.range, None);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(found.exact);
@@ -409,7 +360,11 @@ mod tests {
             let matches: Vec<_> = router
                 .visit(path)
                 .into_iter()
-                .map(|matched| router.resolve(matched).unwrap())
+                .map(|result| {
+                    let matched = result.unwrap();
+                    let (param, route) = router.resolve(&matched);
+                    (matched, param, route)
+                })
                 .collect();
 
             assert_eq!(matches.len(), 2);
@@ -417,10 +372,10 @@ mod tests {
             {
                 // /not/a/path
                 // ^ as Pattern::Root
-                let found = &matches[0];
+                let (found, param, route) = &matches[0];
 
-                assert_eq!(found.route, None);
-                assert_eq!(found.param, None);
+                assert_eq!(*route, None);
+                assert_eq!(*param, None);
                 assert_eq!(found.range, None);
                 assert!(!found.exact);
             }
@@ -428,14 +383,14 @@ mod tests {
             {
                 // /not/a/path
                 //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
-                let found = &matches[1];
+                let (found, param, route) = &matches[1];
                 let segment = {
-                    let range = found.range.as_ref().unwrap();
-                    &path[range[0]..range[1]]
+                    let [start, end] = found.range.unwrap();
+                    &path[start..end]
                 };
 
-                assert_eq!(found.route, Some(&()));
-                assert_eq!(found.param, Some(&"path".into()));
+                assert_eq!(*route, Some(&()));
+                assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(found.exact);
@@ -447,7 +402,11 @@ mod tests {
             let matches: Vec<_> = router
                 .visit(path)
                 .into_iter()
-                .map(|matched| router.resolve(matched).unwrap())
+                .map(|result| {
+                    let matched = result.unwrap();
+                    let (param, route) = router.resolve(&matched);
+                    (matched, param, route)
+                })
                 .collect();
 
             assert_eq!(matches.len(), 4);
@@ -455,25 +414,25 @@ mod tests {
             {
                 // /echo/hello/world
                 // ^ as Pattern::Root
-                let found = &matches[0];
+                let (found, param, route) = &matches[0];
 
-                assert_eq!(found.route, None);
+                assert_eq!(*route, None);
+                assert_eq!(*param, None);
                 assert_eq!(found.range, None);
-                assert_eq!(found.param, None);
                 assert!(!found.exact);
             }
 
             {
                 // /echo/hello/world
                 //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-                let found = &matches[1];
+                let (found, param, route) = &matches[1];
                 let segment = {
-                    let range = found.range.as_ref().unwrap();
-                    &path[range[0]..range[1]]
+                    let [start, end] = found.range.unwrap();
+                    &path[start..end]
                 };
 
-                assert_eq!(found.route, Some(&()));
-                assert_eq!(found.param, Some(&"path".into()));
+                assert_eq!(*route, Some(&()));
+                assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(found.exact);
@@ -482,24 +441,24 @@ mod tests {
             {
                 // /echo/hello/world
                 //  ^^^^ as Pattern::Static("echo")
-                let found = &matches[2];
+                let (found, param, route) = &matches[2];
 
-                assert_eq!(found.route, None);
-                assert_eq!(found.param, None);
+                assert_eq!(*route, None);
+                assert_eq!(*param, None);
                 assert!(!found.exact);
             }
 
             {
                 // /echo/hello/world
                 //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
-                let found = &matches[3];
+                let (found, param, route) = &matches[3];
                 let segment = {
-                    let range = found.range.as_ref().unwrap();
-                    &path[range[0]..range[1]]
+                    let [start, end] = found.range.unwrap();
+                    &path[start..end]
                 };
 
-                assert_eq!(found.route, Some(&()));
-                assert_eq!(found.param, Some(&"path".into()));
+                assert_eq!(*route, Some(&()));
+                assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(segment, "hello/world");
                 assert!(found.exact);
             }
@@ -510,7 +469,11 @@ mod tests {
             let matches: Vec<_> = router
                 .visit(path)
                 .into_iter()
-                .map(|matched| router.resolve(matched).unwrap())
+                .map(|result| {
+                    let matched = result.unwrap();
+                    let (param, route) = router.resolve(&matched);
+                    (matched, param, route)
+                })
                 .collect();
 
             assert_eq!(matches.len(), 4);
@@ -518,25 +481,25 @@ mod tests {
             {
                 // /articles/100
                 // ^ as Pattern::Root
-                let found = &matches[0];
+                let (found, param, route) = &matches[0];
 
-                assert_eq!(found.route, None);
+                assert_eq!(*route, None);
                 assert_eq!(found.range, None);
-                assert_eq!(found.param, None);
+                assert_eq!(*param, None);
                 assert!(!found.exact);
             }
 
             {
                 // /articles/100
                 //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-                let found = &matches[1];
+                let (found, param, route) = &matches[1];
                 let segment = {
-                    let range = found.range.as_ref().unwrap();
-                    &path[range[0]..range[1]]
+                    let [start, end] = found.range.unwrap();
+                    &path[start..end]
                 };
 
-                assert_eq!(found.route, Some(&()));
-                assert_eq!(found.param, Some(&"path".into()));
+                assert_eq!(*route, Some(&()));
+                assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(found.exact);
@@ -545,24 +508,24 @@ mod tests {
             {
                 // /articles/100
                 //  ^^^^^^^^ as Pattern::Static("articles")
-                let found = &matches[2];
+                let (found, param, route) = &matches[2];
 
-                assert_eq!(found.route, None);
-                assert_eq!(found.param, None);
+                assert_eq!(*route, None);
+                assert_eq!(*param, None);
                 assert!(!found.exact);
             }
 
             {
                 // /articles/100
                 //           ^^^ as Pattern::Dynamic(":id")
-                let found = &matches[3];
+                let (found, param, route) = &matches[3];
                 let segment = {
-                    let range = found.range.as_ref().unwrap();
-                    &path[range[0]..range[1]]
+                    let [start, end] = found.range.unwrap();
+                    &path[start..end]
                 };
 
-                assert_eq!(found.route, Some(&()));
-                assert_eq!(found.param, Some(&"id".into()));
+                assert_eq!(*route, Some(&()));
+                assert_eq!(*param, Some(&"id".into()));
                 assert_eq!(segment, "100");
                 assert!(found.exact);
             }
@@ -573,7 +536,11 @@ mod tests {
             let matches: Vec<_> = router
                 .visit(path)
                 .into_iter()
-                .map(|matched| router.resolve(matched).unwrap())
+                .map(|result| {
+                    let matched = result.unwrap();
+                    let (param, route) = router.resolve(&matched);
+                    (matched, param, route)
+                })
                 .collect();
 
             assert_eq!(matches.len(), 5);
@@ -581,25 +548,25 @@ mod tests {
             {
                 // /articles/100/comments
                 // ^ as Pattern::Root
-                let found = &matches[0];
+                let (found, param, route) = &matches[0];
 
-                assert_eq!(found.route, None);
+                assert_eq!(*route, None);
+                assert_eq!(*param, None);
                 assert_eq!(found.range, None);
-                assert_eq!(found.param, None);
                 assert!(!found.exact);
             }
 
             {
                 // /articles/100/comments
                 //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-                let found = &matches[1];
+                let (found, param, route) = &matches[1];
                 let segment = {
-                    let range = found.range.as_ref().unwrap();
-                    &path[range[0]..range[1]]
+                    let [start, end] = found.range.unwrap();
+                    &path[start..end]
                 };
 
-                assert_eq!(found.route, Some(&()));
-                assert_eq!(found.param, Some(&"path".into()));
+                assert_eq!(*route, Some(&()));
+                assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
                 assert!(found.exact);
@@ -608,24 +575,24 @@ mod tests {
             {
                 // /articles/100/comments
                 //  ^^^^^^^^ as Pattern::Static("articles")
-                let found = &matches[2];
+                let (found, param, route) = &matches[2];
 
-                assert_eq!(found.route, None);
-                assert_eq!(found.param, None);
+                assert_eq!(*route, None);
+                assert_eq!(*param, None);
                 assert!(!found.exact);
             }
 
             {
                 // /articles/100/comments
                 //           ^^^ as Pattern::Dynamic(":id")
-                let found = &matches[3];
+                let (found, param, route) = &matches[3];
                 let segment = {
-                    let range = found.range.as_ref().unwrap();
-                    &path[range[0]..range[1]]
+                    let [start, end] = found.range.unwrap();
+                    &path[start..end]
                 };
 
-                assert_eq!(found.route, Some(&()));
-                assert_eq!(found.param, Some(&"id".into()));
+                assert_eq!(*route, Some(&()));
+                assert_eq!(*param, Some(&"id".into()));
                 assert_eq!(segment, "100");
                 assert!(!found.exact);
             }
@@ -633,10 +600,10 @@ mod tests {
             {
                 // /articles/100/comments
                 //               ^^^^^^^^ as Pattern::Static("comments")
-                let found = &matches[4];
+                let (found, param, route) = &matches[4];
 
-                assert_eq!(found.route, Some(&()));
-                assert_eq!(found.param, None);
+                assert_eq!(*route, Some(&()));
+                assert_eq!(*param, None);
                 // Should be considered exact because it is the last path segment.
                 assert!(found.exact);
             }

@@ -2,7 +2,6 @@ use hyper::server::conn;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioTimer;
 use std::error::Error;
-use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,18 +14,17 @@ use tokio::{signal, time};
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
-use crate::app::App;
-use crate::body::{HttpBody, RequestBody};
+use crate::body::RequestBody;
 use crate::error::BoxError;
 use crate::request::Request;
-use crate::router::RouterError;
+use crate::router::{Router, RouterError};
 use crate::server::io_stream::IoStream;
-use crate::Response;
 
 pub async fn serve<T, A>(
     listener: TcpListener,
     mut acceptor: A,
-    app: App<T>,
+    state: T,
+    router: Router<T>, // Router holds no references to T.
     max_connections: usize,
     max_request_size: usize,
     shutdown_timeout: Duration,
@@ -41,9 +39,9 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
-    let router = Arc::new(app.router);
+    let state = Arc::new(state);
 
-    let state = Arc::new(app.state);
+    let router = Arc::new(router);
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
@@ -72,16 +70,16 @@ where
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
 
+        // Get a weak reference to the state passed to the via::app function so
+        // it can be moved in to the connection task.
+        let state = Arc::clone(&state);
+
         // Clone the app so it can be moved into the connection task to serve
         // the connection.
         let router = Arc::clone(&router);
 
-        // Clone the app so it can be moved into the connection task to serve
-        // the connection.
-        let state = Arc::clone(&state);
-
         // Wait for something interesting to happen.
-        let io = loop {
+        let stream = loop {
             tokio::select! {
                 // A graceful shutdown was requested.
                 _ = shutdown_rx.changed() => {
@@ -95,13 +93,7 @@ where
                 // A new connection is ready to be accepted.
                 result = listener.accept() => match result {
                     // Accept the stream from the acceptor.
-                    Ok((stream, _addr)) => break match acceptor.accept(stream).await {
-                        Ok(accepted) => IoStream::new(accepted),
-                        Err(error) => {
-                            let _ = &error; // Placeholder for tracing...
-                            continue;
-                        }
-                    },
+                    Ok((stream, _addr)) => break stream,
                     Err(error) => {
                         let _ = &error; // Placeholder for tracing...
                     }
@@ -124,28 +116,41 @@ where
         // exits.
         let mut shutdown_rx = shutdown_rx.clone();
 
+        let handshake_future = acceptor.accept(stream);
+
         // Spawn a task to serve the connection.
         connections.spawn(async move {
+            let io = match handshake_future.await {
+                Ok(accepted) => IoStream::new(accepted),
+                Err(error) => {
+                    let _ = &error; // Placeholder for tracing...
+                    drop(permit);
+                    return;
+                }
+            };
+
             // Define a hyper service to serve the incoming request.
-            let service = service_fn(|request| {
-                let state = Arc::downgrade(&state);
-                let result = router.visit(request.uri().path()).map(|(params, next)| {
-                    // Destructure the incoming request into it's component parts.
-                    let (head, body) = request.into_parts();
+            let service = service_fn(|r| {
+                let mut request = Request::new(
+                    Arc::clone(&state),
+                    r.map(|body| RequestBody::new(max_request_size, body).into()),
+                );
 
-                    // Limit the length of the request body to max_request_size.
-                    let body = HttpBody::Original(RequestBody::new(max_request_size, body));
-
-                    (Request::new(state, params, head, body), next)
-                });
+                let matches = router.visit(request.uri().path());
+                let next = router.resolve(&matches, request.params_mut());
 
                 async {
-                    let (request, next) = result?;
+                    // If the request was routed successfully, await the response
+                    // future. If the future resolved with an error, generate a
+                    // response from it.
+                    //
+                    // If the request was not routed successfully, immediately
+                    // return so the connection can be closed and the server
+                    // exit.
+                    let response = next?.call(request).await.unwrap_or_else(|e| e.into());
 
-                    Ok::<_, RouterError>(next.call(request).await.map_or_else(
-                        |error| Response::from(error).into_inner(),
-                        Response::into_inner,
-                    ))
+                    // Send the generated http::Response over the socket.
+                    Ok::<_, RouterError>(response.inner)
                 }
             });
 
@@ -162,21 +167,21 @@ where
                 .serve_connection(io, service)
                 .with_upgrades();
 
-            let mut pin_conn = Pin::new(&mut connection);
-
             // Serve the connection.
             if let Err(error) = tokio::select!(
                 // Wait for the connection to close.
-                result = &mut pin_conn => result,
+                result = Pin::new(&mut connection) => result,
 
                 // Wait for the server to start a graceful shutdown. Then
                 // initiate the same for the individual connection.
                 _ = shutdown_rx.changed() => {
+                    let mut connection = Pin::new(&mut connection);
+
                     // The graceful_shutdown fn requires Pin<&mut Self>.
-                    Pin::as_mut(&mut pin_conn).graceful_shutdown();
+                    connection.as_mut().graceful_shutdown();
 
                     // Wait for the connection to close.
-                    (&mut pin_conn).await
+                    (&mut connection).await
                 }
             ) {
                 let _ = &error; // Placeholder for tracing...
