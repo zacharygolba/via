@@ -45,7 +45,7 @@ impl Body for ResponseBody {
 
         Poll::Ready(if start < len {
             let end = (start + MAX_FRAME_LEN).min(len);
-            let data = Bytes::copy_from_slice(&self.data[start..end].as_bytes());
+            let data = Bytes::copy_from_slice(self.data[start..end].as_bytes());
             self.cursor = end;
             Some(Ok(Frame::data(data)))
         } else {
