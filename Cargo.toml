@@ -27,7 +27,7 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 percent-encoding = "2"
 serde = "1"
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "signal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 via-router = { path = "via-router", features = ["lru-cache"] }
 
 [dependencies.cookie]
