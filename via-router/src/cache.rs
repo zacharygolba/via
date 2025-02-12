@@ -5,6 +5,7 @@ use crate::router::Match;
 
 pub struct Cache {
     capacity: usize,
+    #[allow(clippy::type_complexity)]
     entries: RwLock<VecDeque<(Box<str>, Vec<Option<Match>>)>>,
 }
 
@@ -37,7 +38,7 @@ impl Cache {
         let cap = self.capacity;
 
         #[allow(clippy::never_loop)]
-        let (index, matches) = loop {
+        let (key, matches) = loop {
             return match lock.try_read() {
                 Ok(guard) => match fetch(&guard, path) {
                     Some(existing) => break existing,
@@ -47,12 +48,9 @@ impl Cache {
             };
         };
 
-        if cap
-            .checked_div(2)
-            .map_or(false, |threshold| index > threshold)
-        {
+        if cap.checked_div(2).is_some_and(|half| key > half) {
             if let Ok(mut guard) = lock.try_write() {
-                guard.swap_remove_front(index);
+                guard.swap_remove_front(key);
             }
         }
 
