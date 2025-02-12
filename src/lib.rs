@@ -33,7 +33,7 @@
 //! // use the "current_thread" runtime flavor. You'll most likely not want to
 //! // specify a runtime flavor and simpy use #[tokio::main] if your deployment
 //! // target has more than one CPU core.
-//! #[tokio::main(flavor = "current_thread")]
+//! #[tokio::main]
 //! async fn main() -> Result<ExitCode, Error> {
 //!     // Create a new application.
 //!     let mut app = via::app(());
