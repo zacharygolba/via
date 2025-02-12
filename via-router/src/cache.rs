@@ -5,6 +5,7 @@ use crate::router::Match;
 
 pub struct Cache {
     capacity: usize,
+
     #[allow(clippy::type_complexity)]
     entries: RwLock<VecDeque<(Box<str>, Vec<Option<Match>>)>>,
 }
