@@ -1,4 +1,4 @@
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
@@ -15,21 +15,19 @@ const MAX_FRAME_LEN: usize = 8192; // 8KB
 ///
 #[must_use = "streams do nothing unless polled"]
 pub struct ResponseBody {
+    cursor: usize,
+
     /// The buffer containing the body data.
     ///
-    buf: BytesMut,
+    data: Pin<Box<str>>,
 }
 
 impl ResponseBody {
     #[inline]
-    pub fn new(data: &[u8]) -> Self {
-        Self::from_raw(Bytes::copy_from_slice(data))
-    }
-
-    #[inline]
-    pub fn from_raw(bytes: Bytes) -> Self {
+    pub fn new(body: &str) -> Self {
         Self {
-            buf: BytesMut::from(bytes),
+            cursor: 0,
+            data: Pin::new(body.into()),
         }
     }
 }
@@ -39,40 +37,36 @@ impl Body for ResponseBody {
     type Error = BoxError;
 
     fn poll_frame(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let this = self.get_mut();
-        let len = this.buf.len();
+        let start = self.cursor;
+        let len = self.data.len();
 
-        // Check if the buffer has any data.
-        if len == 0 {
-            // The buffer is empty. Signal that the stream has ended.
-            Poll::Ready(None)
+        Poll::Ready(if start < len {
+            let end = (start + MAX_FRAME_LEN).min(len);
+            let data = Bytes::copy_from_slice(self.data[start..end].as_bytes());
+            self.cursor = end;
+            Some(Ok(Frame::data(data)))
         } else {
-            // Split the buffer at the frame length. This will give us an owned
-            // view of the frame at 0..frame_len and advance the buffer to the
-            // offset of the next frame.
-            let next = this.buf.split_to(len.min(MAX_FRAME_LEN)).freeze();
-
-            Poll::Ready(Some(Ok(Frame::data(next))))
-        }
+            None
+        })
     }
 
     fn is_end_stream(&self) -> bool {
-        self.buf.is_empty()
+        self.cursor >= self.data.len()
     }
 
     fn size_hint(&self) -> SizeHint {
         // Get the length of the buffer and attempt to cast it to a
         // `u64`. If the cast fails, return a size hint with no bounds.
-        match self.buf.len().try_into() {
-            Ok(exact) => SizeHint::with_exact(exact),
-            Err(error) => {
-                let _ = &error; // Placeholder for tracing...
-                SizeHint::new()
-            }
-        }
+        let len = self
+            .data
+            .len()
+            .try_into()
+            .expect("failed to perform the conversion");
+
+        SizeHint::with_exact(len)
     }
 }
 
@@ -84,37 +78,19 @@ impl Debug for ResponseBody {
 
 impl Default for ResponseBody {
     fn default() -> Self {
-        Self::from_raw(Bytes::new())
-    }
-}
-
-impl From<Bytes> for ResponseBody {
-    fn from(buf: Bytes) -> Self {
-        Self::from_raw(buf)
-    }
-}
-
-impl From<Vec<u8>> for ResponseBody {
-    fn from(vec: Vec<u8>) -> Self {
-        Self::from_raw(Bytes::from(vec))
-    }
-}
-
-impl From<&'static [u8]> for ResponseBody {
-    fn from(slice: &'static [u8]) -> Self {
-        Self::new(slice)
+        Self::new("")
     }
 }
 
 impl From<String> for ResponseBody {
     fn from(string: String) -> Self {
-        Self::from_raw(Bytes::from(string))
+        Self::new(&string)
     }
 }
 
-impl From<&'static str> for ResponseBody {
-    fn from(slice: &'static str) -> Self {
-        Self::new(slice.as_bytes())
+impl From<&'_ str> for ResponseBody {
+    fn from(slice: &str) -> Self {
+        Self::new(slice)
     }
 }
 
