@@ -70,7 +70,7 @@ impl<T> Router<T> {
                 // exact match and the visited node is not a leaf.
                 MatchWhen::Exact(_) => None,
             }) {
-                middlewares.push(Arc::clone(&middleware));
+                middlewares.push(Arc::clone(middleware));
             }
         }
 
