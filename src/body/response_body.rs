@@ -17,19 +17,6 @@ pub struct ResponseBody {
     remaining: usize,
 }
 
-impl ResponseBody {
-    #[inline]
-    pub fn new(data: &[u8]) -> Self {
-        Self::from_raw(Bytes::copy_from_slice(data))
-    }
-
-    #[inline]
-    pub fn from_raw(data: Bytes) -> Self {
-        let remaining = data.len();
-        Self { data, remaining }
-    }
-}
-
 impl Body for ResponseBody {
     type Data = Bytes;
     type Error = BoxError;
@@ -78,35 +65,46 @@ impl Debug for ResponseBody {
 impl Default for ResponseBody {
     #[inline]
     fn default() -> Self {
-        Self::from_raw(Bytes::new())
+        Self {
+            data: Bytes::new(),
+            remaining: 0,
+        }
+    }
+}
+
+impl From<Bytes> for ResponseBody {
+    #[inline]
+    fn from(data: Bytes) -> Self {
+        let remaining = data.len();
+        Self { data, remaining }
     }
 }
 
 impl From<String> for ResponseBody {
     #[inline]
     fn from(data: String) -> Self {
-        Self::new(data.as_bytes())
+        Self::from(Bytes::copy_from_slice(data.as_bytes()))
     }
 }
 
 impl From<&'_ str> for ResponseBody {
     #[inline]
     fn from(data: &str) -> Self {
-        Self::new(data.as_bytes())
+        Self::from(Bytes::copy_from_slice(data.as_bytes()))
     }
 }
 
 impl From<Vec<u8>> for ResponseBody {
     #[inline]
     fn from(data: Vec<u8>) -> Self {
-        Self::new(&data)
+        Self::from(Bytes::copy_from_slice(&data))
     }
 }
 
 impl From<&'_ [u8]> for ResponseBody {
     #[inline]
     fn from(data: &'_ [u8]) -> Self {
-        Self::new(data)
+        Self::from(Bytes::copy_from_slice(data))
     }
 }
 
@@ -142,7 +140,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_poll_frame_empty() {
-        let mut body = ResponseBody::new(&[]);
+        let mut body = ResponseBody::from("");
         assert!(body.frame().await.is_none());
     }
 
