@@ -5,29 +5,30 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use super::http_body::HttpBody;
+use super::limit_error::LimitError;
 use crate::error::BoxError;
 
 /// The maximum amount of data that can be read from a buffered body per frame.
 ///
 const MAX_FRAME_LEN: usize = 8192; // 8KB
 
-/// An in-memory response body that is read in `8KB` chunks.
-///
 #[must_use = "streams do nothing unless polled"]
 pub struct ResponseBody {
+    buf: Bytes,
     cursor: usize,
-
-    /// The buffer containing the body data.
-    ///
-    data: Pin<Box<str>>,
 }
 
 impl ResponseBody {
     #[inline]
-    pub fn new(body: &str) -> Self {
+    pub fn new(data: &[u8]) -> Self {
+        Self::from_raw(Bytes::copy_from_slice(data))
+    }
+
+    #[inline]
+    pub fn from_raw(data: Bytes) -> Self {
         Self {
+            buf: data,
             cursor: 0,
-            data: Pin::new(body.into()),
         }
     }
 }
@@ -41,32 +42,30 @@ impl Body for ResponseBody {
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let start = self.cursor;
-        let len = self.data.len();
+        let len = self.buf.len();
 
-        Poll::Ready(if start < len {
-            let end = (start + MAX_FRAME_LEN).min(len);
-            let data = Bytes::copy_from_slice(self.data[start..end].as_bytes());
-            self.cursor = end;
-            Some(Ok(Frame::data(data)))
-        } else {
-            None
-        })
+        // Determine if there is any more data to be read out of buf.
+        if start >= len {
+            return Poll::Ready(None);
+        }
+
+        // Calculate the byte position of the last byte of the next data frame.
+        // If an overflow occurs, return an error.
+        let end = start
+            .checked_add(MAX_FRAME_LEN.min(len))
+            .ok_or_else(|| Box::new(LimitError))?;
+
+        self.cursor = end;
+
+        Poll::Ready(Some(Ok(Frame::data(self.buf.slice(start..end)))))
     }
 
     fn is_end_stream(&self) -> bool {
-        self.cursor >= self.data.len()
+        self.cursor >= self.buf.len()
     }
 
     fn size_hint(&self) -> SizeHint {
-        // Get the length of the buffer and attempt to cast it to a
-        // `u64`. If the cast fails, return a size hint with no bounds.
-        let len = self
-            .data
-            .len()
-            .try_into()
-            .expect("failed to perform the conversion");
-
-        SizeHint::with_exact(len)
+        SizeHint::with_exact(self.buf.len().try_into().unwrap())
     }
 }
 
@@ -77,20 +76,37 @@ impl Debug for ResponseBody {
 }
 
 impl Default for ResponseBody {
+    #[inline]
     fn default() -> Self {
-        Self::new("")
+        Self::from_raw(Bytes::new())
     }
 }
 
 impl From<String> for ResponseBody {
-    fn from(string: String) -> Self {
-        Self::new(&string)
+    #[inline]
+    fn from(data: String) -> Self {
+        Self::new(data.as_bytes())
     }
 }
 
 impl From<&'_ str> for ResponseBody {
-    fn from(slice: &str) -> Self {
-        Self::new(slice)
+    #[inline]
+    fn from(data: &str) -> Self {
+        Self::new(data.as_bytes())
+    }
+}
+
+impl From<Vec<u8>> for ResponseBody {
+    #[inline]
+    fn from(data: Vec<u8>) -> Self {
+        Self::new(&data)
+    }
+}
+
+impl From<&'_ [u8]> for ResponseBody {
+    #[inline]
+    fn from(data: &'_ [u8]) -> Self {
+        Self::new(data)
     }
 }
 
