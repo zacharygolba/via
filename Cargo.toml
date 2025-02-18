@@ -39,5 +39,8 @@ version = "0.26"
 optional = true
 default-features = false
 
+[dev-dependencies]
+http-body-util = "0.1"
+
 [workspace]
 members = ["via-router", "examples/*"]

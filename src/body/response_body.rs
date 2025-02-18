@@ -5,7 +5,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use super::http_body::HttpBody;
-use super::limit_error::LimitError;
 use crate::error::BoxError;
 
 /// The maximum amount of data that can be read from a buffered body per frame.
@@ -14,8 +13,8 @@ const MAX_FRAME_LEN: usize = 8192; // 8KB
 
 #[must_use = "streams do nothing unless polled"]
 pub struct ResponseBody {
-    buf: Bytes,
-    cursor: usize,
+    data: Bytes,
+    remaining: usize,
 }
 
 impl ResponseBody {
@@ -26,10 +25,8 @@ impl ResponseBody {
 
     #[inline]
     pub fn from_raw(data: Bytes) -> Self {
-        Self {
-            buf: data,
-            cursor: 0,
-        }
+        let remaining = data.len();
+        Self { data, remaining }
     }
 }
 
@@ -41,31 +38,34 @@ impl Body for ResponseBody {
         mut self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let start = self.cursor;
-        let len = self.buf.len();
-
-        // Determine if there is any more data to be read out of buf.
-        if start >= len {
+        if self.remaining == 0 {
+            // All bytes have been read out of self. 🙌
             return Poll::Ready(None);
         }
 
-        // Calculate the byte position of the last byte of the next data frame.
-        // If an overflow occurs, return an error.
-        let end = start
-            .checked_add(MAX_FRAME_LEN.min(len))
-            .ok_or_else(|| Box::new(LimitError))?;
+        // The start offset of the next frame.
+        let from = self.data.len() - self.remaining;
 
-        self.cursor = end;
+        // The byte length of the next frame.
+        let len = self.remaining.min(MAX_FRAME_LEN);
 
-        Poll::Ready(Some(Ok(Frame::data(self.buf.slice(start..end)))))
+        // The end offset of the next frame.
+        let to = from + len;
+
+        // Decrement remaining by len.
+        self.remaining -= len;
+
+        // Increment the ref-count of the underlying byte buffer and return an
+        // owned slice containing the bytes at from..to.
+        Poll::Ready(Some(Ok(Frame::data(self.data.slice(from..to)))))
     }
 
     fn is_end_stream(&self) -> bool {
-        self.cursor >= self.buf.len()
+        self.remaining == 0
     }
 
     fn size_hint(&self) -> SizeHint {
-        SizeHint::with_exact(self.buf.len().try_into().unwrap())
+        SizeHint::with_exact(self.data.len().try_into().unwrap())
     }
 }
 
@@ -130,5 +130,45 @@ where
 {
     fn from(body: T) -> Self {
         HttpBody::Original(ResponseBody::from(body))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+    use http_body_util::BodyExt;
+
+    use super::{ResponseBody, MAX_FRAME_LEN};
+
+    #[tokio::test]
+    async fn test_poll_frame_empty() {
+        let mut body = ResponseBody::new(&[]);
+        assert!(body.frame().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_poll_frame_one() {
+        let mut body = ResponseBody::from("Hello, world!");
+        let hello_world = body.frame().await.unwrap().unwrap().into_data().unwrap();
+
+        assert_eq!(hello_world, Bytes::copy_from_slice(b"Hello, world!"));
+        assert!(body.frame().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_poll_frame() {
+        let frames = [
+            format!("hello{}", " ".repeat(MAX_FRAME_LEN - 5)),
+            "world".to_owned(),
+        ];
+
+        let mut body = ResponseBody::from(frames.concat());
+
+        for part in &frames {
+            let next = body.frame().await.unwrap().unwrap().into_data().unwrap();
+            assert_eq!(next, Bytes::copy_from_slice(part.as_bytes()));
+        }
+
+        assert!(body.frame().await.is_none());
     }
 }
