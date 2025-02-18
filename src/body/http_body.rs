@@ -8,6 +8,7 @@ use crate::error::BoxError;
 
 /// The body of a request or response.
 ///
+#[non_exhaustive]
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub enum HttpBody<T> {
@@ -18,22 +19,6 @@ pub enum HttpBody<T> {
     /// A boxed request or response body that was returned from a map function.
     ///
     Mapped(BoxBody),
-}
-
-enum HttpBodyProjection<'a, T> {
-    Original(Pin<&'a mut T>),
-    Mapped(Pin<&'a mut BoxBody>),
-}
-
-impl<T> HttpBody<T> {
-    fn project(self: Pin<&mut Self>) -> HttpBodyProjection<T> {
-        unsafe {
-            match self.get_unchecked_mut() {
-                Self::Original(body) => HttpBodyProjection::Original(Pin::new_unchecked(body)),
-                Self::Mapped(body) => HttpBodyProjection::Mapped(Pin::new(body)),
-            }
-        }
-    }
 }
 
 impl<T> HttpBody<T>
@@ -51,18 +36,18 @@ where
 
 impl<T> Body for HttpBody<T>
 where
-    T: Body<Data = Bytes, Error = BoxError>,
+    T: Body<Data = Bytes, Error = BoxError> + Unpin,
 {
     type Data = Bytes;
     type Error = BoxError;
 
     fn poll_frame(
         self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        match self.project() {
-            HttpBodyProjection::Original(body) => body.poll_frame(cx),
-            HttpBodyProjection::Mapped(body) => body.poll_frame(cx),
+        match self.get_mut() {
+            Self::Original(ptr) => Pin::new(ptr).poll_frame(context),
+            Self::Mapped(ptr) => Pin::new(ptr).poll_frame(context),
         }
     }
 
