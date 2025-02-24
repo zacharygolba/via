@@ -11,6 +11,8 @@ use crate::error::BoxError;
 ///
 const MAX_FRAME_LEN: usize = 8192; // 8KB
 
+/// A buffered `impl Body` that is read in `8KB` chunks.
+///
 #[must_use = "streams do nothing unless polled"]
 pub struct ResponseBody {
     data: Bytes,
@@ -52,7 +54,14 @@ impl Body for ResponseBody {
     }
 
     fn size_hint(&self) -> SizeHint {
-        SizeHint::with_exact(self.data.len().try_into().unwrap())
+        match self.data.len().try_into() {
+            Ok(exact) => SizeHint::with_exact(exact),
+            Err(error) => {
+                // Placeholder for tracing...
+                let _ = &error;
+                SizeHint::new()
+            }
+        }
     }
 }
 

@@ -10,7 +10,7 @@ use super::http_body::HttpBody;
 use super::limit_error::LimitError;
 use crate::error::{BoxError, Error};
 
-/// A length-limited request body. The default limit is `10MB`.
+/// A length-limited `impl Body`. The default limit is `10MB`.
 ///
 /// The maximum length can be configured with
 /// [`Server::max_request_size`](crate::Server::max_request_size).
