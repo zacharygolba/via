@@ -11,25 +11,12 @@ use crate::error::BoxError;
 ///
 const MAX_FRAME_LEN: usize = 8192; // 8KB
 
-/// An in-memory response body that is read in `8KB` chunks.
+/// A buffered `impl Body` that is read in `8KB` chunks.
 ///
 #[must_use = "streams do nothing unless polled"]
 pub struct ResponseBody {
-    cursor: usize,
-
-    /// The buffer containing the body data.
-    ///
-    data: Pin<Box<str>>,
-}
-
-impl ResponseBody {
-    #[inline]
-    pub fn new(body: &str) -> Self {
-        Self {
-            cursor: 0,
-            data: Pin::new(body.into()),
-        }
-    }
+    data: Bytes,
+    remaining: usize,
 }
 
 impl Body for ResponseBody {
@@ -40,33 +27,41 @@ impl Body for ResponseBody {
         mut self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let start = self.cursor;
-        let len = self.data.len();
+        if self.remaining == 0 {
+            // All bytes have been read out of self. 🙌
+            return Poll::Ready(None);
+        }
 
-        Poll::Ready(if start < len {
-            let end = (start + MAX_FRAME_LEN).min(len);
-            let data = Bytes::copy_from_slice(self.data[start..end].as_bytes());
-            self.cursor = end;
-            Some(Ok(Frame::data(data)))
-        } else {
-            None
-        })
+        // The start offset of the next frame.
+        let from = self.data.len() - self.remaining;
+
+        // The byte length of the next frame.
+        let len = self.remaining.min(MAX_FRAME_LEN);
+
+        // The end offset of the next frame.
+        let to = from + len;
+
+        // Decrement remaining by len.
+        self.remaining -= len;
+
+        // Increment the ref-count of the underlying byte buffer and return an
+        // owned slice containing the bytes at from..to.
+        Poll::Ready(Some(Ok(Frame::data(self.data.slice(from..to)))))
     }
 
     fn is_end_stream(&self) -> bool {
-        self.cursor >= self.data.len()
+        self.remaining == 0
     }
 
     fn size_hint(&self) -> SizeHint {
-        // Get the length of the buffer and attempt to cast it to a
-        // `u64`. If the cast fails, return a size hint with no bounds.
-        let len = self
-            .data
-            .len()
-            .try_into()
-            .expect("failed to perform the conversion");
-
-        SizeHint::with_exact(len)
+        match self.data.len().try_into() {
+            Ok(exact) => SizeHint::with_exact(exact),
+            Err(error) => {
+                // Placeholder for tracing...
+                let _ = &error;
+                SizeHint::new()
+            }
+        }
     }
 }
 
@@ -77,20 +72,48 @@ impl Debug for ResponseBody {
 }
 
 impl Default for ResponseBody {
+    #[inline]
     fn default() -> Self {
-        Self::new("")
+        Self {
+            data: Bytes::new(),
+            remaining: 0,
+        }
+    }
+}
+
+impl From<Bytes> for ResponseBody {
+    #[inline]
+    fn from(data: Bytes) -> Self {
+        let remaining = data.len();
+        Self { data, remaining }
     }
 }
 
 impl From<String> for ResponseBody {
-    fn from(string: String) -> Self {
-        Self::new(&string)
+    #[inline]
+    fn from(data: String) -> Self {
+        Self::from(Bytes::copy_from_slice(data.as_bytes()))
     }
 }
 
 impl From<&'_ str> for ResponseBody {
-    fn from(slice: &str) -> Self {
-        Self::new(slice)
+    #[inline]
+    fn from(data: &str) -> Self {
+        Self::from(Bytes::copy_from_slice(data.as_bytes()))
+    }
+}
+
+impl From<Vec<u8>> for ResponseBody {
+    #[inline]
+    fn from(data: Vec<u8>) -> Self {
+        Self::from(Bytes::copy_from_slice(&data))
+    }
+}
+
+impl From<&'_ [u8]> for ResponseBody {
+    #[inline]
+    fn from(data: &'_ [u8]) -> Self {
+        Self::from(Bytes::copy_from_slice(data))
     }
 }
 
@@ -114,5 +137,45 @@ where
 {
     fn from(body: T) -> Self {
         HttpBody::Original(ResponseBody::from(body))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+    use http_body_util::BodyExt;
+
+    use super::{ResponseBody, MAX_FRAME_LEN};
+
+    #[tokio::test]
+    async fn test_poll_frame_empty() {
+        let mut body = ResponseBody::from("");
+        assert!(body.frame().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_poll_frame_one() {
+        let mut body = ResponseBody::from("Hello, world!");
+        let hello_world = body.frame().await.unwrap().unwrap().into_data().unwrap();
+
+        assert_eq!(hello_world, Bytes::copy_from_slice(b"Hello, world!"));
+        assert!(body.frame().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_poll_frame() {
+        let frames = [
+            format!("hello{}", " ".repeat(MAX_FRAME_LEN - 5)),
+            "world".to_owned(),
+        ];
+
+        let mut body = ResponseBody::from(frames.concat());
+
+        for part in &frames {
+            let next = body.frame().await.unwrap().unwrap().into_data().unwrap();
+            assert_eq!(next, Bytes::copy_from_slice(part.as_bytes()));
+        }
+
+        assert!(body.frame().await.is_none());
     }
 }
