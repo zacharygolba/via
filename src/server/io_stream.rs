@@ -17,33 +17,28 @@ pub struct IoStream<T> {
 }
 
 impl<T> IoStream<T> {
+    #[inline]
     pub fn new(stream: T) -> Self {
         Self { stream }
     }
 }
 
-impl<T> IoStream<T> {
+impl<T: Unpin> IoStream<T> {
+    #[inline]
     fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
-        // Get a pinned mutable reference to `self.stream` from a pinned
-        // mutable reference to `self`.
-        //
-        // Safety:
-        //
-        // This is safe because data is never moved out of self or
-        // `self.stream`.
-        //
-        unsafe { Pin::map_unchecked_mut(self, |this| &mut this.stream) }
+        let this = self.get_mut();
+        Pin::new(&mut this.stream)
     }
 }
 
-impl<R: AsyncRead> Read for IoStream<R> {
+impl<R: AsyncRead + Unpin> Read for IoStream<R> {
     fn poll_read(
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
         mut cursor: ReadBufCursor<'_>,
     ) -> Poll<Result<(), Error>> {
-        // Get a tokio-compatible buffer from the unfilled portion of the buffer
-        // stored in `cursor`.
+        // Get a tokio-compatible buffer from the unfilled portion of the
+        // buffer in ReadBufCursor.
         //
         // Safety:
         //
@@ -52,36 +47,29 @@ impl<R: AsyncRead> Read for IoStream<R> {
         //
         let mut buf = unsafe { ReadBuf::uninit(cursor.as_mut()) };
 
-        match self.project().poll_read(context, &mut buf)? {
-            // Wait for `stream` to produce the next value.
-            Poll::Pending => Poll::Pending,
+        let len = match self.project().poll_read(context, &mut buf)? {
+            Poll::Ready(_) => buf.filled().len(),
+            Poll::Pending => return Poll::Pending,
+        };
 
-            // Bytes were read into `buf` successfully. Advance the cursor by the
-            // number of bytes that were read.
-            Poll::Ready(_) => {
-                // Get the exact number of bytes that were read during the call
-                // to `stream.poll_read()`.
-                let n = buf.filled().len();
-
-                // Advance `cursor` by `n` number of bytes.
-                //
-                // Safety:
-                //
-                // This is safe because the request body size is limited and
-                // response bodies are buffered and read in 8KB chunks by
-                // default.
-                //
-                unsafe {
-                    cursor.advance(n);
-                }
-
-                Poll::Ready(Ok(()))
-            }
+        // Bytes were read into buf successfully. Advance the cursor by the
+        // number of bytes that were read.
+        //
+        // Safety:
+        //
+        // This is safe because we are using the exact number of bytes that
+        // were read into the filled portion of buf, immediately after the
+        // call to poll_read.
+        //
+        unsafe {
+            cursor.advance(len);
         }
+
+        Poll::Ready(Ok(()))
     }
 }
 
-impl<W: AsyncWrite> Write for IoStream<W> {
+impl<W: AsyncWrite + Unpin> Write for IoStream<W> {
     fn poll_write(
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
