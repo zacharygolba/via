@@ -3,6 +3,8 @@ use crate::path::{self, Param, Pattern, Split};
 #[cfg(feature = "lru-cache")]
 use crate::cache::Cache;
 
+pub type Matched = Vec<Option<Match>>;
+
 /// A matched node in the route tree.
 ///
 /// Contains a reference to the route associated with the node and additional
@@ -133,20 +135,37 @@ impl<T> Router<T> {
 
     #[cfg(feature = "lru-cache")]
     pub fn visit(&self, path: &str) -> Vec<Option<Match>> {
+        let mut attempts = 0;
+
         let cache = &self.cache;
         let nodes = &self.nodes;
 
-        #[allow(clippy::never_loop)]
-        let first = loop {
+        loop {
             return match cache.read(path) {
-                Some(Some(matches)) => matches,
-                Some(None) => break lookup(nodes, path),
-                None => lookup(nodes, path),
-            };
-        };
+                // The requested resource was available in cache.
+                Ok(Some((key, matches))) => {
+                    cache.promote(key);
+                    matches
+                }
 
-        cache.write(path.into(), first.clone());
-        first
+                // The requested resource is not available in cache.
+                Ok(None) => {
+                    let matches = lookup(nodes, path);
+
+                    cache.write(path, &matches);
+                    matches
+                }
+
+                // The cache is unavailable due to a write conflict.
+                Err(_) if attempts > 0 => lookup(nodes, path),
+
+                // The cache is unavailable due to a write conflict.
+                Err(_) => {
+                    attempts += 1;
+                    continue;
+                }
+            };
+        }
     }
 
     #[cfg(not(feature = "lru-cache"))]
@@ -156,8 +175,11 @@ impl<T> Router<T> {
 
     #[inline]
     pub fn resolve(&self, matching: &Match) -> (Option<&Param>, Option<&T>) {
-        let node = self.nodes.get(matching.key);
-        (node.and_then(Node::param), node.and_then(Node::route))
+        if let Some(node) = self.nodes.get(matching.key) {
+            (node.param(), node.route())
+        } else {
+            (None, None)
+        }
     }
 }
 

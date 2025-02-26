@@ -1,29 +1,24 @@
 use std::collections::VecDeque;
+use std::error::Error;
+use std::fmt::{self, Display, Formatter};
 use std::sync::RwLock;
 
-use crate::router::Match;
+use crate::router::{Match, Matched};
+
+#[derive(Debug)]
+pub struct CacheError;
 
 pub struct Cache {
     capacity: usize,
-
-    #[allow(clippy::type_complexity)]
-    entries: RwLock<VecDeque<(Box<str>, Vec<Option<Match>>)>>,
+    entries: RwLock<VecDeque<(Box<str>, Matched)>>,
 }
 
-#[inline]
-fn fetch(
-    store: &VecDeque<(Box<str>, Vec<Option<Match>>)>,
-    key: &str,
-) -> Option<(usize, Vec<Option<Match>>)> {
-    let (index, matches) = store.iter().enumerate().find_map(|(i, (k, matches))| {
-        if *key == **k {
-            Some((i, matches))
-        } else {
-            None
-        }
-    })?;
+impl Error for CacheError {}
 
-    Some((index, matches.to_vec()))
+impl Display for CacheError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "lock in use")
+    }
 }
 
 impl Cache {
@@ -34,37 +29,33 @@ impl Cache {
         }
     }
 
-    pub fn read(&self, path: &str) -> Option<Option<Vec<Option<Match>>>> {
-        let lock = &self.entries;
-        let cap = self.capacity;
-
-        #[allow(clippy::never_loop)]
-        let (key, matches) = loop {
-            return match lock.try_read() {
-                Ok(guard) => match fetch(&guard, path) {
-                    Some(existing) => break existing,
-                    None => Some(None),
-                },
-                Err(_) => None,
-            };
-        };
-
-        if cap.checked_div(2).is_some_and(|half| key > half) {
-            if let Ok(mut guard) = lock.try_write() {
+    pub fn promote(&self, key: usize) {
+        if let Ok(mut guard) = self.entries.try_write() {
+            if self.capacity.checked_div(2).is_some_and(|half| key > half) {
                 guard.swap_remove_front(key);
             }
         }
-
-        Some(Some(matches))
     }
 
-    pub fn write(&self, path: Box<str>, matches: Vec<Option<Match>>) {
+    pub fn read(&self, path: &str) -> Result<Option<(usize, Matched)>, CacheError> {
+        let guard = self.entries.try_read().or(Err(CacheError))?;
+
+        Ok(guard.iter().enumerate().find_map(|(index, (key, value))| {
+            if path == &**key {
+                Some((index, value.to_vec()))
+            } else {
+                None
+            }
+        }))
+    }
+
+    pub fn write(&self, path: &str, matches: &[Option<Match>]) {
         if let Ok(mut guard) = self.entries.try_write() {
             if self.capacity == guard.len() {
                 guard.pop_back();
             }
 
-            guard.push_front((path, matches));
+            guard.push_front((path.into(), matches.to_vec()));
         }
     }
 }
