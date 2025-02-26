@@ -1,24 +1,13 @@
 use std::collections::VecDeque;
 use std::error::Error;
-use std::fmt::{self, Display, Formatter};
 use std::sync::RwLock;
 
-use crate::router::{Match, Matched};
-
-#[derive(Debug)]
-pub struct CacheError;
+use crate::router::Match;
 
 pub struct Cache {
     capacity: usize,
-    entries: RwLock<VecDeque<(Box<str>, Matched)>>,
-}
-
-impl Error for CacheError {}
-
-impl Display for CacheError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "lock in use")
-    }
+    #[allow(clippy::type_complexity)]
+    entries: RwLock<VecDeque<(Box<str>, Vec<Option<Match>>)>>,
 }
 
 impl Cache {
@@ -37,8 +26,12 @@ impl Cache {
         }
     }
 
-    pub fn read(&self, path: &str) -> Result<Option<(usize, Matched)>, CacheError> {
-        let guard = self.entries.try_read().or(Err(CacheError))?;
+    #[allow(clippy::type_complexity)]
+    pub fn read(
+        &self,
+        path: &str,
+    ) -> Result<Option<(usize, Vec<Option<Match>>)>, Box<dyn Error + Send + Sync>> {
+        let guard = self.entries.try_read().or(Err("lock in use"))?;
 
         Ok(guard.iter().enumerate().find_map(|(index, (key, value))| {
             if path == &**key {

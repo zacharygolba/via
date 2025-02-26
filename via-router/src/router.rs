@@ -3,8 +3,6 @@ use crate::path::{self, Param, Pattern, Split};
 #[cfg(feature = "lru-cache")]
 use crate::cache::Cache;
 
-pub type Matched = Vec<Option<Match>>;
-
 /// A matched node in the route tree.
 ///
 /// Contains a reference to the route associated with the node and additional
