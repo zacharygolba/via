@@ -88,7 +88,11 @@ Contributions are welcome! Feel free to submit issues or pull requests on our [G
 
 ## Inspiration
 
-This project is inspired by [Koa](https://github.com/koajs/koa) (a web framework for Node.js).
+This project is inspired by:
+
+-   [Koa](https://github.com/koajs/koa) A web framework for Node.js.
+-   [Tide](https://github.com/http-rs/tide) The reference implementation of an async web server in Rust.
+-   [Actix Web](https://github.com/actix/actix-web) They paved their own way and I have so much respect for that.
 
 ## License
 
