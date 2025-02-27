@@ -93,35 +93,37 @@ impl<'a> Iterator for QueryParser<'a> {
 mod tests {
     use super::QueryParser;
 
-    static QUERY_STRINGS: [&str; 21] = [
-        "query=books&category=fiction&sort=asc",
-        "query=hello%20world&category=%E2%9C%93",
-        "category=books&category=electronics&category=clothing",
-        "query=books&category=",
-        "query=100%25%20organic&category=food",
-        "query=books&filter={\"price\":\"low\",\"rating\":5}",
-        "items[]=book&items[]=pen&items[]=notebook",
-        "",
-        "data={\"name\":\"John\",\"age\":30,\"city\":\"New York\"}",
-        "query=books&category=fiction#section2",
-        // Invalid query strings
-        "query=books&&category=fiction", // Double ampersand
-        "query==books&category=fiction", // Double equal sign
-        "query=books&category",          // Key without value
-        "query=books&=fiction",          // Value without key
-        "query=books&category=fiction&", // Trailing ampersand
-        // Percent-encoded keys
-        "qu%65ry=books&ca%74egory=fiction",
-        "%71uery=books&%63ategory=fiction",
-        "query=books&ca%74egory=fic%74ion",
-        // Invalid UTF-8 characters (using percent-encoded bytes that don't form valid UTF-8 sequences)
-        "query=books&category=%80%80%80",    // Overlong encoding
-        "query=books&category=%C3%28",       // Invalid UTF-8 sequence in value
-        "query%C3%28=books&category=%C3%28", // Invalid UTF-8 sequence in key
-    ];
+    #[test]
+    fn parse_query_params_test() {
+        let query_strings = vec![
+            "query=books&category=fiction&sort=asc",
+            "query=hello%20world&category=%E2%9C%93",
+            "category=books&category=electronics&category=clothing",
+            "query=books&category=",
+            "query=100%25%20organic&category=food",
+            "query=books&filter={\"price\":\"low\",\"rating\":5}",
+            "items[]=book&items[]=pen&items[]=notebook",
+            "",
+            "data={\"name\":\"John\",\"age\":30,\"city\":\"New York\"}",
+            "query=books&category=fiction#section2",
+            // Invalid query strings
+            "query=books&&category=fiction", // Double ampersand
+            "query==books&category=fiction", // Double equal sign
+            "query=books&category",          // Key without value
+            "query=books&=fiction",          // Value without key
+            "query=books&category=fiction&", // Trailing ampersand
+            // Percent-encoded keys
+            "qu%65ry=books&ca%74egory=fiction",
+            "%71uery=books&%63ategory=fiction",
+            "query=books&ca%74egory=fic%74ion",
+            // Invalid UTF-8 characters
+            // (using percent-encoded bytes that don't form valid UTF-8 sequences)
+            "query=books&category=%80%80%80",    // Overlong encoding
+            "query=books&category=%C3%28",       // Invalid UTF-8 sequence in value
+            "query%C3%28=books&category=%C3%28", // Invalid UTF-8 sequence in key
+        ];
 
-    fn get_expected_results() -> [Vec<(&'static str, Option<[usize; 2]>)>; 21] {
-        [
+        let expected_results = vec![
             vec![
                 ("query", Some([6, 11])),
                 ("category", Some([21, 28])),
@@ -155,14 +157,9 @@ mod tests {
             vec![("query", Some([6, 11])), ("category", Some([21, 30]))],
             vec![("query", Some([6, 11])), ("category", Some([21, 27]))],
             vec![("query�(", Some([12, 17])), ("category", Some([27, 33]))],
-        ]
-    }
+        ];
 
-    #[test]
-    fn parse_query_params_test() {
-        let expected_results = get_expected_results();
-
-        for (expected_result_index, query) in QUERY_STRINGS.iter().enumerate() {
+        for (expected_result_index, query) in query_strings.iter().enumerate() {
             let mut actual_result = vec![];
             let expected_result = &expected_results[expected_result_index];
 
