@@ -1,6 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 
-use crate::error::{BoxError, Error};
+use crate::error::{DynError, Error};
 
 #[derive(Clone, Copy, Debug)]
 pub struct LimitError;
@@ -8,7 +8,7 @@ pub struct LimitError;
 /// Wrap the provided [BoxError] with [Error] and set the status based on the
 /// error type.
 ///
-pub fn error_from_boxed(error: BoxError) -> Error {
+pub fn error_from_boxed(error: DynError) -> Error {
     if let Some(&LimitError) = error.downcast_ref() {
         Error::payload_too_large(error)
     } else {

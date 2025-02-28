@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use super::http_body::HttpBody;
-use crate::error::BoxError;
+use crate::error::DynError;
 
 /// The maximum amount of data that can be read from a buffered body per frame.
 ///
@@ -21,7 +21,7 @@ pub struct ResponseBody {
 
 impl Body for ResponseBody {
     type Data = Bytes;
-    type Error = BoxError;
+    type Error = DynError;
 
     fn poll_frame(
         mut self: Pin<&mut Self>,
