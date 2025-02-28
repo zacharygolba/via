@@ -14,7 +14,7 @@ use tokio::{signal, time};
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
-use crate::body::RequestBody;
+use crate::body::{HttpBody, RequestBody};
 use crate::error::DynError;
 use crate::request::Request;
 use crate::router::{Router, RouterError};
@@ -131,10 +131,16 @@ where
 
             // Define a hyper service to serve the incoming request.
             let service = service_fn(|r| {
-                let mut request = Request::new(
-                    Arc::clone(&state),
-                    r.map(|body| RequestBody::new(max_request_size, body).into()),
-                );
+                let mut request = {
+                    let state = Arc::clone(&state);
+                    let (head, body) = r.into_parts();
+
+                    Request::new(
+                        state,
+                        HttpBody::Original(RequestBody::new(max_request_size, body)),
+                        head,
+                    )
+                };
 
                 let matches = router.visit(request.uri().path());
                 let next = router.resolve(&matches, request.params_mut());
