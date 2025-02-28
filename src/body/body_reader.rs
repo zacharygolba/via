@@ -1,4 +1,4 @@
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::Bytes;
 use http::HeaderMap;
 use http_body::Body;
 use serde::de::DeserializeOwned;
@@ -55,11 +55,11 @@ impl BodyData {
         self.trailers.as_ref()
     }
 
-    pub fn parse_json<D>(self) -> Result<D, Error>
+    pub fn parse_json<D>(&self) -> Result<D, Error>
     where
         D: DeserializeOwned,
     {
-        let payload = self.into_text()?;
+        let payload = self.to_utf8()?;
 
         // Attempt deserialize JSON assuming that type `D` exists in a top-level
         // data field. This is a common pattern so we optimize for it to provide
@@ -82,27 +82,21 @@ impl BodyData {
             })
     }
 
-    pub fn into_bytes(self) -> Bytes {
-        let mut buf = BytesMut::with_capacity(self.len());
-
-        for chunk in self.payload {
-            buf.put(chunk);
-        }
-
-        buf.freeze()
-    }
-
-    pub fn into_text(self) -> Result<String, Error> {
-        let mut payload = Vec::with_capacity(self.len());
-
-        for chunk in &self.payload {
-            payload.extend_from_slice(chunk);
-        }
-
-        String::from_utf8(payload).map_err(|error| {
+    pub fn to_utf8(&self) -> Result<String, Error> {
+        String::from_utf8(self.to_vec()).map_err(|error| {
             let source = Box::new(error);
             Error::bad_request(source)
         })
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        let mut vec = Vec::with_capacity(self.len());
+
+        for chunk in &self.payload {
+            vec.extend_from_slice(chunk);
+        }
+
+        vec
     }
 }
 
