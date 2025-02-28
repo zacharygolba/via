@@ -66,9 +66,38 @@ where
     });
 
     // Start accepting incoming connections.
-    let exit_code = 'accept: loop {
+    let exit_code = loop {
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
+
+        // Wait for something interesting to happen.
+        let stream = tokio::select! {
+            // A graceful shutdown was requested.
+            _ = shutdown_rx.changed() => {
+                // Break out of the accept loop with the corrosponding exit code.
+                break match *shutdown_rx.borrow_and_update() {
+                    Some(false) => ExitCode::from(0),
+                    Some(true) | None => ExitCode::from(1),
+                }
+            }
+
+            // A new connection is ready to be accepted.
+            result = listener.accept() => match result {
+                // Accept the stream from the acceptor.
+                Ok((stream, _addr)) => stream,
+                Err(error) => {
+                    let _ = &error; // Placeholder for tracing...
+                    continue;
+                }
+            },
+
+            // We have idle time. Join any inflight connections that may
+            // have finished.
+            _ = connections.join_next(), if !connections.is_empty() => {
+                while connections.try_join_next().is_some() {}
+                continue;
+            }
+        };
 
         // Get a weak reference to the state passed to the via::app function so
         // it can be moved in to the connection task.
@@ -77,35 +106,6 @@ where
         // Clone the app so it can be moved into the connection task to serve
         // the connection.
         let router = Arc::clone(&router);
-
-        // Wait for something interesting to happen.
-        let stream = loop {
-            tokio::select! {
-                // A graceful shutdown was requested.
-                _ = shutdown_rx.changed() => {
-                    // Break out of the accept loop with the corrosponding exit code.
-                    break 'accept match *shutdown_rx.borrow_and_update() {
-                        Some(false) => ExitCode::from(0),
-                        Some(true) | None => ExitCode::from(1),
-                    }
-                }
-
-                // A new connection is ready to be accepted.
-                result = listener.accept() => match result {
-                    // Accept the stream from the acceptor.
-                    Ok((stream, _addr)) => break stream,
-                    Err(error) => {
-                        let _ = &error; // Placeholder for tracing...
-                    }
-                },
-
-                // We have idle time. Join any inflight connections that may
-                // have finished.
-                _ = connections.join_next(), if !connections.is_empty() => {
-                    while connections.try_join_next().is_some() {}
-                }
-            }
-        };
 
         // Clone the watch sender so connections can notify the main thread
         // if an unrecoverable error is encountered.
@@ -207,8 +207,7 @@ where
 
         // Otherwise, return an error.
         _ = time::sleep(shutdown_timeout) => {
-            let message = "server exited before all connections were closed".to_owned();
-            Err(DynError::from(message))
+            Err("server exited before all connections were closed".into())
         }
     }
 }
