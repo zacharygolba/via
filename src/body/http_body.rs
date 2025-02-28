@@ -3,8 +3,12 @@ use http_body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::{BoxBody, RequestBody};
+use super::RequestBody;
 use crate::error::BoxError;
+
+/// A type erased, dynamically dispatched [`Body`].
+///
+pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, BoxError>;
 
 /// The body of a request or response.
 ///
@@ -16,7 +20,7 @@ pub enum HttpBody<T> {
     ///
     Original(T),
 
-    /// A boxed request or response body that was returned from a map function.
+    /// A type erased, dynamically dispatched [`Body`].
     ///
     Mapped(BoxBody),
 }
