@@ -10,7 +10,7 @@ use crate::response::Response;
 /// provided closure to inspect the error to another error. Think of this as a
 /// [`Result::inspect_err`] for middleware.
 ///
-pub fn catch<T, F>(inspect: F) -> impl Middleware<T>
+pub fn inspect<T, F>(inspect: F) -> impl Middleware<T>
 where
     F: Fn(Arc<T>, &Error) + Copy + Send + Sync + 'static,
     T: Send + Sync + 'static,

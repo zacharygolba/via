@@ -24,7 +24,7 @@ async fn main() -> Result<ExitCode, Error> {
     let mut app = via::app(());
 
     // Include an error boundary to catch any errors that occur downstream.
-    app.include(error_boundary::catch(|_, error| {
+    app.include(error_boundary::inspect(|_, error| {
         eprintln!("Error: {}", error);
     }));
 
