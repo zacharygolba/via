@@ -1,7 +1,7 @@
 pub mod cookie_parser;
 pub mod error_boundary;
 
-pub(crate) mod filter_method;
+pub(crate) mod accept_method;
 
 mod middleware;
 mod next;
