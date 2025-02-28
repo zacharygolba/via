@@ -5,7 +5,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::error::BoxError;
+use crate::error::DynError;
 
 /// Converts an `impl Stream` to an `impl Body`.
 ///
@@ -36,10 +36,10 @@ impl<T> StreamBody<T> {
 
 impl<T> Body for StreamBody<T>
 where
-    T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync,
+    T: Stream<Item = Result<Frame<Bytes>, DynError>> + Send + Sync,
 {
     type Data = Bytes;
-    type Error = BoxError;
+    type Error = DynError;
 
     fn poll_frame(
         self: Pin<&mut Self>,

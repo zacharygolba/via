@@ -4,11 +4,11 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use super::RequestBody;
-use crate::error::BoxError;
+use crate::error::DynError;
 
 /// A type erased, dynamically dispatched [`Body`].
 ///
-pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, BoxError>;
+pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, DynError>;
 
 /// The body of a request or response.
 ///
@@ -27,7 +27,7 @@ pub enum HttpBody<T> {
 
 impl<T> HttpBody<T>
 where
-    T: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
+    T: Body<Data = Bytes, Error = DynError> + Send + Sync + 'static,
 {
     #[inline]
     pub fn boxed(self) -> BoxBody {
@@ -40,10 +40,10 @@ where
 
 impl<T> Body for HttpBody<T>
 where
-    T: Body<Data = Bytes, Error = BoxError> + Unpin,
+    T: Body<Data = Bytes, Error = DynError> + Unpin,
 {
     type Data = Bytes;
-    type Error = BoxError;
+    type Error = DynError;
 
     fn poll_frame(
         self: Pin<&mut Self>,

@@ -14,7 +14,7 @@ use crate::response::Response;
 /// [`Error`](std::error::Error)
 /// that is `Send + Sync`.
 ///
-pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+pub type DynError = Box<dyn std::error::Error + Send + Sync>;
 
 /// An error type that can act as a specialized version of a response
 /// [`Builder`](crate::response::Builder).
@@ -24,7 +24,7 @@ pub struct Error {
     as_json: bool,
     status: StatusCode,
     message: Option<String>,
-    error: BoxError,
+    error: DynError,
 }
 
 /// A serialized representation of an individual error.
@@ -36,7 +36,7 @@ struct SerializeError<'a> {
 impl Error {
     /// Returns a new [`Error`] with the provided message.
     ///
-    pub fn new(source: BoxError) -> Self {
+    pub fn new(source: DynError) -> Self {
         Self::internal_server_error(source)
     }
 
@@ -179,280 +179,280 @@ impl Error {
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `400 Bad Request` status.
     ///
-    pub fn bad_request(source: BoxError) -> Self {
+    pub fn bad_request(source: DynError) -> Self {
         Self::new_with_status(StatusCode::BAD_REQUEST, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `401 Unauthorized` status.
     ///
-    pub fn unauthorized(source: BoxError) -> Self {
+    pub fn unauthorized(source: DynError) -> Self {
         Self::new_with_status(StatusCode::UNAUTHORIZED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `402 Payment Required` status.
     ///
-    pub fn payment_required(source: BoxError) -> Self {
+    pub fn payment_required(source: DynError) -> Self {
         Self::new_with_status(StatusCode::PAYMENT_REQUIRED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `403 Forbidden` status.
     ///
-    pub fn forbidden(source: BoxError) -> Self {
+    pub fn forbidden(source: DynError) -> Self {
         Self::new_with_status(StatusCode::FORBIDDEN, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `404 Not Found` status.
     ///
-    pub fn not_found(source: BoxError) -> Self {
+    pub fn not_found(source: DynError) -> Self {
         Self::new_with_status(StatusCode::NOT_FOUND, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `405 Method Not Allowed` status.
     ///
-    pub fn method_not_allowed(source: BoxError) -> Self {
+    pub fn method_not_allowed(source: DynError) -> Self {
         Self::new_with_status(StatusCode::METHOD_NOT_ALLOWED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `406 Not Acceptable` status.
     ///
-    pub fn not_acceptable(source: BoxError) -> Self {
+    pub fn not_acceptable(source: DynError) -> Self {
         Self::new_with_status(StatusCode::NOT_ACCEPTABLE, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `407 Proxy Authentication Required` status.
     ///
-    pub fn proxy_authentication_required(source: BoxError) -> Self {
+    pub fn proxy_authentication_required(source: DynError) -> Self {
         Self::new_with_status(StatusCode::PROXY_AUTHENTICATION_REQUIRED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `408 Request Timeout` status.
     ///
-    pub fn request_timeout(source: BoxError) -> Self {
+    pub fn request_timeout(source: DynError) -> Self {
         Self::new_with_status(StatusCode::REQUEST_TIMEOUT, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `409 Conflict` status.
     ///
-    pub fn conflict(source: BoxError) -> Self {
+    pub fn conflict(source: DynError) -> Self {
         Self::new_with_status(StatusCode::CONFLICT, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `410 Gone` status.
     ///
-    pub fn gone(source: BoxError) -> Self {
+    pub fn gone(source: DynError) -> Self {
         Self::new_with_status(StatusCode::GONE, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `411 Length Required` status.
     ///
-    pub fn length_required(source: BoxError) -> Self {
+    pub fn length_required(source: DynError) -> Self {
         Self::new_with_status(StatusCode::LENGTH_REQUIRED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `412 Precondition Failed` status.
     ///
-    pub fn precondition_failed(source: BoxError) -> Self {
+    pub fn precondition_failed(source: DynError) -> Self {
         Self::new_with_status(StatusCode::PRECONDITION_FAILED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `413 Payload Too Large` status.
     ///
-    pub fn payload_too_large(source: BoxError) -> Self {
+    pub fn payload_too_large(source: DynError) -> Self {
         Self::new_with_status(StatusCode::PAYLOAD_TOO_LARGE, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `414 URI Too Long` status.
     ///
-    pub fn uri_too_long(source: BoxError) -> Self {
+    pub fn uri_too_long(source: DynError) -> Self {
         Self::new_with_status(StatusCode::URI_TOO_LONG, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `415 Unsupported Media Type` status.
     ///
-    pub fn unsupported_media_type(source: BoxError) -> Self {
+    pub fn unsupported_media_type(source: DynError) -> Self {
         Self::new_with_status(StatusCode::UNSUPPORTED_MEDIA_TYPE, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `416 Range Not Satisfiable` status.
     ///
-    pub fn range_not_satisfiable(source: BoxError) -> Self {
+    pub fn range_not_satisfiable(source: DynError) -> Self {
         Self::new_with_status(StatusCode::RANGE_NOT_SATISFIABLE, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `417 Expectation Failed` status.
     ///
-    pub fn expectation_failed(source: BoxError) -> Self {
+    pub fn expectation_failed(source: DynError) -> Self {
         Self::new_with_status(StatusCode::EXPECTATION_FAILED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `418 I'm a teapot` status.
     ///
-    pub fn im_a_teapot(source: BoxError) -> Self {
+    pub fn im_a_teapot(source: DynError) -> Self {
         Self::new_with_status(StatusCode::IM_A_TEAPOT, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `421 Misdirected Request` status.
     ///
-    pub fn misdirected_request(source: BoxError) -> Self {
+    pub fn misdirected_request(source: DynError) -> Self {
         Self::new_with_status(StatusCode::MISDIRECTED_REQUEST, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `422 Unprocessable Entity` status.
     ///
-    pub fn unprocessable_entity(source: BoxError) -> Self {
+    pub fn unprocessable_entity(source: DynError) -> Self {
         Self::new_with_status(StatusCode::UNPROCESSABLE_ENTITY, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `423 Locked` status.
     ///
-    pub fn locked(source: BoxError) -> Self {
+    pub fn locked(source: DynError) -> Self {
         Self::new_with_status(StatusCode::LOCKED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `424 Failed Dependency` status.
     ///
-    pub fn failed_dependency(source: BoxError) -> Self {
+    pub fn failed_dependency(source: DynError) -> Self {
         Self::new_with_status(StatusCode::FAILED_DEPENDENCY, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `426 Upgrade Required` status.
     ///
-    pub fn upgrade_required(source: BoxError) -> Self {
+    pub fn upgrade_required(source: DynError) -> Self {
         Self::new_with_status(StatusCode::UPGRADE_REQUIRED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `428 Precondition Required` status.
     ///
-    pub fn precondition_required(source: BoxError) -> Self {
+    pub fn precondition_required(source: DynError) -> Self {
         Self::new_with_status(StatusCode::PRECONDITION_REQUIRED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `429 Too Many Requests` status.
     ///
-    pub fn too_many_requests(source: BoxError) -> Self {
+    pub fn too_many_requests(source: DynError) -> Self {
         Self::new_with_status(StatusCode::TOO_MANY_REQUESTS, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `431 Request Header Fields Too Large` status.
     ///
-    pub fn request_header_fields_too_large(source: BoxError) -> Self {
+    pub fn request_header_fields_too_large(source: DynError) -> Self {
         Self::new_with_status(StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `451 Unavailable For Legal Reasons` status.
     ///
-    pub fn unavailable_for_legal_reasons(source: BoxError) -> Self {
+    pub fn unavailable_for_legal_reasons(source: DynError) -> Self {
         Self::new_with_status(StatusCode::UNAVAILABLE_FOR_LEGAL_REASONS, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `500 Internal Server Error` status.
     ///
-    pub fn internal_server_error(source: BoxError) -> Self {
+    pub fn internal_server_error(source: DynError) -> Self {
         Self::new_with_status(StatusCode::INTERNAL_SERVER_ERROR, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `501 Not Implemented` status.
     ///
-    pub fn not_implemented(source: BoxError) -> Self {
+    pub fn not_implemented(source: DynError) -> Self {
         Self::new_with_status(StatusCode::NOT_IMPLEMENTED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `502 Bad Gateway` status.
     ///
-    pub fn bad_gateway(source: BoxError) -> Self {
+    pub fn bad_gateway(source: DynError) -> Self {
         Self::new_with_status(StatusCode::BAD_GATEWAY, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `503 Service Unavailable` status.
     ///
-    pub fn service_unavailable(source: BoxError) -> Self {
+    pub fn service_unavailable(source: DynError) -> Self {
         Self::new_with_status(StatusCode::SERVICE_UNAVAILABLE, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `504 Gateway Timeout` status.
     ///
-    pub fn gateway_timeout(source: BoxError) -> Self {
+    pub fn gateway_timeout(source: DynError) -> Self {
         Self::new_with_status(StatusCode::GATEWAY_TIMEOUT, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `505 HTTP Version Not Supported` status.
     ///
-    pub fn http_version_not_supported(source: BoxError) -> Self {
+    pub fn http_version_not_supported(source: DynError) -> Self {
         Self::new_with_status(StatusCode::HTTP_VERSION_NOT_SUPPORTED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `506 Variant Also Negotiates` status.
     ///
-    pub fn variant_also_negotiates(source: BoxError) -> Self {
+    pub fn variant_also_negotiates(source: DynError) -> Self {
         Self::new_with_status(StatusCode::VARIANT_ALSO_NEGOTIATES, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `507 Insufficient Storage` status.
     ///
-    pub fn insufficient_storage(source: BoxError) -> Self {
+    pub fn insufficient_storage(source: DynError) -> Self {
         Self::new_with_status(StatusCode::INSUFFICIENT_STORAGE, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `508 Loop Detected` status.
     ///
-    pub fn loop_detected(source: BoxError) -> Self {
+    pub fn loop_detected(source: DynError) -> Self {
         Self::new_with_status(StatusCode::LOOP_DETECTED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `510 Not Extended` status.
     ///
-    pub fn not_extended(source: BoxError) -> Self {
+    pub fn not_extended(source: DynError) -> Self {
         Self::new_with_status(StatusCode::NOT_EXTENDED, source)
     }
 
     /// Returns a new [`Error`] from the provided source that will generate a
     /// [`Response`] with a `511 Network Authentication Required` status.
     ///
-    pub fn network_authentication_required(source: BoxError) -> Self {
+    pub fn network_authentication_required(source: DynError) -> Self {
         Self::new_with_status(StatusCode::NETWORK_AUTHENTICATION_REQUIRED, source)
     }
 }
 
 impl Error {
     #[inline]
-    fn new_with_status(status: StatusCode, source: BoxError) -> Self {
+    fn new_with_status(status: StatusCode, source: DynError) -> Self {
         Self {
             as_json: false,
             message: None,

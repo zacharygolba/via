@@ -15,7 +15,7 @@ use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
 use crate::body::RequestBody;
-use crate::error::BoxError;
+use crate::error::DynError;
 use crate::request::Request;
 use crate::router::{Router, RouterError};
 use crate::server::io_stream::IoStream;
@@ -28,7 +28,7 @@ pub async fn serve<T, A>(
     max_connections: usize,
     max_request_size: usize,
     shutdown_timeout: Duration,
-) -> Result<ExitCode, BoxError>
+) -> Result<ExitCode, DynError>
 where
     T: Send + Sync + 'static,
     A: Acceptor + Send + Sync + 'static,
@@ -208,7 +208,7 @@ where
         // Otherwise, return an error.
         _ = time::sleep(shutdown_timeout) => {
             let message = "server exited before all connections were closed".to_owned();
-            Err(BoxError::from(message))
+            Err(DynError::from(message))
         }
     }
 }

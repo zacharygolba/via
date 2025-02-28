@@ -8,7 +8,7 @@ use super::body_reader::{BodyData, BodyReader};
 use super::body_stream::BodyStream;
 use super::http_body::HttpBody;
 use super::limit_error::LimitError;
-use crate::error::{BoxError, Error};
+use crate::error::{DynError, Error};
 
 /// A length-limited `impl Body`. The default limit is `10MB`.
 ///
@@ -40,7 +40,7 @@ impl HttpBody<RequestBody> {
 
 impl Body for RequestBody {
     type Data = Bytes;
-    type Error = BoxError;
+    type Error = DynError;
 
     fn poll_frame(
         self: Pin<&mut Self>,
