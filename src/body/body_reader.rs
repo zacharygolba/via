@@ -17,7 +17,7 @@ use super::RequestBody;
 
 /// The entire contents of a request body, in-memory.
 ///
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct BodyData {
     payload: Vec<Bytes>,
     trailers: Option<HeaderMap>,
@@ -26,8 +26,7 @@ pub struct BodyData {
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct BodyReader {
     body: HttpBody<RequestBody>,
-    payload: Option<Vec<Bytes>>,
-    trailers: Option<HeaderMap>,
+    data: Option<BodyData>,
 }
 
 struct JsonPayload<T> {
@@ -105,8 +104,10 @@ impl BodyReader {
     pub(crate) fn new(body: HttpBody<RequestBody>) -> Self {
         Self {
             body,
-            payload: Some(vec![]),
-            trailers: None,
+            data: Some(BodyData {
+                payload: Vec::new(),
+                trailers: None,
+            }),
         }
     }
 }
@@ -120,34 +121,30 @@ impl Future for BodyReader {
 
         loop {
             return match body.as_mut().poll_frame(context) {
+                Poll::Pending => Poll::Pending,
+
+                Poll::Ready(None) => {
+                    Poll::Ready(Ok(this.data.take().ok_or_else(body_already_read)?))
+                }
+
+                Poll::Ready(Some(Err(e))) => Poll::Ready(Err(error_from_boxed(e))),
+
                 Poll::Ready(Some(Ok(frame))) => {
-                    let payload = this.payload.as_mut().ok_or_else(body_already_read)?;
+                    let data = this.data.as_mut().ok_or_else(body_already_read)?;
                     let frame = match frame.into_data() {
                         Err(frame) => frame,
                         Ok(chunk) => {
-                            payload.push(chunk);
+                            data.payload.push(chunk);
                             continue;
                         }
                     };
 
                     if let Ok(trailers) = frame.into_trailers() {
-                        this.trailers.get_or_insert_default().extend(trailers);
+                        data.trailers.get_or_insert_default().extend(trailers);
                     }
 
                     continue;
                 }
-
-                Poll::Ready(Some(Err(e))) => {
-                    let error = error_from_boxed(e);
-                    Poll::Ready(Err(error))
-                }
-
-                Poll::Ready(None) => Poll::Ready(Ok(BodyData {
-                    payload: this.payload.take().ok_or_else(body_already_read)?,
-                    trailers: this.trailers.take(),
-                })),
-
-                Poll::Pending => Poll::Pending,
             };
         }
     }
