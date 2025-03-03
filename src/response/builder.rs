@@ -8,7 +8,7 @@ use crate::body::{HttpBody, ResponseBody};
 use crate::error::Error;
 
 #[derive(Debug, Default)]
-pub struct Builder {
+pub struct ResponseBuilder {
     inner: http::response::Builder,
 }
 
@@ -16,7 +16,7 @@ struct JsonPayload<'a, T> {
     data: &'a T,
 }
 
-impl Builder {
+impl ResponseBuilder {
     #[inline]
     pub fn header<K, V>(self, key: K, value: V) -> Self
     where
