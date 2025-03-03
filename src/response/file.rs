@@ -8,11 +8,13 @@ use tokio::fs;
 use super::Response;
 use crate::{middleware, Error};
 
+type GenerateEtag = fn(&Metadata) -> Result<String, Error>;
+
 /// Serve a single file from disk.
 ///
 pub struct File {
     path: PathBuf,
-    etag: Option<fn(&Metadata) -> Result<String, Error>>,
+    etag: Option<GenerateEtag>,
     mime_type: Option<String>,
     with_last_modified: bool,
 }
@@ -38,7 +40,7 @@ impl File {
         }
     }
 
-    pub fn etag(self, f: fn(&Metadata) -> Result<String, Error>) -> Self {
+    pub fn etag(self, f: GenerateEtag) -> Self {
         Self {
             etag: Some(f),
             ..self
