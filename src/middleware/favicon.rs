@@ -1,8 +1,11 @@
 use std::path::Path;
 
 use super::Middleware;
+use crate::get;
 use crate::response::File;
 
+/// Serves the favicon at the provided path argument.
+///
 /// # Example
 ///
 /// ```
@@ -19,6 +22,7 @@ use crate::response::File;
 ///     Ok(())
 /// }
 /// ```
+///
 pub fn favicon<T>(path: impl AsRef<Path>) -> impl Middleware<T> {
     let path_to_favicon = path.as_ref().to_path_buf();
     let content_type = match path_to_favicon
@@ -33,7 +37,7 @@ pub fn favicon<T>(path: impl AsRef<Path>) -> impl Middleware<T> {
         }
     };
 
-    crate::get(move |_, _| {
+    get(move |_, _| {
         File::open(&path_to_favicon)
             .mime_type(&content_type)
             .serve()
