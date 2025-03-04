@@ -11,7 +11,7 @@ use crate::{middleware, Error};
 
 type GenerateEtag = fn(&Metadata) -> Result<String, Error>;
 
-/// Serve a single file from disk.
+/// A specialized response builder used to serve a single file from disk.
 ///
 pub struct File {
     path: PathBuf,
@@ -30,6 +30,8 @@ fn wrap_io_error(error: io::Error) -> Error {
 }
 
 impl File {
+    /// Specify the path at which the file we want to serve is located.
+    ///
     pub fn open(path: impl AsRef<Path>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
@@ -39,6 +41,9 @@ impl File {
         }
     }
 
+    /// Generate an etag by calling the provided function with a reference to
+    /// the file's [Metadata].
+    ///
     pub fn etag(self, f: GenerateEtag) -> Self {
         Self {
             etag: Some(f),
@@ -46,6 +51,9 @@ impl File {
         }
     }
 
+    /// Set the value of the `Content-Type` header that will be included in the
+    /// response.
+    ///
     pub fn content_type(self, mime_type: &str) -> Self {
         Self {
             content_type: Some(mime_type.to_owned()),
@@ -53,6 +61,8 @@ impl File {
         }
     }
 
+    /// Include a `Last-Modified` header in the response.
+    ///
     pub fn with_last_modified(self) -> Self {
         Self {
             with_last_modified: true,
@@ -60,6 +70,8 @@ impl File {
         }
     }
 
+    /// Respond with the contents of this file.
+    ///
     pub async fn serve(self) -> middleware::Result {
         let mut file = fs::File::open(&self.path).await.map_err(wrap_io_error)?;
         let metadata = file.metadata().await?;
