@@ -25,7 +25,7 @@ use crate::response::File;
 ///
 pub fn favicon<T>(path: impl AsRef<Path>) -> impl Middleware<T> {
     let path_to_favicon = path.as_ref().to_path_buf();
-    let content_type = match path_to_favicon
+    let mime_type = match path_to_favicon
         .extension()
         .and_then(|os_str| os_str.to_str())
     {
@@ -39,7 +39,7 @@ pub fn favicon<T>(path: impl AsRef<Path>) -> impl Middleware<T> {
 
     get(move |_, _| {
         File::open(&path_to_favicon)
-            .mime_type(&content_type)
+            .content_type(&mime_type)
             .serve()
     })
 }

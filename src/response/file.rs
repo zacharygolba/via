@@ -15,7 +15,7 @@ type GenerateEtag = fn(&Metadata) -> Result<String, Error>;
 pub struct File {
     path: PathBuf,
     etag: Option<GenerateEtag>,
-    mime_type: Option<String>,
+    content_type: Option<String>,
     with_last_modified: bool,
 }
 
@@ -35,7 +35,7 @@ impl File {
         Self {
             path: path.as_ref().to_path_buf(),
             etag: None,
-            mime_type: None,
+            content_type: None,
             with_last_modified: false,
         }
     }
@@ -47,9 +47,9 @@ impl File {
         }
     }
 
-    pub fn mime_type(self, mime_type: &str) -> Self {
+    pub fn content_type(self, mime_type: &str) -> Self {
         Self {
-            mime_type: Some(mime_type.to_owned()),
+            content_type: Some(mime_type.to_owned()),
             ..self
         }
     }
@@ -72,7 +72,7 @@ impl File {
 
         let mut response = Response::build().header(CONTENT_LENGTH, data.len());
 
-        if let Some(mime_type) = self.mime_type.as_ref() {
+        if let Some(mime_type) = self.content_type.as_ref() {
             response = response.header(CONTENT_TYPE, mime_type);
         }
 
