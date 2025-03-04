@@ -3,7 +3,7 @@ use http::response::Parts;
 use http::{HeaderMap, StatusCode, Version};
 use std::fmt::{self, Debug, Formatter};
 
-use super::builder::Builder;
+use super::builder::ResponseBuilder;
 use crate::body::{BoxBody, HttpBody, ResponseBody};
 
 pub struct Response {
@@ -13,7 +13,7 @@ pub struct Response {
 
 impl Response {
     #[inline]
-    pub fn build() -> Builder {
+    pub fn build() -> ResponseBuilder {
         Default::default()
     }
 

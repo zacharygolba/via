@@ -8,7 +8,7 @@ use http_body::Frame;
 use super::stream_body::StreamBody;
 use crate::body::{BoxBody, HttpBody, RequestBody};
 use crate::error::{DynError, Error};
-use crate::response::{Builder, Response};
+use crate::response::{Response, ResponseBuilder};
 
 trait Sealed {}
 
@@ -27,13 +27,13 @@ trait Sealed {}
 /// ```
 ///
 pub trait Pipe: Sealed {
-    fn pipe(self, response: Builder) -> Result<Response, Error>;
+    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error>;
 }
 
 impl Sealed for HttpBody<RequestBody> {}
 
 impl Pipe for HttpBody<RequestBody> {
-    fn pipe(self, response: Builder) -> Result<Response, Error> {
+    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response
             .header(TRANSFER_ENCODING, "chunked")
             .body(HttpBody::Mapped(self.boxed()))
@@ -46,7 +46,7 @@ impl<T> Pipe for T
 where
     T: Stream<Item = Result<Frame<Bytes>, DynError>> + Send + Sync + 'static,
 {
-    fn pipe(self, response: Builder) -> Result<Response, Error> {
+    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response
             .header(TRANSFER_ENCODING, "chunked")
             .body(HttpBody::Mapped(BoxBody::new(StreamBody::new(self))))
