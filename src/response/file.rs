@@ -4,6 +4,7 @@ use std::fs::Metadata;
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use tokio::fs;
+use tokio::io::AsyncReadExt;
 
 use super::Response;
 use crate::{middleware, Error};
@@ -20,13 +21,11 @@ pub struct File {
 }
 
 fn wrap_io_error(error: io::Error) -> Error {
-    let kind = error.kind();
-    let source = Box::new(error);
-
-    match kind {
-        ErrorKind::PermissionDenied => Error::forbidden(source),
-        ErrorKind::NotFound => Error::not_found(source),
-        _ => Error::internal_server_error(source),
+    match error.kind() {
+        ErrorKind::PermissionDenied => Error::forbidden(error.into()),
+        ErrorKind::FileTooLarge => Error::payload_too_large(error.into()),
+        ErrorKind::NotFound => Error::not_found(error.into()),
+        _ => Error::internal_server_error(error.into()),
     }
 }
 
@@ -62,12 +61,17 @@ impl File {
     }
 
     pub async fn serve(self) -> middleware::Result {
-        let path = self.path.as_path();
-        let data = fs::read(path).await.map_err(wrap_io_error)?;
-        let meta = if self.etag.is_some() || self.with_last_modified {
-            Some(fs::metadata(path).await.map_err(wrap_io_error)?)
-        } else {
-            None
+        let (data, metadata) = {
+            let mut file = fs::File::open(&self.path).await.map_err(wrap_io_error)?;
+            let metadata = file.metadata().await?;
+
+            let mut data = match metadata.len().try_into() {
+                Ok(capacity) => Vec::with_capacity(capacity),
+                Err(error) => return Err(Error::payload_too_large(error.into())),
+            };
+
+            file.read_to_end(&mut data).await?;
+            (data, metadata)
         };
 
         let mut response = Response::build().header(CONTENT_LENGTH, data.len());
@@ -76,15 +80,13 @@ impl File {
             response = response.header(CONTENT_TYPE, mime_type);
         }
 
-        if let Some(metadata) = meta.as_ref() {
-            if self.with_last_modified {
-                let last_modified = HttpDate::from(metadata.modified()?);
-                response = response.header(LAST_MODIFIED, last_modified.to_string());
-            }
+        if let Some(f) = self.etag.as_ref() {
+            response = response.header(ETAG, f(&metadata)?);
+        }
 
-            if let Some(f) = self.etag.as_ref() {
-                response = response.header(ETAG, f(metadata)?);
-            }
+        if self.with_last_modified {
+            let last_modified = HttpDate::from(metadata.modified()?);
+            response = response.header(LAST_MODIFIED, last_modified.to_string());
         }
 
         response.body(data.into())
