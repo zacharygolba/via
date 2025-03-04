@@ -86,6 +86,6 @@ impl File {
             response = response.header(LAST_MODIFIED, last_modified.to_string());
         }
 
-        response.body(data.into())
+        response.body(data)
     }
 }
