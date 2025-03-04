@@ -10,7 +10,9 @@ homepage = "https://github.com/zacharygolba/via"
 repository = "https://github.com/zacharygolba/via"
 
 [features]
-default = ["http1"]
+default = ["fs", "http1"]
+
+fs = ["tokio/fs", "tokio/io-util"]
 
 http1 = ["hyper/http1"]
 http2 = ["hyper/http2"]
@@ -23,6 +25,7 @@ futures-core = { version = "0.3", default-features = false }
 http = "1"
 http-body = "1"
 http-body-util = "0.1"
+httpdate = "1"
 hyper = { version = "1", features = ["server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 percent-encoding = "2"
