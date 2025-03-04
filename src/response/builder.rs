@@ -49,38 +49,44 @@ impl ResponseBuilder {
     }
 
     #[inline]
-    pub fn body(self, data: HttpBody<ResponseBody>) -> Result<Response, Error> {
+    pub fn body<T>(self, data: T) -> Result<Response, Error>
+    where
+        HttpBody<ResponseBody>: From<T>,
+    {
         Ok(Response {
             cookies: None,
-            inner: self.inner.body(data)?,
+            inner: self.inner.body(data.into())?,
         })
     }
 
+    #[inline]
     pub fn json(self, data: &impl Serialize) -> Result<Response, Error> {
         let json = serde_json::to_string(&JsonPayload { data })?;
 
         self.header(CONTENT_TYPE, "application/json; charset=utf-8")
             .header(CONTENT_LENGTH, json.len())
-            .body(HttpBody::Original(ResponseBody::from(json)))
+            .body(json)
     }
 
+    #[inline]
     pub fn html(self, data: String) -> Result<Response, Error> {
         self.header(CONTENT_TYPE, "text/html; charset=utf-8")
             .header(CONTENT_LENGTH, data.len())
-            .body(HttpBody::Original(ResponseBody::from(data)))
+            .body(data)
     }
 
+    #[inline]
     pub fn text(self, data: String) -> Result<Response, Error> {
         self.header(CONTENT_TYPE, "text/plain; charset=utf-8")
             .header(CONTENT_LENGTH, data.len())
-            .body(HttpBody::Original(ResponseBody::from(data)))
+            .body(data)
     }
 
     /// Convert self into a [Response] with an empty payload.
     ///
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
-        self.body(Default::default())
+        self.body(HttpBody::Original(Default::default()))
     }
 }
 
