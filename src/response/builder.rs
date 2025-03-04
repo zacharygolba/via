@@ -76,19 +76,19 @@ impl ResponseBuilder {
 
         self.header(CONTENT_TYPE, "application/json; charset=utf-8")
             .header(CONTENT_LENGTH, json.len())
-            .body(HttpBody::Original(json.into()))
+            .body(HttpBody::Original(ResponseBody::from(json)))
     }
 
     pub fn html(self, data: String) -> Result<Response, Error> {
         self.header(CONTENT_TYPE, "text/html; charset=utf-8")
             .header(CONTENT_LENGTH, data.len())
-            .body(HttpBody::Original(data.into()))
+            .body(HttpBody::Original(ResponseBody::from(data)))
     }
 
     pub fn text(self, data: String) -> Result<Response, Error> {
         self.header(CONTENT_TYPE, "text/plain; charset=utf-8")
             .header(CONTENT_LENGTH, data.len())
-            .body(HttpBody::Original(data.into()))
+            .body(HttpBody::Original(ResponseBody::from(data)))
     }
 
     /// Convert self into a [Response] with an empty payload.
