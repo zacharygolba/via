@@ -39,7 +39,7 @@ pub fn favicon<T>(path: impl AsRef<Path>) -> impl Middleware<T> {
 
     get(move |_, _| {
         File::open(&path_to_favicon)
-            .content_type(&mime_type)
+            .content_type(mime_type.clone())
             .with_last_modified()
             .serve()
     })

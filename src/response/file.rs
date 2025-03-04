@@ -54,9 +54,9 @@ impl File {
     /// Set the value of the `Content-Type` header that will be included in the
     /// response.
     ///
-    pub fn content_type(self, mime_type: &str) -> Self {
+    pub fn content_type(self, mime_type: String) -> Self {
         Self {
-            content_type: Some(mime_type.to_owned()),
+            content_type: Some(mime_type),
             ..self
         }
     }
@@ -72,7 +72,7 @@ impl File {
 
     /// Respond with the contents of this file.
     ///
-    pub async fn serve(self) -> middleware::Result {
+    pub async fn serve(mut self) -> middleware::Result {
         let mut file = fs::File::open(&self.path).await.map_err(wrap_io_error)?;
         let metadata = file.metadata().await?;
 
@@ -85,7 +85,7 @@ impl File {
 
         let mut response = Response::build().header(CONTENT_LENGTH, data.len());
 
-        if let Some(mime_type) = self.content_type.as_ref() {
+        if let Some(mime_type) = self.content_type.take() {
             response = response.header(CONTENT_TYPE, mime_type);
         }
 
