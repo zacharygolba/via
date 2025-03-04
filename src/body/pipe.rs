@@ -19,8 +19,11 @@ trait Sealed {}
 /// use via::{Next, Request, Response, Pipe};
 ///
 /// async fn echo(request: Request, _: Next) -> via::Result {
-///     let content_type = request.header(CONTENT_TYPE).cloned();
-///     let response = Response::build().headers([(CONTENT_TYPE, content_type)]);
+///     let mut response = Response::build();
+///
+///     if let Some(content_type) = request.header(CONTENT_TYPE).cloned() {
+///         response = response.header(CONTENT_TYPE, content_type);
+///     }
 ///
 ///     request.into_body().pipe(response)
 /// }

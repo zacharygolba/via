@@ -6,11 +6,12 @@ use via::{Next, Pipe, Request, Response, Server};
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 async fn echo(request: Request, _: Next) -> via::Result {
-    // Get an optional copy of the Content-Type header from the request.
-    let content_type = request.header(CONTENT_TYPE).cloned();
+    let mut response = Response::build();
 
-    // Create a response builder with the Content-Type header from the request.
-    let response = Response::build().headers([(CONTENT_TYPE, content_type)]);
+    // If a Content-Type header is present, include it in the response.
+    if let Some(content_type) = request.header(CONTENT_TYPE).cloned() {
+        response = response.header(CONTENT_TYPE, content_type);
+    }
 
     // Stream the request payload back to the client with the options configured
     // in the response builder above.
