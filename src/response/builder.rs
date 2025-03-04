@@ -30,21 +30,6 @@ impl ResponseBuilder {
         }
     }
 
-    pub fn headers<I, K, V>(self, iter: I) -> Self
-    where
-        I: IntoIterator<Item = (K, Option<V>)>,
-        HeaderName: TryFrom<K>,
-        <HeaderName as TryFrom<K>>::Error: Into<http::Error>,
-        HeaderValue: TryFrom<V>,
-        <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
-    {
-        iter.into_iter()
-            .fold(self, |builder, (key, option)| match option {
-                Some(value) => builder.header(key, value),
-                None => builder,
-            })
-    }
-
     #[inline]
     pub fn status<T>(self, status: T) -> Self
     where
