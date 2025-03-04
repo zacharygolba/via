@@ -1,0 +1,11 @@
+.container {
+    margin: 10px 40px;
+}
+
+.nav > li {
+    display: inline-block;
+}
+
+.nav > li:not(:first-of-type) {
+    margin-left: 25px;
+}
