@@ -92,7 +92,7 @@ impl From<Bytes> for ResponseBody {
 impl From<String> for ResponseBody {
     #[inline]
     fn from(data: String) -> Self {
-        Self::from(Bytes::copy_from_slice(data.as_bytes()))
+        Self::from(data.into_bytes())
     }
 }
 
@@ -106,7 +106,7 @@ impl From<&'_ str> for ResponseBody {
 impl From<Vec<u8>> for ResponseBody {
     #[inline]
     fn from(data: Vec<u8>) -> Self {
-        Self::from(Bytes::copy_from_slice(&data))
+        Self::from(Bytes::from(data))
     }
 }
 
