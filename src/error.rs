@@ -500,7 +500,7 @@ impl From<Error> for Response {
                     Response::build()
                         .status(error.status)
                         .header(CONTENT_TYPE, "application/json; charset=utf-8")
-                        .body(json.into())
+                        .body(json)
                 }) {
                 Ok(response) => break response,
                 Err(error) => {
