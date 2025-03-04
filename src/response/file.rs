@@ -61,18 +61,15 @@ impl File {
     }
 
     pub async fn serve(self) -> middleware::Result {
-        let (data, metadata) = {
-            let mut file = fs::File::open(&self.path).await.map_err(wrap_io_error)?;
-            let metadata = file.metadata().await?;
+        let mut file = fs::File::open(&self.path).await.map_err(wrap_io_error)?;
+        let metadata = file.metadata().await?;
 
-            let mut data = match metadata.len().try_into() {
-                Ok(capacity) => Vec::with_capacity(capacity),
-                Err(error) => return Err(Error::payload_too_large(error.into())),
-            };
-
-            file.read_to_end(&mut data).await?;
-            (data, metadata)
+        let mut data = match metadata.len().try_into() {
+            Ok(capacity) => Vec::with_capacity(capacity),
+            Err(error) => return Err(Error::payload_too_large(error.into())),
         };
+
+        file.read_to_end(&mut data).await?;
 
         let mut response = Response::build().header(CONTENT_LENGTH, data.len());
 
