@@ -10,7 +10,7 @@ homepage = "https://github.com/zacharygolba/via"
 repository = "https://github.com/zacharygolba/via"
 
 [features]
-default = ["fs", "http1"]
+default = ["http1"]
 
 fs = ["httpdate", "tokio/fs", "tokio/io-util"]
 
