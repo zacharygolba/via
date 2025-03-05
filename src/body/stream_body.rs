@@ -36,7 +36,7 @@ impl<T> StreamBody<T> {
 
 impl<T> Body for StreamBody<T>
 where
-    T: Stream<Item = Result<Frame<Bytes>, DynError>> + Send + Sync,
+    T: Stream<Item = Result<Bytes, DynError>> + Send + Sync,
 {
     type Data = Bytes;
     type Error = DynError;
@@ -45,7 +45,7 @@ where
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        self.project().poll_next(context)
+        self.project().poll_next(context).map_ok(Frame::data)
     }
 
     fn is_end_stream(&self) -> bool {

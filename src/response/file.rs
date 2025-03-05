@@ -1,14 +1,19 @@
+use futures::TryStreamExt;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, ETAG, LAST_MODIFIED};
 use httpdate::HttpDate;
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io::AsyncReadExt;
+use tokio_util::io::ReaderStream;
 
 use super::Response;
+use crate::body::{Pipe, MAX_FRAME_LEN};
+use crate::error::Error;
 use crate::middleware;
-use crate::Error;
 
+/// A function pointer used to generate an etag.
+///
 type GenerateEtag = fn(&Metadata) -> Result<Option<String>, Error>;
 
 /// A specialized response builder used to serve a single file from disk.
@@ -61,32 +66,91 @@ impl File {
         }
     }
 
-    /// Respond with the contents of this file.
+    /// Respond with a stream of the file contents in chunks.
     ///
-    pub async fn serve(mut self) -> middleware::Result {
-        let mut file = fs::File::open(&self.path).await.map_err(Error::from_io)?;
-        let metadata = file.metadata().await.map_err(Error::from_io)?;
+    pub async fn stream(mut self) -> middleware::Result {
+        let file = fs::File::open(&self.path).await.map_err(Error::from_io)?;
+        let meta = file.metadata().await.map_err(Error::from_io)?;
 
-        // Allocate the exact capacity required to store the file in memory.
-        // This is
-        let mut data = Vec::with_capacity(metadata.len().try_into()?);
+        self.stream_file(&meta, file)
+    }
+
+    /// Respond with the entire contents of the file loaded in to memory.
+    ///
+    pub async fn send(mut self) -> middleware::Result {
+        let mut file = fs::File::open(&self.path).await.map_err(Error::from_io)?;
+        let meta = file.metadata().await.map_err(Error::from_io)?;
+        let len = isize::try_from(meta.len())? as usize;
+
+        let mut data = Vec::with_capacity(len);
 
         file.read_to_end(&mut data).await.map_err(Error::from_io)?;
+        self.respond_from_memory(&meta, data)
+    }
 
+    /// Respond with the contents of the file.
+    ///
+    /// If the file is larger than the provided `max_alloc_size` in bytes, it
+    /// will be streamed over the socket with chunked transfer encoding.
+    ///
+    pub async fn serve(mut self, max_alloc_size: usize) -> middleware::Result {
+        let mut file = fs::File::open(&self.path).await.map_err(Error::from_io)?;
+        let meta = file.metadata().await.map_err(Error::from_io)?;
+        let len = isize::try_from(meta.len())? as usize;
+
+        if len > max_alloc_size {
+            self.stream_file(&meta, file)
+        } else {
+            let mut data = Vec::with_capacity(len);
+
+            file.read_to_end(&mut data).await.map_err(Error::from_io)?;
+            self.respond_from_memory(&meta, data)
+        }
+    }
+
+    fn gen_etag(&self, meta: &Metadata) -> Result<Option<String>, Error> {
+        match self.etag.as_ref() {
+            Some(f) => f(&meta),
+            None => Ok(None),
+        }
+    }
+
+    fn stream_file(&mut self, meta: &Metadata, mut file: fs::File) -> middleware::Result {
+        let mut response = Response::build();
+
+        if let Some(mime_type) = self.content_type.take() {
+            response = response.header(CONTENT_TYPE, mime_type);
+        }
+
+        if let Some(etag) = self.gen_etag(meta)? {
+            response = response.header(ETAG, etag);
+        }
+
+        if self.with_last_modified {
+            let last_modified = HttpDate::from(meta.modified()?);
+            response = response.header(LAST_MODIFIED, last_modified.to_string());
+        }
+
+        file.set_max_buf_size(MAX_FRAME_LEN * 2);
+
+        ReaderStream::new(file)
+            .map_err(|error| error.into())
+            .pipe(response)
+    }
+
+    fn respond_from_memory(&mut self, meta: &Metadata, data: Vec<u8>) -> middleware::Result {
         let mut response = Response::build().header(CONTENT_LENGTH, data.len());
 
         if let Some(mime_type) = self.content_type.take() {
             response = response.header(CONTENT_TYPE, mime_type);
         }
 
-        if let Some(f) = self.etag.as_ref() {
-            if let Some(etag) = f(&metadata)? {
-                response = response.header(ETAG, etag);
-            }
+        if let Some(etag) = self.gen_etag(&meta)? {
+            response = response.header(ETAG, etag);
         }
 
         if self.with_last_modified {
-            let last_modified = HttpDate::from(metadata.modified()?);
+            let last_modified = HttpDate::from(meta.modified()?);
             response = response.header(LAST_MODIFIED, last_modified.to_string());
         }
 

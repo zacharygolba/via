@@ -4,6 +4,17 @@ use via::middleware::error_boundary;
 use via::response::File;
 use via::{Next, Request, Server};
 
+/// The maximum amount of memory that will be allocated to serve a single file.
+///
+/// For the purpose of demonstrating the `File::serve` fn, files larger than
+/// `1 MiB` will be streamed. In a production app, I would probably set this
+/// to `10 MiB`.
+///
+const MAX_ALLOC_SIZE: usize = 1 * 1024 * 1024;
+
+/// The relative path of the public directory in relationship to the current
+/// working directory of the process.
+///
 const PUBLIC_DIR: &str = "./public";
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -18,7 +29,7 @@ async fn file_server(request: Request, _: Next) -> via::Result {
     File::open(&file_path)
         .content_type(mime_type.to_string())
         .with_last_modified()
-        .serve()
+        .serve(MAX_ALLOC_SIZE)
         .await
 }
 

@@ -13,3 +13,5 @@ pub use http_body::{BoxBody, HttpBody};
 pub use pipe::Pipe;
 pub use request_body::RequestBody;
 pub use response_body::ResponseBody;
+
+pub(crate) use response_body::MAX_FRAME_LEN;

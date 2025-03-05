@@ -3,7 +3,6 @@
 use bytes::Bytes;
 use futures_core::Stream;
 use http::header::TRANSFER_ENCODING;
-use http_body::Frame;
 
 use super::stream_body::StreamBody;
 use crate::body::{BoxBody, HttpBody, RequestBody};
@@ -43,11 +42,11 @@ impl Pipe for HttpBody<RequestBody> {
     }
 }
 
-impl<T> Sealed for T where T: Stream<Item = Result<Frame<Bytes>, DynError>> + Send + Sync + 'static {}
+impl<T> Sealed for T where T: Stream<Item = Result<Bytes, DynError>> + Send + Sync + 'static {}
 
 impl<T> Pipe for T
 where
-    T: Stream<Item = Result<Frame<Bytes>, DynError>> + Send + Sync + 'static,
+    T: Stream<Item = Result<Bytes, DynError>> + Send + Sync + 'static,
 {
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response

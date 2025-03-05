@@ -2,10 +2,25 @@
     margin: 10px 40px;
 }
 
+.nav {
+    padding: 0;
+    margin-bottom: 26px;
+}
+
 .nav > li {
     display: inline-block;
 }
 
 .nav > li:not(:first-of-type) {
     margin-left: 25px;
+}
+
+.space {
+    width: 750px;
+    height: 500px;
+    overflow: hidden;
+}
+
+.space > img {
+    transform: rotate(90deg) translate(-125px, -125px);
 }
