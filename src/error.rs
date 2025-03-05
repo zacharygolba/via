@@ -7,6 +7,7 @@ use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::error::Error as StdError;
 use std::fmt::{self, Debug, Display, Formatter};
+use std::io;
 
 use crate::response::Response;
 
@@ -34,10 +35,59 @@ struct SerializeError<'a> {
 }
 
 impl Error {
-    /// Returns a new [`Error`] with the provided message.
+    /// Create a new [`Error`] from the provided source.
     ///
     pub fn new(source: DynError) -> Self {
         Self::internal_server_error(source)
+    }
+
+    /// Create a new [`Error`] from the provided [`io::Error`]. The status code
+    /// of the error returned will correspond to `source.kind()`.
+    ///
+    pub fn from_io(source: io::Error) -> Self {
+        match source.kind() {
+            io::ErrorKind::AlreadyExists => {
+                // Implies a resource already exists.
+                Self::conflict(Box::new(source))
+            }
+
+            io::ErrorKind::BrokenPipe
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionAborted => {
+                // Signals a broken connection.
+                Self::bad_gateway(Box::new(source))
+            }
+
+            io::ErrorKind::ConnectionRefused => {
+                // Suggests the service is not ready or available.
+                Self::service_unavailable(Box::new(source))
+            }
+
+            io::ErrorKind::InvalidData | io::ErrorKind::InvalidInput => {
+                // Generally indicates a malformed request.
+                Self::bad_request(Box::new(source))
+            }
+
+            io::ErrorKind::NotFound => {
+                // Indicates a missing resource.
+                Self::not_found(Box::new(source))
+            }
+
+            io::ErrorKind::PermissionDenied => {
+                // Implies restricted access.
+                Self::forbidden(Box::new(source))
+            }
+
+            io::ErrorKind::TimedOut => {
+                // Implies an upstream service timeout.
+                Self::gateway_timeout(Box::new(source))
+            }
+
+            _ => {
+                // Any other kind is treated as an internal server error.
+                Self::internal_server_error(Box::new(source))
+            }
+        }
     }
 
     /// Returns a new [`Error`] that will be serialized to JSON when converted to
