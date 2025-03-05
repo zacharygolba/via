@@ -10,7 +10,7 @@ use via::{Next, Request, Server};
 /// `1 MiB` will be streamed. In a production app, I would probably set this
 /// to `10 MiB`.
 ///
-const MAX_ALLOC_SIZE: usize = 1 * 1024 * 1024;
+const MAX_ALLOC_SIZE: usize = 1024 * 1024;
 
 /// The relative path of the public directory in relationship to the current
 /// working directory of the process.
