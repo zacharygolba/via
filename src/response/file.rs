@@ -110,7 +110,7 @@ impl File {
 
     fn gen_etag(&self, meta: &Metadata) -> Result<Option<String>, Error> {
         match self.etag.as_ref() {
-            Some(f) => f(&meta),
+            Some(f) => f(meta),
             None => Ok(None),
         }
     }
@@ -145,7 +145,7 @@ impl File {
             response = response.header(CONTENT_TYPE, mime_type);
         }
 
-        if let Some(etag) = self.gen_etag(&meta)? {
+        if let Some(etag) = self.gen_etag(meta)? {
             response = response.header(ETAG, etag);
         }
 
