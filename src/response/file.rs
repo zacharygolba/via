@@ -9,7 +9,7 @@ use super::Response;
 use crate::middleware;
 use crate::Error;
 
-type GenerateEtag = fn(&Metadata) -> Result<String, Error>;
+type GenerateEtag = fn(&Metadata) -> Result<Option<String>, Error>;
 
 /// A specialized response builder used to serve a single file from disk.
 ///
@@ -80,7 +80,9 @@ impl File {
         }
 
         if let Some(f) = self.etag.as_ref() {
-            response = response.header(ETAG, f(&metadata)?);
+            if let Some(etag) = f(&metadata)? {
+                response = response.header(ETAG, etag);
+            }
         }
 
         if self.with_last_modified {
