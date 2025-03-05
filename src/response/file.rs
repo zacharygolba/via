@@ -1,13 +1,13 @@
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, ETAG, LAST_MODIFIED};
 use httpdate::HttpDate;
 use std::fs::Metadata;
-use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 
 use super::Response;
-use crate::{middleware, Error};
+use crate::middleware;
+use crate::Error;
 
 type GenerateEtag = fn(&Metadata) -> Result<String, Error>;
 
@@ -18,15 +18,6 @@ pub struct File {
     etag: Option<GenerateEtag>,
     content_type: Option<String>,
     with_last_modified: bool,
-}
-
-fn wrap_io_error(error: io::Error) -> Error {
-    match error.kind() {
-        ErrorKind::PermissionDenied => Error::forbidden(error.into()),
-        ErrorKind::FileTooLarge => Error::payload_too_large(error.into()),
-        ErrorKind::NotFound => Error::not_found(error.into()),
-        _ => Error::internal_server_error(error.into()),
-    }
 }
 
 impl File {
@@ -73,15 +64,14 @@ impl File {
     /// Respond with the contents of this file.
     ///
     pub async fn serve(mut self) -> middleware::Result {
-        let mut file = fs::File::open(&self.path).await.map_err(wrap_io_error)?;
-        let metadata = file.metadata().await?;
+        let mut file = fs::File::open(&self.path).await.map_err(Error::from_io)?;
+        let metadata = file.metadata().await.map_err(Error::from_io)?;
 
-        let mut data = match metadata.len().try_into() {
-            Ok(capacity) => Vec::with_capacity(capacity),
-            Err(error) => return Err(Error::payload_too_large(error.into())),
-        };
+        // Allocate the exact capacity required to store the file in memory.
+        // This is
+        let mut data = Vec::with_capacity(metadata.len().try_into()?);
 
-        file.read_to_end(&mut data).await?;
+        file.read_to_end(&mut data).await.map_err(Error::from_io)?;
 
         let mut response = Response::build().header(CONTENT_LENGTH, data.len());
 
