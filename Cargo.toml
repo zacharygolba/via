@@ -12,7 +12,7 @@ repository = "https://github.com/zacharygolba/via"
 [features]
 default = ["fs", "http1"]
 
-fs = ["tokio/fs", "tokio/io-util"]
+fs = ["httpdate", "tokio/fs", "tokio/io-util"]
 
 http1 = ["hyper/http1"]
 http2 = ["hyper/http2"]
@@ -25,7 +25,7 @@ futures-core = { version = "0.3", default-features = false }
 http = "1"
 http-body = "1"
 http-body-util = "0.1"
-httpdate = "1"
+httpdate = { version = "1", optional = true }
 hyper = { version = "1", features = ["server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 percent-encoding = "2"
