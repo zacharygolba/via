@@ -46,7 +46,7 @@ impl<T> Sealed for T where T: Stream<Item = Result<Bytes, DynError>> + Send + Sy
 
 impl<T> Pipe for T
 where
-    T: Stream<Item = Result<Bytes, DynError>> + Send + Sync + 'static,
+    T: Stream<Item = Result<Bytes, DynError>> + Send + Sync + Unpin + 'static,
 {
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response
