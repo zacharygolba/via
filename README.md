@@ -51,8 +51,7 @@ async fn main() -> Result<ExitCode, Error> {
     // Define a route that listens on /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
-    // Start the server.
-    Server::new(app).listen(("127.0.0.1", 8080)).await
+    via::start(app).listen(("127.0.0.1", 8080)).await
 }
 ```
 
@@ -66,7 +65,7 @@ async fn main() -> Result<ExitCode, Error> {
 
 4. **Define Routes**: The `app.at("/hello/:name").respond(via::get(hello))` line adds a route that listens for GET requests on `/hello/:name`. The colon (`:`) indicates a dynamic segment in the path, which will match any value and make it available as a parameter.
 
-5. **Start the Server**: The `Server::new(app).listen(("127.0.0.1", 8080)).await` function starts the server and listens for connections on the specified address.
+5. **Start the Server**: Calling `via::start(app).listen(("127.0.0.1", 8080)).await` starts the server and listens for connections on the specified address.
 
 ### Running the Example
 

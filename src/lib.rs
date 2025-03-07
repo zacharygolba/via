@@ -46,8 +46,7 @@
 //!     // Define a route that listens on /hello/:name.
 //!     app.at("/hello/:name").respond(via::get(hello));
 //!
-//!     // Start the server.
-//!     Server::new(app).listen(("127.0.0.1", 8080)).await
+//!     via::start(app).listen(("127.0.0.1", 8080)).await
 //! }
 //! ```
 //!
