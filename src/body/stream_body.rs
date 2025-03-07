@@ -22,21 +22,15 @@ fn size_hint_as_u64((lower, upper): (usize, Option<usize>)) -> (Option<u64>, Opt
 }
 
 impl<T> StreamBody<T> {
+    #[inline]
     pub fn new(stream: T) -> Self {
         Self { stream }
     }
 }
 
-impl<T> StreamBody<T> {
-    #[inline]
-    fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
-        unsafe { Pin::map_unchecked_mut(self, |this| &mut this.stream) }
-    }
-}
-
 impl<T> Body for StreamBody<T>
 where
-    T: Stream<Item = Result<Bytes, DynError>> + Send + Sync,
+    T: Stream<Item = Result<Bytes, DynError>> + Send + Sync + Unpin,
 {
     type Data = Bytes;
     type Error = DynError;
@@ -45,7 +39,11 @@ where
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        self.project().poll_next(context).map_ok(Frame::data)
+        let this = self.get_mut();
+
+        Pin::new(&mut this.stream)
+            .poll_next(context)
+            .map_ok(Frame::data)
     }
 
     fn is_end_stream(&self) -> bool {
