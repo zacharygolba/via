@@ -20,15 +20,19 @@ use crate::request::Request;
 use crate::router::{Router, RouterError};
 use crate::server::io_stream::IoStream;
 
-pub async fn serve<T: Send + Sync + 'static>(
+pub async fn serve<A, T>(
     state: Arc<T>,
     router: Arc<Router<T>>, // Router holds no references to T.
-    mut acceptor: impl Acceptor + 'static,
+    mut acceptor: A,
     max_connections: usize,
     max_request_size: usize,
     shutdown_timeout: Duration,
     listener: TcpListener,
-) -> Result<ExitCode, DynError> {
+) -> Result<ExitCode, DynError>
+where
+    A: Acceptor + Send + Sync + 'static,
+    T: Send + Sync + 'static,
+{
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
     // number of connections is reached, we'll wait until a permit is available
@@ -137,7 +141,7 @@ pub async fn serve<T: Send + Sync + 'static>(
                 let matches = router.visit(request.uri().path());
                 let next = router.resolve(&matches, request.params_mut());
 
-                async {
+                Box::pin(async {
                     // If the request was routed successfully, await the response
                     // future. If the future resolved with an error, generate a
                     // response from it.
@@ -149,7 +153,7 @@ pub async fn serve<T: Send + Sync + 'static>(
 
                     // Send the generated http::Response over the socket.
                     Ok::<_, RouterError>(response.inner)
-                }
+                })
             });
 
             // Create a new HTTP/2 connection.
