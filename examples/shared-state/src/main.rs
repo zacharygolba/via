@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use via::middleware::error_boundary;
-use via::{Next, Request, Response, Server};
+use via::{Next, Request, Response};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -93,6 +93,5 @@ async fn main() -> Result<ExitCode, Error> {
     // Add the `totals` responder to the endpoint GET /totals.
     app.at("/totals").respond(via::get(totals));
 
-    // Start the server.
-    Server::new(app).listen(("127.0.0.1", 8080)).await
+    via::start(app).listen(("127.0.0.1", 8080)).await
 }

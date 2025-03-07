@@ -72,4 +72,4 @@ pub use middleware::{Middleware, Next, Result};
 pub use request::Request;
 pub use response::Response;
 pub use router::Route;
-pub use server::Server;
+pub use server::{start, Server};

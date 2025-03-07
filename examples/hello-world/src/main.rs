@@ -1,6 +1,6 @@
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{Next, Request, Response, Server};
+use via::{Next, Request, Response};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -29,6 +29,5 @@ async fn main() -> Result<ExitCode, Error> {
     // Define a route that listens on /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
-    // Start the server.
-    Server::new(app).listen(("127.0.0.1", 8080)).await
+    via::start(app).listen(("127.0.0.1", 8080)).await
 }
