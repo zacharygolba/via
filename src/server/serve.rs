@@ -20,28 +20,20 @@ use crate::request::Request;
 use crate::router::{Router, RouterError};
 use crate::server::io_stream::IoStream;
 
-pub async fn serve<T, A>(
-    listener: TcpListener,
-    mut acceptor: A,
-    state: T,
-    router: Router<T>, // Router holds no references to T.
+pub async fn serve<T: Send + Sync + 'static>(
+    state: Arc<T>,
+    router: Arc<Router<T>>, // Router holds no references to T.
+    mut acceptor: impl Acceptor + 'static,
     max_connections: usize,
     max_request_size: usize,
     shutdown_timeout: Duration,
-) -> Result<ExitCode, DynError>
-where
-    T: Send + Sync + 'static,
-    A: Acceptor + Send + Sync + 'static,
-{
+    listener: TcpListener,
+) -> Result<ExitCode, DynError> {
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
     // number of connections is reached, we'll wait until a permit is available
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
-
-    let state = Arc::new(state);
-
-    let router = Arc::new(router);
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
