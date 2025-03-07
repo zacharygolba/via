@@ -4,7 +4,7 @@ mod database;
 use std::process::ExitCode;
 use std::time::Duration;
 use via::middleware::{error_boundary, timeout};
-use via::{Next, Request, Server};
+use via::{Next, Request};
 
 use database::Pool;
 
@@ -82,6 +82,5 @@ async fn main() -> Result<ExitCode, Error> {
         });
     });
 
-    // Start the server.
-    Server::new(app).listen(("127.0.0.1", 8080)).await
+    via::start(app).listen(("127.0.0.1", 8080)).await
 }

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use via::middleware::error_boundary;
 use via::response::File;
-use via::{Next, Request, Server};
+use via::{Next, Request};
 
 /// The maximum amount of memory that will be allocated to serve a single file.
 ///
@@ -64,6 +64,5 @@ async fn main() -> Result<ExitCode, Error> {
     // Serve any file located in the public dir.
     app.at("/*path").respond(via::get(file_server));
 
-    // Start the server.
-    Server::new(app).listen(("127.0.0.1", 8080)).await
+    via::start(app).listen(("127.0.0.1", 8080)).await
 }

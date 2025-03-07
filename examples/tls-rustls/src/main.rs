@@ -2,7 +2,7 @@ mod tls;
 
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{Next, Request, Response, Server};
+use via::{Next, Request, Response};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -31,8 +31,7 @@ async fn main() -> Result<ExitCode, Error> {
     // Add our hello responder to the endpoint /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
-    // Start the server.
-    Server::new(app)
+    via::start(app)
         .rustls_config(tls_config)
         .listen(("127.0.0.1", 8080))
         .await

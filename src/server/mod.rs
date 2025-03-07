@@ -6,4 +6,4 @@ mod io_stream;
 mod serve;
 mod server;
 
-pub use server::Server;
+pub use server::{start, Server};

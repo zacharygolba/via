@@ -46,8 +46,7 @@
 //!     // Define a route that listens on /hello/:name.
 //!     app.at("/hello/:name").respond(via::get(hello));
 //!
-//!     // Start the server.
-//!     Server::new(app).listen(("127.0.0.1", 8080)).await
+//!     via::start(app).listen(("127.0.0.1", 8080)).await
 //! }
 //! ```
 //!
@@ -72,4 +71,4 @@ pub use middleware::{Middleware, Next, Result};
 pub use request::Request;
 pub use response::Response;
 pub use router::Route;
-pub use server::Server;
+pub use server::{start, Server};
