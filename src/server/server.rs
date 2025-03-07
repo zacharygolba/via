@@ -143,11 +143,6 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// [shutdown timeout](Self::shutdown_timeout)
     /// when a shutdown signal is received.
     ///
-    /// # Panics
-    ///
-    /// If [`rustls_config`](Self::rustls_config)
-    /// was not provided prior to calling this method.
-    ///
     /// # Exit Codes
     ///
     /// An [`ExitCode::SUCCESS`] can be viewed as a confirmation that every
