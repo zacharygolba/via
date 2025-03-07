@@ -17,8 +17,8 @@ use crate::response::Response;
 ///
 pub type DynError = Box<dyn std::error::Error + Send + Sync>;
 
-/// An error type that can act as a specialized version of a response
-/// [`Builder`](crate::response::Builder).
+/// An error type that can act as a specialized version of a
+/// [`ResponseBuilder`](crate::response::ResponseBuilder).
 ///
 #[derive(Debug)]
 pub struct Error {

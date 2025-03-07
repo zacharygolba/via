@@ -1,0 +1,35 @@
+.container {
+  margin: 10px 40px;
+}
+
+.nav {
+  padding: 0;
+  margin-bottom: 20px;
+}
+
+.nav > li {
+  display: inline-block;
+}
+
+.nav > li:not(:first-of-type) {
+  margin-left: 25px;
+}
+
+.space {
+  position: relative;
+  overflow: hidden;
+  margin: 0;
+  max-width: 750px;
+  height: 528px;
+}
+
+.space > img {
+  transform: rotate(90deg) translate(-125px, -125px);
+}
+
+.space > figcaption {
+  font-style: italic;
+  position: absolute;
+  bottom: 0;
+  right: 0;
+}
