@@ -1,6 +1,6 @@
 [package]
 name = "via"
-version = "2.0.0-rc.26"
+version = "2.0.0-rc.27"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -42,6 +42,9 @@ features = ["percent-encode"]
 version = "0.26"
 optional = true
 default-features = false
+
+[package.metadata.docs.rs]
+all-features = true
 
 [workspace]
 members = ["via-router", "examples/*"]
