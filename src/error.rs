@@ -68,14 +68,16 @@ impl Error {
                 Self::bad_request(Box::new(source))
             }
 
+            io::ErrorKind::IsADirectory
+            | io::ErrorKind::NotADirectory
+            | io::ErrorKind::PermissionDenied => {
+                // Implies restricted access.
+                Self::forbidden(Box::new(source))
+            }
+
             io::ErrorKind::NotFound => {
                 // Indicates a missing resource.
                 Self::not_found(Box::new(source))
-            }
-
-            io::ErrorKind::PermissionDenied => {
-                // Implies restricted access.
-                Self::forbidden(Box::new(source))
             }
 
             io::ErrorKind::TimedOut => {
