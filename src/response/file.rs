@@ -3,7 +3,7 @@ use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, ETAG, LAST_MODIFIED};
 use httpdate::HttpDate;
 use std::fs::{File as StdFile, Metadata};
-use std::io::Read;
+use std::io::{self, ErrorKind, Read};
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -76,7 +76,10 @@ async fn open(path: &Path, max_alloc_size: usize) -> Result<Open, Error> {
         let future = task::spawn_blocking(move || {
             let mut std = StdFile::open(path)?;
             let metadata = std.metadata()?;
-            let required_cap = isize::try_from(metadata.len())? as usize;
+            let required_cap = match isize::try_from(metadata.len()) {
+                Err(e) => return Err(io::Error::new(ErrorKind::FileTooLarge, e)),
+                Ok(cap) => cap as usize,
+            };
 
             if required_cap > max_alloc_size {
                 let mut file = TokioFile::from_std(std);
@@ -92,13 +95,21 @@ async fn open(path: &Path, max_alloc_size: usize) -> Result<Open, Error> {
         });
 
         break match future.await? {
-            Err(error) if attempts > MAX_ATTEMPTS => Err(error),
-            Ok(file_with_metadata) => Ok(file_with_metadata),
-            Err(_) => {
-                time::sleep(Duration::from_millis(delay)).await;
-                attempts += 1;
-                continue;
-            }
+            Ok(open) => Ok(open),
+            Err(error) => match error.kind() {
+                ErrorKind::IsADirectory | ErrorKind::NotFound | ErrorKind::PermissionDenied => {
+                    Err(Error::from_io(error))
+                }
+                _ => {
+                    if attempts > MAX_ATTEMPTS {
+                        Err(Error::from_io(error))
+                    } else {
+                        time::sleep(Duration::from_millis(delay)).await;
+                        attempts += 1;
+                        continue;
+                    }
+                }
+            },
         };
     }
 }
