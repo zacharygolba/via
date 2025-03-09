@@ -231,19 +231,16 @@ impl Stream for FileStream {
 
             Poll::Ready(Ok(())) => {
                 let filled = data.filled();
+                let len = filled.len();
 
-                if let Some(remaining) = this.remaining.checked_sub(filled.len()) {
+                if let Some(remaining) = this.remaining.checked_sub(len) {
                     let data = Bytes::copy_from_slice(filled);
                     this.remaining = remaining;
-
-                    if remaining == 0 {
-                        this.buffer.fill(MaybeUninit::uninit());
-                    }
-
+                    this.buffer[..len].fill_with(MaybeUninit::uninit);
                     Poll::Ready(Some(Ok(data)))
                 } else {
                     this.remaining = 0;
-                    this.buffer.fill(MaybeUninit::uninit());
+                    this.buffer.fill_with(MaybeUninit::uninit);
                     Poll::Ready(Some(Err(io::Error::from(ErrorKind::UnexpectedEof).into())))
                 }
             }
