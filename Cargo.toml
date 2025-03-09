@@ -12,7 +12,7 @@ repository = "https://github.com/zacharygolba/via"
 [features]
 default = ["http1"]
 
-fs = ["dep:futures", "dep:httpdate", "dep:tokio-util", "tokio/fs", "tokio/io-util"]
+fs = ["dep:httpdate", "tokio/fs"]
 
 http1 = ["hyper/http1"]
 http2 = ["hyper/http2"]
@@ -22,7 +22,6 @@ rustls = ["dep:tokio-rustls"]
 [dependencies]
 bytes = "1"
 futures-core = { version = "0.3", default-features = false }
-futures = { version = "0.3", optional = true }
 http = "1"
 http-body = "1"
 http-body-util = "0.1"
@@ -33,7 +32,6 @@ percent-encoding = "2"
 serde = "1"
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
-tokio-util = { version = "0.7", features = ["io"], optional = true }
 via-router = { version = "3.0.0-beta.18", features = ["lru-cache"] }
 
 [dependencies.cookie]
