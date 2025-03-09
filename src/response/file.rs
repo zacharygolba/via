@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::Stream;
+use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, ETAG, LAST_MODIFIED};
 use httpdate::HttpDate;
 use std::fs::{File as StdFile, Metadata};
