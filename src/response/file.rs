@@ -233,8 +233,14 @@ impl Stream for FileStream {
                 let filled = data.filled();
 
                 if let Some(remaining) = this.remaining.checked_sub(filled.len()) {
+                    let data = Bytes::copy_from_slice(filled);
                     this.remaining = remaining;
-                    Poll::Ready(Some(Ok(Bytes::copy_from_slice(filled))))
+
+                    if remaining == 0 {
+                        this.buffer.fill(MaybeUninit::uninit());
+                    }
+
+                    Poll::Ready(Some(Ok(data)))
                 } else {
                     this.remaining = 0;
                     this.buffer.fill(MaybeUninit::uninit());
