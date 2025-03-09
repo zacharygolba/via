@@ -1,11 +1,12 @@
 use std::sync::Arc;
 use tokio::net::TcpStream;
-use tokio_rustls::rustls;
 use tokio_rustls::server::TlsStream;
-use tokio_rustls::{Accept, TlsAcceptor};
+use tokio_rustls::TlsAcceptor;
+use tokio_rustls::{rustls, Accept};
 
 use super::Acceptor;
 
+#[derive(Clone)]
 pub struct RustlsAcceptor {
     acceptor: TlsAcceptor,
 }
@@ -19,11 +20,10 @@ impl RustlsAcceptor {
 }
 
 impl Acceptor for RustlsAcceptor {
-    type Accepted = Accept<TcpStream>;
+    type Future = Accept<TcpStream>;
     type Stream = TlsStream<TcpStream>;
-    type Error = std::io::Error;
 
-    fn accept(&mut self, stream: TcpStream) -> Self::Accepted {
+    fn accept(&mut self, stream: TcpStream) -> Self::Future {
         self.acceptor.accept(stream)
     }
 }

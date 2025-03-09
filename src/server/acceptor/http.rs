@@ -1,5 +1,5 @@
-use std::convert::Infallible;
 use std::future::{self, Ready};
+use std::io;
 use tokio::net::TcpStream;
 
 use super::Acceptor;
@@ -9,11 +9,10 @@ use super::Acceptor;
 pub struct HttpAcceptor;
 
 impl Acceptor for HttpAcceptor {
-    type Accepted = Ready<Result<Self::Stream, Self::Error>>;
+    type Future = Ready<Result<Self::Stream, io::Error>>;
     type Stream = TcpStream;
-    type Error = Infallible;
 
-    fn accept(&mut self, stream: TcpStream) -> Self::Accepted {
+    fn accept(&mut self, stream: TcpStream) -> Self::Future {
         future::ready(Ok(stream))
     }
 }
