@@ -25,7 +25,7 @@ const BASE_DELAY_IN_MILLIS: u64 = 100;
 
 /// The amount of times that we'll retry to open a file if in an error occurs.
 ///
-const MAX_ATTEMPTS: u64 = 3;
+const MAX_ATTEMPTS: u64 = 5;
 
 /// A function pointer used to generate an etag.
 ///
@@ -59,7 +59,7 @@ enum Open {
 struct FileStream {
     remaining: usize,
     buffer: Vec<MaybeUninit<u8>>,
-    file: Option<TokioFile>,
+    file: TokioFile,
 }
 
 /// Attempt to open the file and access the metadata at the provided path.
@@ -210,7 +210,7 @@ impl FileStream {
         Self {
             remaining,
             buffer: vec![MaybeUninit::uninit(); MAX_FRAME_LEN],
-            file: Some(file),
+            file,
         }
     }
 }
@@ -219,31 +219,31 @@ impl Stream for FileStream {
     type Item = Result<Bytes, DynError>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-
-        if this.remaining == 0 {
-            this.file = None;
-            this.buffer.fill(MaybeUninit::uninit());
+        if self.remaining == 0 {
             return Poll::Ready(None);
         }
 
+        let this = self.get_mut();
         let mut data = ReadBuf::uninit(&mut this.buffer);
-        let mut file = match this.file.as_mut() {
-            None => return Poll::Ready(None),
-            Some(file) => file,
-        };
 
-        match Pin::new(&mut file).poll_read(context, &mut data) {
+        match Pin::new(&mut this.file).poll_read(context, &mut data) {
             Poll::Pending => Poll::Pending,
 
             Poll::Ready(Ok(())) => {
                 let filled = data.filled();
-                this.remaining -= filled.len();
-                Poll::Ready(Some(Ok(Bytes::copy_from_slice(filled))))
+
+                if let Some(remaining) = this.remaining.checked_sub(filled.len()) {
+                    this.remaining = remaining;
+                    Poll::Ready(Some(Ok(Bytes::copy_from_slice(filled))))
+                } else {
+                    this.remaining = 0;
+                    this.buffer.fill(MaybeUninit::uninit());
+                    Poll::Ready(Some(Err(io::Error::from(ErrorKind::UnexpectedEof).into())))
+                }
             }
 
             Poll::Ready(Err(error)) => {
-                this.file = None;
+                this.remaining = 0;
                 this.buffer.fill(MaybeUninit::uninit());
                 Poll::Ready(Some(Err(error.into())))
             }
