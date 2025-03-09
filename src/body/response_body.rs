@@ -9,9 +9,9 @@ use crate::error::DynError;
 
 /// The maximum amount of data that can be read from a buffered body per frame.
 ///
-pub const MAX_FRAME_LEN: usize = 8192; // 8KB
+pub const MAX_FRAME_LEN: usize = 16384; // 16KB
 
-/// A buffered `impl Body` that is read in `8KB` chunks.
+/// A buffered `impl Body` that is read in `16KB` chunks.
 ///
 #[must_use = "streams do nothing unless polled"]
 pub struct ResponseBody {
