@@ -1,6 +1,5 @@
 use http::header::CONTENT_TYPE;
 use std::process::ExitCode;
-use via::body::{BoxBody, TeeBody};
 use via::middleware::error_boundary;
 use via::{Next, Pipe, Request, Response};
 
@@ -28,21 +27,9 @@ async fn main() -> Result<ExitCode, Error> {
         eprintln!("Error: {}", error);
     }));
 
-    // Map the request and response bodies to a boxed body type with 2 levels
-    // of indirection. Also, connect a sink a sync to the request and response
-    // body for the purpose of audit logs (because enterprise software).
     app.include(|request: Request, next: Next| {
-        let request = request.map(|body| {
-            let sink = tokio::io::stderr();
-            BoxBody::new(TeeBody::new(body.boxed(), sink))
-        });
-
-        async {
-            Ok(next.call(request).await?.map(|body| {
-                let sink = tokio::io::stdout();
-                BoxBody::new(TeeBody::new(body.boxed(), sink))
-            }))
-        }
+        let request = request.tee(tokio::io::stderr());
+        async { Ok(next.call(request).await?.tee(tokio::io::stdout())) }
     });
 
     // Add our echo responder to the endpoint /echo.

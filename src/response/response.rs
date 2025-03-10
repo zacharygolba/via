@@ -38,25 +38,22 @@ impl Response {
     /// return type of the provided closure `map`.
     ///
     #[inline]
-    pub fn map(self, map: impl FnOnce(HttpBody<ResponseBody>) -> BoxBody) -> Self {
+    pub fn map<F>(self, map: F) -> Self
+    where
+        F: FnOnce(HttpBody<ResponseBody>) -> HttpBody<ResponseBody>,
+    {
         Self {
-            inner: self.inner.map(|body| HttpBody::Boxed(map(body))),
+            inner: self.inner.map(map),
             ..self
         }
     }
 
-    /// Copies bytes from the response body into the provided sink when it is
+    /// Copies bytes from the request body into the provided sink when it is
     /// read.
     ///
     #[inline]
     pub fn tee(self, sink: impl AsyncWrite + Send + Sync + 'static) -> Self {
-        Self {
-            inner: self.inner.map(|body| {
-                let boxed = body.boxed();
-                HttpBody::Tee(TeeBody::new(boxed, sink))
-            }),
-            ..self
-        }
+        self.map(|body| HttpBody::Boxed(BoxBody::new(TeeBody::new(body.boxed(), sink))))
     }
 
     /// Returns a reference to the response cookies.

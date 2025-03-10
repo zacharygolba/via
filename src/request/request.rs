@@ -36,9 +36,12 @@ impl<T> Request<T> {
     /// return type of the provided closure `map`.
     ///
     #[inline]
-    pub fn map(self, map: impl FnOnce(HttpBody<RequestBody>) -> BoxBody) -> Self {
+    pub fn map<F>(self, map: F) -> Self
+    where
+        F: FnOnce(HttpBody<RequestBody>) -> HttpBody<RequestBody>,
+    {
         Self {
-            body: HttpBody::Boxed(map(self.body)),
+            body: map(self.body),
             ..self
         }
     }
@@ -48,10 +51,7 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn tee(self, sink: impl AsyncWrite + Send + Sync + 'static) -> Self {
-        Self {
-            body: HttpBody::Tee(TeeBody::new(self.body.boxed(), sink)),
-            ..self
-        }
+        self.map(|body| HttpBody::Boxed(BoxBody::new(TeeBody::new(body.boxed(), sink))))
     }
 
     /// Consumes the request and returns the body.
