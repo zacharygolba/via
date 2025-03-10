@@ -22,15 +22,15 @@ async fn echo(request: Request, _: Next) -> via::Result {
 async fn main() -> Result<ExitCode, Error> {
     let mut app = via::app(());
 
-    // Include an error boundary to catch any errors that occur downstream.
-    app.include(error_boundary::inspect(|_, error| {
-        eprintln!("Error: {}", error);
-    }));
-
     app.include(|request: Request, next: Next| {
         let request = request.tee(tokio::io::stderr());
         async { Ok(next.call(request).await?.tee(tokio::io::stdout())) }
     });
+
+    // Include an error boundary to catch any errors that occur downstream.
+    app.include(error_boundary::inspect(|_, error| {
+        eprintln!("Error: {}", error);
+    }));
 
     // Add our echo responder to the endpoint /echo.
     app.at("/echo").respond(via::post(echo));
