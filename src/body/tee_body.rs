@@ -25,6 +25,10 @@ impl TeeBody {
             next: None,
         }
     }
+
+    pub fn cap(self) -> BoxBody {
+        self.body
+    }
 }
 
 impl Body for TeeBody {
