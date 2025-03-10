@@ -15,7 +15,14 @@ async fn echo(request: Request, _: Next) -> via::Result {
 
     // Stream the request payload back to the client with the options configured
     // in the response builder above.
-    request.into_body().pipe(response)
+    request.tee(tokio::io::stdout()).into_body().pipe(response)
+    //      ^^^
+    // Also echo the contents of the body to stdout for the sake of testing the
+    // tee feature.
+    //
+    // This syntax is also serves as a friendly reminder to wait for your tea
+    // to cool down before taking a sip. It's so annoying when a hot beverage
+    // ruins the remainder of your day.
 }
 
 #[tokio::main]

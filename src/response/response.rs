@@ -2,13 +2,21 @@ use cookie::CookieJar;
 use http::response::Parts;
 use http::{HeaderMap, StatusCode, Version};
 use std::fmt::{self, Debug, Formatter};
+use tokio::io::AsyncWrite;
 
 use super::builder::ResponseBuilder;
-use crate::body::{BoxBody, HttpBody, ResponseBody};
+use crate::body::{BoxBody, HttpBody, ResponseBody, TeeBody};
 
 pub struct Response {
     pub(crate) cookies: Option<Box<CookieJar>>,
     pub(crate) inner: http::Response<HttpBody<ResponseBody>>,
+}
+
+fn prefer_unboxed(body: &HttpBody<ResponseBody>) {
+    if matches!(body, HttpBody::Dyn(_) | HttpBody::Tee(_)) {
+        // TODO: Replace this with tracing and a proper logger.
+        eprintln!("boxing a response body more than once can create a reference cycle.");
+    }
 }
 
 impl Response {
@@ -38,14 +46,34 @@ impl Response {
     ///
     #[inline]
     pub fn map(self, map: impl FnOnce(HttpBody<ResponseBody>) -> BoxBody) -> Self {
-        if cfg!(debug_assertions) && matches!(self.inner.body(), HttpBody::Mapped(_)) {
-            // TODO: Replace this with tracing and a proper logger.
-            eprintln!("calling response.map() more than once can create a reference cycle.");
+        if cfg!(debug_assertions) {
+            prefer_unboxed(self.inner.body());
         }
 
         Self {
-            cookies: self.cookies,
-            inner: self.inner.map(|body| HttpBody::Mapped(map(body))),
+            inner: self.inner.map(|body| HttpBody::Dyn(map(body))),
+            ..self
+        }
+    }
+
+    /// Write the contents of the response body into the provided sink when it
+    /// is read.
+    ///
+    #[inline]
+    pub fn tee(self, sink: impl AsyncWrite + Send + Sync + 'static) -> Self {
+        if cfg!(debug_assertions) {
+            prefer_unboxed(self.inner.body());
+        }
+
+        Self {
+            inner: self.inner.map(|body| {
+                HttpBody::Tee(match body {
+                    HttpBody::Inline(body) => TeeBody::new(body, sink),
+                    HttpBody::Dyn(boxed) => TeeBody::new(boxed, sink),
+                    HttpBody::Tee(tee) => TeeBody::new(tee.cap(), sink),
+                })
+            }),
+            ..self
         }
     }
 
