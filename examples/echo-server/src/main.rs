@@ -32,19 +32,15 @@ async fn main() -> Result<ExitCode, Error> {
     // of indirection. Also, connect a sink a sync to the request and response
     // body for the purpose of audit logs (because enterprise software).
     app.include(|request: Request, next: Next| {
-        let future = next.call(request.map(|existing| {
-            BoxBody::new(TeeBody::new(
-                BoxBody::new(existing.into_inner()),
-                tokio::io::stderr(),
-            ))
-        }));
+        let request = request.map(|body| {
+            let sink = tokio::io::stderr();
+            BoxBody::new(TeeBody::new(body.boxed(), sink))
+        });
 
         async {
-            Ok(future.await?.map(|existing| {
-                BoxBody::new(TeeBody::new(
-                    BoxBody::new(existing.into_inner()),
-                    tokio::io::stdout(),
-                ))
+            Ok(next.call(request).await?.map(|body| {
+                let sink = tokio::io::stdout();
+                BoxBody::new(TeeBody::new(body.boxed(), sink))
             }))
         }
     });
