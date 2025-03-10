@@ -26,7 +26,8 @@ pub enum HttpBody<T> {
     ///
     Boxed(BoxBody),
 
-    ///
+    /// A boxed body that copies bytes from each data frame into a dyn
+    /// [`AsyncWrite`](tokio::io::AsyncWrite).
     ///
     Tee(TeeBody),
 }

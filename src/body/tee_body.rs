@@ -8,6 +8,9 @@ use tokio::io::AsyncWrite;
 use super::BoxBody;
 use crate::error::DynError;
 
+/// A boxed body that copies bytes from each data frame into a dyn
+/// [`AsyncWrite`](AsyncWrite).
+///
 // This struct needs refactored to contain a state enum to ensure that
 // we're able to (flush if necessary) and shutdown the sink when body
 // stops producing frames...
