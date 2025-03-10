@@ -127,7 +127,7 @@ impl HttpBody<ResponseBody> {
 impl Default for HttpBody<ResponseBody> {
     #[inline]
     fn default() -> Self {
-        HttpBody::Original(Default::default())
+        HttpBody::Inline(Default::default())
     }
 }
 
@@ -136,7 +136,7 @@ where
     ResponseBody: From<T>,
 {
     fn from(body: T) -> Self {
-        HttpBody::Original(ResponseBody::from(body))
+        HttpBody::Inline(ResponseBody::from(body))
     }
 }
 

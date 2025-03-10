@@ -3,9 +3,10 @@
 use bytes::Bytes;
 use futures_core::Stream;
 use http::header::TRANSFER_ENCODING;
+use http_body_util::combinators::BoxBody;
 
 use super::stream_body::StreamBody;
-use crate::body::{BoxBody, HttpBody, RequestBody};
+use crate::body::{HttpBody, RequestBody};
 use crate::error::{DynError, Error};
 use crate::response::{Response, ResponseBuilder};
 
@@ -38,7 +39,7 @@ impl Pipe for HttpBody<RequestBody> {
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response
             .header(TRANSFER_ENCODING, "chunked")
-            .body(HttpBody::Mapped(self.boxed()))
+            .body(BoxBody::new(self))
     }
 }
 
@@ -51,6 +52,6 @@ where
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response
             .header(TRANSFER_ENCODING, "chunked")
-            .body(HttpBody::Mapped(BoxBody::new(StreamBody::new(self))))
+            .body(HttpBody::Dyn(BoxBody::new(StreamBody::new(self))))
     }
 }

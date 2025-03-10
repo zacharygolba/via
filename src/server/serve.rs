@@ -133,7 +133,7 @@ where
 
                     Request::new(
                         state,
-                        HttpBody::Original(RequestBody::new(max_request_size, body)),
+                        HttpBody::Inline(RequestBody::new(max_request_size, body)),
                         head,
                     )
                 };
