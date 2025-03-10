@@ -1,5 +1,6 @@
 use http::header::CONTENT_TYPE;
 use std::process::ExitCode;
+use via::body::{BoxBody, TeeBody};
 use via::middleware::error_boundary;
 use via::{Next, Pipe, Request, Response};
 
@@ -15,14 +16,7 @@ async fn echo(request: Request, _: Next) -> via::Result {
 
     // Stream the request payload back to the client with the options configured
     // in the response builder above.
-    request.tee(tokio::io::stdout()).into_body().pipe(response)
-    //      ^^^
-    // Also echo the contents of the body to stdout for the sake of testing the
-    // tee feature.
-    //
-    // This syntax is also serves as a friendly reminder to wait for your tea
-    // to cool down before taking a sip. It's so annoying when a hot beverage
-    // ruins the remainder of your day.
+    request.into_body().pipe(response)
 }
 
 #[tokio::main]
@@ -33,6 +27,27 @@ async fn main() -> Result<ExitCode, Error> {
     app.include(error_boundary::inspect(|_, error| {
         eprintln!("Error: {}", error);
     }));
+
+    // Map the request and response bodies to a boxed body type with 2 levels
+    // of indirection. Also, connect a sink a sync to the request and response
+    // body for the purpose of audit logs (because enterprise software).
+    app.include(|request: Request, next: Next| {
+        let future = next.call(request.map(|existing| {
+            BoxBody::new(TeeBody::new(
+                BoxBody::new(existing.into_inner()),
+                tokio::io::stderr(),
+            ))
+        }));
+
+        async {
+            Ok(future.await?.map(|existing| {
+                BoxBody::new(TeeBody::new(
+                    BoxBody::new(existing.into_inner()),
+                    tokio::io::stdout(),
+                ))
+            }))
+        }
+    });
 
     // Add our echo responder to the endpoint /echo.
     app.at("/echo").respond(via::post(echo));

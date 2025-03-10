@@ -18,24 +18,12 @@ pub struct TeeBody {
 }
 
 impl TeeBody {
-    pub fn new<T, U>(body: T, sink: U) -> Self
-    where
-        T: Body<Data = Bytes, Error = DynError> + Send + Sync + 'static,
-        U: AsyncWrite + Send + Sync + 'static,
-    {
+    pub fn new(body: BoxBody, sink: impl AsyncWrite + Send + Sync + 'static) -> Self {
         Self {
             body: BoxBody::new(body),
             sink: Box::pin(sink),
             next: None,
         }
-    }
-
-    #[inline]
-    pub(crate) fn cap(self) -> BoxBody {
-        // I'm considering bringing back a custom impl of `BoxBody` in the
-        // event that the struct wrapper breaks composition. It's possible
-        // that we'll want to project
-        todo!()
     }
 }
 

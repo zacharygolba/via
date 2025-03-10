@@ -4,10 +4,9 @@ use http::request::Parts;
 use http::{HeaderMap, HeaderValue, Method, Uri, Version};
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
-use tokio::io::AsyncWrite;
 
 use super::param::{PathParam, PathParams, QueryParam};
-use crate::body::{BoxBody, HttpBody, RequestBody, TeeBody};
+use crate::body::{BoxBody, HttpBody, RequestBody};
 
 pub struct Request<T = ()> {
     /// The shared application state passed to the
@@ -31,44 +30,14 @@ pub struct Request<T = ()> {
     head: Parts,
 }
 
-fn prefer_unboxed(body: &HttpBody<RequestBody>) {
-    if matches!(body, HttpBody::Dyn(_) | HttpBody::Tee(_)) {
-        // TODO: Replace this with tracing and a proper logger.
-        eprintln!("boxing a request body more than once can create a reference cycle.");
-    }
-}
-
 impl<T> Request<T> {
     /// Consumes the request returning a new request with body mapped to the
     /// return type of the provided closure `map`.
     ///
     #[inline]
     pub fn map(self, map: impl FnOnce(HttpBody<RequestBody>) -> BoxBody) -> Self {
-        if cfg!(debug_assertions) {
-            prefer_unboxed(&self.body);
-        }
-
         Self {
-            body: HttpBody::Dyn(map(self.body)),
-            ..self
-        }
-    }
-
-    /// Write the contents of the request body into the provided sink when it
-    /// is read.
-    ///
-    #[inline]
-    pub fn tee(self, sink: impl AsyncWrite + Send + Sync + 'static) -> Self {
-        if cfg!(debug_assertions) {
-            prefer_unboxed(&self.body);
-        }
-
-        Self {
-            body: HttpBody::Tee(match self.body {
-                HttpBody::Inline(body) => TeeBody::new(body, sink),
-                HttpBody::Dyn(boxed) => TeeBody::new(boxed, sink),
-                HttpBody::Tee(tee) => TeeBody::new(tee.cap(), sink),
-            }),
+            body: HttpBody::Boxed(map(self.body)),
             ..self
         }
     }

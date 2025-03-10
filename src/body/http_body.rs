@@ -1,10 +1,12 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
+use std::fmt::Debug;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use super::request_body::RequestBody;
+use super::response_body::ResponseBody;
 use super::tee_body::TeeBody;
-use super::RequestBody;
 use crate::error::DynError;
 
 /// A type erased, dynamically dispatched [`Body`].
@@ -18,15 +20,62 @@ pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, DynError>;
 pub enum HttpBody<T> {
     /// The original body of a request or response.
     ///
-    Inline(T),
+    Original(T),
 
     /// A type erased, dynamically dispatched [`Body`].
     ///
-    Dyn(BoxBody),
+    Boxed(BoxBody),
 
     ///
     ///
     Tee(TeeBody),
+}
+
+impl HttpBody<ResponseBody> {
+    #[inline]
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
+impl<T> HttpBody<T>
+where
+    T: Body<Data = Bytes, Error = DynError> + Debug + Send + Sync + 'static,
+{
+    /// Returns a BoxBody from the `impl Body` contained in self.
+    ///
+    /// If `self` is `HttpBody::Boxed`, no additional allocations are made.
+    ///
+    pub fn boxed(self) -> BoxBody {
+        match self {
+            HttpBody::Original(body) => BoxBody::new(body),
+            HttpBody::Boxed(body) => body,
+            HttpBody::Tee(body) => BoxBody::new(body),
+        }
+    }
+
+    /// Returns the original [RequestBody] or [ResponseBody]
+    ///
+    /// ## Panics
+    ///
+    /// If `self` is not `HttpBody::Original`.
+    ///
+    pub fn into_inner(self) -> T {
+        self.try_into_inner()
+            .expect("expected self to be HttpBody::Original")
+    }
+
+    /// Unwrap the [`Body`] contained in self, if self is `HttpBody::Original`.
+    ///
+    /// If self is not `HttpBody::Original`, ownership of self is transferred
+    /// back to the caller.
+    ///
+    pub fn try_into_inner(self) -> Result<T, Self> {
+        match self {
+            body @ (HttpBody::Boxed(_) | HttpBody::Tee(_)) => Err(body),
+            HttpBody::Original(body) => Ok(body),
+        }
+    }
 }
 
 impl<T> Body for HttpBody<T>
@@ -41,36 +90,38 @@ where
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.get_mut() {
-            Self::Inline(body) => Pin::new(body).poll_frame(context),
-            Self::Dyn(boxed) => Pin::new(boxed).poll_frame(context),
-            Self::Tee(tee) => Pin::new(tee).poll_frame(context),
+            Self::Original(body) => Pin::new(body).poll_frame(context),
+            Self::Boxed(body) => Pin::new(body).poll_frame(context),
+            Self::Tee(body) => Pin::new(body).poll_frame(context),
         }
     }
 
     fn is_end_stream(&self) -> bool {
         match self {
-            Self::Inline(body) => body.is_end_stream(),
-            Self::Dyn(boxed) => boxed.is_end_stream(),
-            Self::Tee(tee) => tee.is_end_stream(),
+            Self::Original(body) => body.is_end_stream(),
+            Self::Boxed(body) => body.is_end_stream(),
+            Self::Tee(body) => body.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match self {
-            Self::Inline(body) => body.size_hint(),
-            Self::Dyn(boxed) => boxed.size_hint(),
-            Self::Tee(tee) => tee.size_hint(),
+            Self::Original(body) => body.size_hint(),
+            Self::Boxed(body) => body.size_hint(),
+            Self::Tee(body) => body.size_hint(),
         }
     }
 }
 
 impl<T> From<BoxBody> for HttpBody<T> {
+    #[inline]
     fn from(body: BoxBody) -> Self {
-        Self::Dyn(body)
+        Self::Boxed(body)
     }
 }
 
 impl<T> From<TeeBody> for HttpBody<T> {
+    #[inline]
     fn from(body: TeeBody) -> Self {
         Self::Tee(body)
     }
@@ -79,6 +130,22 @@ impl<T> From<TeeBody> for HttpBody<T> {
 impl From<RequestBody> for HttpBody<RequestBody> {
     #[inline]
     fn from(body: RequestBody) -> Self {
-        Self::Inline(body)
+        Self::Original(body)
+    }
+}
+
+impl Default for HttpBody<ResponseBody> {
+    #[inline]
+    fn default() -> Self {
+        HttpBody::Original(Default::default())
+    }
+}
+
+impl<T> From<T> for HttpBody<ResponseBody>
+where
+    ResponseBody: From<T>,
+{
+    fn from(body: T) -> Self {
+        HttpBody::Original(ResponseBody::from(body))
     }
 }

@@ -86,7 +86,7 @@ impl ResponseBuilder {
     ///
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
-        self.body(HttpBody::Inline(Default::default()))
+        self.body(HttpBody::Original(Default::default()))
     }
 }
 

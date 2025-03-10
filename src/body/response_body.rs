@@ -4,7 +4,6 @@ use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::http_body::HttpBody;
 use crate::error::DynError;
 
 /// The maximum amount of data that can be read from a buffered body per frame.
@@ -114,29 +113,6 @@ impl From<&'_ [u8]> for ResponseBody {
     #[inline]
     fn from(data: &'_ [u8]) -> Self {
         Self::from(Bytes::copy_from_slice(data))
-    }
-}
-
-impl HttpBody<ResponseBody> {
-    #[inline]
-    pub fn new() -> Self {
-        Default::default()
-    }
-}
-
-impl Default for HttpBody<ResponseBody> {
-    #[inline]
-    fn default() -> Self {
-        HttpBody::Inline(Default::default())
-    }
-}
-
-impl<T> From<T> for HttpBody<ResponseBody>
-where
-    ResponseBody: From<T>,
-{
-    fn from(body: T) -> Self {
-        HttpBody::Inline(ResponseBody::from(body))
     }
 }
 
