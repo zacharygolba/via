@@ -24,7 +24,7 @@ async fn main() -> Result<ExitCode, Error> {
 
     app.include(|request: Request, next: Next| {
         let request = request.tee(tokio::io::stderr());
-        async { Ok(next.call(request).await?.tee(tokio::io::stdout())) }
+        async { Ok(next.call(request).await?.tee(tokio::io::stderr())) }
     });
 
     // Include an error boundary to catch any errors that occur downstream.

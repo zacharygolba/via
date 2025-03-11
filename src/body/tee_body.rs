@@ -1,5 +1,6 @@
-use bytes::Bytes;
-use http_body::{Body, Frame, SizeHint};
+use bytes::{Buf, Bytes};
+use http_body::{Body, Frame};
+use std::collections::VecDeque;
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -15,17 +16,23 @@ use crate::error::DynError;
 // we're able to (flush if necessary) and shutdown the sink when body
 // stops producing frames...
 pub struct TeeBody {
+    io: Pin<Box<dyn AsyncWrite + Send + Sync>>,
     body: BoxBody,
-    sink: Pin<Box<dyn AsyncWrite + Send + Sync>>,
-    next: Option<Bytes>,
+    state: IoState,
+}
+
+enum IoState {
+    Closed,
+    Shutdown,
+    Writeable(VecDeque<Bytes>),
 }
 
 impl TeeBody {
     pub fn new(body: BoxBody, sink: impl AsyncWrite + Send + Sync + 'static) -> Self {
         Self {
+            io: Box::pin(sink),
             body: BoxBody::new(body),
-            sink: Box::pin(sink),
-            next: None,
+            state: IoState::Writeable(VecDeque::with_capacity(2)),
         }
     }
 
@@ -43,64 +50,70 @@ impl Body for TeeBody {
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.get_mut();
-        let mut next = loop {
-            if let Some(data) = this.next.take() {
-                if data.is_empty() {
-                    this.next = None;
-                } else {
-                    break data;
-                }
-            } else {
-                // The only reason this is safe is because we know that
-                // RequestBody and ResponseBody are both Unpin.
-                //
-                // It's possible to have an unsafe pin projection here if you
-                // supply an !Unpin stream to `Pipe::pipe` and then supply a
-                // sink to Response::tee. So long as hyper::body::Incoming is
-                // Unpin,
-                let ready = match Pin::new(&mut this.body).poll_frame(context) {
-                    Poll::Ready(Some(Ok(frame))) => frame,
-                    poll @ (Poll::Pending | Poll::Ready(None) | Poll::Ready(Some(Err(_)))) => {
-                        if this.sink.as_mut().poll_shutdown(context)? == Poll::Pending {
-                            println!("pending shutdown");
-                            return Poll::Pending;
-                        } else {
-                            println!("sink shutdown");
-                            return poll;
+        let state = &mut this.state;
+        let mut done = false;
+        let mut body_err = None;
+
+        loop {
+            let backlog = loop {
+                return match state {
+                    IoState::Writeable(bufs) => break bufs,
+                    IoState::Shutdown => match this.io.as_mut().poll_shutdown(context) {
+                        Poll::Pending => Poll::Pending,
+                        Poll::Ready(Ok(())) => {
+                            *state = IoState::Closed;
+                            Poll::Ready(body_err)
+                        }
+                        Poll::Ready(Err(error)) => {
+                            *state = IoState::Closed;
+                            Poll::Ready(body_err.or_else(|| Some(Err(error.into()))))
+                        }
+                    },
+                    IoState::Closed => Poll::Ready(None),
+                };
+            };
+
+            if let Some(mut next) = backlog.pop_front() {
+                match this.io.as_mut().poll_write(context, &next) {
+                    Poll::Pending => {
+                        backlog.push_front(next);
+                        // Placeholder for tracing...
+                    }
+                    Poll::Ready(Ok(len)) => {
+                        if len < next.len() {
+                            next.advance(len);
+                            backlog.push_front(next);
                         }
                     }
-                };
-
-                this.next = match ready.into_data() {
-                    Err(trailers) => return Poll::Ready(Some(Ok(trailers))),
-                    Ok(data) => Some(data),
-                };
-            }
-        };
-
-        match this.sink.as_mut().poll_write(context, &next)? {
-            Poll::Pending => {
-                this.next = Some(next);
-                Poll::Pending
-            }
-            Poll::Ready(len) => {
-                if len == next.len() {
-                    Poll::Ready(Some(Ok(Frame::data(next))))
-                } else {
-                    let data = next.split_to(len);
-                    this.next = Some(next);
-                    Poll::Ready(Some(Ok(Frame::data(data))))
+                    Poll::Ready(Err(error)) => {
+                        let _ = &error; // Placeholder for tracing...
+                        *state = IoState::Shutdown;
+                        continue;
+                    }
                 }
+            } else if done {
+                *state = IoState::Shutdown;
+                continue;
             }
+
+            match Pin::new(&mut this.body).poll_frame(context) {
+                Poll::Pending => break Poll::Pending,
+                Poll::Ready(None) => {
+                    done = true;
+                }
+                Poll::Ready(Some(Ok(frame))) => {
+                    if let Some(next) = frame.data_ref() {
+                        backlog.push_back(next.clone());
+                    }
+
+                    break Poll::Ready(Some(Ok(frame)));
+                }
+                Poll::Ready(Some(err @ Err(_))) => {
+                    *state = IoState::Shutdown;
+                    body_err = Some(err);
+                }
+            };
         }
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.body.is_end_stream()
-    }
-
-    fn size_hint(&self) -> SizeHint {
-        self.body.size_hint()
     }
 }
 
