@@ -24,8 +24,8 @@ async fn main() -> Result<ExitCode, Error> {
 
     app.include(|request: Request, next: Next| async {
         Ok(next.call(request).await?.map(|body| {
-            let scc = stderr();
-            body.tee(scc).boxed()
+            let sec = stderr();
+            body.tee(sec).boxed()
         }))
     });
 
