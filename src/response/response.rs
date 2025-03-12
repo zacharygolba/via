@@ -2,10 +2,9 @@ use cookie::CookieJar;
 use http::response::Parts;
 use http::{HeaderMap, StatusCode, Version};
 use std::fmt::{self, Debug, Formatter};
-use tokio::io::AsyncWrite;
 
 use super::builder::ResponseBuilder;
-use crate::body::{HttpBody, ResponseBody, TeeBody};
+use crate::body::{HttpBody, ResponseBody};
 
 pub struct Response {
     pub(crate) cookies: Option<Box<CookieJar>>,
@@ -46,14 +45,6 @@ impl Response {
             inner: self.inner.map(map),
             ..self
         }
-    }
-
-    /// Copies bytes from the response body into the provided sink when it is
-    /// read.
-    ///
-    #[inline]
-    pub fn tee(self, sink: impl AsyncWrite + Send + Sync + 'static) -> Self {
-        self.map(|body| HttpBody::Tee(TeeBody::new(body, sink)))
     }
 
     /// Returns a reference to the response cookies.

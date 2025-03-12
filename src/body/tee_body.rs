@@ -6,6 +6,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::AsyncWrite;
 
+use super::BoxBody;
 use crate::error::DynError;
 
 /// A boxed body that writes each data frame into a dyn
@@ -13,7 +14,7 @@ use crate::error::DynError;
 ///
 pub struct TeeBody {
     io: Pin<Box<dyn AsyncWrite + Send + Sync>>,
-    body: Pin<Box<dyn Body<Data = Bytes, Error = DynError> + Send + Sync>>,
+    body: BoxBody,
     state: IoState,
 }
 
@@ -24,13 +25,10 @@ enum IoState {
 }
 
 impl TeeBody {
-    pub fn new(
-        body: impl Body<Data = Bytes, Error = DynError> + Send + Sync + 'static,
-        io: impl AsyncWrite + Send + Sync + 'static,
-    ) -> Self {
+    pub fn new(body: BoxBody, io: impl AsyncWrite + Send + Sync + 'static) -> Self {
         Self {
             io: Box::pin(io),
-            body: Box::pin(body),
+            body,
             state: IoState::Writeable(VecDeque::with_capacity(2)),
         }
     }
@@ -45,6 +43,8 @@ impl Body for TeeBody {
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.get_mut();
+
+        let io = &mut this.io;
         let state = &mut this.state;
         let mut is_done = false;
         let mut next_frame = None;
@@ -53,7 +53,7 @@ impl Body for TeeBody {
             let backlog = match state {
                 IoState::Writeable(bufs) => bufs,
                 IoState::Shutdown => {
-                    return match this.io.as_mut().poll_shutdown(context) {
+                    return match io.as_mut().poll_shutdown(context) {
                         Poll::Pending => Poll::Pending,
                         Poll::Ready(Ok(())) => {
                             *state = IoState::Closed;
@@ -71,7 +71,7 @@ impl Body for TeeBody {
             };
 
             if let Some(mut next) = backlog.pop_front() {
-                match this.io.as_mut().poll_write(context, &next) {
+                match io.as_mut().poll_write(context, &next) {
                     Poll::Pending => {
                         backlog.push_front(next);
                         // Placeholder for tracing...
@@ -97,7 +97,7 @@ impl Body for TeeBody {
                 return Poll::Ready(next_frame);
             }
 
-            match this.body.as_mut().poll_frame(context) {
+            match Pin::new(&mut this.body).poll_frame(context) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(None) => {
                     is_done = true;

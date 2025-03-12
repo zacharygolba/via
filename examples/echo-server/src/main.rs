@@ -1,5 +1,6 @@
 use http::header::CONTENT_TYPE;
 use std::process::ExitCode;
+use tokio::io::stderr;
 use via::middleware::error_boundary;
 use via::{Next, Pipe, Request, Response};
 
@@ -23,8 +24,20 @@ async fn main() -> Result<ExitCode, Error> {
     let mut app = via::app(());
 
     app.include(|request: Request, next: Next| {
-        let request = request.tee(tokio::io::stderr());
-        async { Ok(next.call(request).await?.tee(tokio::io::stderr())) }
+        let request = request.map(|body| body.tee(stderr()));
+        //
+        // For additional indirection you could alternatively do...
+        // let request = request.map(|body| body.tee(stderr()).boxed());
+        //
+
+        async {
+            let response = next.call(request).await?;
+            Ok(response.map(|body| body.tee(stderr())))
+            //
+            // For additional indirection you could alternatively do...
+            // Ok(response.map(|body| body.tee(stderr()).boxed()))
+            //
+        }
     });
 
     // Include an error boundary to catch any errors that occur downstream.

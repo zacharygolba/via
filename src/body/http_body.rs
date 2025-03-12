@@ -3,6 +3,7 @@ use http_body::{Body, Frame, SizeHint};
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::io::AsyncWrite;
 
 use super::request_body::RequestBody;
 use super::response_body::ResponseBody;
@@ -26,7 +27,7 @@ pub enum HttpBody<T> {
     ///
     Boxed(BoxBody),
 
-    /// A boxed body that copies bytes from each data frame into a dyn
+    /// A boxed body that writes each data frame into a dyn
     /// [`AsyncWrite`](tokio::io::AsyncWrite).
     ///
     Tee(TeeBody),
@@ -41,41 +42,16 @@ impl HttpBody<ResponseBody> {
 
 impl<T> HttpBody<T>
 where
-    T: Body<Data = Bytes, Error = DynError> + Debug + Send + Sync + 'static,
+    T: Body<Data = Bytes, Error = DynError> + Send + Sync + Unpin + 'static,
 {
-    /// Returns a BoxBody from the `impl Body` contained in self.
-    ///
-    /// If `self` is `HttpBody::Boxed`, no additional allocations are made.
-    ///
-    pub fn boxed(self) -> BoxBody {
-        match self {
-            HttpBody::Original(body) => BoxBody::new(body),
-            HttpBody::Boxed(body) => body,
-            HttpBody::Tee(body) => BoxBody::new(body),
-        }
+    #[inline]
+    pub fn boxed(self) -> Self {
+        Self::Boxed(BoxBody::new(self))
     }
 
-    /// Returns the original [RequestBody] or [ResponseBody]
-    ///
-    /// ## Panics
-    ///
-    /// If `self` is not `HttpBody::Original`.
-    ///
-    pub fn into_inner(self) -> T {
-        self.try_into_inner()
-            .expect("expected self to be HttpBody::Original")
-    }
-
-    /// Unwrap the [`Body`] contained in self, if self is `HttpBody::Original`.
-    ///
-    /// If self is not `HttpBody::Original`, ownership of self is transferred
-    /// back to the caller.
-    ///
-    pub fn try_into_inner(self) -> Result<T, Self> {
-        match self {
-            body @ (HttpBody::Boxed(_) | HttpBody::Tee(_)) => Err(body),
-            HttpBody::Original(body) => Ok(body),
-        }
+    #[inline]
+    pub fn tee(self, io: impl AsyncWrite + Send + Sync + 'static) -> Self {
+        Self::Tee(TeeBody::new(BoxBody::new(self), io))
     }
 }
 
@@ -138,7 +114,7 @@ impl From<RequestBody> for HttpBody<RequestBody> {
 impl Default for HttpBody<ResponseBody> {
     #[inline]
     fn default() -> Self {
-        HttpBody::Original(Default::default())
+        Self::Original(Default::default())
     }
 }
 
@@ -147,6 +123,6 @@ where
     ResponseBody: From<T>,
 {
     fn from(body: T) -> Self {
-        HttpBody::Original(ResponseBody::from(body))
+        Self::Original(ResponseBody::from(body))
     }
 }

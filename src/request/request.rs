@@ -4,10 +4,9 @@ use http::request::Parts;
 use http::{HeaderMap, HeaderValue, Method, Uri, Version};
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
-use tokio::io::AsyncWrite;
 
 use super::param::{PathParam, PathParams, QueryParam};
-use crate::body::{HttpBody, RequestBody, TeeBody};
+use crate::body::{HttpBody, RequestBody};
 
 pub struct Request<T = ()> {
     /// The shared application state passed to the
@@ -44,14 +43,6 @@ impl<T> Request<T> {
             body: map(self.body),
             ..self
         }
-    }
-
-    /// Copies bytes from the request body into the provided sink when it is
-    /// read.
-    ///
-    #[inline]
-    pub fn tee(self, sink: impl AsyncWrite + Send + Sync + 'static) -> Self {
-        self.map(|body| HttpBody::Tee(TeeBody::new(body, sink)))
     }
 
     /// Consumes the request and returns the body.
