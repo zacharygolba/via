@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::io::AsyncWrite;
 
 use super::param::{PathParam, PathParams, QueryParam};
-use crate::body::{BoxBody, HttpBody, RequestBody, TeeBody};
+use crate::body::{HttpBody, RequestBody, TeeBody};
 
 pub struct Request<T = ()> {
     /// The shared application state passed to the
@@ -51,7 +51,7 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn tee(self, sink: impl AsyncWrite + Send + Sync + 'static) -> Self {
-        self.map(|body| HttpBody::Boxed(BoxBody::new(TeeBody::new(body.boxed(), sink))))
+        self.map(|body| HttpBody::Tee(TeeBody::new(body, sink)))
     }
 
     /// Consumes the request and returns the body.

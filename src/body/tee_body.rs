@@ -6,7 +6,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::AsyncWrite;
 
-use super::BoxBody;
 use crate::error::DynError;
 
 /// A boxed body that writes each data frame into a dyn
@@ -14,7 +13,7 @@ use crate::error::DynError;
 ///
 pub struct TeeBody {
     io: Pin<Box<dyn AsyncWrite + Send + Sync>>,
-    body: BoxBody,
+    body: Pin<Box<dyn Body<Data = Bytes, Error = DynError> + Send + Sync>>,
     state: IoState,
 }
 
@@ -25,16 +24,15 @@ enum IoState {
 }
 
 impl TeeBody {
-    pub fn new(body: BoxBody, sink: impl AsyncWrite + Send + Sync + 'static) -> Self {
+    pub fn new(
+        body: impl Body<Data = Bytes, Error = DynError> + Send + Sync + 'static,
+        io: impl AsyncWrite + Send + Sync + 'static,
+    ) -> Self {
         Self {
-            io: Box::pin(sink),
-            body: BoxBody::new(body),
+            io: Box::pin(io),
+            body: Box::pin(body),
             state: IoState::Writeable(VecDeque::with_capacity(2)),
         }
-    }
-
-    pub fn cap(self) -> BoxBody {
-        self.body
     }
 }
 
@@ -99,7 +97,7 @@ impl Body for TeeBody {
                 return Poll::Ready(next_frame);
             }
 
-            match Pin::new(&mut this.body).poll_frame(context) {
+            match this.body.as_mut().poll_frame(context) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(None) => {
                     is_done = true;

@@ -51,7 +51,7 @@ where
         match self {
             HttpBody::Original(body) => BoxBody::new(body),
             HttpBody::Boxed(body) => body,
-            HttpBody::Tee(body) => body.cap(),
+            HttpBody::Tee(body) => BoxBody::new(body),
         }
     }
 

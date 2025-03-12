@@ -5,7 +5,7 @@ use std::fmt::{self, Debug, Formatter};
 use tokio::io::AsyncWrite;
 
 use super::builder::ResponseBuilder;
-use crate::body::{BoxBody, HttpBody, ResponseBody, TeeBody};
+use crate::body::{HttpBody, ResponseBody, TeeBody};
 
 pub struct Response {
     pub(crate) cookies: Option<Box<CookieJar>>,
@@ -48,12 +48,12 @@ impl Response {
         }
     }
 
-    /// Copies bytes from the request body into the provided sink when it is
+    /// Copies bytes from the response body into the provided sink when it is
     /// read.
     ///
     #[inline]
     pub fn tee(self, sink: impl AsyncWrite + Send + Sync + 'static) -> Self {
-        self.map(|body| HttpBody::Boxed(BoxBody::new(TeeBody::new(body.boxed(), sink))))
+        self.map(|body| HttpBody::Tee(TeeBody::new(body, sink)))
     }
 
     /// Returns a reference to the response cookies.
