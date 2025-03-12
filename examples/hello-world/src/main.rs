@@ -1,4 +1,5 @@
 use std::process::ExitCode;
+use tokio::io::stderr;
 use via::middleware::error_boundary;
 use via::{Next, Request, Response};
 
@@ -21,13 +22,11 @@ async fn main() -> Result<ExitCode, Error> {
     // Create a new application.
     let mut app = via::app(());
 
-    app.include(|request: Request, next: Next| {
-        let request = request.map(|body| body.tee(tokio::io::stderr()));
-
-        async {
-            let response = next.call(request).await?;
-            Ok(response.map(|body| body.tee(tokio::io::stderr())))
-        }
+    app.include(|request: Request, next: Next| async {
+        Ok(next.call(request).await?.map(|body| {
+            let scc = stderr();
+            body.tee(scc).boxed()
+        }))
     });
 
     // Include an error boundary to catch any errors that occur downstream.
