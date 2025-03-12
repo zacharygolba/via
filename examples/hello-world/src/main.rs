@@ -21,6 +21,15 @@ async fn main() -> Result<ExitCode, Error> {
     // Create a new application.
     let mut app = via::app(());
 
+    app.include(|request: Request, next: Next| {
+        let request = request.map(|body| body.tee(tokio::io::stderr()));
+
+        async {
+            let response = next.call(request).await?;
+            Ok(response.map(|body| body.tee(tokio::io::stderr())))
+        }
+    });
+
     // Include an error boundary to catch any errors that occur downstream.
     app.include(error_boundary::inspect(|_, error| {
         eprintln!("Error: {}", error);
