@@ -9,12 +9,9 @@ use tokio::io::AsyncWrite;
 use super::BoxBody;
 use crate::error::DynError;
 
-/// A boxed body that copies bytes from each data frame into a dyn
+/// A boxed body that writes each data frame into a dyn
 /// [`AsyncWrite`](AsyncWrite).
 ///
-// This struct needs refactored to contain a state enum to ensure that
-// we're able to (flush if necessary) and shutdown the sink when body
-// stops producing frames...
 pub struct TeeBody {
     io: Pin<Box<dyn AsyncWrite + Send + Sync>>,
     body: BoxBody,
@@ -51,26 +48,28 @@ impl Body for TeeBody {
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.get_mut();
         let state = &mut this.state;
-        let mut done = false;
-        let mut body_err = None;
+        let mut is_done = false;
+        let mut next_frame = None;
 
         loop {
-            let backlog = loop {
-                return match state {
-                    IoState::Writeable(bufs) => break bufs,
-                    IoState::Shutdown => match this.io.as_mut().poll_shutdown(context) {
+            let backlog = match state {
+                IoState::Writeable(bufs) => bufs,
+                IoState::Shutdown => {
+                    return match this.io.as_mut().poll_shutdown(context) {
                         Poll::Pending => Poll::Pending,
                         Poll::Ready(Ok(())) => {
                             *state = IoState::Closed;
-                            Poll::Ready(body_err)
+                            Poll::Ready(next_frame)
                         }
-                        Poll::Ready(Err(error)) => {
+                        Poll::Ready(Err(e)) => {
                             *state = IoState::Closed;
-                            Poll::Ready(body_err.or_else(|| Some(Err(error.into()))))
+                            Poll::Ready(next_frame.or_else(|| Some(Err(e.into()))))
                         }
-                    },
-                    IoState::Closed => Poll::Ready(None),
-                };
+                    };
+                }
+                IoState::Closed => {
+                    return Poll::Ready(None);
+                }
             };
 
             if let Some(mut next) = backlog.pop_front() {
@@ -91,29 +90,41 @@ impl Body for TeeBody {
                         continue;
                     }
                 }
-            } else if done {
+            } else if is_done {
                 *state = IoState::Shutdown;
                 continue;
             }
 
+            if next_frame.is_some() {
+                return Poll::Ready(next_frame);
+            }
+
             match Pin::new(&mut this.body).poll_frame(context) {
-                Poll::Pending => break Poll::Pending,
+                Poll::Pending => return Poll::Pending,
                 Poll::Ready(None) => {
-                    done = true;
+                    is_done = true;
                 }
                 Poll::Ready(Some(Ok(frame))) => {
                     if let Some(next) = frame.data_ref() {
                         backlog.push_back(next.clone());
                     }
 
-                    break Poll::Ready(Some(Ok(frame)));
+                    next_frame = Some(Ok(frame));
                 }
-                Poll::Ready(Some(err @ Err(_))) => {
+                Poll::Ready(Some(Err(error))) => {
                     *state = IoState::Shutdown;
-                    body_err = Some(err);
+                    next_frame = Some(Err(error));
                 }
             };
         }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.body.is_end_stream()
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.body.size_hint()
     }
 }
 
