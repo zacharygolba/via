@@ -14,15 +14,20 @@ use crate::error::DynError;
 /// [`AsyncWrite`](AsyncWrite).
 ///
 pub struct TeeBody {
+    state: IoState,
     io: Pin<Box<dyn AsyncWrite + Send + Sync>>,
     body: BoxBody,
-    state: IoState,
+    backlog: VecDeque<Bytes>,
 }
 
 enum IoState {
     Closed,
     Shutdown,
-    Writeable(VecDeque<Bytes>),
+    Writeable,
+}
+
+fn broken_pipe() -> DynError {
+    Box::new(io::Error::from(ErrorKind::BrokenPipe))
 }
 
 impl TeeBody {
@@ -30,7 +35,8 @@ impl TeeBody {
         Self {
             io: Box::pin(io),
             body,
-            state: IoState::Writeable(VecDeque::with_capacity(2)),
+            state: IoState::Writeable,
+            backlog: VecDeque::with_capacity(2),
         }
     }
 }
@@ -47,22 +53,23 @@ impl Body for TeeBody {
 
         let io = &mut this.io;
         let state = &mut this.state;
-        let mut is_done = false;
-        let mut next_frame = None;
+        let backlog = &mut this.backlog;
+        let mut next = None;
 
         loop {
-            let backlog = match state {
-                IoState::Writeable(bufs) => bufs,
+            match state {
+                IoState::Writeable => {}
                 IoState::Shutdown => {
+                    backlog.clear();
                     return match io.as_mut().poll_shutdown(context) {
                         Poll::Pending => Poll::Pending,
                         Poll::Ready(Ok(())) => {
                             *state = IoState::Closed;
-                            Poll::Ready(next_frame)
+                            Poll::Ready(next)
                         }
                         Poll::Ready(Err(e)) => {
                             *state = IoState::Closed;
-                            Poll::Ready(next_frame.or_else(|| Some(Err(e.into()))))
+                            Poll::Ready(next.or_else(|| Some(Err(e.into()))))
                         }
                     };
                 }
@@ -71,30 +78,29 @@ impl Body for TeeBody {
                 }
             };
 
-            if let Some(mut next) = backlog.pop_front() {
-                match io.as_mut().poll_write(context, &next) {
+            if let Some(front) = backlog.front_mut() {
+                match io.as_mut().poll_write(context, front) {
                     Poll::Pending => {
                         // Placeholder for tracing...
                         //
                         // Something along the lines of:
                         // tracing::info!("TeeBody: io is not yet ready for writes.");
                         //
-                        backlog.push_front(next);
                         return Poll::Pending;
                     }
                     Poll::Ready(Ok(len)) => {
-                        let remaining = next.remaining();
+                        let remaining = front.remaining();
 
                         if len == 0 && remaining > len {
-                            let error = io::Error::from(ErrorKind::BrokenPipe);
                             *state = IoState::Shutdown;
-                            next_frame = Some(Err(error.into()));
+                            next = Some(Err(broken_pipe()));
                             continue;
                         }
 
                         if len < remaining {
-                            next.advance(len);
-                            backlog.push_front(next);
+                            front.advance(len);
+                        } else {
+                            backlog.pop_front();
                         }
                     }
                     Poll::Ready(Err(error)) => {
@@ -103,32 +109,34 @@ impl Body for TeeBody {
                         continue;
                     }
                 }
-            } else if is_done {
-                *state = IoState::Shutdown;
-                continue;
             }
 
-            if next_frame.is_some() {
-                return Poll::Ready(next_frame);
+            if next.is_some() {
+                return Poll::Ready(next);
             }
 
             match Pin::new(&mut this.body).poll_frame(context) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(None) => {
-                    is_done = true;
+                    *state = IoState::Shutdown;
+
+                    if !backlog.is_empty() {
+                        context.waker().wake_by_ref();
+                        return Poll::Pending;
+                    }
                 }
                 Poll::Ready(Some(Ok(frame))) => {
-                    if let Some(next) = frame.data_ref() {
-                        backlog.push_back(next.clone());
+                    if let Some(data) = frame.data_ref() {
+                        backlog.push_back(data.clone());
                     }
 
-                    next_frame = Some(Ok(frame));
+                    next = Some(Ok(frame));
                 }
                 Poll::Ready(Some(Err(error))) => {
                     *state = IoState::Shutdown;
-                    next_frame = Some(Err(error));
+                    next = Some(Err(error));
                 }
-            };
+            }
         }
     }
 
