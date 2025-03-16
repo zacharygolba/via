@@ -2,6 +2,7 @@ use bytes::{Buf, Bytes};
 use http_body::{Body, Frame};
 use std::collections::VecDeque;
 use std::fmt::{self, Debug, Formatter};
+use std::io::{self, ErrorKind};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::AsyncWrite;
@@ -81,7 +82,16 @@ impl Body for TeeBody {
                         }
                     }
                     Poll::Ready(Ok(len)) => {
-                        if len < next.remaining() {
+                        let remaining = next.remaining();
+
+                        if len == 0 && remaining > len {
+                            let error = io::Error::from(ErrorKind::BrokenPipe);
+                            *state = IoState::Shutdown;
+                            next_frame = Some(Err(error.into()));
+                            continue;
+                        }
+
+                        if len < remaining {
                             next.advance(len);
                             backlog.push_front(next);
                         }
