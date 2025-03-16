@@ -81,7 +81,7 @@ impl Body for TeeBody {
                         }
                     }
                     Poll::Ready(Ok(len)) => {
-                        if len < next.len() {
+                        if len < next.remaining() {
                             next.advance(len);
                             backlog.push_front(next);
                         }
