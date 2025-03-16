@@ -49,7 +49,6 @@ impl Body for TeeBody {
         let state = &mut this.state;
         let mut is_done = false;
         let mut next_frame = None;
-        let mut polled_frame = false;
 
         loop {
             let backlog = match state {
@@ -75,11 +74,13 @@ impl Body for TeeBody {
             if let Some(mut next) = backlog.pop_front() {
                 match io.as_mut().poll_write(context, &next) {
                     Poll::Pending => {
-                        backlog.push_front(next);
                         // Placeholder for tracing...
-                        if polled_frame {
-                            return Poll::Pending;
-                        }
+                        //
+                        // Something along the lines of:
+                        // tracing::info!("TeeBody: io is not yet ready for writes.");
+                        //
+                        backlog.push_front(next);
+                        return Poll::Pending;
                     }
                     Poll::Ready(Ok(len)) => {
                         let remaining = next.remaining();
@@ -115,7 +116,6 @@ impl Body for TeeBody {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(None) => {
                     is_done = true;
-                    polled_frame = true;
                 }
                 Poll::Ready(Some(Ok(frame))) => {
                     if let Some(next) = frame.data_ref() {
@@ -123,12 +123,10 @@ impl Body for TeeBody {
                     }
 
                     next_frame = Some(Ok(frame));
-                    polled_frame = true;
                 }
                 Poll::Ready(Some(Err(error))) => {
                     *state = IoState::Shutdown;
                     next_frame = Some(Err(error));
-                    polled_frame = true;
                 }
             };
         }
