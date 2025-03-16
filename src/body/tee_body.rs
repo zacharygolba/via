@@ -127,6 +127,13 @@ impl Body for TeeBody {
                 }
                 Poll::Ready(Some(Ok(frame))) => {
                     if let Some(data) = frame.data_ref() {
+                        if backlog.len() == backlog.capacity() {
+                            // Placeholder for tracing...
+                            if cfg!(debug_assertions) {
+                                println!("TeeBody: allocating for backlog");
+                            }
+                        }
+
                         backlog.push_back(data.clone());
                     }
 
