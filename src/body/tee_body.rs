@@ -52,24 +52,22 @@ impl Body for TeeBody {
 
         loop {
             let backlog = 'writable: {
-                return match state {
+                let next = match state {
                     IoState::Writeable(deque) => break 'writable deque,
-                    IoState::Shutdown(last) => {
-                        let next = last.take().map(Err);
+                    IoState::Shutdown(last) => last.take().map(Err),
+                    IoState::Closed => return Poll::Ready(None),
+                };
 
-                        match this.io.as_mut().poll_shutdown(context) {
-                            Poll::Pending => Poll::Pending,
-                            Poll::Ready(Ok(())) => {
-                                *state = IoState::Closed;
-                                Poll::Ready(next)
-                            }
-                            Poll::Ready(Err(error)) => {
-                                *state = IoState::Closed;
-                                Poll::Ready(next.or_else(|| Some(Err(error.into()))))
-                            }
-                        }
+                return match this.io.as_mut().poll_shutdown(context) {
+                    Poll::Pending => Poll::Pending,
+                    Poll::Ready(Ok(())) => {
+                        *state = IoState::Closed;
+                        Poll::Ready(next)
                     }
-                    IoState::Closed => Poll::Ready(None),
+                    Poll::Ready(Err(error)) => {
+                        *state = IoState::Closed;
+                        Poll::Ready(next.or_else(|| Some(Err(error.into()))))
+                    }
                 };
             };
 
