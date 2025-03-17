@@ -14,16 +14,15 @@ use crate::error::DynError;
 /// [`AsyncWrite`](AsyncWrite).
 ///
 pub struct TeeBody {
-    state: IoState,
     io: Pin<Box<dyn AsyncWrite + Send + Sync>>,
     body: BoxBody,
-    backlog: VecDeque<Bytes>,
+    state: IoState,
 }
 
 enum IoState {
     Closed,
-    Shutdown,
-    Writeable,
+    Shutdown(Option<DynError>),
+    Writeable(VecDeque<Bytes>),
 }
 
 fn broken_pipe() -> DynError {
@@ -35,8 +34,7 @@ impl TeeBody {
         Self {
             io: Box::pin(io),
             body,
-            state: IoState::Writeable,
-            backlog: VecDeque::with_capacity(2),
+            state: IoState::Writeable(VecDeque::with_capacity(2)),
         }
     }
 }
@@ -50,100 +48,81 @@ impl Body for TeeBody {
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.get_mut();
-
-        let io = &mut this.io;
         let state = &mut this.state;
-        let backlog = &mut this.backlog;
-        let mut next = None;
 
         loop {
-            match state {
-                IoState::Writeable => {}
-                IoState::Shutdown => {
-                    backlog.clear();
-                    return match io.as_mut().poll_shutdown(context) {
-                        Poll::Pending => Poll::Pending,
-                        Poll::Ready(Ok(())) => {
-                            *state = IoState::Closed;
-                            Poll::Ready(next)
+            let backlog = 'writable: {
+                return match state {
+                    IoState::Writeable(deque) => break 'writable deque,
+                    IoState::Shutdown(last) => {
+                        let next = last.take().map(Err);
+
+                        match this.io.as_mut().poll_shutdown(context) {
+                            Poll::Pending => Poll::Pending,
+                            Poll::Ready(Ok(())) => {
+                                *state = IoState::Closed;
+                                Poll::Ready(next)
+                            }
+                            Poll::Ready(Err(error)) => {
+                                *state = IoState::Closed;
+                                Poll::Ready(next.or_else(|| Some(Err(error.into()))))
+                            }
                         }
-                        Poll::Ready(Err(e)) => {
-                            *state = IoState::Closed;
-                            Poll::Ready(next.or_else(|| Some(Err(e.into()))))
-                        }
-                    };
-                }
-                IoState::Closed => {
-                    return Poll::Ready(None);
-                }
+                    }
+                    IoState::Closed => Poll::Ready(None),
+                };
             };
 
-            if let Some(front) = backlog.front_mut() {
-                match io.as_mut().poll_write(context, front) {
-                    Poll::Pending => {
-                        // Placeholder for tracing...
-                        //
-                        // Something along the lines of:
-                        // tracing::info!("TeeBody: io is not yet ready for writes.");
-                        //
-                        return Poll::Pending;
-                    }
-                    Poll::Ready(Ok(len)) => {
-                        let remaining = front.remaining();
-
-                        if len == 0 && remaining > len {
-                            *state = IoState::Shutdown;
-                            next = Some(Err(broken_pipe()));
-                            continue;
-                        }
-
-                        if len < remaining {
-                            front.advance(len);
-                        } else {
-                            backlog.pop_front();
-                        }
-                    }
-                    Poll::Ready(Err(error)) => {
-                        let _ = &error; // Placeholder for tracing...
-                        *state = IoState::Shutdown;
-                        continue;
-                    }
-                }
-            }
-
-            if next.is_some() {
-                return Poll::Ready(next);
-            }
-
-            match Pin::new(&mut this.body).poll_frame(context) {
+            let next = match Pin::new(&mut this.body).poll_frame(context) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(None) => {
-                    *state = IoState::Shutdown;
-
-                    if !backlog.is_empty() {
-                        context.waker().wake_by_ref();
-                        return Poll::Pending;
+                    if backlog.is_empty() {
+                        *state = IoState::Shutdown(None);
+                        continue;
                     }
+
+                    None
                 }
                 Poll::Ready(Some(Ok(frame))) => {
                     if let Some(data) = frame.data_ref() {
-                        if backlog.len() == backlog.capacity() {
-                            // Placeholder for tracing...
-                            if cfg!(debug_assertions) {
-                                println!("TeeBody: allocating for backlog");
-                            }
-                        }
-
                         backlog.push_back(data.clone());
                     }
 
-                    next = Some(Ok(frame));
+                    Some(Ok(frame))
                 }
                 Poll::Ready(Some(Err(error))) => {
-                    *state = IoState::Shutdown;
-                    next = Some(Err(error));
+                    backlog.clear();
+                    *state = IoState::Shutdown(Some(error));
+                    continue;
+                }
+            };
+
+            if let Some(mut buf) = backlog.pop_front() {
+                let bytes_written = match this.io.as_mut().poll_write(context, &buf) {
+                    Poll::Pending => {
+                        return next.map_or(Poll::Pending, |result| Poll::Ready(Some(result)));
+                    }
+                    Poll::Ready(Ok(n)) => n,
+                    Poll::Ready(Err(error)) => {
+                        backlog.clear();
+                        *state = IoState::Shutdown(Some(error.into()));
+                        continue;
+                    }
+                };
+                let remaining = buf.remaining();
+
+                if bytes_written == 0 && remaining > 0 {
+                    *state = IoState::Shutdown(Some(broken_pipe()));
+                    continue;
+                }
+
+                if bytes_written < remaining {
+                    buf.advance(bytes_written);
+                    backlog.push_front(buf);
                 }
             }
+
+            return Poll::Ready(next);
         }
     }
 
