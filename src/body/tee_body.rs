@@ -98,7 +98,10 @@ impl Body for TeeBody {
             if let Some(buf) = backlog.front_mut() {
                 let bytes_written = match this.io.as_mut().poll_write(context, buf) {
                     Poll::Pending => {
-                        return next.map_or(Poll::Pending, |result| Poll::Ready(Some(result)));
+                        return match next {
+                            Some(result) => Poll::Ready(Some(result)),
+                            None => Poll::Pending,
+                        }
                     }
                     Poll::Ready(Ok(n)) => n,
                     Poll::Ready(Err(error)) => {
@@ -107,15 +110,16 @@ impl Body for TeeBody {
                         continue;
                     }
                 };
-                let remaining = buf.remaining();
 
-                if bytes_written == 0 && remaining > 0 {
+                if bytes_written == 0 && buf.remaining() > 0 {
                     *state = IoState::Shutdown(Some(broken_pipe()));
                     continue;
                 }
 
-                if bytes_written < remaining {
+                if bytes_written < buf.remaining() {
                     buf.advance(bytes_written);
+                } else {
+                    backlog.pop_front();
                 }
             }
 
