@@ -14,7 +14,6 @@ use tokio::{signal, time};
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
-use crate::body::{HttpBody, RequestBody};
 use crate::error::DynError;
 use crate::request::Request;
 use crate::router::{Router, RouterError};
@@ -112,11 +111,11 @@ where
         // exits.
         let mut shutdown_rx = shutdown_rx.clone();
 
-        let handshake_future = acceptor.accept(stream);
+        let tls_handshake = acceptor.accept(stream);
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            let io = match handshake_future.await {
+            let io = match tls_handshake.await {
                 Ok(accepted) => IoStream::new(accepted),
                 Err(error) => {
                     let _ = &error; // Placeholder for tracing...
@@ -130,18 +129,15 @@ where
                 let mut request = {
                     let state = Arc::clone(&state);
                     let (head, body) = r.into_parts();
-
-                    Request::new(
-                        state,
-                        HttpBody::Original(RequestBody::new(max_request_size, body)),
-                        head,
-                    )
+                    Request::new(max_request_size, state, head, body)
                 };
 
-                let matches = router.visit(request.uri().path());
-                let next = router.resolve(&matches, request.params_mut());
+                let matched = router.visit(request.uri().path());
+                let result = router
+                    .resolve(&matched, request.params_mut())
+                    .map(|next| next.run(request));
 
-                Box::pin(async {
+                async {
                     // If the request was routed successfully, await the response
                     // future. If the future resolved with an error, generate a
                     // response from it.
@@ -149,11 +145,8 @@ where
                     // If the request was not routed successfully, immediately
                     // return so the connection can be closed and the server
                     // exit.
-                    let response = next?.call(request).await.unwrap_or_else(|e| e.into());
-
-                    // Send the generated http::Response over the socket.
-                    Ok::<_, RouterError>(response.inner)
-                })
+                    Ok::<_, RouterError>(result?.await)
+                }
             });
 
             // Create a new HTTP/2 connection.

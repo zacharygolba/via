@@ -22,11 +22,10 @@ async fn main() -> Result<ExitCode, Error> {
     // Create a new application.
     let mut app = via::app(());
 
-    app.include(|request: Request, next: Next| async {
-        Ok(next.call(request).await?.map(|body| {
-            let sec = stderr();
-            body.tee(sec).boxed()
-        }))
+    app.include(|request: Request, next: Next| {
+        let response = next.call(request);
+
+        async { Ok(response.await?.map(|body| body.tee(stderr()))) }
     });
 
     // Include an error boundary to catch any errors that occur downstream.

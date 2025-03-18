@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use http_body::{Body, Frame, SizeHint};
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
@@ -12,10 +12,8 @@ pub const MAX_FRAME_LEN: usize = 16384; // 16KB
 
 /// A buffered `impl Body` that is read in `16KB` chunks.
 ///
-#[must_use = "streams do nothing unless polled"]
 pub struct ResponseBody {
-    data: Bytes,
-    remaining: usize,
+    buf: Bytes,
 }
 
 impl Body for ResponseBody {
@@ -23,37 +21,26 @@ impl Body for ResponseBody {
     type Error = DynError;
 
     fn poll_frame(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        if self.remaining == 0 {
-            // All bytes have been read out of self. 🙌
-            return Poll::Ready(None);
+        let buf = &mut self.get_mut().buf;
+
+        if buf.is_empty() {
+            Poll::Ready(None)
+        } else {
+            // The end offset of the next data frame.
+            let offset = buf.remaining().min(MAX_FRAME_LEN);
+            Poll::Ready(Some(Ok(Frame::data(buf.split_to(offset)))))
         }
-
-        // The start offset of the next frame.
-        let from = self.data.len() - self.remaining;
-
-        // The byte length of the next frame.
-        let len = self.remaining.min(MAX_FRAME_LEN);
-
-        // The end offset of the next frame.
-        let to = from + len;
-
-        // Decrement remaining by len.
-        self.remaining -= len;
-
-        // Increment the ref-count of the underlying byte buffer and return an
-        // owned slice containing the bytes at from..to.
-        Poll::Ready(Some(Ok(Frame::data(self.data.slice(from..to)))))
     }
 
     fn is_end_stream(&self) -> bool {
-        self.remaining == 0
+        self.buf.is_empty()
     }
 
     fn size_hint(&self) -> SizeHint {
-        match self.data.len().try_into() {
+        match self.buf.len().try_into() {
             Ok(exact) => SizeHint::with_exact(exact),
             Err(error) => {
                 // Placeholder for tracing...
@@ -73,18 +60,14 @@ impl Debug for ResponseBody {
 impl Default for ResponseBody {
     #[inline]
     fn default() -> Self {
-        Self {
-            data: Bytes::new(),
-            remaining: 0,
-        }
+        Self { buf: Bytes::new() }
     }
 }
 
 impl From<Bytes> for ResponseBody {
     #[inline]
     fn from(data: Bytes) -> Self {
-        let remaining = data.len();
-        Self { data, remaining }
+        Self { buf: data }
     }
 }
 

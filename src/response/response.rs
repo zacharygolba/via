@@ -25,14 +25,6 @@ impl Response {
         }
     }
 
-    #[inline]
-    pub fn from_parts(parts: Parts, body: HttpBody<ResponseBody>) -> Self {
-        Self {
-            cookies: None,
-            inner: http::Response::from_parts(parts, body),
-        }
-    }
-
     /// Consumes the response returning a new response with body mapped to the
     /// return type of the provided closure `map`.
     ///
@@ -45,6 +37,11 @@ impl Response {
             inner: self.inner.map(map),
             ..self
         }
+    }
+
+    #[inline]
+    pub fn into_inner(self) -> http::Response<HttpBody<ResponseBody>> {
+        self.inner
     }
 
     /// Returns a reference to the response cookies.
@@ -90,7 +87,7 @@ impl Response {
 impl Default for Response {
     #[inline]
     fn default() -> Self {
-        Self::new(HttpBody::new())
+        Self::new(HttpBody::default())
     }
 }
 
@@ -103,5 +100,14 @@ impl Debug for Response {
             .field("cookies", &self.cookies)
             .field("body", self.inner.body())
             .finish()
+    }
+}
+
+impl From<(Parts, HttpBody<ResponseBody>)> for Response {
+    fn from((parts, body): (Parts, HttpBody<ResponseBody>)) -> Self {
+        Self {
+            cookies: None,
+            inner: http::Response::from_parts(parts, body),
+        }
     }
 }

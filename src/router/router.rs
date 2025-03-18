@@ -1,6 +1,5 @@
 use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
-
 use via_router::Match;
 
 use super::route::{MatchWhen, Route};
@@ -8,7 +7,9 @@ use crate::middleware::Next;
 use crate::request::PathParams;
 
 #[derive(Debug)]
-pub struct RouterError;
+pub struct RouterError {
+    message: String,
+}
 
 pub struct Router<T> {
     inner: via_router::Router<Vec<MatchWhen<T>>>,
@@ -32,14 +33,14 @@ impl<T> Router<T> {
 
     pub fn resolve(
         &self,
-        matches: &[Option<Match>],
+        matched: &[Option<Match>],
         path_params: &mut PathParams,
     ) -> Result<Next<T>, RouterError> {
         let mut middlewares = Vec::with_capacity(8);
 
         // Iterate over the routes that match the request's path.
-        for option in matches.iter().rev() {
-            let matching = option.as_ref().ok_or(RouterError)?;
+        for option in matched.iter().rev() {
+            let matching = option.as_ref().ok_or_else(RouterError::new)?;
             let (param, route) = self.inner.resolve(matching);
 
             // If there is a dynamic parameter name associated with the route,
@@ -78,10 +79,18 @@ impl<T> Router<T> {
     }
 }
 
+impl RouterError {
+    fn new() -> Self {
+        Self {
+            message: "an error occurred when routing the request".to_owned(),
+        }
+    }
+}
+
 impl std::error::Error for RouterError {}
 
 impl Display for RouterError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "an error occured when routing the request.")
+        write!(f, "{}", &self.message)
     }
 }

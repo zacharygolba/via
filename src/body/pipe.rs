@@ -52,6 +52,6 @@ where
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response
             .header(TRANSFER_ENCODING, "chunked")
-            .body(HttpBody::Boxed(BoxBody::new(StreamBody::new(self))))
+            .body(BoxBody::new(StreamBody::new(self)))
     }
 }

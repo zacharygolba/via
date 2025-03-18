@@ -2,6 +2,7 @@ use cookie::{Cookie, CookieJar};
 use http::header::AsHeaderName;
 use http::request::Parts;
 use http::{HeaderMap, HeaderValue, Method, Uri, Version};
+use hyper::body::Incoming;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
@@ -198,12 +199,12 @@ impl<T> Request<T> {
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(state: Arc<T>, body: HttpBody<RequestBody>, head: Parts) -> Self {
+    pub(crate) fn new(max_body_size: usize, state: Arc<T>, head: Parts, body: Incoming) -> Self {
         Self {
             state,
             cookies: None,
             params: PathParams::new(Vec::with_capacity(8)),
-            body,
+            body: HttpBody::new(RequestBody::new(max_body_size, body)),
             head,
         }
     }
