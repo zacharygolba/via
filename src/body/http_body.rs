@@ -19,18 +19,7 @@ pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, DynError>;
 /// The body of a request or response.
 ///
 #[derive(Debug)]
-pub struct HttpBody<T> {
-    kind: BodyKind<T>,
-}
-
-enum BodyProjection<'a, T> {
-    Original(Pin<&'a mut T>),
-    Boxed(Pin<&'a mut BoxBody>),
-    Tee(Pin<&'a mut TeeBody>),
-}
-
-#[derive(Debug)]
-enum BodyKind<T> {
+pub enum HttpBody<T> {
     /// The original body of a request or response.
     ///
     Original(T),
@@ -42,19 +31,37 @@ enum BodyKind<T> {
     /// A boxed body that writes each data frame into a dyn
     /// [`AsyncWrite`](tokio::io::AsyncWrite).
     ///
-    Tee(TeeBody),
+    Tee(TeeBody<T>),
 }
 
-impl<T> BodyKind<T>
+impl<T> HttpBody<T>
 where
-    T: Body<Data = Bytes, Error = DynError> + Send + Sync + 'static,
+    T: Body<Data = Bytes, Error = DynError> + Send + Sync + Unpin + 'static,
 {
-    #[inline(always)]
-    fn boxed(self) -> BoxBody {
-        match self {
+    pub fn boxed(self) -> Self {
+        Self::Boxed(match self {
             Self::Original(body) => BoxBody::new(body),
             Self::Boxed(body) => body,
             Self::Tee(body) => BoxBody::new(body),
+        })
+    }
+
+    pub fn tee(self, io: impl AsyncWrite + Send + Sync + 'static) -> Self {
+        match self.try_into_inner() {
+            Ok(original) => Self::Tee(TeeBody::new(original, io)),
+            Err(boxed) => {
+                // Placeholder for tracing...
+                // warn!("tip: call tee() before boxed() to avoid an extra allocation.");
+                Self::Boxed(BoxBody::new(TeeBody::new(boxed, io)))
+            }
+        }
+    }
+
+    pub fn try_into_inner(self) -> Result<T, BoxBody> {
+        match self {
+            Self::Original(original) => Ok(original),
+            Self::Boxed(boxed) => Err(boxed),
+            Self::Tee(tee) => Ok(tee.cap()),
         }
     }
 }
@@ -69,53 +76,6 @@ impl HttpBody<RequestBody> {
     }
 }
 
-impl<T> HttpBody<T> {
-    #[inline(always)]
-    pub(crate) fn new(body: T) -> Self {
-        Self {
-            kind: BodyKind::Original(body),
-        }
-    }
-
-    pub fn try_into_inner(self) -> Result<T, Self> {
-        match self.kind {
-            BodyKind::Boxed(_) | BodyKind::Tee(_) => Err(self),
-            BodyKind::Original(body) => Ok(body),
-        }
-    }
-}
-
-impl<T> HttpBody<T> {
-    fn project(self: Pin<&mut Self>) -> BodyProjection<T> {
-        unsafe {
-            match &mut self.get_unchecked_mut().kind {
-                BodyKind::Original(body) => BodyProjection::Original(Pin::new_unchecked(body)),
-                BodyKind::Boxed(body) => BodyProjection::Boxed(Pin::new_unchecked(body)),
-                BodyKind::Tee(body) => BodyProjection::Tee(Pin::new_unchecked(body)),
-            }
-        }
-    }
-}
-
-impl<T> HttpBody<T>
-where
-    T: Body<Data = Bytes, Error = DynError> + Send + Sync + 'static,
-{
-    #[inline]
-    pub fn boxed(self) -> Self {
-        Self {
-            kind: BodyKind::Boxed(self.kind.boxed()),
-        }
-    }
-
-    #[inline]
-    pub fn tee(self, io: impl AsyncWrite + Send + Sync + 'static) -> Self {
-        Self {
-            kind: BodyKind::Tee(TeeBody::new(self.kind.boxed(), io)),
-        }
-    }
-}
-
 impl<T> Body for HttpBody<T>
 where
     T: Body<Data = Bytes, Error = DynError> + Unpin,
@@ -127,26 +87,26 @@ where
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        match self.project() {
-            BodyProjection::Original(body) => body.poll_frame(context),
-            BodyProjection::Boxed(body) => body.poll_frame(context),
-            BodyProjection::Tee(body) => body.poll_frame(context),
+        match self.get_mut() {
+            Self::Original(body) => Pin::new(body).poll_frame(context),
+            Self::Boxed(body) => Pin::new(body).poll_frame(context),
+            Self::Tee(body) => Pin::new(body).poll_frame(context),
         }
     }
 
     fn is_end_stream(&self) -> bool {
-        match &self.kind {
-            BodyKind::Original(body) => body.is_end_stream(),
-            BodyKind::Boxed(body) => body.is_end_stream(),
-            BodyKind::Tee(body) => body.is_end_stream(),
+        match &self {
+            Self::Original(body) => body.is_end_stream(),
+            Self::Boxed(body) => body.is_end_stream(),
+            Self::Tee(body) => body.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
-        match &self.kind {
-            BodyKind::Original(body) => body.size_hint(),
-            BodyKind::Boxed(body) => body.size_hint(),
-            BodyKind::Tee(body) => body.size_hint(),
+        match &self {
+            Self::Original(body) => body.size_hint(),
+            Self::Boxed(body) => body.size_hint(),
+            Self::Tee(body) => body.size_hint(),
         }
     }
 }
@@ -154,36 +114,28 @@ where
 impl<T> From<BoxBody> for HttpBody<T> {
     #[inline]
     fn from(body: BoxBody) -> Self {
-        Self {
-            kind: BodyKind::Boxed(body),
-        }
+        Self::Boxed(body)
     }
 }
 
-impl<T> From<TeeBody> for HttpBody<T> {
+impl<T> From<TeeBody<T>> for HttpBody<T> {
     #[inline]
-    fn from(body: TeeBody) -> Self {
-        Self {
-            kind: BodyKind::Tee(body),
-        }
+    fn from(body: TeeBody<T>) -> Self {
+        Self::Tee(body)
     }
 }
 
 impl From<RequestBody> for HttpBody<RequestBody> {
     #[inline]
     fn from(body: RequestBody) -> Self {
-        Self {
-            kind: BodyKind::Original(body),
-        }
+        Self::Original(body)
     }
 }
 
 impl Default for HttpBody<ResponseBody> {
     #[inline]
     fn default() -> Self {
-        Self {
-            kind: BodyKind::Original(Default::default()),
-        }
+        Self::Original(Default::default())
     }
 }
 
@@ -193,8 +145,6 @@ where
 {
     #[inline]
     fn from(body: T) -> Self {
-        Self {
-            kind: BodyKind::Original(ResponseBody::from(body)),
-        }
+        Self::Original(body.into())
     }
 }

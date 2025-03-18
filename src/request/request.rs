@@ -26,9 +26,9 @@ pub struct Request<T = ()> {
     ///
     params: PathParams,
 
-    body: HttpBody<RequestBody>,
-
     head: Parts,
+
+    body: HttpBody<RequestBody>,
 }
 
 impl<T> Request<T> {
@@ -58,14 +58,6 @@ impl<T> Request<T> {
     #[inline]
     pub fn into_inner(self) -> http::Request<HttpBody<RequestBody>> {
         http::Request::from_parts(self.head, self.body)
-    }
-
-    /// Consumes the request and returns a tuple containing the component
-    /// parts of the request and the request body.
-    ///
-    #[inline]
-    pub fn into_parts(self) -> (Parts, HttpBody<RequestBody>) {
-        (self.head, self.body)
     }
 
     /// Returns a reference to the body associated with the request.
@@ -199,13 +191,13 @@ impl<T> Request<T> {
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(max_body_size: usize, state: Arc<T>, head: Parts, body: Incoming) -> Self {
+    pub(crate) fn new(max_request_size: usize, state: Arc<T>, head: Parts, body: Incoming) -> Self {
         Self {
             state,
             cookies: None,
             params: PathParams::new(Vec::with_capacity(8)),
-            body: HttpBody::new(RequestBody::new(max_body_size, body)),
             head,
+            body: HttpBody::Original(RequestBody::new(max_request_size, body)),
         }
     }
 

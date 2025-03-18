@@ -7,15 +7,14 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::AsyncWrite;
 
-use super::BoxBody;
 use crate::error::DynError;
 
 /// A boxed body that writes each data frame into a dyn
 /// [`AsyncWrite`](AsyncWrite).
 ///
-pub struct TeeBody {
+pub struct TeeBody<T> {
     io: Pin<Box<dyn AsyncWrite + Send + Sync>>,
-    body: BoxBody,
+    body: T,
     state: IoState,
 }
 
@@ -29,17 +28,25 @@ fn broken_pipe() -> DynError {
     Box::new(io::Error::from(ErrorKind::BrokenPipe))
 }
 
-impl TeeBody {
-    pub fn new(body: BoxBody, io: impl AsyncWrite + Send + Sync + 'static) -> Self {
+impl<T> TeeBody<T> {
+    pub fn new(body: T, io: impl AsyncWrite + Send + Sync + 'static) -> Self {
         Self {
             io: Box::pin(io),
             body,
             state: IoState::Writable(VecDeque::with_capacity(2)),
         }
     }
+
+    #[inline]
+    pub fn cap(self) -> T {
+        self.body
+    }
 }
 
-impl Body for TeeBody {
+impl<T> Body for TeeBody<T>
+where
+    T: Body<Data = Bytes, Error = DynError> + Unpin,
+{
     type Data = Bytes;
     type Error = DynError;
 
@@ -136,7 +143,7 @@ impl Body for TeeBody {
     }
 }
 
-impl Debug for TeeBody {
+impl<T> Debug for TeeBody<T> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("TeeBody").finish()
     }
@@ -154,8 +161,8 @@ mod tests {
     use tokio::io::AsyncWrite;
     use tokio::sync::Mutex;
 
-    use super::{BoxBody, TeeBody};
-    use crate::body::tee_body::IoState;
+    use super::{IoState, TeeBody};
+    use crate::body::BoxBody;
     use crate::error::DynError;
 
     struct MockBody {
@@ -175,7 +182,7 @@ mod tests {
         }
     }
 
-    fn expect_none(body: Pin<&mut TeeBody>, context: &mut Context) {
+    fn expect_none(body: Pin<&mut TeeBody<BoxBody>>, context: &mut Context) {
         match body.poll_frame(context) {
             Poll::Pending => panic!("expected ready, got pending"),
             Poll::Ready(None) => {}
@@ -183,7 +190,7 @@ mod tests {
         }
     }
 
-    fn expect_data_frame(body: Pin<&mut TeeBody>, context: &mut Context) -> Bytes {
+    fn expect_data_frame(body: Pin<&mut TeeBody<BoxBody>>, context: &mut Context) -> Bytes {
         match body.poll_frame(context) {
             Poll::Pending => panic!("expected ready, got pending"),
             Poll::Ready(None) => panic!("expected some, got none"),

@@ -24,8 +24,7 @@ async fn main() -> Result<ExitCode, Error> {
 
     app.include(|request: Request, next: Next| {
         let response = next.call(request);
-
-        async { Ok(response.await?.map(|body| body.tee(stderr()))) }
+        async { Ok(response.await?.map(|body| body.boxed().tee(stderr()))) }
     });
 
     // Include an error boundary to catch any errors that occur downstream.
