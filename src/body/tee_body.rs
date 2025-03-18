@@ -22,7 +22,7 @@ pub struct TeeBody {
 enum IoState {
     Closed,
     Shutdown(Option<DynError>),
-    Writeable(VecDeque<Bytes>),
+    Writable(VecDeque<Bytes>),
 }
 
 fn broken_pipe() -> DynError {
@@ -34,7 +34,7 @@ impl TeeBody {
         Self {
             io: Box::pin(io),
             body,
-            state: IoState::Writeable(VecDeque::with_capacity(2)),
+            state: IoState::Writable(VecDeque::with_capacity(2)),
         }
     }
 }
@@ -53,7 +53,7 @@ impl Body for TeeBody {
         loop {
             let backlog = 'writable: {
                 let next = match state {
-                    IoState::Writeable(deque) => break 'writable deque,
+                    IoState::Writable(deque) => break 'writable deque,
                     IoState::Shutdown(last) => last.take().map(Err),
                     IoState::Closed => return Poll::Ready(None),
                 };
@@ -167,7 +167,7 @@ mod tests {
 
     fn io_state_closed(state: &IoState) -> bool {
         match state {
-            IoState::Writeable(_) | IoState::Shutdown(_) => false,
+            IoState::Writable(_) | IoState::Shutdown(_) => false,
             IoState::Closed => true,
         }
     }
