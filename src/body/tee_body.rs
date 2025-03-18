@@ -95,8 +95,8 @@ impl Body for TeeBody {
                 }
             };
 
-            if let Some(mut buf) = backlog.pop_front() {
-                let bytes_written = match this.io.as_mut().poll_write(context, &buf) {
+            if let Some(buf) = backlog.front_mut() {
+                let bytes_written = match this.io.as_mut().poll_write(context, buf) {
                     Poll::Pending => {
                         return next.map_or(Poll::Pending, |result| Poll::Ready(Some(result)));
                     }
@@ -116,7 +116,6 @@ impl Body for TeeBody {
 
                 if bytes_written < remaining {
                     buf.advance(bytes_written);
-                    backlog.push_front(buf);
                 }
             }
 
