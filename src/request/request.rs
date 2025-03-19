@@ -197,7 +197,7 @@ impl<T> Request<T> {
             cookies: None,
             params: PathParams::new(Vec::with_capacity(8)),
             head,
-            body: HttpBody::Original(RequestBody::new(max_request_size, body)),
+            body: HttpBody::Inline(RequestBody::new(max_request_size, body)),
         }
     }
 

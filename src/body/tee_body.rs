@@ -1,5 +1,6 @@
 use bytes::{Buf, Bytes};
-use http_body::{Body, Frame};
+use futures_core::ready;
+use http_body::{Body, Frame, SizeHint};
 use std::collections::VecDeque;
 use std::fmt::{self, Debug, Formatter};
 use std::io::{self, ErrorKind};
@@ -12,40 +13,44 @@ use crate::error::DynError;
 /// A boxed body that writes each data frame into a dyn
 /// [`AsyncWrite`](AsyncWrite).
 ///
-pub struct TeeBody<T> {
-    io: Pin<Box<dyn AsyncWrite + Send + Sync>>,
-    body: T,
-    state: IoState,
+pub struct TeeBody<T, U> {
+    src: T,
+    dest: U,
+    status: TeeStatus,
+    backlog: VecDeque<Bytes>,
 }
 
-enum IoState {
+#[derive(Debug)]
+enum TeeStatus {
+    Open,
     Closed,
-    Shutdown(Option<DynError>),
-    Writable(VecDeque<Bytes>),
+    Pending,
+    Shutdown(Option<Result<Frame<Bytes>, DynError>>),
 }
 
 fn broken_pipe() -> DynError {
     Box::new(io::Error::from(ErrorKind::BrokenPipe))
 }
 
-impl<T> TeeBody<T> {
-    pub fn new(body: T, io: impl AsyncWrite + Send + Sync + 'static) -> Self {
+impl<T, U> TeeBody<T, U>
+where
+    T: Body<Data = Bytes, Error = DynError> + Send + Sync + Unpin + 'static,
+    U: AsyncWrite + Send + Sync + Unpin + 'static,
+{
+    pub fn new(src: T, dest: U) -> Self {
         Self {
-            io: Box::pin(io),
-            body,
-            state: IoState::Writable(VecDeque::with_capacity(2)),
+            src,
+            dest,
+            status: TeeStatus::Pending,
+            backlog: VecDeque::with_capacity(2),
         }
-    }
-
-    #[inline]
-    pub fn cap(self) -> T {
-        self.body
     }
 }
 
-impl<T> Body for TeeBody<T>
+impl<T, U> Body for TeeBody<T, U>
 where
-    T: Body<Data = Bytes, Error = DynError> + Unpin,
+    T: Body<Data = Bytes, Error = DynError> + Send + Sync + Unpin + 'static,
+    U: AsyncWrite + Send + Sync + Unpin + 'static,
 {
     type Data = Bytes;
     type Error = DynError;
@@ -55,95 +60,102 @@ where
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.get_mut();
-        let state = &mut this.state;
+        let status = &mut this.status;
+        let mut done = false;
 
         loop {
-            let backlog = 'writable: {
-                let next = match state {
-                    IoState::Writable(deque) => break 'writable deque,
-                    IoState::Shutdown(last) => last.take().map(Err),
-                    IoState::Closed => return Poll::Ready(None),
+            'shutdown: {
+                let last = match status {
+                    TeeStatus::Open | TeeStatus::Pending => break 'shutdown,
+                    TeeStatus::Shutdown(option) => option.take(),
+                    TeeStatus::Closed => return Poll::Ready(None),
                 };
 
-                return match this.io.as_mut().poll_shutdown(context) {
-                    Poll::Pending => Poll::Pending,
-                    Poll::Ready(Ok(())) => {
-                        *state = IoState::Closed;
-                        Poll::Ready(next)
-                    }
-                    Poll::Ready(Err(error)) => {
-                        *state = IoState::Closed;
-                        Poll::Ready(next.or_else(|| Some(Err(error.into()))))
-                    }
-                };
-            };
-
-            let next = match Pin::new(&mut this.body).poll_frame(context) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(None) => {
-                    if backlog.is_empty() {
-                        *state = IoState::Shutdown(None);
-                        continue;
-                    }
-
-                    None
-                }
-                Poll::Ready(Some(Ok(frame))) => {
-                    if let Some(data) = frame.data_ref() {
-                        backlog.push_back(data.clone());
-                    }
-
-                    Some(Ok(frame))
-                }
-                Poll::Ready(Some(Err(error))) => {
-                    backlog.clear();
-                    *state = IoState::Shutdown(Some(error));
-                    continue;
-                }
-            };
-
-            if let Some(buf) = backlog.front_mut() {
-                let bytes_written = match this.io.as_mut().poll_write(context, buf) {
+                return match Pin::new(&mut this.dest).poll_shutdown(context) {
                     Poll::Pending => {
-                        return match next {
-                            Some(result) => Poll::Ready(Some(result)),
-                            None => Poll::Pending,
-                        }
+                        *status = TeeStatus::Shutdown(last);
+                        Poll::Pending
                     }
-                    Poll::Ready(Ok(n)) => n,
-                    Poll::Ready(Err(error)) => {
-                        backlog.clear();
-                        *state = IoState::Shutdown(Some(error.into()));
-                        continue;
+                    Poll::Ready(Ok(())) => {
+                        *status = TeeStatus::Closed;
+                        Poll::Ready(last)
+                    }
+                    Poll::Ready(Err(shutdown_error)) => {
+                        *status = TeeStatus::Closed;
+                        Poll::Ready(last.or_else(|| Some(Err(shutdown_error.into()))))
                     }
                 };
+            }
 
-                if bytes_written == 0 && buf.remaining() > 0 {
-                    *state = IoState::Shutdown(Some(broken_pipe()));
+            match ready!(Pin::new(&mut this.src).poll_frame(context)) {
+                Some(Err(error)) => {
+                    this.backlog.clear();
+                    *status = TeeStatus::Shutdown(Some(Err(error)));
                     continue;
                 }
-
-                if bytes_written < buf.remaining() {
-                    buf.advance(bytes_written);
-                } else {
-                    backlog.pop_front();
+                Some(Ok(next)) => match next.into_data() {
+                    Err(error) => {
+                        let frame = Frame::trailers(error.into_trailers().unwrap());
+                        *status = TeeStatus::Shutdown(Some(Ok(frame)));
+                    }
+                    Ok(data) => {
+                        this.backlog.push_back(data);
+                    }
+                },
+                None => {
+                    done = true;
                 }
             }
 
-            return Poll::Ready(next);
+            if matches!(status, TeeStatus::Pending) {
+                *status = TeeStatus::Open;
+                context.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+
+            if let Some(mut front) = this.backlog.pop_front() {
+                let remaining = front.remaining();
+                let offset = match ready!(Pin::new(&mut this.dest).poll_write(context, &front)) {
+                    Ok(num_bytes_written) => num_bytes_written,
+                    Err(error) => {
+                        this.backlog.clear();
+                        *status = TeeStatus::Shutdown(Some(Err(error.into())));
+                        continue;
+                    }
+                };
+
+                if offset == 0 && remaining > 0 {
+                    *status = TeeStatus::Shutdown(Some(Err(broken_pipe())));
+                    continue;
+                }
+
+                if offset < remaining {
+                    this.backlog.push_front(front.split_off(offset));
+                }
+
+                if done && this.backlog.is_empty() {
+                    *status = TeeStatus::Shutdown(Some(Ok(Frame::data(front))));
+                    continue;
+                }
+
+                return Poll::Ready(Some(Ok(Frame::data(front))));
+            }
         }
     }
 
     fn is_end_stream(&self) -> bool {
-        self.body.is_end_stream()
+        matches!(&self.status, TeeStatus::Closed)
     }
 
     fn size_hint(&self) -> http_body::SizeHint {
-        self.body.size_hint()
+        let mut hint = SizeHint::new();
+
+        hint.set_lower(self.src.size_hint().lower());
+        hint
     }
 }
 
-impl<T> Debug for TeeBody<T> {
+impl<T, U> Debug for TeeBody<T, U> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("TeeBody").finish()
     }
@@ -161,8 +173,7 @@ mod tests {
     use tokio::io::AsyncWrite;
     use tokio::sync::Mutex;
 
-    use super::{IoState, TeeBody};
-    use crate::body::BoxBody;
+    use super::{TeeBody, TeeStatus};
     use crate::error::DynError;
 
     struct MockBody {
@@ -175,22 +186,10 @@ mod tests {
         data: Arc<Mutex<Vec<u8>>>,
     }
 
-    fn io_state_closed(state: &IoState) -> bool {
-        match state {
-            IoState::Writable(_) | IoState::Shutdown(_) => false,
-            IoState::Closed => true,
-        }
-    }
-
-    fn expect_none(body: Pin<&mut TeeBody<BoxBody>>, context: &mut Context) {
-        match body.poll_frame(context) {
-            Poll::Pending => panic!("expected ready, got pending"),
-            Poll::Ready(None) => {}
-            Poll::Ready(Some(_)) => panic!("expected none, got some"),
-        }
-    }
-
-    fn expect_data_frame(body: Pin<&mut TeeBody<BoxBody>>, context: &mut Context) -> Bytes {
+    fn expect_data_frame(
+        body: Pin<&mut TeeBody<MockBody, MockWriter>>,
+        context: &mut Context,
+    ) -> Bytes {
         match body.poll_frame(context) {
             Poll::Pending => panic!("expected ready, got pending"),
             Poll::Ready(None) => panic!("expected some, got none"),
@@ -278,15 +277,20 @@ mod tests {
 
         let mut context = Context::from_waker(Waker::noop());
         let mut body = TeeBody::new(
-            BoxBody::new(MockBody::new(
+            MockBody::new(
                 true,
                 vec![
                     Ok(Frame::data(Bytes::copy_from_slice(b"hello "))),
                     Ok(Frame::data(Bytes::copy_from_slice(b"world"))),
                 ],
-            )),
+            ),
             writer.clone(),
         );
+
+        assert!(matches!(
+            Pin::new(&mut body).poll_frame(&mut context),
+            Poll::Pending
+        ));
 
         assert_eq!(
             b"hello ".as_slice(),
@@ -298,13 +302,15 @@ mod tests {
             expect_data_frame(Pin::new(&mut body), &mut context),
         );
 
-        expect_none(Pin::new(&mut body), &mut context);
-
         assert_eq!(
             b"hello world".as_slice(),
             writer.data.lock().await.as_slice()
         );
 
-        assert!(io_state_closed(&body.state));
+        assert!(
+            matches!(&body.status, TeeStatus::Closed),
+            "expected TeeStatus::Closed, got {:?}",
+            &body.status
+        );
     }
 }

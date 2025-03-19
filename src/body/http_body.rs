@@ -22,47 +22,32 @@ pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, DynError>;
 pub enum HttpBody<T> {
     /// The original body of a request or response.
     ///
-    Original(T),
+    Inline(T),
 
     /// A type erased, dynamically dispatched [`Body`].
     ///
-    Boxed(BoxBody),
-
-    /// A boxed body that writes each data frame into a dyn
-    /// [`AsyncWrite`](tokio::io::AsyncWrite).
-    ///
-    Tee(TeeBody<T>),
+    Dyn(BoxBody),
 }
 
 impl<T> HttpBody<T>
 where
     T: Body<Data = Bytes, Error = DynError> + Send + Sync + Unpin + 'static,
 {
-    pub fn boxed(self) -> Self {
-        Self::Boxed(match self {
-            Self::Original(body) => BoxBody::new(body),
-            Self::Boxed(body) => body,
-            Self::Tee(body) => BoxBody::new(body),
-        })
-    }
-
-    pub fn tee(self, io: impl AsyncWrite + Send + Sync + 'static) -> Self {
-        match self.try_into_inner() {
-            Ok(original) => Self::Tee(TeeBody::new(original, io)),
-            Err(boxed) => {
-                // Placeholder for tracing...
-                // warn!("tip: call tee() before boxed() to avoid an extra allocation.");
-                Self::Boxed(BoxBody::new(TeeBody::new(boxed, io)))
-            }
-        }
-    }
-
-    pub fn try_into_inner(self) -> Result<T, BoxBody> {
+    pub fn boxed(self) -> BoxBody {
         match self {
-            Self::Original(original) => Ok(original),
-            Self::Boxed(boxed) => Err(boxed),
-            Self::Tee(tee) => Ok(tee.cap()),
+            Self::Inline(body) => BoxBody::new(body),
+            Self::Dyn(body) => body,
         }
+    }
+
+    pub fn tee<U>(self, dest: U) -> Self
+    where
+        U: AsyncWrite + Send + Sync + Unpin + 'static,
+    {
+        Self::Dyn(match self {
+            Self::Inline(src) => BoxBody::new(TeeBody::new(src, dest)),
+            Self::Dyn(src) => BoxBody::new(TeeBody::new(src, dest)),
+        })
     }
 }
 
@@ -88,25 +73,22 @@ where
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.get_mut() {
-            Self::Original(body) => Pin::new(body).poll_frame(context),
-            Self::Boxed(body) => Pin::new(body).poll_frame(context),
-            Self::Tee(body) => Pin::new(body).poll_frame(context),
+            Self::Inline(body) => Pin::new(body).poll_frame(context),
+            Self::Dyn(body) => Pin::new(body).poll_frame(context),
         }
     }
 
     fn is_end_stream(&self) -> bool {
         match &self {
-            Self::Original(body) => body.is_end_stream(),
-            Self::Boxed(body) => body.is_end_stream(),
-            Self::Tee(body) => body.is_end_stream(),
+            Self::Inline(body) => body.is_end_stream(),
+            Self::Dyn(body) => body.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match &self {
-            Self::Original(body) => body.size_hint(),
-            Self::Boxed(body) => body.size_hint(),
-            Self::Tee(body) => body.size_hint(),
+            Self::Inline(body) => body.size_hint(),
+            Self::Dyn(body) => body.size_hint(),
         }
     }
 }
@@ -114,28 +96,21 @@ where
 impl<T> From<BoxBody> for HttpBody<T> {
     #[inline]
     fn from(body: BoxBody) -> Self {
-        Self::Boxed(body)
-    }
-}
-
-impl<T> From<TeeBody<T>> for HttpBody<T> {
-    #[inline]
-    fn from(body: TeeBody<T>) -> Self {
-        Self::Tee(body)
+        Self::Dyn(body)
     }
 }
 
 impl From<RequestBody> for HttpBody<RequestBody> {
     #[inline]
     fn from(body: RequestBody) -> Self {
-        Self::Original(body)
+        Self::Inline(body)
     }
 }
 
 impl Default for HttpBody<ResponseBody> {
     #[inline]
     fn default() -> Self {
-        Self::Original(Default::default())
+        Self::Inline(Default::default())
     }
 }
 
@@ -145,6 +120,6 @@ where
 {
     #[inline]
     fn from(body: T) -> Self {
-        Self::Original(body.into())
+        Self::Inline(body.into())
     }
 }
