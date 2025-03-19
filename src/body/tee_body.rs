@@ -34,8 +34,8 @@ fn broken_pipe() -> DynError {
 
 impl<T, U> TeeBody<T, U>
 where
-    T: Body<Data = Bytes, Error = DynError> + Send + Sync + Unpin + 'static,
-    U: AsyncWrite + Send + Sync + Unpin + 'static,
+    T: Body<Data = Bytes, Error = DynError> + Send + Sync + Unpin,
+    U: AsyncWrite + Send + Sync + Unpin,
 {
     pub fn new(src: T, dest: U) -> Self {
         Self {
@@ -49,8 +49,8 @@ where
 
 impl<T, U> Body for TeeBody<T, U>
 where
-    T: Body<Data = Bytes, Error = DynError> + Send + Sync + Unpin + 'static,
-    U: AsyncWrite + Send + Sync + Unpin + 'static,
+    T: Body<Data = Bytes, Error = DynError> + Send + Sync + Unpin,
+    U: AsyncWrite + Send + Sync + Unpin,
 {
     type Data = Bytes;
     type Error = DynError;
