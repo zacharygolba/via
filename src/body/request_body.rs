@@ -30,29 +30,29 @@ impl Body for RequestBody {
     type Error = DynError;
 
     fn poll_frame(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let this = self.get_mut();
+        let frame = 'poll: {
+            return match Pin::new(&mut self.body).poll_frame(context)? {
+                Poll::Pending => Poll::Pending,
+                Poll::Ready(None) => Poll::Ready(None),
+                Poll::Ready(Some(next)) => break 'poll next,
+            };
+        };
 
-        match Pin::new(&mut this.body).poll_frame(context)? {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Ready(Some(frame)) => {
-                if let Some(chunk) = frame.data_ref() {
-                    let len = chunk.len();
+        if let Some(chunk) = frame.data_ref() {
+            let len = chunk.len();
 
-                    if this.remaining < len {
-                        let error = Box::new(LimitError);
-                        return Poll::Ready(Some(Err(error)));
-                    }
-
-                    this.remaining -= len;
-                }
-
-                Poll::Ready(Some(Ok(frame)))
+            if self.remaining < len {
+                let error = Box::new(LimitError);
+                return Poll::Ready(Some(Err(error)));
             }
+
+            self.remaining -= len;
         }
+
+        Poll::Ready(Some(Ok(frame)))
     }
 
     fn is_end_stream(&self) -> bool {

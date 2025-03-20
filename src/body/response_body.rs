@@ -21,17 +21,15 @@ impl Body for ResponseBody {
     type Error = DynError;
 
     fn poll_frame(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let buf = &mut self.get_mut().buf;
-
-        if buf.is_empty() {
+        if self.buf.is_empty() {
             Poll::Ready(None)
         } else {
             // The end offset of the next data frame.
-            let offset = buf.remaining().min(MAX_FRAME_LEN);
-            Poll::Ready(Some(Ok(Frame::data(buf.split_to(offset)))))
+            let offset = self.buf.remaining().min(MAX_FRAME_LEN);
+            Poll::Ready(Some(Ok(Frame::data(self.buf.split_to(offset)))))
         }
     }
 

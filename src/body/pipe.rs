@@ -43,7 +43,7 @@ impl Pipe for HttpBody<RequestBody> {
 
 impl<T> Pipe for T
 where
-    T: Stream<Item = Result<Bytes, DynError>> + Send + Sync + Unpin + 'static,
+    T: Stream<Item = Result<Bytes, DynError>> + Send + Sync + 'static,
 {
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response

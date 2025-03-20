@@ -34,10 +34,8 @@ impl BodyStream {
 impl Stream for BodyStream {
     type Item = Result<Frame<Bytes>, Error>;
 
-    fn poll_next(self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-
-        Pin::new(&mut this.body)
+    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.body)
             .poll_frame(context)
             .map_err(error_from_boxed)
     }
