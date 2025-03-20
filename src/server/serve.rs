@@ -134,7 +134,7 @@ where
 
                 let result = {
                     let (path, params) = request.path_with_params_mut();
-                    router.visit(path, params).map(|next| next.run(request))
+                    router.visit(path, params).map(|next| next.call(request))
                 };
 
                 async {
@@ -145,7 +145,10 @@ where
                     // If an error occurs due to a failed integrity check in
                     // the router, immediately return with an error so the
                     // connection can be closed and the server exit.
-                    Ok::<_, RouterError>(result?.await)
+                    let response = result?.await.unwrap_or_else(|error| error.into());
+
+                    // Unwrap the http::Response contained in via::Response.
+                    Ok::<_, RouterError>(response.into_inner())
                 }
             });
 
