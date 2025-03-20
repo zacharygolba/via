@@ -33,17 +33,13 @@ pub trait Pipe: Sealed {
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error>;
 }
 
-impl Sealed for HttpBody<RequestBody> {}
-
 impl Pipe for HttpBody<RequestBody> {
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response
             .header(TRANSFER_ENCODING, "chunked")
-            .body(BoxBody::new(self))
+            .body(self.into_box_body())
     }
 }
-
-impl<T> Sealed for T where T: Stream<Item = Result<Bytes, DynError>> + Send + Sync + 'static {}
 
 impl<T> Pipe for T
 where
@@ -55,3 +51,6 @@ where
             .body(BoxBody::new(StreamBody::new(self)))
     }
 }
+
+impl Sealed for HttpBody<RequestBody> {}
+impl<T> Sealed for T where T: Stream<Item = Result<Bytes, DynError>> + Send + Sync + 'static {}

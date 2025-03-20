@@ -36,17 +36,10 @@ impl<T> HttpBody<T>
 where
     T: Body<Data = Bytes, Error = DynError> + Send + Sync + 'static,
 {
-    pub fn into_boxed(self) -> Self {
+    pub fn into_box_body(self) -> BoxBody {
         match self {
-            Self::Initial(body) => Self::Boxed(BoxBody::new(body)),
-            boxed => boxed,
-        }
-    }
-
-    pub fn try_into_inner(self) -> Result<T, BoxBody> {
-        match self {
-            Self::Initial(body) => Ok(body),
-            Self::Boxed(body) => Err(body),
+            Self::Initial(body) => BoxBody::new(body),
+            Self::Boxed(body) => body,
         }
     }
 
@@ -116,13 +109,6 @@ impl<T> From<BoxBody> for HttpBody<T> {
     #[inline]
     fn from(body: BoxBody) -> Self {
         Self::Boxed(body)
-    }
-}
-
-impl From<RequestBody> for HttpBody<RequestBody> {
-    #[inline]
-    fn from(body: RequestBody) -> Self {
-        Self::Initial(body)
     }
 }
 
