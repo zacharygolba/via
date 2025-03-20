@@ -195,9 +195,9 @@ impl<T> Request<T> {
         Self {
             state,
             cookies: None,
-            params: PathParams::new(Vec::with_capacity(8)),
+            params: PathParams::new(),
             head,
-            body: HttpBody::Inline(RequestBody::new(max_request_size, body)),
+            body: HttpBody::Initial(RequestBody::new(max_request_size, body)),
         }
     }
 
@@ -209,8 +209,8 @@ impl<T> Request<T> {
     }
 
     #[inline]
-    pub(crate) fn params_mut(&mut self) -> &mut PathParams {
-        &mut self.params
+    pub(crate) fn path_with_params_mut(&mut self) -> (&str, &mut PathParams) {
+        (self.head.uri.path(), &mut self.params)
     }
 }
 

@@ -2,14 +2,15 @@ use std::fmt::{self, Debug, Formatter};
 use std::slice;
 use via_router::Param;
 
+#[derive(Default)]
 pub struct PathParams {
     data: Vec<(Param, Option<[usize; 2]>)>,
 }
 
 impl PathParams {
     #[inline]
-    pub fn new(data: Vec<(Param, Option<[usize; 2]>)>) -> Self {
-        Self { data }
+    pub fn new() -> Self {
+        Default::default()
     }
 
     #[inline]

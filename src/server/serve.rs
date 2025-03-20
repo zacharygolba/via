@@ -132,19 +132,19 @@ where
                     Request::new(max_request_size, state, head, body)
                 };
 
-                let matched = router.visit(request.uri().path());
-                let result = router
-                    .resolve(&matched, request.params_mut())
-                    .map(|next| next.run(request));
+                let result = {
+                    let (path, params) = request.path_with_params_mut();
+                    router.visit(path, params).map(|next| next.run(request))
+                };
 
                 async {
                     // If the request was routed successfully, await the response
                     // future. If the future resolved with an error, generate a
                     // response from it.
                     //
-                    // If the request was not routed successfully, immediately
-                    // return so the connection can be closed and the server
-                    // exit.
+                    // If an error occurs due to a failed integrity check in
+                    // the router, immediately return with an error so the
+                    // connection can be closed and the server exit.
                     Ok::<_, RouterError>(result?.await)
                 }
             });

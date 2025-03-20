@@ -1,5 +1,4 @@
 use std::process::ExitCode;
-use tokio::io::stderr;
 use via::middleware::error_boundary;
 use via::{Next, Request, Response};
 
@@ -13,19 +12,10 @@ async fn hello(request: Request, _: Next) -> via::Result {
     Response::build().text(format!("Hello, {}!", name))
 }
 
-// For the sake of simplifying doctests, we're specifying that we want to
-// use the "current_thread" runtime flavor. You'll most likely not want to
-// specify a runtime flavor and simpy use #[tokio::main] if your deployment
-// target has more than one CPU core.
 #[tokio::main]
 async fn main() -> Result<ExitCode, Error> {
     // Create a new application.
     let mut app = via::app(());
-
-    app.include(|request: Request, next: Next| {
-        let response = next.call(request);
-        async { Ok(response.await?.map(|body| body.tee(stderr()))) }
-    });
 
     // Include an error boundary to catch any errors that occur downstream.
     app.include(error_boundary::inspect(|_, error| {

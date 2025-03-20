@@ -1,6 +1,5 @@
 use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
-use via_router::Match;
 
 use super::route::{MatchWhen, Route};
 use crate::middleware::Next;
@@ -27,19 +26,11 @@ impl<T> Router<T> {
     }
 
     #[inline]
-    pub fn visit(&self, path: &str) -> Vec<Option<Match>> {
-        self.inner.visit(path)
-    }
-
-    pub fn resolve(
-        &self,
-        matched: &[Option<Match>],
-        path_params: &mut PathParams,
-    ) -> Result<Next<T>, RouterError> {
-        let mut middlewares = Vec::with_capacity(8);
+    pub fn visit(&self, path: &str, params: &mut PathParams) -> Result<Next<T>, RouterError> {
+        let mut middlewares = Vec::new();
 
         // Iterate over the routes that match the request's path.
-        for option in matched.iter().rev() {
+        for option in self.inner.visit(path).iter().rev() {
             let matching = option.as_ref().ok_or_else(RouterError::new)?;
             let (param, route) = self.inner.resolve(matching);
 
@@ -47,7 +38,7 @@ impl<T> Router<T> {
             // build a tuple containing the name and the range of the parameter
             // value in the request's path.
             if let Some(name) = param {
-                path_params.push(name, matching.range);
+                params.push(name, matching.range);
             }
 
             let stack = match route {
