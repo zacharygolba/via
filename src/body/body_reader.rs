@@ -117,36 +117,36 @@ impl Future for BodyReader {
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        let mut body = Pin::new(&mut this.body);
+        let data = &mut this.data;
 
-        loop {
-            return match body.as_mut().poll_frame(context) {
+        for _ in 0..2 {
+            return match Pin::new(&mut this.body).poll_frame(context) {
                 Poll::Pending => Poll::Pending,
-
-                Poll::Ready(None) => {
-                    Poll::Ready(Ok(this.data.take().ok_or_else(body_already_read)?))
-                }
-
+                Poll::Ready(None) => Poll::Ready(data.take().ok_or_else(body_already_read)),
                 Poll::Ready(Some(Err(e))) => Poll::Ready(Err(error_from_boxed(e))),
-
                 Poll::Ready(Some(Ok(frame))) => {
-                    let data = this.data.as_mut().ok_or_else(body_already_read)?;
-                    let frame = match frame.into_data() {
-                        Err(frame) => frame,
-                        Ok(chunk) => {
-                            data.payload.push(chunk);
-                            continue;
-                        }
-                    };
+                    let output = data.as_mut().ok_or_else(body_already_read)?;
 
-                    if let Ok(trailers) = frame.into_trailers() {
-                        data.trailers.get_or_insert_default().extend(trailers);
+                    match frame.into_data() {
+                        Ok(next) => {
+                            output.payload.push(next);
+                        }
+                        Err(frame) => {
+                            let trailers = frame.into_trailers().unwrap();
+                            if let Some(existing) = output.trailers.as_mut() {
+                                existing.extend(trailers);
+                            } else {
+                                output.trailers = Some(trailers);
+                            }
+                        }
                     }
 
                     continue;
                 }
             };
         }
+
+        Poll::Pending
     }
 }
 
