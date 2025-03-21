@@ -24,12 +24,14 @@ impl Body for ResponseBody {
         mut self: Pin<&mut Self>,
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        if self.buf.is_empty() {
+        let remaining = self.buf.remaining();
+
+        if remaining == 0 {
             Poll::Ready(None)
         } else {
-            // The end offset of the next data frame.
-            let offset = self.buf.remaining().min(MAX_FRAME_LEN);
-            Poll::Ready(Some(Ok(Frame::data(self.buf.split_to(offset)))))
+            Poll::Ready(Some(Ok(Frame::data(
+                self.buf.split_to(remaining.min(MAX_FRAME_LEN)),
+            ))))
         }
     }
 
