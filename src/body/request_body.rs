@@ -33,16 +33,14 @@ impl Body for RequestBody {
         mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let frame = 'poll: {
-            return match Pin::new(&mut self.body).poll_frame(context)? {
-                Poll::Pending => Poll::Pending,
-                Poll::Ready(None) => Poll::Ready(None),
-                Poll::Ready(Some(next)) => break 'poll next,
-            };
+        let frame = match Pin::new(&mut self.body).poll_frame(context)? {
+            Poll::Ready(Some(next)) => next,
+            Poll::Ready(None) => return Poll::Ready(None),
+            Poll::Pending => return Poll::Pending,
         };
 
-        if let Some(chunk) = frame.data_ref() {
-            let len = chunk.len();
+        if let Some(next) = frame.data_ref() {
+            let len = next.len();
 
             if self.remaining < len {
                 let error = Box::new(LimitError);

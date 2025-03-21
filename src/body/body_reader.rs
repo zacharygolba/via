@@ -117,20 +117,18 @@ impl Future for BodyReader {
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        let data = &mut this.data;
+        let output = &mut this.data;
 
         for _ in 0..2 {
             return match Pin::new(&mut this.body).poll_frame(context) {
                 Poll::Pending => Poll::Pending,
-                Poll::Ready(None) => Poll::Ready(data.take().ok_or_else(body_already_read)),
+                Poll::Ready(None) => Poll::Ready(output.take().ok_or_else(body_already_read)),
                 Poll::Ready(Some(Err(e))) => Poll::Ready(Err(error_from_boxed(e))),
                 Poll::Ready(Some(Ok(frame))) => {
-                    let output = data.as_mut().ok_or_else(body_already_read)?;
+                    let output = output.as_mut().ok_or_else(body_already_read)?;
 
                     match frame.into_data() {
-                        Ok(next) => {
-                            output.payload.push(next);
-                        }
+                        Ok(data) => output.payload.push(data),
                         Err(frame) => {
                             let trailers = frame.into_trailers().unwrap();
                             if let Some(existing) = output.trailers.as_mut() {
