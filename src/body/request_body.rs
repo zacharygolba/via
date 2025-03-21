@@ -31,7 +31,7 @@ impl Body for RequestBody {
 
     fn poll_frame(
         mut self: Pin<&mut Self>,
-        context: &mut Context<'_>,
+        context: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let frame = match Pin::new(&mut self.body).poll_frame(context)? {
             Poll::Ready(Some(next)) => next,

@@ -82,7 +82,7 @@ where
 
     fn poll_frame(
         self: Pin<&mut Self>,
-        context: &mut Context<'_>,
+        context: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.project() {
             HttpBodyProjection::Initial(body) => body.poll_frame(context),

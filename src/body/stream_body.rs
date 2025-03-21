@@ -37,7 +37,7 @@ where
 
     fn poll_frame(
         self: Pin<&mut Self>,
-        context: &mut Context<'_>,
+        context: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         self.project().poll_next(context).map_ok(Frame::data)
     }

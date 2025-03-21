@@ -22,7 +22,7 @@ impl Body for ResponseBody {
 
     fn poll_frame(
         mut self: Pin<&mut Self>,
-        _: &mut Context<'_>,
+        _: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let remaining = self.buf.remaining();
 

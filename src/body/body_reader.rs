@@ -115,7 +115,7 @@ impl BodyReader {
 impl Future for BodyReader {
     type Output = Result<BodyData, Error>;
 
-    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
         let output = &mut this.data;
 
@@ -144,6 +144,7 @@ impl Future for BodyReader {
             };
         }
 
+        context.waker().wake_by_ref();
         Poll::Pending
     }
 }
