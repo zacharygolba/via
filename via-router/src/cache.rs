@@ -7,7 +7,7 @@ use crate::router::Match;
 pub struct Cache {
     capacity: usize,
     #[allow(clippy::type_complexity)]
-    entries: RwLock<VecDeque<(Box<str>, Vec<Option<Match>>)>>,
+    entries: RwLock<VecDeque<(Box<str>, Vec<Match>)>>,
 }
 
 impl Cache {
@@ -30,7 +30,7 @@ impl Cache {
     pub fn read(
         &self,
         path: &str,
-    ) -> Result<Option<(usize, Vec<Option<Match>>)>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Option<(usize, Vec<Match>)>, Box<dyn Error + Send + Sync>> {
         let guard = self.entries.try_read().or(Err("lock in use"))?;
 
         Ok(guard.iter().enumerate().find_map(|(index, (key, value))| {
@@ -42,7 +42,7 @@ impl Cache {
         }))
     }
 
-    pub fn write(&self, path: &str, matches: &[Option<Match>]) {
+    pub fn write(&self, path: &str, matches: &[Match]) {
         if let Ok(mut guard) = self.entries.try_write() {
             if self.capacity == guard.len() {
                 guard.pop_back();

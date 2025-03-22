@@ -16,8 +16,9 @@ use hyper_util::rt::TokioExecutor;
 use super::acceptor::Acceptor;
 use crate::error::DynError;
 use crate::request::Request;
-use crate::router::{Router, RouterError};
+use crate::router::{MatchWhen, Router, RouterError};
 use crate::server::io_stream::IoStream;
+use crate::{Next, Response};
 
 pub async fn serve<A, T>(
     state: Arc<T>,
@@ -132,23 +133,53 @@ where
                     Request::new(max_request_size, state, head, body)
                 };
 
-                let result = {
-                    let (path, params) = request.path_with_params_mut();
-                    router.visit(path, params).map(|next| next.call(request))
+                let result = 'router: {
+                    let mut next = Next::new();
+
+                    for matching in router.routes().visit(request.uri().path()) {
+                        let node = match router.routes().resolve(&matching) {
+                            Some(resolved) => resolved,
+                            None => break 'router Err(RouterError::new()),
+                        };
+
+                        if let Some(name) = node.param().cloned() {
+                            request.params_mut().push((name, matching.range));
+                        }
+
+                        if let Some(route) = node.route() {
+                            next.stack_mut()
+                                .extend(route.iter().filter_map(|when| match when {
+                                    MatchWhen::Partial(partial) => Some(Arc::clone(partial)),
+                                    MatchWhen::Exact(exact) => {
+                                        if matching.is_exact() {
+                                            Some(Arc::clone(exact))
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                }));
+                        }
+                    }
+
+                    Ok(next.call(request))
                 };
 
                 async {
-                    // If the request was routed successfully, await the response
-                    // future. If the future resolved with an error, generate a
-                    // response from it.
-                    //
                     // If an error occurs due to a failed integrity check in
                     // the router, immediately return with an error so the
                     // connection can be closed and the server exit.
-                    let response = result?.await.unwrap_or_else(|error| error.into());
+                    //
+                    // Otherwise, await the future to get a response from the
+                    // application.
+                    Ok::<_, RouterError>(match result?.await {
+                        // The request was routed successfully and the
+                        // application generated a response without error.
+                        Ok(response) => response.into_inner(),
 
-                    // Unwrap the http::Response contained in via::Response.
-                    Ok::<_, RouterError>(response.into_inner())
+                        // The request was routed successfully but an error
+                        // occurred in the application.
+                        Err(error) => Response::from(error).into_inner(),
+                    })
                 }
             });
 

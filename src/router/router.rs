@@ -1,9 +1,6 @@
 use std::fmt::{self, Display, Formatter};
-use std::sync::Arc;
 
 use super::route::{MatchWhen, Route};
-use crate::middleware::Next;
-use crate::request::PathParams;
 
 #[derive(Debug)]
 pub struct RouterError {
@@ -25,53 +22,13 @@ impl<T> Router<T> {
         Route::new(self.inner.at(pattern))
     }
 
-    #[inline]
-    pub fn visit(&self, path: &str, params: &mut PathParams) -> Result<Next<T>, RouterError> {
-        let mut middlewares = Vec::new();
-
-        // Iterate over the routes that match the request's path.
-        for option in self.inner.visit(path).iter().rev() {
-            let matching = option.as_ref().ok_or_else(RouterError::new)?;
-            let (param, route) = self.inner.resolve(matching);
-
-            // If there is a dynamic parameter name associated with the route,
-            // build a tuple containing the name and the range of the parameter
-            // value in the request's path.
-            if let Some(name) = param {
-                params.push(name, matching.range);
-            }
-
-            let stack = match route {
-                Some(middleware) => middleware,
-                None => continue,
-            };
-
-            // Extend `stack` with middleware in `matched` depending on whether
-            // or not the middleware expects a partial or exact match.
-            for middleware in stack.iter().rev().filter_map(|when| match when {
-                // Include this middleware in `stack` because it expects an exact
-                // match and the visited node is considered a leaf in this
-                // context.
-                MatchWhen::Exact(exact) if matching.exact => Some(exact),
-
-                // Include this middleware in `stack` unconditionally because it
-                // targets partial matches.
-                MatchWhen::Partial(partial) => Some(partial),
-
-                // Exclude this middleware from `stack` because it expects an
-                // exact match and the visited node is not a leaf.
-                MatchWhen::Exact(_) => None,
-            }) {
-                middlewares.push(Arc::clone(middleware));
-            }
-        }
-
-        Ok(Next::new(middlewares))
+    pub(crate) fn routes(&self) -> &via_router::Router<Vec<MatchWhen<T>>> {
+        &self.inner
     }
 }
 
 impl RouterError {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             message: "an error occurred when routing the request".to_owned(),
         }

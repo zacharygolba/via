@@ -19,8 +19,8 @@ impl PathParams {
     }
 
     #[inline]
-    pub fn push(&mut self, name: &Param, range: Option<[usize; 2]>) {
-        self.data.push((name.clone(), range));
+    pub fn push(&mut self, param: (Param, Option<[usize; 2]>)) {
+        self.data.push(param);
     }
 }
 

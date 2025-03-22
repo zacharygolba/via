@@ -7,4 +7,4 @@ mod path;
 mod router;
 
 pub use path::Param;
-pub use router::{Match, Route, Router};
+pub use router::{Match, Node, Route, Router};

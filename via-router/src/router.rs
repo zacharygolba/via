@@ -10,28 +10,21 @@ use crate::cache::Cache;
 ///
 #[derive(Clone, Debug)]
 pub struct Match {
-    /// True if there were no more segments to match against the children of
-    /// the matched node. Otherwise, false.
-    ///
-    pub exact: bool,
-
     /// The start and end offset of the parameter that matched the path
     /// segment.
     ///
     pub range: Option<[usize; 2]>,
 
-    /// The key of the node that matched the path segment.
-    ///
-    key: usize,
+    value: usize,
 }
 
 /// A node in the route tree that represents a single path segment.
 pub struct Node<T> {
-    /// The index of the route in the route store associated with the node.
-    route: Option<T>,
-
     /// The pattern used to match the node against a path segment.
-    pattern: Pattern,
+    pub(crate) pattern: Pattern,
+
+    /// The index of the route in the route store associated with the node.
+    pub(crate) route: Option<T>,
 
     /// The indices of the nodes that are reachable from the current node.
     children: Option<Vec<usize>>,
@@ -56,8 +49,26 @@ pub struct Router<T> {
 
 impl Match {
     #[inline]
-    fn new(exact: bool, key: usize, range: Option<[usize; 2]>) -> Self {
-        Self { exact, range, key }
+    pub fn is_exact(&self) -> bool {
+        (self.value & 0b10) != 0
+    }
+}
+
+impl Match {
+    #[inline]
+    fn found(exact: bool, key: usize, range: Option<[usize; 2]>) -> Self {
+        Self {
+            range,
+            value: (key << 0b10) | (1 << 0b00) | (if exact { 1 } else { 0 } << 0b01),
+        }
+    }
+
+    #[inline]
+    fn not_found() -> Self {
+        Self {
+            range: None,
+            value: 0,
+        }
     }
 }
 
@@ -74,7 +85,7 @@ impl<T> Node<T> {
     /// associated with the node. The returned value will be `None` if the
     /// node has a `Root` or `Static` pattern.
     #[inline]
-    fn param(&self) -> Option<&Param> {
+    pub fn param(&self) -> Option<&Param> {
         if let Pattern::Dynamic(param) | Pattern::Wildcard(param) = &self.pattern {
             Some(param)
         } else {
@@ -83,7 +94,7 @@ impl<T> Node<T> {
     }
 
     #[inline]
-    fn route(&self) -> Option<&T> {
+    pub fn route(&self) -> Option<&T> {
         self.route.as_ref()
     }
 }
@@ -97,10 +108,6 @@ impl<T> Route<'_, T> {
             router: self.router,
             key,
         }
-    }
-
-    pub fn param(&self) -> Option<&Param> {
-        self.router.nodes.get(self.key)?.param()
     }
 
     /// Returns a mutable reference to the route associated with this `Endpoint`.
@@ -132,7 +139,7 @@ impl<T> Router<T> {
     }
 
     #[cfg(feature = "lru-cache")]
-    pub fn visit(&self, path: &str) -> Vec<Option<Match>> {
+    pub fn visit(&self, path: &str) -> Vec<Match> {
         let mut attempts = 0;
 
         let cache = &self.cache;
@@ -172,11 +179,13 @@ impl<T> Router<T> {
     }
 
     #[inline]
-    pub fn resolve(&self, matching: &Match) -> (Option<&Param>, Option<&T>) {
-        if let Some(node) = self.nodes.get(matching.key) {
-            (node.param(), node.route())
+    pub fn resolve(&self, matched: &Match) -> Option<&Node<T>> {
+        let value = matched.value;
+
+        if value & 0b01 != 0 {
+            self.nodes.get(value >> 0b10)
         } else {
-            (None, None)
+            None
         }
     }
 }
@@ -227,17 +236,17 @@ where
     insert(router, segments, next_key)
 }
 
-fn lookup<T>(nodes: &[Node<T>], path: &str) -> Vec<Option<Match>> {
+fn lookup<T>(nodes: &[Node<T>], path: &str) -> Vec<Match> {
     let root = match nodes.first() {
         Some(next) => next,
-        None => return vec![None],
+        None => return vec![],
     };
 
     let mut results = Vec::with_capacity(8);
     let mut segments = Vec::with_capacity(8);
 
     segments.extend(Split::new(path));
-    results.push(Some(Match::new(segments.is_empty(), 0, None)));
+    results.push(Match::found(segments.is_empty(), 0, None));
 
     if let Some(match_next) = &root.children {
         rlookup(&mut results, nodes, match_next, path, &segments, 0);
@@ -250,7 +259,7 @@ fn lookup<T>(nodes: &[Node<T>], path: &str) -> Vec<Option<Match>> {
 fn rlookup<T>(
     // A mutable reference to a vector that contains the matches that we
     // have found so far.
-    results: &mut Vec<Option<Match>>,
+    results: &mut Vec<Match>,
 
     // A reference to the route store that contains the route tree.
     nodes: &[Node<T>],
@@ -276,7 +285,7 @@ fn rlookup<T>(
         let node = match nodes.get(key) {
             Some(next) => next,
             None => {
-                results.push(None);
+                results.push(Match::not_found());
                 continue;
             }
         };
@@ -285,7 +294,7 @@ fn rlookup<T>(
             Pattern::Static(name) => match match_range {
                 // The node has a static pattern that matches the path segment.
                 Some([start, end]) if name == &path[start..end] => {
-                    results.push(Some(Match::new(has_remaining, key, match_range)));
+                    results.push(Match::found(has_remaining, key, match_range));
                 }
                 Some(_) => continue,
                 None => break,
@@ -293,14 +302,14 @@ fn rlookup<T>(
 
             // The node has a dynamic pattern that can match any value.
             Pattern::Dynamic(_) => {
-                results.push(Some(Match::new(has_remaining, key, match_range)));
+                results.push(Match::found(has_remaining, key, match_range));
             }
 
             // The node has a wildcard pattern that can match any value
             // and consume the remainder of the uri path.
             Pattern::Wildcard(_) => {
                 let match_range = match_range.map(|[start, _]| [start, path.len()]);
-                results.push(Some(Match::new(true, key, match_range)));
+                results.push(Match::found(true, key, match_range));
                 continue;
             }
 
@@ -342,10 +351,9 @@ mod tests {
             let matches: Vec<_> = router
                 .visit(path)
                 .into_iter()
-                .map(|result| {
-                    let matched = result.unwrap();
-                    let (param, route) = router.resolve(&matched);
-                    (matched, param, route)
+                .filter_map(|matched| {
+                    let node = router.resolve(&matched)?;
+                    Some((matched, node.param(), node.route()))
                 })
                 .collect();
 
@@ -359,7 +367,7 @@ mod tests {
                 assert_eq!(*route, None);
                 assert_eq!(*param, None);
                 assert_eq!(found.range, None);
-                assert!(found.exact);
+                assert!(found.is_exact());
             }
 
             {
@@ -371,7 +379,7 @@ mod tests {
                 assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(found.range, None);
                 // Should be considered exact because of the catch-all pattern.
-                assert!(found.exact);
+                assert!(found.is_exact());
             }
         }
 
@@ -380,10 +388,9 @@ mod tests {
             let matches: Vec<_> = router
                 .visit(path)
                 .into_iter()
-                .map(|result| {
-                    let matched = result.unwrap();
-                    let (param, route) = router.resolve(&matched);
-                    (matched, param, route)
+                .filter_map(|matched| {
+                    let node = router.resolve(&matched)?;
+                    Some((matched, node.param(), node.route()))
                 })
                 .collect();
 
@@ -397,7 +404,7 @@ mod tests {
                 assert_eq!(*route, None);
                 assert_eq!(*param, None);
                 assert_eq!(found.range, None);
-                assert!(!found.exact);
+                assert!(!found.is_exact());
             }
 
             {
@@ -413,7 +420,7 @@ mod tests {
                 assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert!(found.exact);
+                assert!(found.is_exact());
             }
         }
 
@@ -422,10 +429,9 @@ mod tests {
             let matches: Vec<_> = router
                 .visit(path)
                 .into_iter()
-                .map(|result| {
-                    let matched = result.unwrap();
-                    let (param, route) = router.resolve(&matched);
-                    (matched, param, route)
+                .filter_map(|matched| {
+                    let node = router.resolve(&matched)?;
+                    Some((matched, node.param(), node.route()))
                 })
                 .collect();
 
@@ -439,7 +445,7 @@ mod tests {
                 assert_eq!(*route, None);
                 assert_eq!(*param, None);
                 assert_eq!(found.range, None);
-                assert!(!found.exact);
+                assert!(!found.is_exact());
             }
 
             {
@@ -455,7 +461,7 @@ mod tests {
                 assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert!(found.exact);
+                assert!(found.is_exact());
             }
 
             {
@@ -465,7 +471,7 @@ mod tests {
 
                 assert_eq!(*route, None);
                 assert_eq!(*param, None);
-                assert!(!found.exact);
+                assert!(!found.is_exact());
             }
 
             {
@@ -480,7 +486,7 @@ mod tests {
                 assert_eq!(*route, Some(&()));
                 assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(segment, "hello/world");
-                assert!(found.exact);
+                assert!(found.is_exact());
             }
         }
 
@@ -489,10 +495,9 @@ mod tests {
             let matches: Vec<_> = router
                 .visit(path)
                 .into_iter()
-                .map(|result| {
-                    let matched = result.unwrap();
-                    let (param, route) = router.resolve(&matched);
-                    (matched, param, route)
+                .filter_map(|matched| {
+                    let node = router.resolve(&matched)?;
+                    Some((matched, node.param(), node.route()))
                 })
                 .collect();
 
@@ -506,7 +511,7 @@ mod tests {
                 assert_eq!(*route, None);
                 assert_eq!(found.range, None);
                 assert_eq!(*param, None);
-                assert!(!found.exact);
+                assert!(!found.is_exact());
             }
 
             {
@@ -522,7 +527,7 @@ mod tests {
                 assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert!(found.exact);
+                assert!(found.is_exact());
             }
 
             {
@@ -532,7 +537,7 @@ mod tests {
 
                 assert_eq!(*route, None);
                 assert_eq!(*param, None);
-                assert!(!found.exact);
+                assert!(!found.is_exact());
             }
 
             {
@@ -547,7 +552,7 @@ mod tests {
                 assert_eq!(*route, Some(&()));
                 assert_eq!(*param, Some(&"id".into()));
                 assert_eq!(segment, "100");
-                assert!(found.exact);
+                assert!(found.is_exact());
             }
         }
 
@@ -556,10 +561,9 @@ mod tests {
             let matches: Vec<_> = router
                 .visit(path)
                 .into_iter()
-                .map(|result| {
-                    let matched = result.unwrap();
-                    let (param, route) = router.resolve(&matched);
-                    (matched, param, route)
+                .filter_map(|matched| {
+                    let node = router.resolve(&matched)?;
+                    Some((matched, node.param(), node.route()))
                 })
                 .collect();
 
@@ -573,7 +577,7 @@ mod tests {
                 assert_eq!(*route, None);
                 assert_eq!(*param, None);
                 assert_eq!(found.range, None);
-                assert!(!found.exact);
+                assert!(!found.is_exact());
             }
 
             {
@@ -589,7 +593,7 @@ mod tests {
                 assert_eq!(*param, Some(&"path".into()));
                 assert_eq!(segment, &path[1..]);
                 // Should be considered exact because of the catch-all pattern.
-                assert!(found.exact);
+                assert!(found.is_exact());
             }
 
             {
@@ -599,7 +603,7 @@ mod tests {
 
                 assert_eq!(*route, None);
                 assert_eq!(*param, None);
-                assert!(!found.exact);
+                assert!(!found.is_exact());
             }
 
             {
@@ -614,7 +618,7 @@ mod tests {
                 assert_eq!(*route, Some(&()));
                 assert_eq!(*param, Some(&"id".into()));
                 assert_eq!(segment, "100");
-                assert!(!found.exact);
+                assert!(!found.is_exact());
             }
 
             {
@@ -625,7 +629,7 @@ mod tests {
                 assert_eq!(*route, Some(&()));
                 assert_eq!(*param, None);
                 // Should be considered exact because it is the last path segment.
-                assert!(found.exact);
+                assert!(found.is_exact());
             }
         }
     }

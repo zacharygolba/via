@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use via_router::Param;
 
 use crate::middleware::Middleware;
 
@@ -35,10 +34,6 @@ impl<T> Route<'_, T> {
     pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) -> &mut Self {
         scope(self);
         self
-    }
-
-    pub fn param(&self) -> Option<&Param> {
-        self.inner.param()
     }
 
     pub fn include(&mut self, middleware: impl Middleware<T> + 'static) -> &mut Self {

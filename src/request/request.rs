@@ -209,8 +209,8 @@ impl<T> Request<T> {
     }
 
     #[inline]
-    pub(crate) fn path_with_params_mut(&mut self) -> (&str, &mut PathParams) {
-        (self.head.uri.path(), &mut self.params)
+    pub(crate) fn params_mut(&mut self) -> &mut PathParams {
+        &mut self.params
     }
 }
 

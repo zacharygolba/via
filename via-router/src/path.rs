@@ -1,6 +1,5 @@
 use std::fmt::{self, Display, Formatter};
 use std::str::MatchIndices;
-use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
 pub enum Pattern {
@@ -10,9 +9,9 @@ pub enum Pattern {
     Wildcard(Param),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Param {
-    value: Arc<str>,
+    value: String,
 }
 
 pub struct Split<'a> {
@@ -56,28 +55,22 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
     })
 }
 
-impl Clone for Param {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            value: Arc::clone(&self.value),
-        }
-    }
-}
-
 impl Display for Param {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(&self.value, f)
     }
 }
 
-impl<T> From<T> for Param
-where
-    Arc<str>: From<T>,
-{
-    fn from(value: T) -> Self {
+impl From<String> for Param {
+    fn from(value: String) -> Self {
+        Self { value }
+    }
+}
+
+impl From<&'_ str> for Param {
+    fn from(value: &str) -> Self {
         Self {
-            value: value.into(),
+            value: value.to_owned(),
         }
     }
 }
