@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use crate::middleware::Middleware;
 
+pub(crate) type Router<T> = via_router::Router<Vec<MatchWhen<T>>>;
+
 /// An enum that wraps middleware before it's added to the router, specifying
 /// whether the middleware should apply to partial or exact matches of a
 /// request's url path.
@@ -45,17 +47,16 @@ impl<T> Route<'_, T> {
         self.push(MatchWhen::Exact(Arc::new(middleware)));
         self
     }
-}
-
-impl<'a, T> Route<'a, T> {
-    #[inline]
-    pub(super) fn new(inner: via_router::Route<'a, Vec<MatchWhen<T>>>) -> Self {
-        Self { inner }
-    }
 
     fn push(&mut self, middleware: MatchWhen<T>) {
         self.inner
             .get_or_insert_route_with(Vec::new)
             .push(middleware);
+    }
+}
+
+impl<'a, T> From<via_router::Route<'a, Vec<MatchWhen<T>>>> for Route<'a, T> {
+    fn from(inner: via_router::Route<'a, Vec<MatchWhen<T>>>) -> Self {
+        Self { inner }
     }
 }

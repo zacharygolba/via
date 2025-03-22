@@ -1,5 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 use std::str::MatchIndices;
+use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
 pub enum Pattern {
@@ -11,7 +12,7 @@ pub enum Pattern {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Param {
-    value: String,
+    value: Arc<str>,
 }
 
 pub struct Split<'a> {
@@ -61,16 +62,13 @@ impl Display for Param {
     }
 }
 
-impl From<String> for Param {
-    fn from(value: String) -> Self {
-        Self { value }
-    }
-}
-
-impl From<&'_ str> for Param {
-    fn from(value: &str) -> Self {
+impl<T> From<T> for Param
+where
+    Arc<str>: From<T>,
+{
+    fn from(value: T) -> Self {
         Self {
-            value: value.to_owned(),
+            value: value.into(),
         }
     }
 }

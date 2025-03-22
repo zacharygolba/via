@@ -16,7 +16,7 @@ use hyper_util::rt::TokioExecutor;
 use super::acceptor::Acceptor;
 use crate::error::DynError;
 use crate::request::Request;
-use crate::router::{MatchWhen, Router, RouterError};
+use crate::router::{MatchWhen, Router};
 use crate::server::io_stream::IoStream;
 use crate::{Next, Response};
 
@@ -136,21 +136,21 @@ where
                 let result = 'router: {
                     let mut next = Next::new();
 
-                    for matching in router.routes().visit(request.uri().path()) {
-                        let node = match router.routes().resolve(&matching) {
-                            Some(resolved) => resolved,
-                            None => break 'router Err(RouterError::new()),
+                    for (key, range) in router.visit(request.uri().path()) {
+                        let found = match router.resolve(key) {
+                            Ok(resolved) => resolved,
+                            Err(error) => break 'router Err(error),
                         };
 
-                        if let Some(name) = node.param().cloned() {
-                            request.params_mut().push((name, matching.range));
+                        if let Some(name) = found.param.cloned() {
+                            request.params_mut().push((name, range));
                         }
 
-                        if let Some(route) = node.route() {
+                        if let Some(route) = found.route {
                             let middleware = route.iter().filter_map(|when| match when {
                                 MatchWhen::Partial(partial) => Some(partial),
                                 MatchWhen::Exact(exact) => {
-                                    if matching.is_exact() {
+                                    if found.exact {
                                         Some(exact)
                                     } else {
                                         None
@@ -172,7 +172,7 @@ where
                     //
                     // Otherwise, await the future to get a response from the
                     // application.
-                    Ok::<_, RouterError>(match result?.await {
+                    Ok::<_, via_router::Error>(match result?.await {
                         // The request was routed successfully and the
                         // application generated a response without error.
                         Ok(response) => response.into_inner(),
@@ -215,7 +215,7 @@ where
                 }
             ) {
                 let _ = &error; // Placeholder for tracing...
-                if error.source().is_some_and(|e| e.is::<RouterError>()) {
+                if error.source().is_some_and(|e| e.is::<via_router::Error>()) {
                     let _ = shutdown_tx.send(Some(true));
                 }
             }

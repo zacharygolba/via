@@ -2,12 +2,10 @@ use std::collections::VecDeque;
 use std::error::Error;
 use std::sync::RwLock;
 
-use crate::router::Match;
-
 pub struct Cache {
     capacity: usize,
     #[allow(clippy::type_complexity)]
-    entries: RwLock<VecDeque<(Box<str>, Vec<Match>)>>,
+    entries: RwLock<VecDeque<(Box<str>, Vec<(usize, Option<[usize; 2]>)>)>>,
 }
 
 impl Cache {
@@ -30,7 +28,8 @@ impl Cache {
     pub fn read(
         &self,
         path: &str,
-    ) -> Result<Option<(usize, Vec<Match>)>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Option<(usize, Vec<(usize, Option<[usize; 2]>)>)>, Box<dyn Error + Send + Sync>>
+    {
         let guard = self.entries.try_read().or(Err("lock in use"))?;
 
         Ok(guard.iter().enumerate().find_map(|(index, (key, value))| {
@@ -42,7 +41,7 @@ impl Cache {
         }))
     }
 
-    pub fn write(&self, path: &str, matches: &[Match]) {
+    pub fn write(&self, path: &str, matches: &[(usize, Option<[usize; 2]>)]) {
         if let Ok(mut guard) = self.entries.try_write() {
             if self.capacity == guard.len() {
                 guard.pop_back();
