@@ -147,17 +147,18 @@ where
                         }
 
                         if let Some(route) = node.route() {
-                            next.stack_mut()
-                                .extend(route.iter().filter_map(|when| match when {
-                                    MatchWhen::Partial(partial) => Some(Arc::clone(partial)),
-                                    MatchWhen::Exact(exact) => {
-                                        if matching.is_exact() {
-                                            Some(Arc::clone(exact))
-                                        } else {
-                                            None
-                                        }
+                            let middleware = route.iter().filter_map(|when| match when {
+                                MatchWhen::Partial(partial) => Some(partial),
+                                MatchWhen::Exact(exact) => {
+                                    if matching.is_exact() {
+                                        Some(exact)
+                                    } else {
+                                        None
                                     }
-                                }));
+                                }
+                            });
+
+                            next.stack_mut().extend(middleware.cloned());
                         }
                     }
 
