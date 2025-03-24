@@ -25,7 +25,7 @@ use crate::{Next, Response};
 
 pub async fn serve<A, T>(
     listener: TcpListener,
-    acceptor: A,
+    mut acceptor: A,
     context: ServerContext<T>,
 ) -> Result<ExitCode, DynError>
 where
@@ -38,10 +38,8 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(context.max_connections));
 
-    // Create a JoinSet to track inflight connections. We'll use this to wait for
-    // all connections to close before the server exits.
-    let mut connections = JoinSet::new();
-
+    // Create a watch channel to notify the individual connections in each
+    // connection task if / when a graceful shutdown is requested.
     let (shutdown_tx, mut shutdown_rx) = watch::channel(None);
 
     // Spawn a task to wait for the `ctrl_c` future to resolve.
@@ -57,19 +55,17 @@ where
         }
     });
 
+    // Create a JoinSet to track inflight connections. We'll use this to wait for
+    // all connections to close before the server exits.
+    let mut connections = JoinSet::new();
+
     // Wrap ServerContext with arc so it can be cloned into the connection task.
     let context = Arc::new(context);
 
     // Start accepting incoming connections.
-    let exit_code = loop {
+    let exit = loop {
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
-
-        // Clone the acceptor so it can be moved into the connectiont task.
-        let mut acceptor = acceptor.clone();
-
-        // Clone ServerContext so it can be moved into the connection task.
-        let context = Arc::clone(&context);
 
         // Wait for something interesting to happen.
         let (stream, _address) = tokio::select! {
@@ -100,18 +96,24 @@ where
             }
         };
 
+        // Clone ServerContext so it can be moved into the connection task.
+        let context = Arc::clone(&context);
+
         // Clone the watch sender so connections can notify the main thread
         // if an unrecoverable error is encountered.
         let shutdown_tx = shutdown_tx.clone();
 
-        // Clone the watch channel so that we can notify the connection
-        // task when initiate a graceful shutdown process before the server
-        // exits.
+        // Clone the watch receiver so connections can be notified when a
+        // graceful shutdown is requested.
         let mut shutdown_rx = shutdown_rx.clone();
+
+        // Get a future that resolves with the accepted stream after any
+        // required TLS negotiation happens.
+        let tls_handshake_future = acceptor.accept(stream);
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            let io = match acceptor.accept(stream).await {
+            let io = match tls_handshake_future.await {
                 Ok(accepted) => IoStream::new(accepted),
                 Err(_) => {
                     // Placeholder for tracing...
@@ -151,10 +153,8 @@ where
                 // Wait for the server to start a graceful shutdown. Then
                 // initiate the same for the individual connection.
                 _ = shutdown_rx.changed() => {
-                    let mut connection = Pin::new(&mut connection);
-
                     // The graceful_shutdown fn requires Pin<&mut Self>.
-                    connection.as_mut().graceful_shutdown();
+                    Pin::new(&mut connection).graceful_shutdown();
 
                     // Wait for the connection to close.
                     connection.await
@@ -174,7 +174,7 @@ where
 
     tokio::select! {
         // Wait for inflight connection to close within the configured timeout.
-        _ = shutdown(&mut connections) => Ok(exit_code),
+        _ = shutdown(&mut connections) => Ok(exit),
 
         // Otherwise, return an error.
         _ = time::sleep(context.shutdown_timeout) => {
