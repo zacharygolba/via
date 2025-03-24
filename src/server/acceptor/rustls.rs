@@ -4,6 +4,8 @@ use tokio_rustls::server::TlsStream;
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::{rustls, Accept};
 
+pub use rustls::ServerConfig as RustlsConfig;
+
 use super::Acceptor;
 
 #[derive(Clone)]
@@ -12,7 +14,7 @@ pub struct RustlsAcceptor {
 }
 
 impl RustlsAcceptor {
-    pub fn new(config: Arc<rustls::ServerConfig>) -> Self {
+    pub fn new(config: Arc<RustlsConfig>) -> Self {
         Self {
             acceptor: config.into(),
         }

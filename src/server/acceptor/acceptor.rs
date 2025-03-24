@@ -5,7 +5,7 @@ use tokio::net::TcpStream;
 
 /// A trait for types that can accept a TcpStream.
 ///
-pub trait Acceptor: Send + Sync {
+pub trait Acceptor: Clone + Send + Sync {
     type Future: Future<Output = Result<Self::Stream, io::Error>> + Send + Sync;
     type Stream: AsyncRead + AsyncWrite + Send + Sync + Unpin;
 
