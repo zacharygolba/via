@@ -20,7 +20,7 @@ pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, DynError>;
 pub enum HttpBody<T> {
     /// The original body of a request or response.
     ///
-    Initial(T),
+    Inline(T),
 
     /// A type erased, dynamically dispatched [`Body`].
     ///
@@ -36,16 +36,16 @@ impl<T> HttpBody<T>
 where
     T: Body<Data = Bytes, Error = DynError> + Send + Sync + 'static,
 {
-    pub fn into_box_body(self) -> BoxBody {
+    pub fn boxed(self) -> BoxBody {
         match self {
-            Self::Initial(body) => BoxBody::new(body),
+            Self::Inline(body) => BoxBody::new(body),
             Self::Boxed(body) => body,
         }
     }
 
-    pub fn try_into_box_body(self) -> Result<BoxBody, T> {
+    pub fn try_boxed(self) -> Result<BoxBody, T> {
         match self {
-            Self::Initial(body) => Err(body),
+            Self::Inline(body) => Err(body),
             Self::Boxed(body) => Ok(body),
         }
     }
@@ -66,7 +66,7 @@ impl<T> HttpBody<T> {
     fn project(self: Pin<&mut Self>) -> HttpBodyProjection<T> {
         unsafe {
             match self.get_unchecked_mut() {
-                Self::Initial(body) => HttpBodyProjection::Initial(Pin::new_unchecked(body)),
+                Self::Inline(body) => HttpBodyProjection::Initial(Pin::new_unchecked(body)),
                 Self::Boxed(body) => HttpBodyProjection::Boxed(Pin::new_unchecked(body)),
             }
         }
@@ -92,14 +92,14 @@ where
 
     fn is_end_stream(&self) -> bool {
         match self {
-            Self::Initial(body) => body.is_end_stream(),
+            Self::Inline(body) => body.is_end_stream(),
             Self::Boxed(body) => body.is_end_stream(),
         }
     }
 
     fn size_hint(&self) -> SizeHint {
         match self {
-            Self::Initial(body) => body.size_hint(),
+            Self::Inline(body) => body.size_hint(),
             Self::Boxed(body) => body.size_hint(),
         }
     }
@@ -112,10 +112,17 @@ impl<T> From<BoxBody> for HttpBody<T> {
     }
 }
 
+impl From<RequestBody> for HttpBody<RequestBody> {
+    #[inline]
+    fn from(body: RequestBody) -> Self {
+        Self::Inline(body)
+    }
+}
+
 impl Default for HttpBody<ResponseBody> {
     #[inline]
     fn default() -> Self {
-        Self::Initial(Default::default())
+        Self::Inline(Default::default())
     }
 }
 
@@ -125,6 +132,6 @@ where
 {
     #[inline]
     fn from(body: T) -> Self {
-        Self::Initial(body.into())
+        Self::Inline(body.into())
     }
 }

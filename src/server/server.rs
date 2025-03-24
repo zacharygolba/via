@@ -1,12 +1,13 @@
 use std::process::ExitCode;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, ToSocketAddrs};
+
+#[cfg(feature = "rustls")]
+use std::sync::Arc;
 
 use super::serve::serve;
 use crate::app::App;
 use crate::error::DynError;
-use crate::router::Router;
 
 #[cfg(feature = "rustls")]
 use super::acceptor::{RustlsAcceptor, RustlsConfig};
@@ -36,14 +37,6 @@ pub struct Server<T> {
 
     #[cfg(feature = "rustls")]
     rustls_config: Option<RustlsConfig>,
-}
-
-pub(super) struct ServerContext<T> {
-    pub state: Arc<T>,
-    pub router: Router<T>,
-    pub max_body_size: usize,
-    pub max_connections: usize,
-    pub shutdown_timeout: Duration,
 }
 
 /// Creates a new server for the provided app.
@@ -167,19 +160,19 @@ impl<T: Send + Sync + 'static> Server<T> {
         #[cfg(not(feature = "rustls"))]
         let acceptor = HttpAcceptor;
 
-        let context = ServerContext {
-            state: Arc::new(self.app.state),
-            router: self.app.router,
-            max_body_size: self.max_body_size.unwrap_or(DEFAULT_MAX_REQUEST_SIZE),
-            max_connections: self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
-            shutdown_timeout: self.shutdown_timeout.map_or_else(
+        // Serve incoming connections until shutdown is requested.
+        serve(
+            listener,
+            acceptor,
+            self.app,
+            self.max_body_size.unwrap_or(DEFAULT_MAX_REQUEST_SIZE),
+            self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
+            self.shutdown_timeout.map_or_else(
                 || Duration::from_secs(DEFAULT_SHUTDOWN_TIMEOUT),
                 Duration::from_secs,
             ),
-        };
-
-        // Serve incoming connections until shutdown is requested.
-        serve(listener, acceptor, context).await
+        )
+        .await
     }
 }
 

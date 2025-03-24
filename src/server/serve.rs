@@ -1,9 +1,9 @@
 use hyper::server::conn;
-use hyper::service::service_fn;
 use hyper_util::rt::TokioTimer;
 use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinSet;
@@ -13,17 +13,18 @@ use tokio::{signal, time};
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
-use super::server::ServerContext;
+use crate::app::App;
+use crate::app::AppService;
 use crate::error::DynError;
-use crate::request::Request;
-use crate::router::MatchWhen;
 use crate::server::io_stream::IoStream;
-use crate::{Next, Response};
 
 pub async fn serve<A, T>(
     listener: TcpListener,
-    mut acceptor: A,
-    context: ServerContext<T>,
+    acceptor: A,
+    app: App<T>,
+    max_body_size: usize,
+    max_connections: usize,
+    shutdown_timeout: Duration,
 ) -> Result<ExitCode, DynError>
 where
     A: Acceptor + Send + Sync + 'static,
@@ -33,7 +34,11 @@ where
     // of connections that the server can handle concurrently. If the maximum
     // number of connections is reached, we'll wait until a permit is available
     // before accepting a new connection.
-    let semaphore = Arc::new(Semaphore::new(context.max_connections));
+    let semaphore = Arc::new(Semaphore::new(max_connections));
+
+    // Create a JoinSet to track inflight connections. We'll use this to wait for
+    // all connections to close before the server exits.
+    let mut connections = JoinSet::new();
 
     // Create a watch channel to notify the individual connections in each
     // connection task if / when a graceful shutdown is requested.
@@ -52,24 +57,20 @@ where
         }
     });
 
-    // Create a JoinSet to track inflight connections. We'll use this to wait for
-    // all connections to close before the server exits.
-    let mut connections = JoinSet::new();
-
-    // Wrap ServerContext with arc so it can be cloned into the connection task.
-    let context = Arc::new(context);
+    // Wrap the app in an arc so it can be moved into each connection task.
+    let app = Arc::new(app);
 
     // Start accepting incoming connections.
-    let exit = loop {
+    let exit = 'accept: loop {
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
 
         // Wait for something interesting to happen.
-        let (stream, _address) = tokio::select! {
+        let tcp_stream = tokio::select! {
             // A graceful shutdown was requested.
             _ = shutdown_rx.changed() => {
                 // Break out of the accept loop with the corrosponding exit code.
-                break match *shutdown_rx.borrow_and_update() {
+                break 'accept match *shutdown_rx.borrow_and_update() {
                     Some(false) => ExitCode::from(0),
                     Some(true) | None => ExitCode::from(1),
                 }
@@ -78,7 +79,7 @@ where
             // A new connection is ready to be accepted.
             result = listener.accept() => match result {
                 // Accept the stream from the acceptor.
-                Ok(accepted) => accepted,
+                Ok((accepted, _)) => accepted,
                 Err(_) => {
                     // Placeholder for tracing...
                     continue;
@@ -93,25 +94,22 @@ where
             }
         };
 
-        // Clone ServerContext so it can be moved into the connection task.
-        let context = Arc::clone(&context);
-
-        // Clone the watch sender so connections can notify the main thread
-        // if an unrecoverable error is encountered.
-        let shutdown_tx = shutdown_tx.clone();
+        let mut acceptor = acceptor.clone();
 
         // Clone the watch receiver so connections can be notified when a
         // graceful shutdown is requested.
         let mut shutdown_rx = shutdown_rx.clone();
 
-        // Get a future that resolves with the accepted stream after any
-        // required TLS negotiation happens.
-        let tls_handshake_future = acceptor.accept(stream);
+        // Clone the watch sender so connections can notify the main thread
+        // if an unrecoverable error is encountered.
+        let shutdown_tx = shutdown_tx.clone();
+
+        let service = AppService::new(Arc::clone(&app), max_body_size);
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            let io = match tls_handshake_future.await {
-                Ok(accepted) => IoStream::new(accepted),
+            let stream = match acceptor.accept(tcp_stream).await {
+                Ok(accepted) => accepted,
                 Err(_) => {
                     // Placeholder for tracing...
                     drop(permit);
@@ -119,77 +117,17 @@ where
                 }
             };
 
-            // Create a service from the provided closure to serve the request.
-            let service = service_fn(|incoming_request| {
-                let mut request = {
-                    let state = Arc::clone(&context.state);
-                    let (head, body) = incoming_request.into_parts();
-                    Request::new(context.max_body_size, state, head, body)
-                };
-
-                let result = 'router: {
-                    let mut next = Next::new();
-                    let router = &context.router;
-
-                    for (key, range) in router.visit(request.uri().path()) {
-                        let found = match router.resolve(key) {
-                            Ok(resolved) => resolved,
-                            Err(error) => break 'router Err(error),
-                        };
-
-                        if let Some(name) = found.param.cloned() {
-                            request.params_mut().push((name, range));
-                        }
-
-                        if let Some(route) = found.route {
-                            let middleware = route.iter().filter_map(|when| match when {
-                                MatchWhen::Partial(partial) => Some(partial),
-                                MatchWhen::Exact(exact) => {
-                                    if found.exact {
-                                        Some(exact)
-                                    } else {
-                                        None
-                                    }
-                                }
-                            });
-
-                            next.stack_mut().extend(middleware.cloned());
-                        }
-                    }
-
-                    Ok(next.call(request))
-                };
-
-                async {
-                    // If an error occurs due to a failed integrity check in
-                    // the router, immediately return with an error so the
-                    // connection can be closed and the server exit.
-                    //
-                    // Otherwise, await the future to get a response from the
-                    // application.
-                    Ok::<_, via_router::Error>(match result?.await {
-                        // The request was routed successfully and the
-                        // application generated a response without error.
-                        Ok(response) => response.into_inner(),
-
-                        // The request was routed successfully but an error
-                        // occurred in the application.
-                        Err(error) => Response::from(error).into_inner(),
-                    })
-                }
-            });
-
             // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
             let mut connection = conn::http2::Builder::new(TokioExecutor::new())
                 .timer(TokioTimer::new())
-                .serve_connection(io, service);
+                .serve_connection(IoStream::new(stream), service);
 
             // Create a new HTTP/1.1 connection.
             #[cfg(all(feature = "http1", not(feature = "http2")))]
             let mut connection = conn::http1::Builder::new()
                 .timer(TokioTimer::new())
-                .serve_connection(io, service)
+                .serve_connection(IoStream::new(stream), service)
                 .with_upgrades();
 
             // Serve the connection.
@@ -224,7 +162,7 @@ where
         _ = shutdown(&mut connections) => Ok(exit),
 
         // Otherwise, return an error.
-        _ = time::sleep(context.shutdown_timeout) => {
+        _ = time::sleep(shutdown_timeout) => {
             Err("server exited before all connections were closed".into())
         }
     }

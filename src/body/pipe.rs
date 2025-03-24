@@ -37,7 +37,7 @@ impl Pipe for HttpBody<RequestBody> {
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         response
             .header(TRANSFER_ENCODING, "chunked")
-            .body(self.into_box_body())
+            .body(self.boxed())
     }
 }
 

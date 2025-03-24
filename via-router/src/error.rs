@@ -1,6 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Error {
     message: String,
 }

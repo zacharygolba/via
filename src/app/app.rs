@@ -1,8 +1,10 @@
+use std::sync::Arc;
+
 use crate::middleware::Middleware;
 use crate::router::{Route, Router};
 
 pub struct App<T> {
-    pub(crate) state: T,
+    pub(crate) state: Arc<T>,
     pub(crate) router: Router<T>,
 }
 
@@ -10,7 +12,7 @@ pub struct App<T> {
 ///
 pub fn app<T>(state: T) -> App<T> {
     App {
-        state,
+        state: Arc::new(state),
         router: Router::new(),
     }
 }
