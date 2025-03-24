@@ -1,9 +1,7 @@
-use hyper::body::Incoming;
 use hyper::server::conn;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioTimer;
 use std::error::Error;
-use std::future::Future;
 use std::process::ExitCode;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -16,10 +14,9 @@ use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
 use super::server::ServerContext;
-use crate::body::{HttpBody, ResponseBody};
 use crate::error::DynError;
 use crate::request::Request;
-use crate::router::{MatchWhen, Router};
+use crate::router::MatchWhen;
 use crate::server::io_stream::IoStream;
 use crate::{Next, Response};
 
@@ -123,13 +120,63 @@ where
             };
 
             // Create a service from the provided closure to serve the request.
-            let service = service_fn(|request| {
-                run(
-                    Arc::clone(&context.state),
-                    &context.router,
-                    context.max_body_size,
-                    request,
-                )
+            let service = service_fn(|incoming_request| {
+                let mut request = {
+                    let state = Arc::clone(&context.state);
+                    let (head, body) = incoming_request.into_parts();
+                    Request::new(context.max_body_size, state, head, body)
+                };
+
+                let result = 'router: {
+                    let mut next = Next::new();
+                    let router = &context.router;
+
+                    for (key, range) in router.visit(request.uri().path()) {
+                        let found = match router.resolve(key) {
+                            Ok(resolved) => resolved,
+                            Err(error) => break 'router Err(error),
+                        };
+
+                        if let Some(name) = found.param.cloned() {
+                            request.params_mut().push((name, range));
+                        }
+
+                        if let Some(route) = found.route {
+                            let middleware = route.iter().filter_map(|when| match when {
+                                MatchWhen::Partial(partial) => Some(partial),
+                                MatchWhen::Exact(exact) => {
+                                    if found.exact {
+                                        Some(exact)
+                                    } else {
+                                        None
+                                    }
+                                }
+                            });
+
+                            next.stack_mut().extend(middleware.cloned());
+                        }
+                    }
+
+                    Ok(next.call(request))
+                };
+
+                async {
+                    // If an error occurs due to a failed integrity check in
+                    // the router, immediately return with an error so the
+                    // connection can be closed and the server exit.
+                    //
+                    // Otherwise, await the future to get a response from the
+                    // application.
+                    Ok::<_, via_router::Error>(match result?.await {
+                        // The request was routed successfully and the
+                        // application generated a response without error.
+                        Ok(response) => response.into_inner(),
+
+                        // The request was routed successfully but an error
+                        // occurred in the application.
+                        Err(error) => Response::from(error).into_inner(),
+                    })
+                }
             });
 
             // Create a new HTTP/2 connection.
@@ -180,68 +227,6 @@ where
         _ = time::sleep(context.shutdown_timeout) => {
             Err("server exited before all connections were closed".into())
         }
-    }
-}
-
-fn run<T>(
-    state: Arc<T>,
-    router: &Router<T>,
-    max_body_size: usize,
-    incoming_request: http::Request<Incoming>,
-) -> impl Future<Output = Result<http::Response<HttpBody<ResponseBody>>, via_router::Error>> {
-    let mut request = {
-        let (head, body) = incoming_request.into_parts();
-        Request::new(max_body_size, state, head, body)
-    };
-
-    let result = 'router: {
-        let mut next = Next::new();
-
-        for (key, range) in router.visit(request.uri().path()) {
-            let found = match router.resolve(key) {
-                Ok(resolved) => resolved,
-                Err(error) => break 'router Err(error),
-            };
-
-            if let Some(name) = found.param.cloned() {
-                request.params_mut().push((name, range));
-            }
-
-            if let Some(route) = found.route {
-                let middleware = route.iter().filter_map(|when| match when {
-                    MatchWhen::Partial(partial) => Some(partial),
-                    MatchWhen::Exact(exact) => {
-                        if found.exact {
-                            Some(exact)
-                        } else {
-                            None
-                        }
-                    }
-                });
-
-                next.stack_mut().extend(middleware.cloned());
-            }
-        }
-
-        Ok(next.call(request))
-    };
-
-    async {
-        // If an error occurs due to a failed integrity check in
-        // the router, immediately return with an error so the
-        // connection can be closed and the server exit.
-        //
-        // Otherwise, await the future to get a response from the
-        // application.
-        Ok::<_, via_router::Error>(match result?.await {
-            // The request was routed successfully and the
-            // application generated a response without error.
-            Ok(response) => response.into_inner(),
-
-            // The request was routed successfully but an error
-            // occurred in the application.
-            Err(error) => Response::from(error).into_inner(),
-        })
     }
 }
 
