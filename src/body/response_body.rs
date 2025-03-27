@@ -74,42 +74,42 @@ impl Default for ResponseBody {
 
 impl From<Bytes> for ResponseBody {
     #[inline]
-    fn from(mut data: Bytes) -> Self {
-        let mut chunks = Vec::with_capacity(data.len().div_ceil(MAX_FRAME_LEN));
-
-        while !data.is_empty() {
-            chunks.push(data.split_to(data.len().min(MAX_FRAME_LEN)));
-        }
-
-        Self::new(chunks)
+    fn from(data: Bytes) -> Self {
+        Self::from(data.as_ref())
     }
 }
 
 impl From<String> for ResponseBody {
     #[inline]
     fn from(data: String) -> Self {
-        Self::from(Bytes::copy_from_slice(data.as_bytes()))
+        Self::from(data.as_bytes())
     }
 }
 
 impl From<&'_ str> for ResponseBody {
     #[inline]
     fn from(data: &str) -> Self {
-        Self::from(Bytes::copy_from_slice(data.as_bytes()))
+        Self::from(data.as_bytes())
     }
 }
 
 impl From<Vec<u8>> for ResponseBody {
     #[inline]
     fn from(data: Vec<u8>) -> Self {
-        Self::from(Bytes::copy_from_slice(&data))
+        Self::from(data.as_slice())
     }
 }
 
 impl From<&'_ [u8]> for ResponseBody {
     #[inline]
-    fn from(data: &'_ [u8]) -> Self {
-        Self::from(Bytes::copy_from_slice(data))
+    fn from(slice: &'_ [u8]) -> Self {
+        let mut chunks = Vec::with_capacity(slice.len().div_ceil(MAX_FRAME_LEN));
+
+        for chunk in slice.chunks(MAX_FRAME_LEN) {
+            chunks.push(Bytes::copy_from_slice(chunk));
+        }
+
+        Self { offset: 0, chunks }
     }
 }
 
