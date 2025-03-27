@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
 use crate::middleware::Middleware;
+use via_router::MatchCond;
 
 pub(crate) type Router<T> = via_router::Router<Vec<MatchWhen<T>>>;
 
@@ -13,50 +12,50 @@ pub enum MatchWhen<T> {
     /// variant is used when middleware is added to an `Endpoint` with the
     /// `respond` method.
     ///
-    Exact(Arc<dyn Middleware<T>>),
+    Exact(Box<dyn Middleware<T>>),
 
     /// Apply the middleware to partial matches of a request's url path. This
     /// variant is used when middleware is added to an `Endpoint` with the
     /// `include` method.
     ///
-    Partial(Arc<dyn Middleware<T>>),
+    Partial(Box<dyn Middleware<T>>),
 }
 
 pub struct Route<'a, T> {
-    inner: via_router::Route<'a, Vec<MatchWhen<T>>>,
+    inner: via_router::Route<'a, Box<dyn Middleware<T>>>,
 }
 
-impl<T> Route<'_, T> {
+impl<'a, T> Route<'a, T> {
     pub fn at(&mut self, pattern: &'static str) -> Route<T> {
         Route {
             inner: self.inner.at(pattern),
         }
     }
 
-    pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) -> &mut Self {
+    pub fn scope<F>(&mut self, scope: F)
+    where
+        F: FnOnce(&mut Self),
+    {
         scope(self);
-        self
     }
 
-    pub fn include(&mut self, middleware: impl Middleware<T> + 'static) -> &mut Self {
-        self.push(MatchWhen::Partial(Arc::new(middleware)));
-        self
+    pub fn include<M>(&mut self, middleware: M)
+    where
+        M: Middleware<T> + 'static,
+    {
+        self.inner.push(MatchCond::Partial(Box::new(middleware)));
     }
 
-    pub fn respond(&mut self, middleware: impl Middleware<T> + 'static) -> &mut Self {
-        self.push(MatchWhen::Exact(Arc::new(middleware)));
-        self
-    }
-
-    fn push(&mut self, middleware: MatchWhen<T>) {
-        self.inner
-            .get_or_insert_route_with(Vec::new)
-            .push(middleware);
+    pub fn respond<M>(mut self, middleware: M)
+    where
+        M: Middleware<T> + 'static,
+    {
+        self.inner.push(MatchCond::Exact(Box::new(middleware)));
     }
 }
 
-impl<'a, T> From<via_router::Route<'a, Vec<MatchWhen<T>>>> for Route<'a, T> {
-    fn from(inner: via_router::Route<'a, Vec<MatchWhen<T>>>) -> Self {
+impl<'a, T> From<via_router::Route<'a, Box<dyn Middleware<T>>>> for Route<'a, T> {
+    fn from(inner: via_router::Route<'a, Box<dyn Middleware<T>>>) -> Self {
         Self { inner }
     }
 }

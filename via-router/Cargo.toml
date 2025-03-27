@@ -11,3 +11,6 @@ repository = "https://github.com/zacharygolba/via"
 [features]
 default = []
 lru-cache = []
+
+[dependencies]
+smallvec = "1.14.0"

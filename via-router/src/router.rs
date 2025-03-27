@@ -63,15 +63,25 @@ impl<T> Node<T> {
         }
     }
 
+    fn map<U, F>(self, f: F) -> Node<U>
+    where
+        F: FnOnce(T) -> U,
+    {
+        Node {
+            route: self.route.map(f),
+            pattern: self.pattern,
+            children: self.children,
+        }
+    }
+
     /// Returns an optional reference to the name of the dynamic parameter
     /// associated with the node. The returned value will be `None` if the
     /// node has a `Root` or `Static` pattern.
     #[inline]
-    pub fn param(&self) -> Option<&Param> {
-        if let Pattern::Dynamic(param) | Pattern::Wildcard(param) = &self.pattern {
-            Some(param)
-        } else {
-            None
+    fn param(&self) -> Option<&Param> {
+        match &self.pattern {
+            Pattern::Dynamic(param) | Pattern::Wildcard(param) => Some(param),
+            _ => None,
         }
     }
 }
@@ -105,6 +115,20 @@ impl<T> Router<T> {
             #[cfg(feature = "lru-cache")]
             cache: Cache::new(1000),
             nodes: vec![Node::new(Pattern::Root)],
+        }
+    }
+
+    pub fn map<U, F>(self, mut f: F) -> Router<U>
+    where
+        F: FnMut(T) -> U,
+    {
+        Router {
+            cache: self.cache,
+            nodes: self
+                .nodes
+                .into_iter()
+                .map(|node| node.map(&mut f))
+                .collect(),
         }
     }
 
