@@ -1,6 +1,5 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
-use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -12,16 +11,10 @@ pub const MAX_FRAME_LEN: usize = 8192; // 8KB
 
 /// A buffered `impl Body` that is read in `8KB` chunks.
 ///
+#[derive(Debug, Default)]
 pub struct ResponseBody {
     offset: usize,
     chunks: Vec<Bytes>,
-}
-
-impl ResponseBody {
-    #[inline]
-    fn new(chunks: Vec<Bytes>) -> Self {
-        Self { offset: 0, chunks }
-    }
 }
 
 impl Body for ResponseBody {
@@ -56,19 +49,6 @@ impl Body for ResponseBody {
             .iter()
             .try_fold(0u64, |n, chunk| n.checked_add(chunk.len() as u64))
             .map_or_else(SizeHint::new, SizeHint::with_exact)
-    }
-}
-
-impl Debug for ResponseBody {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("ResponseBody").finish()
-    }
-}
-
-impl Default for ResponseBody {
-    #[inline]
-    fn default() -> Self {
-        Self::new(Vec::new())
     }
 }
 
@@ -120,6 +100,12 @@ mod tests {
     use http_body_util::BodyExt;
 
     use super::{ResponseBody, MAX_FRAME_LEN};
+
+    impl ResponseBody {
+        fn new(chunks: Vec<Bytes>) -> Self {
+            Self { offset: 0, chunks }
+        }
+    }
 
     #[test]
     fn test_response_body_from_bytes() {
