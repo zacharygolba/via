@@ -55,7 +55,7 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
 }
 
 impl Pattern {
-    fn as_label(&self) -> Option<&Param> {
+    pub fn as_label(&self) -> Option<&Param> {
         match self {
             Self::Dynamic(param) | Self::Wildcard(param) => Some(param),
             Self::Root | Self::Static(_) => None,

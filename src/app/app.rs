@@ -5,7 +5,7 @@ use crate::router::{Route, Router};
 
 pub struct App<T> {
     pub(crate) state: Arc<T>,
-    pub(crate) router: via_router::Builder<Box<dyn Middleware<T>>>,
+    pub(crate) router: Router<T>,
 }
 
 /// Constructs a new [`App`] with the provided `state` argument.
@@ -13,7 +13,7 @@ pub struct App<T> {
 pub fn app<T>(state: T) -> App<T> {
     App {
         state: Arc::new(state),
-        router: Router::build(),
+        router: Router::new(),
     }
 }
 

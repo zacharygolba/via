@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-#[cfg(feature = "lru-cache")]
-mod cache;
+// #[cfg(feature = "lru-cache")]
+// mod cache;
 
 mod error;
 mod path;

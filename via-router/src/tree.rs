@@ -1,11 +1,9 @@
+use either::Either;
 use smallvec::SmallVec;
-use std::sync::Arc;
 use std::{mem, slice};
 
-use crate::{
-    path::{self, Param, Pattern, Split},
-    Error,
-};
+use crate::error::Error;
+use crate::path::{self, Pattern, Split};
 
 #[derive(Clone, Debug)]
 pub enum MatchCond<T> {
@@ -31,47 +29,33 @@ pub struct Route<'a, T> {
 
 #[derive(Debug)]
 pub struct Node<T> {
-    children: Vec<usize>,
+    children: Either<Option<usize>, Vec<usize>>,
     pattern: Pattern,
-    route: Option<T>,
+    route: Option<Vec<T>>,
 }
 
-fn insert<T, I>(tree: &mut Vec<Node<T>>, segments: &mut I, parent_key: usize) -> usize
-where
-    I: Iterator<Item = Pattern>,
-{
-    // If the current node is a catch-all, we can skip the rest of the segments.
-    // In the future we may want to panic if the caller tries to insert a node
-    // into a catch-all node rather than silently ignoring the rest of the
-    // segments.
-    if let Pattern::Wildcard(_) = &tree[parent_key].pattern {
-        return parent_key;
-    }
-
-    // If there are no more segments, we can return the current key.
-    let pattern = match segments.next() {
-        Some(value) => value,
-        None => return parent_key,
-    };
-
-    // Check if the pattern already exists in the node at `current_key`. If it
-    // does, we can continue to the next segment.
-    for key in tree[parent_key].children.iter().copied() {
-        if pattern == tree[key].pattern {
-            return insert(tree, segments, key);
+impl<T> MatchCond<T> {
+    pub fn as_either(&self) -> &T {
+        match self {
+            Self::Exact(value) | Self::Partial(value) => value,
         }
     }
 
-    let next_key = tree.len();
-    tree.push(Node::new(pattern));
+    pub fn as_match<'a, U>(&self, other: &'a MatchCond<U>) -> Option<&'a U> {
+        match (self, other) {
+            (Self::Partial(_), MatchCond::Partial(value)) => Some(value),
+            (Self::Exact(_), MatchCond::Exact(value)) => Some(value),
+            _ => None,
+        }
+    }
 
-    let parent = &mut tree[parent_key];
-    parent.children.push(next_key);
-
-    // If the pattern does not exist in the node at `current_key`, we need to create
-    // a new node as a descendant of the node at `current_key` and then insert it
-    // into the store.
-    insert(tree, segments, next_key)
+    pub fn as_partial(&self) -> Option<&T> {
+        if let Self::Partial(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
 }
 
 impl Binding {
@@ -79,8 +63,8 @@ impl Binding {
         self.nodes.iter()
     }
 
-    pub fn range(&self) -> Option<&[usize; 2]> {
-        self.range.as_ref()
+    pub fn range(&self) -> Option<[usize; 2]> {
+        self.range
     }
 }
 
@@ -97,20 +81,57 @@ impl Binding {
     }
 }
 
-impl<T> MatchCond<T> {
-    pub fn as_either(&self) -> &T {
-        match self {
-            Self::Exact(exact) => exact,
-            Self::Partial(partial) => partial,
+impl<T> Node<T> {
+    fn new(pattern: Pattern) -> Self {
+        Self {
+            children: Either::Left(None),
+            pattern,
+            route: None,
         }
     }
 
-    fn as_partial(&self) -> Option<&T> {
-        if let Self::Partial(partial) = self {
-            Some(partial)
-        } else {
-            None
+    fn children(&self) -> &[usize] {
+        match self.children.as_ref() {
+            Either::Left(option) => option.as_slice(),
+            Either::Right(vec) => vec.as_slice(),
         }
+    }
+
+    fn middleware(&self) -> &[T] {
+        match self.route.as_ref() {
+            Some(route) => route.as_slice(),
+            None => &[],
+        }
+    }
+
+    fn push(&mut self, key: usize) {
+        let option = match &mut self.children {
+            Either::Right(vec) => return vec.push(key),
+            Either::Left(option) => option,
+        };
+
+        if let Some(existing) = option.take() {
+            self.children = Either::Right(vec![existing, key]);
+        } else {
+            self.children = Either::Left(Some(key));
+        }
+    }
+}
+
+impl<T> Route<'_, T> {
+    pub fn at(&mut self, path: &'static str) -> Route<T> {
+        let mut segments = path::patterns(path);
+        let key = insert(&mut self.tree, &mut segments, self.key);
+
+        Route {
+            tree: &mut self.tree,
+            key,
+        }
+    }
+
+    pub fn push(&mut self, middleware: T) {
+        let node = &mut self.tree[self.key];
+        node.route.get_or_insert_default().push(middleware);
     }
 }
 
@@ -131,19 +152,32 @@ impl<T> Router<T> {
         }
     }
 
-    pub fn get(&self, key: usize) -> Result<(&Pattern, &Option<T>), Error> {
+    pub fn get(&self, key: usize) -> Result<(&Pattern, &[T]), Error> {
         match self.tree.get(key) {
-            Some(node) => Ok((&node.pattern, &node.route)),
+            Some(node) => Ok((&node.pattern, node.middleware())),
             None => Err(Error::new()),
         }
     }
 
     pub fn visit(&self, path: &str) -> Vec<Binding> {
         let mut segments = Split::new(path).peekable();
-        let mut results = Vec::with_capacity(8);
-        let mut queue = SmallVec::<[usize; 4]>::new();
-        let mut next = SmallVec::<[usize; 4]>::new();
+        let mut results = Vec::new();
+        let mut queue = SmallVec::<[usize; 6]>::new();
+        let mut next = SmallVec::<[usize; 6]>::new();
         let tree = &self.tree;
+
+        if let Some(root) = tree.first() {
+            let mut binding = Binding::new(None);
+
+            if segments.peek().is_none() {
+                binding.push(MatchCond::Exact(0));
+            } else {
+                binding.push(MatchCond::Partial(0));
+            }
+
+            results.push(binding);
+            queue.extend_from_slice(root.children());
+        }
 
         loop {
             let mut binding = Binding::new(segments.next());
@@ -206,7 +240,7 @@ impl<T> Router<T> {
                 };
 
                 binding.push(match_cond);
-                next.extend_from_slice(&node.children);
+                next.extend_from_slice(node.children());
             }
 
             results.push(binding);
@@ -215,30 +249,41 @@ impl<T> Router<T> {
     }
 }
 
-impl<T> Route<'_, T> {
-    pub fn at(&mut self, path: &'static str) -> Route<T> {
-        let mut segments = path::patterns(path);
-        let key = insert(&mut self.tree, &mut segments, self.key);
+fn insert<T, I>(tree: &mut Vec<Node<T>>, segments: &mut I, parent_key: usize) -> usize
+where
+    I: Iterator<Item = Pattern>,
+{
+    // If the current node is a catch-all, we can skip the rest of the segments.
+    // In the future we may want to panic if the caller tries to insert a node
+    // into a catch-all node rather than silently ignoring the rest of the
+    // segments.
+    if let Pattern::Wildcard(_) = &tree[parent_key].pattern {
+        return parent_key;
+    }
 
-        Route {
-            tree: &mut self.tree,
-            key,
+    // If there are no more segments, we can return the current key.
+    let pattern = match segments.next() {
+        Some(value) => value,
+        None => return parent_key,
+    };
+
+    // Check if the pattern already exists in the node at `current_key`. If it
+    // does, we can continue to the next segment.
+    for key in tree[parent_key].children.iter().copied() {
+        if pattern == tree[key].pattern {
+            return insert(tree, segments, key);
         }
     }
 
-    pub fn as_mut(&mut self) -> &mut Option<T> {
-        &mut self.tree[self.key].route
-    }
-}
+    let next_key = tree.len();
+    tree.push(Node::new(pattern));
 
-impl<T> Node<T> {
-    fn new(pattern: Pattern) -> Self {
-        Self {
-            children: Vec::new(),
-            pattern,
-            route: None,
-        }
-    }
+    tree[parent_key].push(next_key);
+
+    // If the pattern does not exist in the node at `current_key`, we need to create
+    // a new node as a descendant of the node at `current_key` and then insert it
+    // into the store.
+    insert(tree, segments, next_key)
 }
 
 #[cfg(test)]
@@ -257,10 +302,10 @@ mod tests {
         let mut router = Router::new();
 
         for path in &PATHS {
-            let _ = router.at(path).as_mut().insert(());
+            let _ = router.at(path).push(());
         }
 
-        println!("router: {:?}", router);
+        println!("router: {:#?}", router);
 
         // {
         //     let path = "/";
