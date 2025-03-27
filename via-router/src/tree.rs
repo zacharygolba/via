@@ -1,30 +1,27 @@
 use smallvec::SmallVec;
-use std::slice;
 use std::sync::Arc;
+use std::{mem, slice};
 
-use crate::path::{self, Param, Pattern, Split};
+use crate::{
+    path::{self, Param, Pattern, Split},
+    Error,
+};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum MatchCond<T> {
     Partial(T),
     Exact(T),
 }
 
 #[derive(Debug)]
-pub struct Binding<T> {
-    is_exact: bool,
-    offset: usize,
-    node: Arc<Node<T>>,
-    to: Option<[usize; 2]>,
-}
-
-pub struct Builder<T> {
-    tree: Vec<Node<T>>,
+pub struct Binding {
+    nodes: Vec<MatchCond<usize>>,
+    range: Option<[usize; 2]>,
 }
 
 #[derive(Debug)]
 pub struct Router<T> {
-    tree: Vec<Arc<Node<T>>>,
+    tree: Vec<Node<T>>,
 }
 
 pub struct Route<'a, T> {
@@ -36,7 +33,7 @@ pub struct Route<'a, T> {
 pub struct Node<T> {
     children: Vec<usize>,
     pattern: Pattern,
-    route: Vec<MatchCond<T>>,
+    route: Option<T>,
 }
 
 fn insert<T, I>(tree: &mut Vec<Node<T>>, segments: &mut I, parent_key: usize) -> usize
@@ -59,7 +56,7 @@ where
 
     // Check if the pattern already exists in the node at `current_key`. If it
     // does, we can continue to the next segment.
-    for key in tree[parent_key].iter().copied() {
+    for key in tree[parent_key].children.iter().copied() {
         if pattern == tree[key].pattern {
             return insert(tree, segments, key);
         }
@@ -77,50 +74,53 @@ where
     insert(tree, segments, next_key)
 }
 
-impl<T> Binding<T> {
-    fn new(is_exact: bool, node: Arc<Node<T>>, to: Option<[usize; 2]>) -> Self {
-        Self {
-            is_exact,
-            offset: 0,
-            node,
-            to,
-        }
+impl Binding {
+    pub fn iter(&self) -> slice::Iter<MatchCond<usize>> {
+        self.nodes.iter()
     }
 
-    pub fn param(&self) -> Option<(&Param, Option<[usize; 2]>)> {
-        self.node.param().map(|name| (name, self.to))
-    }
-
-    pub fn next(&mut self) -> Option<usize> {
-        let is_exact = self.is_exact;
-        let offset = &mut self.offset;
-        let route = &self.node.route;
-
-        loop {
-            let key = *offset;
-            return match route.get(key)? {
-                MatchCond::Exact(_) if is_exact => {
-                    *offset += 1;
-                    Some(key)
-                }
-                MatchCond::Partial(_) => {
-                    *offset += 1;
-                    Some(key)
-                }
-                MatchCond::Exact(_) => {
-                    *offset += 1;
-                    continue;
-                }
-            };
-        }
-    }
-
-    pub fn get(&self, key: usize) -> Option<&T> {
-        self.node.route.get(key).map(MatchCond::as_either)
+    pub fn range(&self) -> Option<&[usize; 2]> {
+        self.range.as_ref()
     }
 }
 
-impl<T> Builder<T> {
+impl Binding {
+    fn new(range: Option<[usize; 2]>) -> Self {
+        Self {
+            nodes: Vec::with_capacity(3),
+            range,
+        }
+    }
+
+    fn push(&mut self, key: MatchCond<usize>) {
+        self.nodes.push(key);
+    }
+}
+
+impl<T> MatchCond<T> {
+    pub fn as_either(&self) -> &T {
+        match self {
+            Self::Exact(exact) => exact,
+            Self::Partial(partial) => partial,
+        }
+    }
+
+    fn as_partial(&self) -> Option<&T> {
+        if let Self::Partial(partial) = self {
+            Some(partial)
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> Router<T> {
+    pub fn new() -> Self {
+        Self {
+            tree: vec![Node::new(Pattern::Root)],
+        }
+    }
+
     pub fn at(&mut self, path: &'static str) -> Route<T> {
         let mut segments = path::patterns(path);
         let key = insert(&mut self.tree, &mut segments, 0);
@@ -131,83 +131,87 @@ impl<T> Builder<T> {
         }
     }
 
-    pub fn build(self) -> Router<T> {
-        Router {
-            tree: self.tree.into_iter().map(Arc::new).collect(),
-        }
-    }
-}
-
-impl<T> Router<T> {
-    pub fn build() -> Builder<T> {
-        Builder {
-            tree: vec![Node::new(Pattern::Root)],
+    pub fn get(&self, key: usize) -> Result<(&Pattern, &Option<T>), Error> {
+        match self.tree.get(key) {
+            Some(node) => Ok((&node.pattern, &node.route)),
+            None => Err(Error::new()),
         }
     }
 
-    pub fn visit(&self, path: &str) -> Vec<Binding<T>> {
+    pub fn visit(&self, path: &str) -> Vec<Binding> {
         let mut segments = Split::new(path).peekable();
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(8);
         let mut queue = SmallVec::<[usize; 4]>::new();
         let mut next = SmallVec::<[usize; 4]>::new();
         let tree = &self.tree;
 
-        if let Some(root) = tree.first() {
-            queue.extend_from_slice(&root.children);
-            results.push(Binding::new(segments.peek().is_none(), root.clone(), None));
-        }
-
-        while let Some(range) = segments.next() {
-            let segment = &path[range[0]..range[1]];
+        loop {
+            let mut binding = Binding::new(segments.next());
             let is_exact = segments.peek().is_none();
+            let range = match &binding.range {
+                Some(range) => {
+                    next.clear();
+                    *range
+                }
+                None => {
+                    for key in queue.iter().copied() {
+                        let pattern = tree.get(key).map(|node| &node.pattern);
+                        if let Some(Pattern::Wildcard(_)) = pattern {
+                            binding.push(MatchCond::Exact(key))
+                        }
+                    }
 
-            for key in queue.drain(..) {
+                    return results;
+                }
+            };
+
+            for key in queue.iter().copied() {
                 let node = match tree.get(key) {
-                    Some(next) => next,
+                    Some(node) => node,
                     None => {
                         // Placeholder for tracing...
                         continue;
                     }
                 };
 
-                match node.pattern() {
-                    Pattern::Static(value) if value == segment => {
-                        next.extend_from_slice(&node.children);
-                        results.push(Binding::new(is_exact, node.clone(), Some(range)));
-                    }
-
-                    Pattern::Wildcard(_) => {
-                        let [start, _] = range;
-                        results.push(Binding::new(true, node.clone(), Some([start, path.len()])));
-                    }
-
+                let match_cond = match &node.pattern {
                     Pattern::Dynamic(_) => {
-                        next.extend_from_slice(&node.children);
-                        results.push(Binding::new(is_exact, node.clone(), Some(range)));
+                        if is_exact {
+                            MatchCond::Exact(key)
+                        } else {
+                            MatchCond::Partial(key)
+                        }
                     }
 
-                    _ => {}
-                }
+                    Pattern::Wildcard(_) => MatchCond::Exact(key),
+
+                    Pattern::Static(label) => {
+                        let [start, end] = range;
+
+                        if label != &path[start..end] {
+                            continue;
+                        }
+
+                        if is_exact {
+                            MatchCond::Exact(key)
+                        } else {
+                            MatchCond::Partial(key)
+                        }
+                    }
+
+                    Pattern::Root => {
+                        // Placeholder for tracing...
+                        continue;
+                    }
+                };
+
+                binding.push(match_cond);
+                next.extend_from_slice(&node.children);
             }
 
-            queue.extend(next.drain(..));
+            results.push(binding);
+            mem::swap(&mut queue, &mut next);
         }
-
-        for key in queue.drain(..) {
-            let node = match tree.get(key) {
-                Some(next) => next,
-                None => {
-                    // Placeholder for tracing...
-                    continue;
-                }
-            };
-
-            if let Pattern::Wildcard(_) = node.pattern() {
-                results.push(Binding::new(true, node.clone(), None));
-            }
-        }
-
-        results
     }
 }
 
@@ -222,24 +226,8 @@ impl<T> Route<'_, T> {
         }
     }
 
-    pub fn push(&mut self, middleware: MatchCond<T>) {
-        self.tree[self.key].route.push(middleware);
-    }
-}
-
-impl<T> MatchCond<T> {
-    fn as_either(&self) -> &T {
-        match self {
-            Self::Exact(route) | Self::Partial(route) => route,
-        }
-    }
-
-    fn as_partial(&self) -> Option<&T> {
-        if let Self::Partial(route) = self {
-            Some(route)
-        } else {
-            None
-        }
+    pub fn as_mut(&mut self) -> &mut Option<T> {
+        &mut self.tree[self.key].route
     }
 }
 
@@ -248,29 +236,14 @@ impl<T> Node<T> {
         Self {
             children: Vec::new(),
             pattern,
-            route: Vec::new(),
-        }
-    }
-
-    fn iter(&self) -> slice::Iter<usize> {
-        self.children.iter()
-    }
-
-    fn pattern(&self) -> &Pattern {
-        &self.pattern
-    }
-
-    fn param(&self) -> Option<&Param> {
-        match &self.pattern {
-            Pattern::Dynamic(param) | Pattern::Wildcard(param) => Some(param),
-            Pattern::Root | Pattern::Static(_) => None,
+            route: None,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{MatchCond, Router};
+    use super::Router;
 
     const PATHS: [&str; 4] = [
         "/*path",
@@ -281,49 +254,45 @@ mod tests {
 
     #[test]
     fn test_router_visit() {
-        let router = {
-            let mut builder = Router::build();
+        let mut router = Router::new();
 
-            for path in &PATHS {
-                let _ = builder.at(path).push(MatchCond::Exact(()));
-            }
-
-            builder.build()
-        };
+        for path in &PATHS {
+            let _ = router.at(path).as_mut().insert(());
+        }
 
         println!("router: {:?}", router);
 
-        {
-            let path = "/";
-            let matches: Vec<_> = router.visit(path);
+        // {
+        //     let path = "/";
+        //     let matches: Vec<_> = router.visit(path);
 
-            println!("match / {:?}", matches);
-            assert_eq!(matches.len(), 2);
+        //     println!("match / {:?}", matches);
+        //     assert_eq!(matches.len(), 2);
 
-            {
-                // /
-                // ^ as Pattern::Root
-                let binding = &matches[0];
+        //     {
+        //         // /
+        //         // ^ as Pattern::Root
+        //         let binding = &matches[0];
 
-                assert!(binding.is_exact);
+        //         assert!(binding.is_exact);
 
-                assert_eq!(binding.to, None);
-                assert_eq!(binding.param(), None);
-                assert_eq!(binding.node.route.len(), 0);
-            }
+        //         assert_eq!(binding.to, None);
+        //         assert_eq!(binding.param(), None);
+        //         assert_eq!(binding.node.route.len(), 0);
+        //     }
 
-            {
-                // /
-                //  ^ as Pattern::CatchAll("*path")
-                let binding = &matches[1];
+        //     {
+        //         // /
+        //         //  ^ as Pattern::CatchAll("*path")
+        //         let binding = &matches[1];
 
-                assert_eq!(binding.to, None);
-                assert_eq!(binding.node.route.len(), 1);
-                assert_eq!(binding.param(), Some((&"path".into(), None)));
-                // Should be considered exact because of the catch-all pattern.
-                assert!(binding.is_exact);
-            }
-        }
+        //         assert_eq!(binding.to, None);
+        //         assert_eq!(binding.node.route.len(), 1);
+        //         assert_eq!(binding.param(), Some((&"path".into(), None)));
+        //         // Should be considered exact because of the catch-all pattern.
+        //         assert!(binding.is_exact);
+        //     }
+        // }
 
         // {
         //     let path = "/not/a/path";

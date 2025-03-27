@@ -3,8 +3,10 @@
 #[cfg(feature = "lru-cache")]
 mod cache;
 
+mod error;
 mod path;
 mod tree;
 
-pub use path::Param;
-pub use tree::{Binding, Builder, MatchCond, Route, Router};
+pub use error::Error;
+pub use path::{Param, Pattern};
+pub use tree::{Binding, MatchCond, Route, Router};

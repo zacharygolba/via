@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::middleware::Middleware;
 use via_router::MatchCond;
 
@@ -22,7 +24,7 @@ pub enum MatchWhen<T> {
 }
 
 pub struct Route<'a, T> {
-    inner: via_router::Route<'a, Box<dyn Middleware<T>>>,
+    inner: via_router::Route<'a, Vec<Arc<dyn Middleware<T>>>>,
 }
 
 impl<'a, T> Route<'a, T> {
@@ -43,7 +45,10 @@ impl<'a, T> Route<'a, T> {
     where
         M: Middleware<T> + 'static,
     {
-        self.inner.push(MatchCond::Partial(Box::new(middleware)));
+        self.inner
+            .as_mut()
+            .get_or_insert_default()
+            .push(MatchCond::Partial(Arc::new(middleware)));
     }
 
     pub fn respond<M>(mut self, middleware: M)

@@ -5,7 +5,7 @@ use std::sync::Arc;
 #[derive(Debug, PartialEq)]
 pub enum Pattern {
     Root,
-    Static(Param),
+    Static(String),
     Dynamic(Param),
     Wildcard(Param),
 }
@@ -49,11 +49,18 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
 
             // The segment does not start with a reserved character. We will
             // consider it a static pattern that can be matched by value.
-            _ => Pattern::Static(Param {
-                value: segment.into(),
-            }),
+            _ => Pattern::Static(segment.into()),
         }
     })
+}
+
+impl Pattern {
+    fn as_label(&self) -> Option<&Param> {
+        match self {
+            Self::Dynamic(param) | Self::Wildcard(param) => Some(param),
+            Self::Root | Self::Static(_) => None,
+        }
+    }
 }
 
 impl Display for Param {
