@@ -32,7 +32,7 @@ impl<'a, T> Route<'a, T> {
         self.inner.push(MatchCond::Partial(Arc::new(middleware)));
     }
 
-    pub fn respond<M>(mut self, middleware: M)
+    pub fn respond<M>(&mut self, middleware: M)
     where
         M: Middleware<T> + 'static,
     {
