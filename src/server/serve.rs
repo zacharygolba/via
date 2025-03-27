@@ -140,8 +140,10 @@ where
                                 Ok(found) => found,
                             };
 
-                            if let Some((once, label)) = params.take().zip(pattern.as_label()) {
-                                once.push(label.clone(), binding.range());
+                            if let Some(label) = pattern.as_label() {
+                                if let Some(once) = params.take() {
+                                    once.push(label.clone(), binding.range());
+                                }
                             }
 
                             for match_cond in route {
