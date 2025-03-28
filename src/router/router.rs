@@ -11,7 +11,7 @@ pub struct Route<'a, T> {
     inner: Inner<'a, T>,
 }
 
-impl<'a, T> Route<'a, T> {
+impl<T> Route<'_, T> {
     pub fn at(&mut self, pattern: &'static str) -> Route<T> {
         Route {
             inner: self.inner.at(pattern),

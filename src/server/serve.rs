@@ -121,7 +121,7 @@ where
                 .with_upgrades();
 
             // Serve the connection.
-            if let Err(_) = tokio::select!(
+            if let Err(error) = tokio::select!(
                 // Wait for the connection to close.
                 result = Pin::new(&mut connection) => result,
 
@@ -138,6 +138,7 @@ where
                 }
             ) {
                 // Placeholder for tracing...
+                let _ = &error;
             }
 
             // Return the permit back to the semaphore.

@@ -92,7 +92,7 @@ impl<'a, T> Binding<'a, T> {
     }
 }
 
-impl<'a, T> Debug for Binding<'a, T> {
+impl<T> Debug for Binding<'_, T> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Binding")
             .field("range", &self.range)
@@ -166,10 +166,10 @@ impl<T> Debug for Node<T> {
 impl<T> Route<'_, T> {
     pub fn at(&mut self, path: &'static str) -> Route<T> {
         let mut segments = path::patterns(path);
-        let key = insert(&mut self.tree, &mut segments, self.key);
+        let key = insert(self.tree, &mut segments, self.key);
 
         Route {
-            tree: &mut self.tree,
+            tree: self.tree,
             key,
         }
     }
@@ -182,9 +182,7 @@ impl<T> Route<'_, T> {
 
 impl<T> Router<T> {
     pub fn new() -> Self {
-        Self {
-            tree: vec![Node::new(Pattern::Root)],
-        }
+        Default::default()
     }
 
     pub fn at(&mut self, path: &'static str) -> Route<T> {
@@ -280,6 +278,14 @@ impl<T> Router<T> {
             }
 
             mem::swap(&mut queue, &mut next);
+        }
+    }
+}
+
+impl<T> Default for Router<T> {
+    fn default() -> Self {
+        Self {
+            tree: vec![Node::new(Pattern::Root)],
         }
     }
 }
