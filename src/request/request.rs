@@ -187,10 +187,14 @@ impl<T> Request<T> {
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(state: Arc<T>, request: http::Request<HttpBody<RequestBody>>) -> Self {
+    pub(crate) fn new(
+        state: Arc<T>,
+        params: PathParams,
+        request: http::Request<HttpBody<RequestBody>>,
+    ) -> Self {
         Self {
             state,
-            params: PathParams::new(),
+            params,
             cookies: None,
             request,
         }

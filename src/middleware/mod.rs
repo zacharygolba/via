@@ -10,3 +10,5 @@ mod timeout;
 pub use middleware::{Middleware, Result};
 pub use next::Next;
 pub use timeout::timeout;
+
+pub(crate) use middleware::FutureResponse;

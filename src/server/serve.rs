@@ -1,7 +1,5 @@
 use hyper::server::conn;
-use hyper::service::service_fn;
 use hyper_util::rt::TokioTimer;
-use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,17 +7,14 @@ use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinSet;
 use tokio::{signal, time};
-use via_router::Error as RouterError;
 
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
-use crate::body::RequestBody;
+use crate::app::{App, AppService};
 use crate::error::DynError;
-use crate::request::Request;
 use crate::server::io_stream::IoStream;
-use crate::{App, Next};
 
 pub async fn serve<A, T>(
     listener: TcpListener,
@@ -97,22 +92,14 @@ where
             }
         };
 
-        let mut acceptor = acceptor.clone();
-
-        // Clone the watch receiver so connections can be notified when a
-        // graceful shutdown is requested.
         let mut shutdown_rx = shutdown_rx.clone();
-
-        // Clone the watch sender so connections can notify the main thread
-        // if an unrecoverable error is encountered.
-        let shutdown_tx = shutdown_tx.clone();
-
-        let app = Arc::clone(&app);
+        let mut acceptor = acceptor.clone();
+        let service = AppService::new(Arc::clone(&app), max_body_size);
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            let io = match acceptor.accept(tcp_stream).await {
-                Ok(accepted) => IoStream::new(accepted),
+            let stream = match acceptor.accept(tcp_stream).await {
+                Ok(accepted) => accepted,
                 Err(error) => {
                     let _ = &error; // Placeholder for tracing...
                     drop(permit);
@@ -120,71 +107,21 @@ where
                 }
             };
 
-            // Define a hyper service to serve the incoming request.
-            let service = service_fn(|raw| {
-                let mut request = Request::new(
-                    Arc::clone(&app.state),
-                    raw.map(|body| RequestBody::new(max_body_size, body).into()),
-                );
-
-                let result = 'router: {
-                    let mut next = Next::new();
-
-                    for binding in app.router.visit(request.uri().path()) {
-                        let mut params = Some(request.params_mut());
-                        let stack = next.stack_mut();
-
-                        for match_key in binding.iter() {
-                            let (pattern, route) = match app.router.get(*match_key.as_either()) {
-                                Err(error) => break 'router Err(error),
-                                Ok(found) => found,
-                            };
-
-                            if let Some(label) = pattern.as_label() {
-                                if let Some(once) = params.take() {
-                                    once.push(label.clone(), binding.range());
-                                }
-                            }
-
-                            for match_cond in route {
-                                if let Some(middleware) = match_key.as_match(match_cond) {
-                                    stack.push_back(Arc::clone(middleware));
-                                }
-                            }
-                        }
-                    }
-
-                    Ok(next.call(request))
-                };
-
-                async {
-                    // If the request was routed successfully, await the response
-                    // future. If the future resolved with an error, generate a
-                    // response from it.
-                    //
-                    // If the request was not routed successfully, immediately
-                    // return so the connection can be closed and the server
-                    // exit.
-                    let response = result?.await.unwrap_or_else(|e| e.into());
-                    Ok::<_, RouterError>(response.into_inner())
-                }
-            });
-
             // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
             let mut connection = conn::http2::Builder::new(TokioExecutor::new())
                 .timer(TokioTimer::new())
-                .serve_connection(io, service);
+                .serve_connection(IoStream::new(stream), service);
 
             // Create a new HTTP/1.1 connection.
             #[cfg(all(feature = "http1", not(feature = "http2")))]
             let mut connection = conn::http1::Builder::new()
                 .timer(TokioTimer::new())
-                .serve_connection(io, service)
+                .serve_connection(IoStream::new(stream), service)
                 .with_upgrades();
 
             // Serve the connection.
-            if let Err(error) = tokio::select!(
+            if let Err(_) = tokio::select!(
                 // Wait for the connection to close.
                 result = Pin::new(&mut connection) => result,
 
@@ -200,16 +137,7 @@ where
                     (&mut connection).await
                 }
             ) {
-                let _ = &error; // Placeholder for tracing...
-                if error.source().is_some_and(|e| e.is::<RouterError>()) {
-                    let _ = shutdown_tx.send(Some(true));
-                }
-            }
-
-            // Assert that the connection did not move.
-            if cfg!(debug_assertions) {
-                #[allow(clippy::let_underscore_future)]
-                let _ = &mut connection;
+                // Placeholder for tracing...
             }
 
             // Return the permit back to the semaphore.
