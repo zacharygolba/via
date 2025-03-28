@@ -36,7 +36,7 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
             // the name or identifier associated with the parameter.
             Some(':') => match segment.get(1..) {
                 None | Some("") => panic!("Dynamic parameters must be named. Found ':'."),
-                Some(name) => Pattern::Dynamic(Param { value: name.into() }),
+                Some(name) => Pattern::Dynamic(name.to_owned().into()),
             },
 
             // Path segments that start with an asterisk are considered CatchAll
@@ -44,7 +44,7 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
             // the name or identifier associated with the parameter.
             Some('*') => match segment.get(1..) {
                 None | Some("") => panic!("Wildcard parameters must be named. Found '*'."),
-                Some(name) => Pattern::Wildcard(Param { value: name.into() }),
+                Some(name) => Pattern::Wildcard(name.to_owned().into()),
             },
 
             // The segment does not start with a reserved character. We will
@@ -69,11 +69,8 @@ impl Display for Param {
     }
 }
 
-impl<T> From<T> for Param
-where
-    Arc<str>: From<T>,
-{
-    fn from(value: T) -> Self {
+impl From<String> for Param {
+    fn from(value: String) -> Self {
         Self {
             value: value.into(),
         }
