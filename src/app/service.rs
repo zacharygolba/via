@@ -44,11 +44,8 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         let mut next = Next::new();
 
         for matching in self.app.router.visit(request.uri().path()) {
-            println!("matching: {:#?}", matching);
             for cond in matching.iter() {
                 let node = *cond.as_either();
-
-                println!("cond: {:#?}", cond);
 
                 if let Some(name) = node.param() {
                     request.params_mut().push(name.clone(), matching.range());
@@ -56,10 +53,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
 
                 next.stack_mut().extend(
                     node.iter()
-                        .filter_map(|route| {
-                            println!("partial: {}", route.as_partial().is_some());
-                            cond.as_match(route)
-                        })
+                        .filter_map(|route| cond.as_match(route))
                         .cloned(),
                 );
             }
