@@ -19,7 +19,9 @@ pub fn app<T>(state: T) -> App<T> {
 
 impl<T> App<T> {
     pub fn at(&mut self, pattern: &'static str) -> Route<T> {
-        self.router.at(pattern).into()
+        Route {
+            inner: self.router.at(pattern),
+        }
     }
 
     pub fn include(&mut self, middleware: impl Middleware<T> + 'static) -> &mut Self {
