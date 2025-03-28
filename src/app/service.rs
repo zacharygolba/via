@@ -51,11 +51,11 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
                     request.params_mut().push(name.clone(), matching.range());
                 }
 
-                next.stack_mut().extend(
-                    node.iter()
-                        .filter_map(|route| cond.as_match(route))
-                        .cloned(),
-                );
+                node.iter()
+                    .filter_map(|route| cond.as_match(route))
+                    .for_each(|middleware| {
+                        next.stack_mut().push_back(Arc::clone(middleware));
+                    });
             }
         }
 
