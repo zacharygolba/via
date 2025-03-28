@@ -8,10 +8,8 @@ use std::task::{Context, Poll};
 
 use crate::app::App;
 use crate::body::{HttpBody, RequestBody, ResponseBody};
-use crate::middleware::FutureResponse;
-use crate::request::param::PathParams;
+use crate::middleware::{FutureResponse, Next};
 use crate::request::Request;
-use crate::Next;
 
 pub struct AppService<T> {
     app: Arc<App<T>>,
@@ -37,7 +35,6 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
         let mut request = Request::new(
             Arc::clone(&self.app.state),
-            PathParams::new(),
             request.map(|body| RequestBody::new(self.max_body_size, body).into()),
         );
 
