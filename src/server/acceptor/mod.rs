@@ -1,9 +1,13 @@
+#![allow(unused_imports)]
+
 mod acceptor;
+mod http;
 
 #[cfg(feature = "rustls")]
-pub mod rustls;
-
-#[cfg(not(feature = "rustls"))]
-pub mod http;
+mod rustls;
 
 pub use acceptor::Acceptor;
+pub use http::HttpAcceptor;
+
+#[cfg(feature = "rustls")]
+pub use rustls::{RustlsAcceptor, RustlsConfig};

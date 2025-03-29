@@ -1,22 +1,20 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
-use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::http_body::HttpBody;
 use crate::error::DynError;
 
 /// The maximum amount of data that can be read from a buffered body per frame.
 ///
-pub const MAX_FRAME_LEN: usize = 16384; // 16KB
+pub const MAX_FRAME_LEN: usize = 8192; // 8KB
 
-/// A buffered `impl Body` that is read in `16KB` chunks.
+/// A buffered `impl Body` that is read in `8KB` chunks.
 ///
-#[must_use = "streams do nothing unless polled"]
+#[derive(Debug, Default)]
 pub struct ResponseBody {
-    data: Bytes,
-    remaining: usize,
+    offset: usize,
+    chunks: Vec<Bytes>,
 }
 
 impl Body for ResponseBody {
@@ -25,127 +23,146 @@ impl Body for ResponseBody {
 
     fn poll_frame(
         mut self: Pin<&mut Self>,
-        _: &mut Context<'_>,
+        _: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        if self.remaining == 0 {
-            // All bytes have been read out of self. 🙌
-            return Poll::Ready(None);
-        }
-
-        // The start offset of the next frame.
-        let from = self.data.len() - self.remaining;
-
-        // The byte length of the next frame.
-        let len = self.remaining.min(MAX_FRAME_LEN);
-
-        // The end offset of the next frame.
-        let to = from + len;
-
-        // Decrement remaining by len.
-        self.remaining -= len;
-
-        // Increment the ref-count of the underlying byte buffer and return an
-        // owned slice containing the bytes at from..to.
-        Poll::Ready(Some(Ok(Frame::data(self.data.slice(from..to)))))
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.remaining == 0
-    }
-
-    fn size_hint(&self) -> SizeHint {
-        match self.data.len().try_into() {
-            Ok(exact) => SizeHint::with_exact(exact),
-            Err(error) => {
-                // Placeholder for tracing...
-                let _ = &error;
-                SizeHint::new()
+        match self.chunks.get(self.offset).cloned() {
+            None => Poll::Ready(None),
+            Some(data) => {
+                self.offset += 1;
+                Poll::Ready(Some(Ok(Frame::data(data))))
             }
         }
     }
-}
 
-impl Debug for ResponseBody {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("ResponseBody").finish()
+    fn is_end_stream(&self) -> bool {
+        self.offset >= self.chunks.len()
     }
-}
 
-impl Default for ResponseBody {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            data: Bytes::new(),
-            remaining: 0,
-        }
+    fn size_hint(&self) -> SizeHint {
+        // The following type casts are safe because:
+        //
+        //   - MAX_FRAME_LEN is a constant
+        //   - rest.len() is never > isize::MAX
+        //   - last.len() is never > MAX_FRAME_LEN
+        //
+        self.chunks
+            .iter()
+            .try_fold(0u64, |n, chunk| n.checked_add(chunk.len() as u64))
+            .map_or_else(SizeHint::new, SizeHint::with_exact)
     }
 }
 
 impl From<Bytes> for ResponseBody {
     #[inline]
     fn from(data: Bytes) -> Self {
-        let remaining = data.len();
-        Self { data, remaining }
+        Self::from(data.as_ref())
     }
 }
 
 impl From<String> for ResponseBody {
     #[inline]
     fn from(data: String) -> Self {
-        Self::from(data.into_bytes())
+        Self::from(data.as_bytes())
     }
 }
 
 impl From<&'_ str> for ResponseBody {
     #[inline]
     fn from(data: &str) -> Self {
-        Self::from(Bytes::copy_from_slice(data.as_bytes()))
+        Self::from(data.as_bytes())
     }
 }
 
 impl From<Vec<u8>> for ResponseBody {
     #[inline]
     fn from(data: Vec<u8>) -> Self {
-        Self::from(Bytes::from(data))
+        Self::from(data.as_slice())
     }
 }
 
 impl From<&'_ [u8]> for ResponseBody {
     #[inline]
-    fn from(data: &'_ [u8]) -> Self {
-        Self::from(Bytes::copy_from_slice(data))
-    }
-}
+    fn from(slice: &'_ [u8]) -> Self {
+        let mut chunks = Vec::with_capacity(slice.len().div_ceil(MAX_FRAME_LEN));
 
-impl HttpBody<ResponseBody> {
-    #[inline]
-    pub fn new() -> Self {
-        Default::default()
-    }
-}
+        for chunk in slice.chunks(MAX_FRAME_LEN) {
+            chunks.push(Bytes::copy_from_slice(chunk));
+        }
 
-impl Default for HttpBody<ResponseBody> {
-    #[inline]
-    fn default() -> Self {
-        HttpBody::Original(Default::default())
-    }
-}
-
-impl<T> From<T> for HttpBody<ResponseBody>
-where
-    ResponseBody: From<T>,
-{
-    fn from(body: T) -> Self {
-        HttpBody::Original(ResponseBody::from(body))
+        Self { offset: 0, chunks }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
+    use http_body::Body;
     use http_body_util::BodyExt;
 
     use super::{ResponseBody, MAX_FRAME_LEN};
+
+    impl ResponseBody {
+        fn new(chunks: Vec<Bytes>) -> Self {
+            Self { offset: 0, chunks }
+        }
+    }
+
+    #[test]
+    fn test_response_body_from_bytes() {
+        let body = ResponseBody::from(Bytes::copy_from_slice(&vec![b' '; MAX_FRAME_LEN * 10]));
+
+        assert_eq!(
+            body.chunks.len(),
+            10,
+            "the byte buffer is split into chunks no larger than MAX_FRAME_LEN"
+        );
+
+        assert_eq!(
+            body.chunks.len(),
+            body.chunks.capacity(),
+            "the capacity of the vec that stores each chunk is also it's length"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_is_end_stream() {
+        assert!(
+            ResponseBody::default().is_end_stream(),
+            "is_end_stream should be true for an empty response"
+        );
+
+        let mut body = ResponseBody::new(vec![
+            Bytes::copy_from_slice(b"Hello"),
+            Bytes::copy_from_slice(b", world!"),
+        ]);
+
+        assert!(
+            !body.is_end_stream(),
+            "is_end_stream should be false when there is a remaining data frame."
+        );
+
+        while body.frame().await.is_some() {}
+
+        assert!(
+            body.is_end_stream(),
+            "is_end_stream should be true after each frame is polled."
+        );
+    }
+
+    #[test]
+    fn test_size_hint() {
+        let single_frame = Body::size_hint(&ResponseBody::new(vec![Bytes::copy_from_slice(
+            b"Hello, world!",
+        )]));
+
+        let many_frames = Body::size_hint(&ResponseBody::new(vec![
+            Bytes::copy_from_slice(b"Hello"),
+            Bytes::copy_from_slice(b", world!"),
+        ]));
+
+        assert_eq!(single_frame.exact(), Some("Hello, world!".len() as u64));
+        assert_eq!(many_frames.exact(), Some("Hello, world!".len() as u64));
+    }
 
     #[tokio::test]
     async fn test_poll_frame_empty() {

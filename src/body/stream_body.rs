@@ -14,13 +14,6 @@ pub struct StreamBody<T> {
     stream: T,
 }
 
-fn size_hint_as_u64((lower, upper): (usize, Option<usize>)) -> (Option<u64>, Option<u64>) {
-    (
-        lower.try_into().ok(),
-        upper.and_then(|value| value.try_into().ok()),
-    )
-}
-
 impl<T> StreamBody<T> {
     #[inline]
     pub fn new(stream: T) -> Self {
@@ -28,22 +21,25 @@ impl<T> StreamBody<T> {
     }
 }
 
+impl<T> StreamBody<T> {
+    #[inline]
+    pub fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
+        unsafe { self.map_unchecked_mut(|this| &mut this.stream) }
+    }
+}
+
 impl<T> Body for StreamBody<T>
 where
-    T: Stream<Item = Result<Bytes, DynError>> + Send + Sync + Unpin,
+    T: Stream<Item = Result<Bytes, DynError>> + Send + Sync,
 {
     type Data = Bytes;
     type Error = DynError;
 
     fn poll_frame(
         self: Pin<&mut Self>,
-        context: &mut Context<'_>,
+        context: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let this = self.get_mut();
-
-        Pin::new(&mut this.stream)
-            .poll_next(context)
-            .map_ok(Frame::data)
+        self.project().poll_next(context).map_ok(Frame::data)
     }
 
     fn is_end_stream(&self) -> bool {
@@ -51,22 +47,22 @@ where
     }
 
     fn size_hint(&self) -> SizeHint {
-        match size_hint_as_u64(self.stream.size_hint()) {
-            (None, _) => SizeHint::new(),
-            (Some(low), None) => {
-                let mut hint = SizeHint::new();
+        let mut hint = SizeHint::new();
+        let existing = self.stream.size_hint();
 
-                hint.set_lower(low);
-                hint
-            }
-            (Some(low), Some(high)) => {
-                let mut hint = SizeHint::new();
-
-                hint.set_lower(low);
-                hint.set_upper(high);
-                hint
+        match (
+            existing.0.try_into().ok(),
+            existing.1.and_then(|upper| upper.try_into().ok()),
+        ) {
+            (None, _) => {}
+            (Some(lower), None) => hint.set_lower(lower),
+            (Some(lower), Some(upper)) => {
+                hint.set_lower(lower);
+                hint.set_upper(upper);
             }
         }
+
+        hint
     }
 }
 

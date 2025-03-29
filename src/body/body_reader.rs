@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use futures_core::ready;
 use http::HeaderMap;
 use http_body::Body;
 use serde::de::DeserializeOwned;
@@ -37,7 +38,7 @@ struct JsonPayloadVisitor<T> {
     marker: PhantomData<T>,
 }
 
-fn body_already_read() -> Error {
+fn already_read() -> Error {
     let message = "request body already read".to_owned();
     Error::internal_server_error(message.into())
 }
@@ -73,20 +74,17 @@ impl BodyData {
             .map(|json: JsonPayload<D>| json.data)
             // Otherwise, attempt to deserialize `D` from the object at the root
             // of payload. If that also fails, use the original error.
-            .or_else(|error| serde_json::from_str(&payload).or(Err(error)))
+            .or_else(|e| serde_json::from_str(&payload).or(Err(e)))
             // If an error occured, wrap it with `via::Error` and set the status
             // code to 400 Bad Request.
-            .map_err(|error| {
-                let source = Box::new(error);
-                Error::bad_request(source)
-            })
+            .map_err(|e| Error::bad_request(Box::new(e)))
     }
 
     pub fn to_utf8(&self) -> Result<String, Error> {
-        String::from_utf8(self.to_vec()).map_err(|error| {
-            let source = Box::new(error);
-            Error::bad_request(source)
-        })
+        match String::from_utf8(self.to_vec()) {
+            Ok(utf8) => Ok(utf8),
+            Err(e) => Err(Error::bad_request(Box::new(e))),
+        }
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
@@ -110,37 +108,38 @@ impl BodyReader {
             }),
         }
     }
+
+    fn project(self: Pin<&mut Self>) -> (Pin<&mut HttpBody<RequestBody>>, &mut Option<BodyData>) {
+        let this = self.get_mut();
+        (Pin::new(&mut this.body), &mut this.data)
+    }
 }
 
 impl Future for BodyReader {
     type Output = Result<BodyData, Error>;
 
-    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        let mut body = Pin::new(&mut this.body);
+    fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
+        let (mut body, data) = self.project();
 
         loop {
-            return match body.as_mut().poll_frame(context) {
-                Poll::Pending => Poll::Pending,
+            return match ready!(body.as_mut().poll_frame(context)) {
+                None => Poll::Ready(data.take().ok_or_else(already_read)),
+                Some(Err(e)) => Poll::Ready(Err(error_from_boxed(e))),
+                Some(Ok(frame)) => {
+                    let output = data.as_mut().ok_or_else(already_read)?;
 
-                Poll::Ready(None) => {
-                    Poll::Ready(Ok(this.data.take().ok_or_else(body_already_read)?))
-                }
-
-                Poll::Ready(Some(Err(e))) => Poll::Ready(Err(error_from_boxed(e))),
-
-                Poll::Ready(Some(Ok(frame))) => {
-                    let data = this.data.as_mut().ok_or_else(body_already_read)?;
-                    let frame = match frame.into_data() {
-                        Err(frame) => frame,
-                        Ok(chunk) => {
-                            data.payload.push(chunk);
-                            continue;
+                    match frame.into_data() {
+                        Ok(data) => {
+                            output.payload.push(data);
                         }
-                    };
-
-                    if let Ok(trailers) = frame.into_trailers() {
-                        data.trailers.get_or_insert_default().extend(trailers);
+                        Err(frame) => {
+                            let trailers = frame.into_trailers().unwrap();
+                            if let Some(existing) = output.trailers.as_mut() {
+                                existing.extend(trailers);
+                            } else {
+                                output.trailers = Some(trailers);
+                            }
+                        }
                     }
 
                     continue;

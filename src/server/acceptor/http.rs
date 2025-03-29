@@ -6,6 +6,7 @@ use super::Acceptor;
 
 /// Accepts a TCP stream and returns it as-is.
 ///
+#[derive(Clone)]
 pub struct HttpAcceptor;
 
 impl Acceptor for HttpAcceptor {

@@ -105,7 +105,7 @@ fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
                 }
             }
 
-            let delta = match &response.cookies {
+            let delta = match response.cookies.as_ref() {
                 Some(jar) => jar.delta(),
                 None => return Ok(response),
             };

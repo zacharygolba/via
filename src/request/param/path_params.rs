@@ -2,6 +2,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::slice;
 use via_router::Param;
 
+#[derive(Default)]
 pub struct PathParams {
     data: Vec<(Param, Option<[usize; 2]>)>,
 }
@@ -18,8 +19,8 @@ impl PathParams {
     }
 
     #[inline]
-    pub fn push(&mut self, name: &Param, range: Option<[usize; 2]>) {
-        self.data.push((name.clone(), range));
+    pub fn push(&mut self, label: Param, range: Option<[usize; 2]>) {
+        self.data.push((label, range));
     }
 }
 

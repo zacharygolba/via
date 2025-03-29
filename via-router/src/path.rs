@@ -1,30 +1,22 @@
 use std::fmt::{self, Display, Formatter};
-use std::str::MatchIndices;
 use std::sync::Arc;
 
-#[derive(Debug, PartialEq)]
-pub enum Pattern {
-    Root,
-    Static(Param),
-    Dynamic(Param),
-    Wildcard(Param),
-}
-
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Param {
     value: Arc<str>,
 }
 
-pub struct Split<'a> {
-    len: usize,
-    offset: usize,
-    indices: MatchIndices<'a, char>,
+#[derive(Debug, PartialEq)]
+pub(crate) enum Pattern {
+    Static(String),
+    Dynamic(Param),
+    Wildcard(Param),
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
-pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
-    Split::new(path).map(|[start, end]| {
+pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
+    split(path).into_iter().map(|[start, end]| {
         let segment = match path.get(start..end) {
             Some(slice) => slice,
             None => panic!("Path segments cannot be empty when defining a route."),
@@ -36,7 +28,7 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
             // the name or identifier associated with the parameter.
             Some(':') => match segment.get(1..) {
                 None | Some("") => panic!("Dynamic parameters must be named. Found ':'."),
-                Some(name) => Pattern::Dynamic(Param { value: name.into() }),
+                Some(name) => Pattern::Dynamic(name.to_owned().into()),
             },
 
             // Path segments that start with an asterisk are considered CatchAll
@@ -44,25 +36,38 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
             // the name or identifier associated with the parameter.
             Some('*') => match segment.get(1..) {
                 None | Some("") => panic!("Wildcard parameters must be named. Found '*'."),
-                Some(name) => Pattern::Wildcard(Param { value: name.into() }),
+                Some(name) => Pattern::Wildcard(name.to_owned().into()),
             },
 
             // The segment does not start with a reserved character. We will
             // consider it a static pattern that can be matched by value.
-            _ => Pattern::Static(Param {
-                value: segment.into(),
-            }),
+            _ => Pattern::Static(segment.into()),
         }
     })
 }
 
-impl Clone for Param {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            value: Arc::clone(&self.value),
+pub(crate) fn split(path: &str) -> Vec<[usize; 2]> {
+    let mut parts = Vec::with_capacity(6);
+    let mut start = 0;
+
+    let bytes = path.as_bytes();
+    let len = bytes.len();
+
+    for (index, byte) in bytes.iter().enumerate() {
+        if path.is_char_boundary(index) && *byte == b'/' {
+            if bytes.get(start).is_some_and(|from| *from != b'/') {
+                parts.push([start, index]);
+            }
+
+            start = index + 1;
         }
     }
+
+    if len > start {
+        parts.push([start, len]);
+    }
+
+    parts
 }
 
 impl Display for Param {
@@ -71,11 +76,8 @@ impl Display for Param {
     }
 }
 
-impl<T> From<T> for Param
-where
-    Arc<str>: From<T>,
-{
-    fn from(value: T) -> Self {
+impl From<String> for Param {
+    fn from(value: String) -> Self {
         Self {
             value: value.into(),
         }
@@ -89,51 +91,8 @@ impl PartialEq<str> for Param {
     }
 }
 
-impl<'a> Split<'a> {
-    #[inline]
-    pub fn new(path: &'a str) -> Self {
-        Self {
-            len: path.len(),
-            offset: 0,
-            indices: path.match_indices('/'),
-        }
-    }
-}
-
-impl Iterator for Split<'_> {
-    type Item = [usize; 2];
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let len = self.len;
-        let offset = &mut self.offset;
-        let indices = &mut self.indices;
-
-        loop {
-            let start = *offset;
-            let end = match indices.next() {
-                None if len > start => len,
-                Some((index, _)) => index,
-                None => return None,
-            };
-
-            // Move start to the byte position after end.
-            *offset = end + 1;
-
-            // If a range exists with a length greater than `0` from start to end,
-            // append a Span to segments. This bounds check prevents an empty range
-            // from ending up in segments.
-            if end > start {
-                return Some([start, end]);
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::Split;
-
     const PATHS: [&str; 16] = [
         "/home/about",
         "/products/item/123",
@@ -179,7 +138,15 @@ mod tests {
         let expected_results = get_expected_results();
 
         for (i, path) in PATHS.iter().enumerate() {
-            for (j, segment) in Split::new(path).enumerate() {
+            let segments = super::split(path);
+
+            assert_eq!(
+                segments.len(),
+                expected_results[i].len(),
+                "split produced less segments than expected"
+            );
+
+            for (j, segment) in segments.into_iter().enumerate() {
                 let expect = expected_results[i][j];
                 assert_eq!(segment, expect, "{} ({}, {:?})", path, j, segment);
             }
