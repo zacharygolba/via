@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use futures_core::ready;
 use http::HeaderMap;
 use http_body::Body;
 use serde::de::DeserializeOwned;
@@ -37,7 +38,7 @@ struct JsonPayloadVisitor<T> {
     marker: PhantomData<T>,
 }
 
-fn body_already_read() -> Error {
+fn already_read() -> Error {
     let message = "request body already read".to_owned();
     Error::internal_server_error(message.into())
 }
@@ -110,25 +111,30 @@ impl BodyReader {
             }),
         }
     }
+
+    fn project(self: Pin<&mut Self>) -> (Pin<&mut HttpBody<RequestBody>>, &mut Option<BodyData>) {
+        let this = self.get_mut();
+        (Pin::new(&mut this.body), &mut this.data)
+    }
 }
 
 impl Future for BodyReader {
     type Output = Result<BodyData, Error>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        let output = &mut this.data;
+        let (mut body, data) = self.project();
 
-        for _ in 0..2 {
-            return match Pin::new(&mut this.body).poll_frame(context) {
-                Poll::Pending => Poll::Pending,
-                Poll::Ready(None) => Poll::Ready(output.take().ok_or_else(body_already_read)),
-                Poll::Ready(Some(Err(e))) => Poll::Ready(Err(error_from_boxed(e))),
-                Poll::Ready(Some(Ok(frame))) => {
-                    let output = output.as_mut().ok_or_else(body_already_read)?;
+        loop {
+            return match ready!(body.as_mut().poll_frame(context)) {
+                None => Poll::Ready(data.take().ok_or_else(already_read)),
+                Some(Err(e)) => Poll::Ready(Err(error_from_boxed(e))),
+                Some(Ok(frame)) => {
+                    let output = data.as_mut().ok_or_else(already_read)?;
 
                     match frame.into_data() {
-                        Ok(data) => output.payload.push(data),
+                        Ok(data) => {
+                            output.payload.push(data);
+                        }
                         Err(frame) => {
                             let trailers = frame.into_trailers().unwrap();
                             if let Some(existing) = output.trailers.as_mut() {
@@ -143,9 +149,6 @@ impl Future for BodyReader {
                 }
             };
         }
-
-        context.waker().wake_by_ref();
-        Poll::Pending
     }
 }
 
