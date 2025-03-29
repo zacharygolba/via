@@ -36,8 +36,6 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
         let mut params = PathParams::new(Vec::with_capacity(4));
         let mut next = Next::new(VecDeque::with_capacity(6));
-        let request = request.map(|body| HttpBody::request(self.max_body_size, body));
-        let state = Arc::clone(&self.app.state);
 
         for binding in self.app.visit(request.uri().path()) {
             for matched in binding.iter() {
@@ -52,7 +50,11 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         }
 
         ServeRequest {
-            future: next.call(Request::new(state, params, request)),
+            future: next.call(Request::new(
+                Arc::clone(&self.app.state),
+                params,
+                request.map(|body| HttpBody::request(self.max_body_size, body)),
+            )),
         }
     }
 }
