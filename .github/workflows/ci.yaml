@@ -47,7 +47,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --package via-router --features lru-cache
+          args: --package via-router
 
   fmt_clippy_and_docs:
     name: fmt, clippy, and docs
