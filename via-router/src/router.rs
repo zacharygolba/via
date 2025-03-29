@@ -3,7 +3,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::mem;
 
 use crate::binding::{Binding, Match, MatchCond};
-use crate::path::{self, Pattern, Split};
+use crate::path::{self, Pattern};
 
 pub struct Node<T> {
     children: Vec<usize>,
@@ -109,25 +109,28 @@ impl<T> Router<T> {
     }
 
     pub fn visit<'a>(&'a self, path: &str) -> Vec<Binding<'a, T>> {
-        let mut segments = Split::new(path).peekable();
+        // The following three lines allocate unconditionally.
         let mut results = Vec::with_capacity(8);
+        let mut first = Vec::with_capacity(1);
+        let segments = path::split(path);
+
+        let mut offset = 0;
         let mut queue = SmallVec::<[usize; 6]>::new();
         let mut next = SmallVec::<[usize; 6]>::new();
 
         if let Some(root) = self.tree.first() {
-            let mut nodes = Vec::with_capacity(1);
-            let children = &root.children;
-
-            nodes.push(Match::new(segments.peek().is_none(), None, &root.route));
-            queue.extend_from_slice(children);
-
-            results.push(Binding::new(None, nodes));
+            queue.extend_from_slice(&root.children);
+            first.push(Match::new(segments.is_empty(), None, &root.route));
+            results.push(Binding::new(None, first));
         }
 
         loop {
             let mut nodes = Vec::new();
-            let (range, exact) = match segments.next() {
-                Some(to) => (to, segments.peek().is_none()),
+            let (range, exact) = match segments.get(offset) {
+                Some(to) => {
+                    offset += 1;
+                    (*to, offset == segments.len())
+                }
                 None => {
                     for key in queue.drain(..) {
                         let node = lookup!(&self.tree, key);
@@ -145,21 +148,20 @@ impl<T> Router<T> {
 
             for key in queue.drain(..) {
                 let node = lookup!(&self.tree, key);
-                let children = &node.children;
 
                 match &node.pattern {
                     Pattern::Wildcard(param) => {
                         nodes.push(Match::new(true, Some(param), &node.route))
                     }
                     Pattern::Dynamic(param) => {
-                        next.extend_from_slice(children);
+                        next.extend_from_slice(&node.children);
                         nodes.push(Match::new(exact, Some(param), &node.route));
                     }
                     Pattern::Static(value) => {
                         let [start, end] = range;
 
                         if value == &path[start..end] {
-                            next.extend_from_slice(children);
+                            next.extend_from_slice(&node.children);
                             nodes.push(Match::new(exact, None, &node.route));
                         }
                     }
