@@ -28,6 +28,8 @@ where
     A: Acceptor + Send + Sync + 'static,
     T: Send + Sync + 'static,
 {
+    let app = Arc::new(app);
+
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
     // number of connections is reached, we'll wait until a permit is available
@@ -40,23 +42,11 @@ where
 
     // Create a watch channel to notify the connections to initiate a
     // graceful shutdown process when the `ctrl_c` future resolves.
-    let (shutdown_tx, mut shutdown_rx) = watch::channel(None);
-
-    // Spawn a task to wait for the `ctrl_c` future to resolve.
-    tokio::spawn({
-        let ctrl_c_future = signal::ctrl_c();
-        let shutdown_tx = shutdown_tx.clone();
-
-        async move {
-            if ctrl_c_future.await.is_err() {
-                eprintln!("unable to register the 'ctrl-c' signal.");
-            } else if shutdown_tx.send(Some(false)).is_err() {
-                eprintln!("unable to notify connections to shutdown.");
-            }
-        }
-    });
-
-    let app = Arc::new(app);
+    let mut shutdown_rx = {
+        let (tx, rx) = watch::channel(None);
+        tokio::spawn(wait_for_ctrl_c(tx));
+        rx
+    };
 
     // Start accepting incoming connections.
     let exit_code = loop {
@@ -154,6 +144,14 @@ where
         _ = time::sleep(shutdown_timeout) => {
             Err("server exited before all connections were closed".into())
         }
+    }
+}
+
+async fn wait_for_ctrl_c(tx: watch::Sender<Option<bool>>) {
+    if signal::ctrl_c().await.is_err() {
+        eprintln!("unable to register the 'ctrl-c' signal.");
+    } else if tx.send(Some(false)).is_err() {
+        eprintln!("unable to notify connections to shutdown.");
     }
 }
 
