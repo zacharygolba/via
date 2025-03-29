@@ -74,20 +74,17 @@ impl BodyData {
             .map(|json: JsonPayload<D>| json.data)
             // Otherwise, attempt to deserialize `D` from the object at the root
             // of payload. If that also fails, use the original error.
-            .or_else(|error| serde_json::from_str(&payload).or(Err(error)))
+            .or_else(|e| serde_json::from_str(&payload).or(Err(e)))
             // If an error occured, wrap it with `via::Error` and set the status
             // code to 400 Bad Request.
-            .map_err(|error| {
-                let source = Box::new(error);
-                Error::bad_request(source)
-            })
+            .map_err(|e| Error::bad_request(Box::new(e)))
     }
 
     pub fn to_utf8(&self) -> Result<String, Error> {
-        String::from_utf8(self.to_vec()).map_err(|error| {
-            let source = Box::new(error);
-            Error::bad_request(source)
-        })
+        match String::from_utf8(self.to_vec()) {
+            Ok(utf8) => Ok(utf8),
+            Err(e) => Err(Error::bad_request(Box::new(e))),
+        }
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
