@@ -13,5 +13,4 @@ default = []
 lru-cache = []
 
 [dependencies]
-either = "1.15.0"
 smallvec = "1.14.0"

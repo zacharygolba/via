@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
+use via_router::Binding;
+
+use super::router::{Route, Router};
 use crate::middleware::Middleware;
-use crate::router::{Route, Router};
 
 pub struct App<T> {
     pub(crate) state: Arc<T>,
-    pub(crate) router: Router<T>,
+    router: Router<T>,
 }
 
 /// Constructs a new [`App`] with the provided `state` argument.
@@ -18,14 +20,19 @@ pub fn app<T>(state: T) -> App<T> {
 }
 
 impl<T> App<T> {
-    pub fn at(&mut self, pattern: &'static str) -> Route<T> {
+    pub fn at(&mut self, path: &'static str) -> Route<T> {
         Route {
-            inner: self.router.at(pattern),
+            inner: self.router.at(path),
         }
     }
 
-    pub fn include(&mut self, middleware: impl Middleware<T> + 'static) -> &mut Self {
+    pub fn include(&mut self, middleware: impl Middleware<T> + 'static) {
         self.at("/").include(middleware);
-        self
+    }
+}
+
+impl<T> App<T> {
+    pub(crate) fn visit(&self, path: &str) -> Vec<Binding<Arc<dyn Middleware<T>>>> {
+        self.router.visit(path)
     }
 }

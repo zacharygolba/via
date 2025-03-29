@@ -1,5 +1,6 @@
 use hyper::body::Incoming;
 use hyper::service::Service;
+use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
@@ -7,9 +8,9 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use crate::app::App;
-use crate::body::{HttpBody, RequestBody, ResponseBody};
+use crate::body::{HttpBody, ResponseBody};
 use crate::middleware::{FutureResponse, Next};
-use crate::request::Request;
+use crate::request::{PathParams, Request};
 
 pub struct AppService<T> {
     app: Arc<App<T>>,
@@ -21,7 +22,7 @@ pub struct ServeRequest {
 }
 
 impl<T> AppService<T> {
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new(app: Arc<App<T>>, max_body_size: usize) -> Self {
         Self { app, max_body_size }
     }
@@ -33,31 +34,25 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
     type Response = http::Response<HttpBody<ResponseBody>>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
-        let mut request = Request::new(
-            Arc::clone(&self.app.state),
-            request.map(|body| RequestBody::new(self.max_body_size, body).into()),
-        );
+        let mut params = PathParams::new(Vec::with_capacity(4));
+        let mut next = Next::new(VecDeque::with_capacity(6));
+        let request = request.map(|body| HttpBody::request(self.max_body_size, body));
+        let state = Arc::clone(&self.app.state);
 
-        let mut next = Next::new();
-
-        for matching in self.app.router.visit(request.uri().path()) {
-            for cond in matching.iter() {
-                let node = *cond.as_either();
-
-                if let Some(name) = node.param() {
-                    request.params_mut().push(name.clone(), matching.range());
+        for binding in self.app.visit(request.uri().path()) {
+            for matched in binding.iter() {
+                if let Some(name) = matched.param() {
+                    params.push(name.clone(), binding.range());
                 }
 
-                node.iter()
-                    .filter_map(|route| cond.as_match(route))
-                    .for_each(|middleware| {
-                        next.stack_mut().push_back(Arc::clone(middleware));
-                    });
+                for middleware in matched.iter() {
+                    next.push(Arc::clone(middleware));
+                }
             }
         }
 
         ServeRequest {
-            future: next.call(request),
+            future: next.call(Request::new(state, params, request)),
         }
     }
 }

@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
+use hyper::body::Incoming;
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -52,6 +53,10 @@ where
 }
 
 impl HttpBody<RequestBody> {
+    pub(crate) fn request(max_body_size: usize, incoming: Incoming) -> Self {
+        HttpBody::Inline(RequestBody::new(max_body_size, incoming))
+    }
+
     pub fn stream(self) -> BodyStream {
         BodyStream::new(self)
     }

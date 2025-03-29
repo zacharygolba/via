@@ -1,19 +1,14 @@
-use either::Either;
 use smallvec::SmallVec;
 use std::fmt::{self, Debug, Formatter};
-use std::{mem, slice};
+use std::mem;
 
-use crate::path::{self, Param, Pattern, Split};
+use crate::binding::{Binding, Match, MatchCond};
+use crate::path::{self, Pattern, Split};
 
-#[derive(Clone, Debug)]
-pub enum MatchCond<T> {
-    Partial(T),
-    Exact(T),
-}
-
-pub struct Binding<'a, T> {
-    range: Option<[usize; 2]>,
-    nodes: Vec<MatchCond<&'a Node<T>>>,
+pub struct Node<T> {
+    children: Vec<usize>,
+    pattern: Pattern,
+    route: Vec<MatchCond<T>>,
 }
 
 #[derive(Debug)]
@@ -24,12 +19,6 @@ pub struct Router<T> {
 pub struct Route<'a, T> {
     tree: &'a mut Vec<Node<T>>,
     key: usize,
-}
-
-pub struct Node<T> {
-    children: Either<Option<usize>, Vec<usize>>,
-    pattern: Pattern,
-    route: Option<Vec<T>>,
 }
 
 macro_rules! lookup {
@@ -47,99 +36,12 @@ macro_rules! lookup {
     };
 }
 
-impl<T> MatchCond<T> {
-    pub fn and<U>(self, next: U) -> MatchCond<U> {
-        match self {
-            Self::Partial(_) => MatchCond::Partial(next),
-            Self::Exact(_) => MatchCond::Exact(next),
-        }
-    }
-
-    pub fn as_either(&self) -> &T {
-        match self {
-            Self::Partial(value) | Self::Exact(value) => value,
-        }
-    }
-
-    pub fn as_match<'a, U>(&self, other: &'a MatchCond<U>) -> Option<&'a U> {
-        match (self, other) {
-            (Self::Partial(_), MatchCond::Partial(value)) => Some(value),
-            (Self::Exact(_), MatchCond::Exact(value)) => Some(value),
-            _ => None,
-        }
-    }
-
-    pub fn as_partial(&self) -> Option<&T> {
-        if let Self::Partial(value) = self {
-            Some(value)
-        } else {
-            None
-        }
-    }
-}
-
-impl<'a, T> Binding<'a, T> {
-    fn new(range: Option<[usize; 2]>, nodes: Vec<MatchCond<&'a Node<T>>>) -> Self {
-        Self { range, nodes }
-    }
-
-    pub fn iter(&self) -> slice::Iter<MatchCond<&'a Node<T>>> {
-        self.nodes.iter()
-    }
-
-    pub fn range(&self) -> Option<[usize; 2]> {
-        self.range
-    }
-}
-
-impl<T> Debug for Binding<'_, T> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("Binding")
-            .field("range", &self.range)
-            .field("nodes", &self.nodes)
-            .finish()
-    }
-}
-
-impl<T> Node<T> {
-    pub fn iter(&self) -> slice::Iter<T> {
-        match self.route.as_ref() {
-            Some(route) => route.iter(),
-            None => [].iter(),
-        }
-    }
-
-    pub fn param(&self) -> Option<&Param> {
-        self.pattern.as_label()
-    }
-}
-
 impl<T> Node<T> {
     fn new(pattern: Pattern) -> Self {
         Self {
-            children: Either::Left(None),
+            children: Vec::new(),
             pattern,
-            route: None,
-        }
-    }
-
-    fn children(&self) -> &[usize] {
-        match self.children.as_ref() {
-            Either::Left(option) => option.as_slice(),
-            Either::Right(vec) => vec.as_slice(),
-        }
-    }
-
-    fn push(&mut self, key: usize) {
-        let option = match &mut self.children {
-            Either::Right(vec) => return vec.push(key),
-            Either::Left(option) => option,
-        };
-
-        if let Some(existing) = option.take() {
-            self.children = Either::Right(vec![existing, key]);
-        } else {
-            self.children = Either::Left(Some(key));
+            route: Vec::new(),
         }
     }
 }
@@ -147,7 +49,7 @@ impl<T> Node<T> {
 impl<T> Debug for Node<T> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         #[derive(Debug)]
-        struct Len {
+        struct Route {
             #[allow(dead_code)]
             len: usize,
         }
@@ -157,7 +59,9 @@ impl<T> Debug for Node<T> {
             .field("pattern", &self.pattern)
             .field(
                 "route",
-                &self.route.as_ref().map(|route| Len { len: route.len() }),
+                &Route {
+                    len: self.route.len(),
+                },
             )
             .finish()
     }
@@ -174,9 +78,18 @@ impl<T> Route<'_, T> {
         }
     }
 
-    pub fn push(&mut self, middleware: T) {
+    pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) {
+        scope(self);
+    }
+
+    pub fn include(&mut self, middleware: T) {
         let node = &mut self.tree[self.key];
-        node.route.get_or_insert_default().push(middleware);
+        node.route.push(MatchCond::Partial(middleware));
+    }
+
+    pub fn respond(&mut self, middleware: T) {
+        let node = &mut self.tree[self.key];
+        node.route.push(MatchCond::Exact(middleware));
     }
 }
 
@@ -197,86 +110,63 @@ impl<T> Router<T> {
 
     pub fn visit<'a>(&'a self, path: &str) -> Vec<Binding<'a, T>> {
         let mut segments = Split::new(path).peekable();
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(8);
         let mut queue = SmallVec::<[usize; 6]>::new();
         let mut next = SmallVec::<[usize; 6]>::new();
-        let tree = &self.tree;
 
-        if let Some(root) = tree.first() {
+        if let Some(root) = self.tree.first() {
             let mut nodes = Vec::with_capacity(1);
+            let children = &root.children;
 
-            queue.extend_from_slice(root.children());
-
-            if segments.peek().is_none() {
-                nodes.push(MatchCond::Exact(root))
-            } else {
-                nodes.push(MatchCond::Partial(root))
-            }
+            nodes.push(Match::new(segments.peek().is_none(), None, &root.route));
+            queue.extend_from_slice(children);
 
             results.push(Binding::new(None, nodes));
         }
 
         loop {
-            let mut binding = Binding::new(segments.next(), Vec::new());
-            let is_last = segments.peek().is_none();
-            let range = match binding.range.as_ref() {
-                Some(range) => range,
+            let mut nodes = Vec::new();
+            let (range, exact) = match segments.next() {
+                Some(to) => (to, segments.peek().is_none()),
                 None => {
                     for key in queue.drain(..) {
-                        let node = lookup!(tree, key);
+                        let node = lookup!(&self.tree, key);
+                        let route = &node.route;
 
-                        if let Pattern::Wildcard(_) = &node.pattern {
-                            binding.nodes.push(MatchCond::Exact(node));
+                        if let Pattern::Wildcard(param) = &node.pattern {
+                            nodes.push(Match::new(true, Some(param), route));
                         }
                     }
 
-                    if !binding.nodes.is_empty() {
-                        results.push(binding);
-                    }
-
+                    results.push(Binding::new(None, nodes));
                     return results;
                 }
             };
 
             for key in queue.drain(..) {
-                let node = lookup!(tree, key);
+                let node = lookup!(&self.tree, key);
+                let children = &node.children;
 
                 match &node.pattern {
-                    Pattern::Static(label) => {
-                        let [start, end] = *range;
+                    Pattern::Wildcard(param) => {
+                        nodes.push(Match::new(true, Some(param), &node.route))
+                    }
+                    Pattern::Dynamic(param) => {
+                        next.extend_from_slice(children);
+                        nodes.push(Match::new(exact, Some(param), &node.route));
+                    }
+                    Pattern::Static(value) => {
+                        let [start, end] = range;
 
-                        if label == &path[start..end] {
-                            next.extend_from_slice(node.children());
-                            binding.nodes.push(if is_last {
-                                MatchCond::Exact(node)
-                            } else {
-                                MatchCond::Partial(node)
-                            });
+                        if value == &path[start..end] {
+                            next.extend_from_slice(children);
+                            nodes.push(Match::new(exact, None, &node.route));
                         }
                     }
-
-                    Pattern::Wildcard(_) => {
-                        binding.nodes.push(MatchCond::Exact(node));
-                    }
-
-                    Pattern::Dynamic(_) => {
-                        next.extend_from_slice(node.children());
-                        binding.nodes.push(if is_last {
-                            MatchCond::Exact(node)
-                        } else {
-                            MatchCond::Partial(node)
-                        });
-                    }
-
-                    // The node does not match the range in path...
-                    _ => {}
                 }
             }
 
-            if !binding.nodes.is_empty() {
-                results.push(binding);
-            }
-
+            results.push(Binding::new(Some(range), nodes));
             mem::swap(&mut queue, &mut next);
         }
     }
@@ -285,7 +175,7 @@ impl<T> Router<T> {
 impl<T> Default for Router<T> {
     fn default() -> Self {
         Self {
-            tree: vec![Node::new(Pattern::Root)],
+            tree: vec![Node::new(Pattern::Static("".to_owned()))],
         }
     }
 }
@@ -319,7 +209,7 @@ where
     let next_key = tree.len();
     tree.push(Node::new(pattern));
 
-    tree[parent_key].push(next_key);
+    tree[parent_key].children.push(next_key);
 
     // If the pattern does not exist in the node at `current_key`, we need to create
     // a new node as a descendant of the node at `current_key` and then insert it
@@ -343,7 +233,7 @@ mod tests {
         let mut router = Router::new();
 
         for path in &PATHS {
-            let _ = router.at(path).push(());
+            let _ = router.at(path).respond(());
         }
 
         println!("router: {:#?}", router);

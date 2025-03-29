@@ -90,7 +90,7 @@ static ROUTES: [&str; 100] = [
     "/dashboard/reports",
     "/notifications/settings",
     "/notifications/settings/email",
-    "/notifications/settings/push",
+    "/notifications/settings/include",
     "/inbox",
     "/inbox/:conversation_id",
     "/inbox/:conversation_id/messages",
@@ -112,7 +112,7 @@ fn find_matches_1(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
-        let _ = router.at(path).push(());
+        let _ = router.at(path).include(());
     }
 
     b.iter(|| {
@@ -127,7 +127,7 @@ fn find_matches_2(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
-        let _ = router.at(path).push(());
+        let _ = router.at(path).include(());
     }
 
     b.iter(|| {
@@ -142,7 +142,7 @@ fn find_matches_3(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
-        let _ = router.at(path).push(());
+        let _ = router.at(path).include(());
     }
 
     b.iter(|| {
@@ -157,7 +157,7 @@ fn find_matches_4(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
-        let _ = router.at(path).push(());
+        let _ = router.at(path).include(());
     }
 
     b.iter(|| {
@@ -172,7 +172,7 @@ fn find_matches_5(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
-        let _ = router.at(path).push(());
+        let _ = router.at(path).include(());
     }
 
     b.iter(|| {
@@ -188,7 +188,7 @@ fn find_matches_6(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
-        let _ = router.at(path).push(());
+        let _ = router.at(path).include(());
     }
 
     b.iter(|| {
@@ -204,7 +204,7 @@ fn find_matches_7(b: &mut Bencher) {
     let mut router: Router<()> = Router::new();
 
     for path in ROUTES {
-        let _ = router.at(path).push(());
+        let _ = router.at(path).include(());
     }
 
     b.iter(|| {

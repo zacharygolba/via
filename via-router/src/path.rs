@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
 pub enum Pattern {
-    Root,
     Static(String),
     Dynamic(Param),
     Wildcard(Param),
@@ -23,7 +22,7 @@ pub struct Split<'a> {
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
-pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
+pub fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
     Split::new(path).map(|[start, end]| {
         let segment = match path.get(start..end) {
             Some(slice) => slice,
@@ -52,15 +51,6 @@ pub fn patterns(path: &'static str) -> impl Iterator<Item = Pattern> {
             _ => Pattern::Static(segment.into()),
         }
     })
-}
-
-impl Pattern {
-    pub fn as_label(&self) -> Option<&Param> {
-        match self {
-            Self::Dynamic(param) | Self::Wildcard(param) => Some(param),
-            Self::Root | Self::Static(_) => None,
-        }
-    }
 }
 
 impl Display for Param {
