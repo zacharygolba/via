@@ -1,21 +1,21 @@
 use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
 
-#[derive(Debug, PartialEq)]
-pub enum Pattern {
-    Static(String),
-    Dynamic(Param),
-    Wildcard(Param),
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Param {
     value: Arc<str>,
 }
 
+#[derive(Debug, PartialEq)]
+pub(crate) enum Pattern {
+    Static(String),
+    Dynamic(Param),
+    Wildcard(Param),
+}
+
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
-pub fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
+pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
     split(path).into_iter().map(|[start, end]| {
         let segment = match path.get(start..end) {
             Some(slice) => slice,
@@ -46,7 +46,7 @@ pub fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
     })
 }
 
-pub fn split(path: &str) -> Vec<[usize; 2]> {
+pub(crate) fn split(path: &str) -> Vec<[usize; 2]> {
     let mut parts = Vec::with_capacity(6);
     let mut start = 0;
 
