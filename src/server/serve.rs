@@ -46,6 +46,7 @@ where
         rx
     };
 
+    // Wrap app in an arc so it can be cloned into the connection task.
     let app = Arc::new(app);
 
     // Start accepting incoming connections.
@@ -67,7 +68,7 @@ where
             // A new connection is ready to be accepted.
             result = listener.accept() => match result {
                 // Accept the stream from the acceptor.
-                Ok((stream, _addr)) => stream,
+                Ok((stream, _)) => stream,
                 Err(error) => {
                     let _ = &error; // Placeholder for tracing...
                     continue;
@@ -82,53 +83,69 @@ where
             }
         };
 
-        // 3 Arc clones...
-
-        let mut acceptor = acceptor.clone();
+        // Clone the watch receiver so we can shutdown the connection if we get
+        // a Ctrl+C signal sent to the process.
         let mut shutdown_rx = shutdown_rx.clone();
 
-        let app = Arc::clone(&app);
+        // A future that exists purely to limit the scope in which acceptor
+        // and app can be used.
+        let negotiate = {
+            let mut acceptor = acceptor.clone();
+            let app = Arc::clone(&app);
+
+            async move {
+                match acceptor.accept(tcp_stream).await {
+                    Ok(stream) => Ok((app, stream)),
+                    Err(error) => Err(error),
+                }
+            }
+        };
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            let stream = match acceptor.accept(tcp_stream).await {
-                Ok(accepted) => accepted,
+            match negotiate.await {
                 Err(error) => {
                     let _ = &error; // Placeholder for tracing...
                     drop(permit);
-                    return;
+                }
+                Ok((app, stream)) => {
+                    // Create a new HTTP/2 connection.
+                    #[cfg(feature = "http2")]
+                    let mut connection = Box::pin(
+                        conn::http2::Builder::new(TokioExecutor::new())
+                            .timer(TokioTimer::new())
+                            .serve_connection(
+                                IoStream::new(stream),
+                                AppService::new(app, max_body_size),
+                            ),
+                    );
+
+                    // Create a new HTTP/1.1 connection.
+                    #[cfg(all(feature = "http1", not(feature = "http2")))]
+                    let mut connection = Box::pin(
+                        conn::http1::Builder::new()
+                            .timer(TokioTimer::new())
+                            .serve_connection(
+                                IoStream::new(stream),
+                                AppService::new(app, max_body_size),
+                            )
+                            .with_upgrades(),
+                    );
+
+                    // Serve the connection.
+                    if let Err(error) = tokio::select!(
+                        result = connection.as_mut() => result,
+                        _ = shutdown_rx.changed() => {
+                            connection.as_mut().graceful_shutdown();
+                            connection.await
+                        }
+                    ) {
+                        let _ = &error; // Placeholder for tracing...
+                    }
+
+                    drop(permit);
                 }
             };
-
-            // Create a new HTTP/2 connection.
-            #[cfg(feature = "http2")]
-            let mut connection = Box::pin(
-                conn::http2::Builder::new(TokioExecutor::new())
-                    .timer(TokioTimer::new())
-                    .serve_connection(IoStream::new(stream), AppService::new(app, max_body_size)),
-            );
-
-            // Create a new HTTP/1.1 connection.
-            #[cfg(all(feature = "http1", not(feature = "http2")))]
-            let mut connection = Box::pin(
-                conn::http1::Builder::new()
-                    .timer(TokioTimer::new())
-                    .serve_connection(IoStream::new(stream), AppService::new(app, max_body_size))
-                    .with_upgrades(),
-            );
-
-            // Serve the connection.
-            if let Err(error) = tokio::select!(
-                result = connection.as_mut() => result,
-                _ = shutdown_rx.changed() => {
-                    connection.as_mut().graceful_shutdown();
-                    connection.await
-                }
-            ) {
-                let _ = &error; // Placeholder for tracing...
-            }
-
-            drop(permit);
         });
     };
 
