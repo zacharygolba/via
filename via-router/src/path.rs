@@ -126,11 +126,12 @@ impl SplitWithLookahead<'_> {
 }
 
 impl Iterator for SplitWithLookahead<'_> {
-    type Item = ([usize; 2], bool);
+    type Item = (bool, [usize; 2]);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        Some((self.split.next()?, self.split.peek().is_some()))
+        let next = self.split.next()?;
+        Some((self.split.peek().is_none(), next))
     }
 }
 

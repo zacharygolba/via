@@ -110,7 +110,7 @@ impl<T> Router<T> {
     pub fn visit<'a>(&'a self, path: &str) -> Vec<Binding<'a, T>> {
         let mut segments = Split::new(path).lookahead();
 
-        let mut bindings = Vec::with_capacity(8);
+        let mut bindings = Vec::new();
         let mut branch = Vec::with_capacity(64);
         let mut nodes = Vec::with_capacity(1);
         let mut next = SmallVec::<[&[usize]; 2]>::new();
@@ -121,7 +121,7 @@ impl<T> Router<T> {
             branch.extend_from_slice(&root.children);
         }
 
-        while let Some((range, has_next)) = segments.next() {
+        while let Some((exact, range)) = segments.next() {
             let mut nodes = Vec::with_capacity(4);
 
             for key in branch.drain(..) {
@@ -132,23 +132,26 @@ impl<T> Router<T> {
                         nodes.push(Match::new(true, Some(param), &node.route))
                     }
                     Pattern::Dynamic(param) => {
-                        nodes.push(Match::new(!has_next, Some(param), &node.route));
+                        nodes.push(Match::new(exact, Some(param), &node.route));
                         next.push(&node.children);
                     }
                     Pattern::Static(value) => {
                         let [start, end] = range;
-
                         if value == &path[start..end] {
-                            nodes.push(Match::new(!has_next, None, &node.route));
+                            nodes.push(Match::new(exact, None, &node.route));
                             next.push(&node.children);
                         }
                     }
-                    Pattern::Root => continue,
+                    Pattern::Root => {
+                        continue;
+                    }
                 }
             }
 
-            bindings.push(Binding::new(Some(range), nodes));
-            branch.extend(next.drain(..).flatten());
+            if !nodes.is_empty() {
+                bindings.push(Binding::new(Some(range), nodes));
+                branch.extend(next.drain(..).flatten());
+            }
         }
 
         let mut wildcards = branch
@@ -162,10 +165,11 @@ impl<T> Router<T> {
 
         bindings
     }
+}
 
+impl<T> Router<T> {
     fn match_trailing_wildcard(&self, key: usize) -> Option<Match<T>> {
         let node = self.tree.get(key)?;
-
         if let Pattern::Wildcard(param) = &node.pattern {
             Some(Match::new(true, Some(param), &node.route))
         } else {
