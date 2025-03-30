@@ -143,6 +143,7 @@ impl<T> Router<T> {
                             next.push(&node.children);
                         }
                     }
+                    Pattern::Root => continue,
                 }
             }
 
@@ -176,7 +177,7 @@ impl<T> Router<T> {
 impl<T> Default for Router<T> {
     fn default() -> Self {
         Self {
-            tree: vec![Node::new(Pattern::Static("".to_owned()))],
+            tree: vec![Node::new(Pattern::Root)],
         }
     }
 }

@@ -21,6 +21,7 @@ pub struct SplitWithLookahead<'a> {
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum Pattern {
+    Root,
     Static(String),
     Dynamic(Param),
     Wildcard(Param),
