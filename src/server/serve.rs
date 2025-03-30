@@ -28,8 +28,6 @@ where
     A: Acceptor + Send + Sync + 'static,
     T: Send + Sync + 'static,
 {
-    let app = Arc::new(app);
-
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
     // number of connections is reached, we'll wait until a permit is available
@@ -47,6 +45,8 @@ where
         tokio::spawn(wait_for_ctrl_c(tx));
         rx
     };
+
+    let app = Arc::new(app);
 
     // Start accepting incoming connections.
     let exit_code = loop {
@@ -82,9 +82,12 @@ where
             }
         };
 
-        let mut shutdown_rx = shutdown_rx.clone();
+        // 3 Arc clones...
+
         let mut acceptor = acceptor.clone();
-        let service = AppService::new(Arc::clone(&app), max_body_size);
+        let mut shutdown_rx = shutdown_rx.clone();
+
+        let app = Arc::clone(&app);
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
@@ -99,39 +102,32 @@ where
 
             // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
-            let mut connection = conn::http2::Builder::new(TokioExecutor::new())
-                .timer(TokioTimer::new())
-                .serve_connection(IoStream::new(stream), service);
+            let mut connection = Box::pin(
+                conn::http2::Builder::new(TokioExecutor::new())
+                    .timer(TokioTimer::new())
+                    .serve_connection(IoStream::new(stream), AppService::new(app, max_body_size)),
+            );
 
             // Create a new HTTP/1.1 connection.
             #[cfg(all(feature = "http1", not(feature = "http2")))]
-            let mut connection = conn::http1::Builder::new()
-                .timer(TokioTimer::new())
-                .serve_connection(IoStream::new(stream), service)
-                .with_upgrades();
+            let mut connection = Box::pin(
+                conn::http1::Builder::new()
+                    .timer(TokioTimer::new())
+                    .serve_connection(IoStream::new(stream), AppService::new(app, max_body_size))
+                    .with_upgrades(),
+            );
 
             // Serve the connection.
             if let Err(error) = tokio::select!(
-                // Wait for the connection to close.
-                result = Pin::new(&mut connection) => result,
-
-                // Wait for the server to start a graceful shutdown. Then
-                // initiate the same for the individual connection.
+                result = connection.as_mut() => result,
                 _ = shutdown_rx.changed() => {
-                    let mut connection = Pin::new(&mut connection);
-
-                    // The graceful_shutdown fn requires Pin<&mut Self>.
                     connection.as_mut().graceful_shutdown();
-
-                    // Wait for the connection to close.
-                    (&mut connection).await
+                    connection.await
                 }
             ) {
-                // Placeholder for tracing...
-                let _ = &error;
+                let _ = &error; // Placeholder for tracing...
             }
 
-            // Return the permit back to the semaphore.
             drop(permit);
         });
     };
