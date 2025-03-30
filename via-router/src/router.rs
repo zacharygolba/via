@@ -1,9 +1,8 @@
 use smallvec::SmallVec;
 use std::fmt::{self, Debug, Formatter};
-use std::mem;
 
 use crate::binding::{Binding, Match, MatchCond};
-use crate::path::{self, Pattern};
+use crate::path::{self, Pattern, Split};
 
 pub struct Node<T> {
     children: Vec<usize>,
@@ -109,44 +108,23 @@ impl<T> Router<T> {
     }
 
     pub fn visit<'a>(&'a self, path: &str) -> Vec<Binding<'a, T>> {
-        // The following three lines allocate unconditionally.
-        let mut results = Vec::with_capacity(8);
-        let mut first = Vec::with_capacity(1);
-        let segments = path::split(path);
+        let mut segments = Split::new(path).lookahead();
 
-        let mut offset = 0;
-        let mut queue = SmallVec::<[usize; 6]>::new();
-        let mut next = SmallVec::<[usize; 6]>::new();
+        let mut bindings = Vec::with_capacity(8);
+        let mut branch = Vec::with_capacity(64);
+        let mut nodes = Vec::with_capacity(1);
+        let mut next = SmallVec::<[&[usize]; 2]>::new();
 
         if let Some(root) = self.tree.first() {
-            queue.extend_from_slice(&root.children);
-            first.push(Match::new(segments.is_empty(), None, &root.route));
-            results.push(Binding::new(None, first));
+            nodes.push(Match::new(!segments.has_next(), None, &root.route));
+            bindings.push(Binding::new(None, nodes));
+            branch.extend_from_slice(&root.children);
         }
 
-        loop {
-            let mut nodes = Vec::new();
-            let (range, exact) = match segments.get(offset) {
-                Some(to) => {
-                    offset += 1;
-                    (*to, offset == segments.len())
-                }
-                None => {
-                    for key in queue.drain(..) {
-                        let node = lookup!(&self.tree, key);
-                        let route = &node.route;
+        while let Some((range, has_next)) = segments.next() {
+            let mut nodes = Vec::with_capacity(4);
 
-                        if let Pattern::Wildcard(param) = &node.pattern {
-                            nodes.push(Match::new(true, Some(param), route));
-                        }
-                    }
-
-                    results.push(Binding::new(None, nodes));
-                    return results;
-                }
-            };
-
-            for key in queue.drain(..) {
+            for key in branch.drain(..) {
                 let node = lookup!(&self.tree, key);
 
                 match &node.pattern {
@@ -154,22 +132,43 @@ impl<T> Router<T> {
                         nodes.push(Match::new(true, Some(param), &node.route))
                     }
                     Pattern::Dynamic(param) => {
-                        next.extend_from_slice(&node.children);
-                        nodes.push(Match::new(exact, Some(param), &node.route));
+                        nodes.push(Match::new(!has_next, Some(param), &node.route));
+                        next.push(&node.children);
                     }
                     Pattern::Static(value) => {
                         let [start, end] = range;
 
                         if value == &path[start..end] {
-                            next.extend_from_slice(&node.children);
-                            nodes.push(Match::new(exact, None, &node.route));
+                            nodes.push(Match::new(!has_next, None, &node.route));
+                            next.push(&node.children);
                         }
                     }
                 }
             }
 
-            results.push(Binding::new(Some(range), nodes));
-            mem::swap(&mut queue, &mut next);
+            bindings.push(Binding::new(Some(range), nodes));
+            branch.extend(next.drain(..).flatten());
+        }
+
+        let mut wildcards = branch
+            .drain(..)
+            .filter_map(|key| self.match_trailing_wildcard(key))
+            .peekable();
+
+        if wildcards.peek().is_some() {
+            bindings.push(Binding::new(None, wildcards.collect()));
+        }
+
+        bindings
+    }
+
+    fn match_trailing_wildcard(&self, key: usize) -> Option<Match<T>> {
+        let node = self.tree.get(key)?;
+
+        if let Pattern::Wildcard(param) = &node.pattern {
+            Some(Match::new(true, Some(param), &node.route))
+        } else {
+            None
         }
     }
 }
@@ -223,22 +222,141 @@ where
 mod tests {
     use super::Router;
 
-    const PATHS: [&str; 4] = [
-        "/*path",
-        "/echo/*path",
-        "/articles/:id",
-        "/articles/:id/comments",
+    static PATHS: [&str; 100] = [
+        "/home",
+        "/about",
+        "/contact",
+        "/login",
+        "/signup",
+        "/profile/:user_name",
+        "/user/:user_id",
+        "/settings",
+        "/settings/account",
+        "/settings/privacy",
+        "/settings/security",
+        "/posts",
+        "/post/:post_id",
+        "/post/:post_id/edit",
+        "/post/:post_id/comments",
+        "/post/:post_id/comments/:comment_id",
+        "/post/:post_id/likes",
+        "/post/:post_id/share",
+        "/comments",
+        "/comment/:comment_id",
+        "/notifications",
+        "/notifications/:notification_id",
+        "/messages",
+        "/message/:message_id",
+        "/message/:message_id/reply",
+        "/search",
+        "/search/results",
+        "/search/:query",
+        "/admin",
+        "/admin/users",
+        "/admin/user/:user_id",
+        "/admin/user/:user_id/edit",
+        "/admin/posts",
+        "/admin/post/:post_id",
+        "/admin/post/:post_id/edit",
+        "/admin/comments",
+        "/admin/comment/:comment_id",
+        "/admin/comment/:comment_id/edit",
+        "/admin/categories",
+        "/admin/category/:category_id",
+        "/admin/category/:category_id/edit",
+        "/admin/tags",
+        "/admin/tag/:tag_id",
+        "/admin/tag/:tag_id/edit",
+        "/admin/settings",
+        "/categories",
+        "/category/:category_id",
+        "/category/:category_id/posts",
+        "/tags",
+        "/tag/:tag_id",
+        "/tag/:tag_id/posts",
+        "/favorites",
+        "/favorite/:item_id",
+        "/friends",
+        "/friend/:friend_id",
+        "/groups",
+        "/group/:group_id",
+        "/group/:group_id/members",
+        "/group/:group_id/posts",
+        "/events",
+        "/event/:event_id",
+        "/event/:event_id/rsvp",
+        "/event/:event_id/attendees",
+        "/help",
+        "/help/article/:article_id",
+        "/terms",
+        "/privacy",
+        "/faq",
+        "/sitemap",
+        "/rss",
+        "/api/:version/:resource",
+        "/api/:version/:resource/:resource_id",
+        "/api/:version/:resource/:resource_id/edit",
+        "/api/:version/:resource/:resource_id/comments/:comment_id",
+        "/api/:version/:resource/:resource_id/comments/:comment_id/edit",
+        "/checkout",
+        "/checkout/cart",
+        "/checkout/payment",
+        "/checkout/confirmation",
+        "/dashboard",
+        "/dashboard/overview",
+        "/dashboard/stats",
+        "/dashboard/reports",
+        "/notifications/settings",
+        "/notifications/settings/email",
+        "/notifications/settings/include",
+        "/inbox",
+        "/inbox/:conversation_id",
+        "/inbox/:conversation_id/messages",
+        "/subscriptions",
+        "/subscription/:subscription_id",
+        "/subscription/:subscription_id/edit",
+        "/billing",
+        "/billing/history",
+        "/billing/payment-methods",
+        "/billing/invoice/:invoice_id",
+        "/report/user/:user_id",
+        "/report/post/:post_id",
+        "/report/comment/:comment_id",
+        "/invite",
     ];
+
+    fn simple_prng(seed: u32) -> u32 {
+        // Constants from Numerical Recipes
+        let a: u64 = 1664525;
+        let c: u64 = 1013904223;
+        let m: u64 = u32::MAX as u64 + 1;
+
+        let next = (a * seed as u64 + c) % m;
+        next as u32 % 10_000 + 1
+    }
 
     #[test]
     fn test_router_visit() {
         let mut router = Router::new();
 
-        for path in &PATHS {
-            let _ = router.at(path).respond(());
+        for pattern in PATHS {
+            let _ = router.at(pattern).respond(());
         }
 
-        println!("router: {:#?}", router);
+        for pattern in PATHS {
+            let path = crate::path::Split::new(pattern)
+                .map(|[start, end]| {
+                    let segment = &pattern[start..end];
+                    if segment.starts_with(':') {
+                        simple_prng(12345).to_string()
+                    } else {
+                        segment.to_owned()
+                    }
+                })
+                .fold(String::new(), |path, next| path + "/" + &next);
+
+            router.visit(&path);
+        }
 
         // {
         //     let path = "/";
