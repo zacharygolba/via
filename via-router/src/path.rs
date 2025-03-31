@@ -119,6 +119,12 @@ impl Iterator for Split<'_> {
     }
 }
 
+impl SplitWithLookahead<'_> {
+    pub fn has_next(&mut self) -> bool {
+        self.split.peek().is_some()
+    }
+}
+
 impl Iterator for SplitWithLookahead<'_> {
     type Item = (bool, [usize; 2]);
 
