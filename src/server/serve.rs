@@ -50,36 +50,36 @@ where
     let app = Arc::new(app);
 
     // Start accepting incoming connections.
-    let exit_code = loop {
+    let exit_code = 'accept: loop {
         // Acquire a permit from the semaphore.
         let permit = semaphore.clone().acquire_owned().await?;
 
         // Wait for something interesting to happen.
-        let tcp_stream = tokio::select! {
-            // A graceful shutdown was requested.
-            _ = shutdown_rx.changed() => {
-                // Break out of the accept loop with the corrosponding exit code.
-                break match *shutdown_rx.borrow_and_update() {
-                    Some(false) => ExitCode::from(0),
-                    Some(true) | None => ExitCode::from(1),
+        let tcp_stream = loop {
+            tokio::select! {
+                // A graceful shutdown was requested.
+                _ = shutdown_rx.changed() => {
+                    // Break out of the accept loop with the corrosponding exit code.
+                    break 'accept match *shutdown_rx.borrow_and_update() {
+                        Some(false) => ExitCode::from(0),
+                        Some(true) | None => ExitCode::from(1),
+                    }
                 }
-            }
 
-            // A new connection is ready to be accepted.
-            result = listener.accept() => match result {
-                // Accept the stream from the acceptor.
-                Ok((stream, _)) => stream,
-                Err(error) => {
-                    let _ = &error; // Placeholder for tracing...
-                    continue;
+                // A new connection is ready to be accepted.
+                result = listener.accept() => match result {
+                    // Accept the stream from the acceptor.
+                    Ok((stream, _addr)) => break stream,
+                    Err(error) => {
+                        let _ = &error; // Placeholder for tracing...
+                    }
+                },
+
+                // We have idle time. Join any inflight connections that may
+                // have finished.
+                _ = connections.join_next(), if !connections.is_empty() => {
+                    while connections.try_join_next().is_some() {}
                 }
-            },
-
-            // We have idle time. Join any inflight connections that may
-            // have finished.
-            _ = connections.join_next(), if !connections.is_empty() => {
-                while connections.try_join_next().is_some() {}
-                continue;
             }
         };
 
