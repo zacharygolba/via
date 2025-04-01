@@ -1,4 +1,7 @@
 use std::fmt::{self, Display, Formatter};
+use std::iter::Peekable;
+use std::mem;
+use std::str::MatchIndices;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -6,8 +9,19 @@ pub struct Param {
     value: Arc<str>,
 }
 
+pub struct Split<'a> {
+    len: usize,
+    offset: usize,
+    indices: MatchIndices<'a, char>,
+}
+
+pub struct SplitWithLookahead<'a> {
+    split: Peekable<Split<'a>>,
+}
+
 #[derive(Debug, PartialEq)]
 pub(crate) enum Pattern {
+    Root,
     Static(String),
     Dynamic(Param),
     Wildcard(Param),
@@ -16,7 +30,7 @@ pub(crate) enum Pattern {
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
-    split(path).into_iter().map(|[start, end]| {
+    Split::new(path).map(|[start, end]| {
         let segment = match path.get(start..end) {
             Some(slice) => slice,
             None => panic!("Path segments cannot be empty when defining a route."),
@@ -46,30 +60,6 @@ pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
     })
 }
 
-pub(crate) fn split(path: &str) -> Vec<[usize; 2]> {
-    let mut parts = Vec::with_capacity(6);
-    let mut start = 0;
-
-    let bytes = path.as_bytes();
-    let len = bytes.len();
-
-    for (index, byte) in bytes.iter().enumerate() {
-        if path.is_char_boundary(index) && *byte == b'/' {
-            if bytes.get(start).is_some_and(|from| *from != b'/') {
-                parts.push([start, index]);
-            }
-
-            start = index + 1;
-        }
-    }
-
-    if len > start {
-        parts.push([start, len]);
-    }
-
-    parts
-}
-
 impl Display for Param {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(&self.value, f)
@@ -91,8 +81,67 @@ impl PartialEq<str> for Param {
     }
 }
 
+impl<'a> Split<'a> {
+    pub fn new(path: &'a str) -> Self {
+        Self {
+            len: path.len(),
+            offset: 0,
+            indices: path.match_indices('/'),
+        }
+    }
+
+    pub fn lookahead(self) -> SplitWithLookahead<'a> {
+        SplitWithLookahead {
+            split: self.peekable(),
+        }
+    }
+}
+
+impl Iterator for Split<'_> {
+    type Item = [usize; 2];
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let offset = &mut self.offset;
+
+        for (end, _) in &mut self.indices {
+            if end == 0 {
+                *offset += 1;
+                continue;
+            }
+
+            return Some([mem::replace(offset, end + 1), end]);
+        }
+
+        if offset == &self.len {
+            None
+        } else {
+            let len = self.len;
+            Some([mem::replace(offset, len), len])
+        }
+    }
+}
+
+impl SplitWithLookahead<'_> {
+    pub fn has_next(&mut self) -> bool {
+        self.split.peek().is_some()
+    }
+}
+
+impl Iterator for SplitWithLookahead<'_> {
+    type Item = (bool, [usize; 2]);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.split.next()?;
+        Some((self.split.peek().is_none(), next))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::Split;
+
     const PATHS: [&str; 16] = [
         "/home/about",
         "/products/item/123",
@@ -124,11 +173,11 @@ mod tests {
             vec![[1, 10], [11, 18]],
             vec![[1, 4]],
             vec![[1, 8], [9, 16]],
-            vec![[2, 6], [8, 13]],
-            vec![[1, 9], [11, 15], [16, 19]],
-            vec![[1, 5], [6, 11], [12, 16], [18, 22]],
-            vec![[1, 5], [7, 14], [15, 23]],
-            vec![[1, 9], [10, 17], [19, 21]],
+            vec![[1, 1], [2, 6], [7, 7], [8, 13]],
+            vec![[1, 9], [10, 10], [11, 15], [16, 19]],
+            vec![[1, 5], [6, 11], [12, 16], [17, 17], [18, 22]],
+            vec![[1, 5], [6, 6], [7, 14], [15, 23]],
+            vec![[1, 9], [10, 17], [18, 18], [19, 21]],
             vec![],
         ]
     }
@@ -138,15 +187,14 @@ mod tests {
         let expected_results = get_expected_results();
 
         for (i, path) in PATHS.iter().enumerate() {
-            let segments = super::split(path);
-
             assert_eq!(
-                segments.len(),
+                Split::new(path).count(),
                 expected_results[i].len(),
-                "split produced less segments than expected"
+                "Split produced more or less segments than expected for {}",
+                path
             );
 
-            for (j, segment) in segments.into_iter().enumerate() {
+            for (j, segment) in Split::new(path).enumerate() {
                 let expect = expected_results[i][j];
                 assert_eq!(segment, expect, "{} ({}, {:?})", path, j, segment);
             }
