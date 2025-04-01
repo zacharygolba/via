@@ -23,15 +23,14 @@ impl<T> IoStream<T> {
     }
 }
 
-impl<T: Unpin> IoStream<T> {
+impl<T> IoStream<T> {
     #[inline]
     fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
-        let this = self.get_mut();
-        Pin::new(&mut this.stream)
+        unsafe { self.map_unchecked_mut(|this| &mut this.stream) }
     }
 }
 
-impl<R: AsyncRead + Unpin> Read for IoStream<R> {
+impl<R: AsyncRead> Read for IoStream<R> {
     fn poll_read(
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
@@ -48,8 +47,8 @@ impl<R: AsyncRead + Unpin> Read for IoStream<R> {
         let mut buf = unsafe { ReadBuf::uninit(cursor.as_mut()) };
 
         let len = match self.project().poll_read(context, &mut buf)? {
-            Poll::Ready(_) => buf.filled().len(),
             Poll::Pending => return Poll::Pending,
+            Poll::Ready(_) => buf.filled().len(),
         };
 
         // Bytes were read into buf successfully. Advance the cursor by the
@@ -69,7 +68,7 @@ impl<R: AsyncRead + Unpin> Read for IoStream<R> {
     }
 }
 
-impl<W: AsyncWrite + Unpin> Write for IoStream<W> {
+impl<W: AsyncWrite> Write for IoStream<W> {
     fn poll_write(
         self: Pin<&mut Self>,
         context: &mut Context<'_>,
