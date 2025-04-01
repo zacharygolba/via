@@ -37,14 +37,16 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         let mut params = PathParams::new(Vec::with_capacity(6));
         let mut next = Next::new(VecDeque::new());
 
-        for binding in self.app.visit(request.uri().path()) {
-            for matched in binding.iter() {
-                if let Some(name) = matched.param() {
-                    params.push(name.clone(), binding.range());
-                }
+        for binding in self.app.router.visit(request.uri().path()) {
+            let range = binding.range.as_ref();
 
+            for matched in binding.iter() {
                 for middleware in matched.iter() {
                     next.push(Arc::clone(middleware));
+                }
+
+                if let Some(name) = matched.param.cloned() {
+                    params.push(name, range.copied());
                 }
             }
         }

@@ -30,7 +30,7 @@ pub(crate) enum Pattern {
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
-    Split::new(path).into_iter().map(|[start, end]| {
+    Split::new(path).map(|[start, end]| {
         let segment = match path.get(start..end) {
             Some(slice) => slice,
             None => panic!("Path segments cannot be empty when defining a route."),
@@ -102,19 +102,22 @@ impl Iterator for Split<'_> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some((end, _)) = self.indices.next() {
+        let offset = &mut self.offset;
+
+        for (end, _) in &mut self.indices {
             if end == 0 {
-                self.offset += 1;
+                *offset += 1;
                 continue;
             }
 
-            return Some([mem::replace(&mut self.offset, end + 1), end]);
+            return Some([mem::replace(offset, end + 1), end]);
         }
 
-        if &self.len == &self.offset {
+        if offset == &self.len {
             None
         } else {
-            Some([mem::replace(&mut self.offset, self.len), self.len])
+            let len = self.len;
+            Some([mem::replace(offset, len), len])
         }
     }
 }

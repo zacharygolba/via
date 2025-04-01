@@ -4,12 +4,6 @@ use std::fmt::{self, Debug, Formatter};
 use crate::binding::{Binding, Match, MatchCond};
 use crate::path::{self, Pattern, Split};
 
-pub struct Node<T> {
-    children: Vec<usize>,
-    pattern: Pattern,
-    route: Vec<MatchCond<T>>,
-}
-
 #[derive(Debug)]
 pub struct Router<T> {
     tree: Vec<Node<T>>,
@@ -18,6 +12,12 @@ pub struct Router<T> {
 pub struct Route<'a, T> {
     tree: &'a mut Vec<Node<T>>,
     key: usize,
+}
+
+struct Node<T> {
+    children: Vec<usize>,
+    pattern: Pattern,
+    route: Vec<MatchCond<T>>,
 }
 
 macro_rules! lookup {
@@ -122,25 +122,26 @@ impl<T> Router<T> {
             results.push(binding);
         }
 
-        while let Some((exact, range)) = segments.next() {
-            let mut binding = Binding::new(None, SmallVec::new());
+        while let Some((is_exact, range)) = segments.next() {
+            let mut binding = Binding::new(Some(range), SmallVec::new());
 
             for key in branch.drain(..) {
                 let node = lookup!(&self.tree, key);
 
                 match &node.pattern {
                     Pattern::Wildcard(param) => {
-                        binding.push(Match::new(true, Some(param), &node.route))
+                        binding.push(Match::new(true, Some(param), &node.route));
                     }
                     Pattern::Dynamic(param) => {
                         next.push(&node.children);
-                        binding.push(Match::new(exact, Some(param), &node.route));
+                        binding.push(Match::new(is_exact, Some(param), &node.route));
                     }
                     Pattern::Static(value) => {
                         let [start, end] = range;
+
                         if value == &path[start..end] {
                             next.push(&node.children);
-                            binding.push(Match::new(exact, None, &node.route));
+                            binding.push(Match::new(is_exact, None, &node.route));
                         }
                     }
                     Pattern::Root => {
@@ -149,9 +150,12 @@ impl<T> Router<T> {
                 }
             }
 
+            for children in next.drain(..) {
+                branch.extend_from_slice(children);
+            }
+
             if !binding.is_empty() {
                 results.push(binding);
-                branch.extend(next.drain(..).flatten());
             }
         }
 
@@ -166,13 +170,16 @@ impl<T> Router<T> {
 
         results
     }
-}
 
-impl<T> Router<T> {
     fn match_trailing_wildcard(&self, key: usize) -> Option<Match<T>> {
         let node = self.tree.get(key)?;
+
         if let Pattern::Wildcard(param) = &node.pattern {
-            Some(Match::new(true, Some(param), &node.route))
+            Some(Match {
+                is_exact: true,
+                param: Some(param),
+                route: &node.route,
+            })
         } else {
             None
         }
