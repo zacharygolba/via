@@ -1,6 +1,5 @@
 use hyper::server::conn;
 use hyper_util::rt::TokioTimer;
-use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -48,7 +47,7 @@ where
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
-    let mut connections = JoinSet::new();
+    let mut connections = JoinSet::<Result<(), DynError>>::new();
 
     // Start accepting incoming connections.
     let exit_code = 'accept: loop {
@@ -78,14 +77,22 @@ where
 
                 // We have idle time. Join any inflight connections that may
                 // have finished.
-                _ = connections.join_next(), if !connections.is_empty() => {
-                    while connections.try_join_next().is_some() {}
+                joined = connections.join_next(), if !connections.is_empty() => {
+                    if let Some(Err(error)) = joined {
+                        let _ = &error; // Placeholder for tracing...
+                    }
+
+                    while let Some(result) = connections.try_join_next() {
+                        if let Err(error) = result {
+                            let _ = &error; // Placeholder for tracing...
+                        }
+                    }
                 }
             }
         };
 
-        // Clone the app so it can be moved into the connection task.
-        let app = Arc::clone(&app);
+        // Create an AppService to serve the connection.
+        let service = AppService::new(Arc::clone(&app), max_body_size);
 
         // Clone acceptor so negotiation can happen in the connection task.
         let mut acceptor = acceptor.clone();
@@ -96,42 +103,42 @@ where
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            let stream = match acceptor.accept(tcp_stream).await {
-                Ok(accepted) => accepted,
-                Err(_) => {
-                    // Placeholder for tracing...
+            let accepted = match acceptor.accept(tcp_stream).await {
+                Ok(stream) => stream,
+                Err(error) => {
                     drop(permit);
-                    return;
+                    return Err(error.into());
                 }
             };
 
             // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
-            let mut connection = conn::http2::Builder::new(TokioExecutor::new())
-                .timer(TokioTimer::new())
-                .serve_connection(IoStream::new(stream), AppService::new(app, max_body_size));
+            let mut connection = Box::pin(
+                conn::http2::Builder::new(TokioExecutor::new())
+                    .timer(TokioTimer::new())
+                    .serve_connection(IoStream::new(accepted), service),
+            );
 
             // Create a new HTTP/1.1 connection.
             #[cfg(all(feature = "http1", not(feature = "http2")))]
-            let mut connection = conn::http1::Builder::new()
-                .timer(TokioTimer::new())
-                .serve_connection(IoStream::new(stream), AppService::new(app, max_body_size))
-                .with_upgrades();
-
-            let mut conn_mut = Pin::new(&mut connection);
+            let mut connection = Box::pin(
+                conn::http1::Builder::new()
+                    .timer(TokioTimer::new())
+                    .serve_connection(IoStream::new(accepted), service)
+                    .with_upgrades(),
+            );
 
             // Serve the connection.
-            if let Err(error) = tokio::select!(
-                result = conn_mut.as_mut() => result,
+            let result = tokio::select! {
+                served = connection.as_mut() => served.map_err(|e| e.into()),
                 _ = shutdown_rx.changed() => {
-                    conn_mut.as_mut().graceful_shutdown();
-                    conn_mut.as_mut().await
+                    connection.as_mut().graceful_shutdown();
+                    connection.as_mut().await.map_err(|e| e.into())
                 }
-            ) {
-                let _ = &error; // Placeholder for tracing...
-            }
+            };
 
             drop(permit);
+            result
         });
     };
 
@@ -154,7 +161,7 @@ async fn wait_for_ctrl_c(tx: watch::Sender<Option<bool>>) {
     }
 }
 
-async fn shutdown(connections: &mut JoinSet<()>) {
+async fn shutdown(connections: &mut JoinSet<Result<(), DynError>>) {
     while let Some(result) = connections.join_next().await {
         if let Err(error) = result {
             let _ = &error; // Placeholder for tracing...
