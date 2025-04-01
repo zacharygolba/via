@@ -121,14 +121,14 @@ where
             let mut conn_mut = Pin::new(&mut connection);
 
             // Serve the connection.
-            if let Err(_) = tokio::select!(
+            if let Err(error) = tokio::select!(
                 result = conn_mut.as_mut() => result,
                 _ = shutdown_rx.changed() => {
                     conn_mut.as_mut().graceful_shutdown();
                     conn_mut.as_mut().await
                 }
             ) {
-                // Placeholder for tracing...
+                let _ = &error; // Placeholder for tracing...
             }
 
             drop(permit);
