@@ -1,10 +1,11 @@
+use smallvec::SmallVec;
 use std::slice;
 
 use crate::path::Param;
 
 pub struct Binding<'a, T> {
     range: Option<[usize; 2]>,
-    nodes: Vec<Match<'a, T>>,
+    nodes: SmallVec<[Match<'a, T>; 1]>,
 }
 
 pub struct Match<'a, T> {
@@ -36,8 +37,16 @@ impl<T> Binding<'_, T> {
 
 impl<'a, T> Binding<'a, T> {
     #[inline]
-    pub(crate) fn new(range: Option<[usize; 2]>, nodes: Vec<Match<'a, T>>) -> Self {
+    pub(crate) fn new(range: Option<[usize; 2]>, nodes: SmallVec<[Match<'a, T>; 1]>) -> Self {
         Self { range, nodes }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    pub(crate) fn push(&mut self, node: Match<'a, T>) {
+        self.nodes.push(node);
     }
 }
 

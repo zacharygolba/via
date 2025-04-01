@@ -109,37 +109,38 @@ impl<T> Router<T> {
 
     pub fn visit<'a>(&'a self, path: &str) -> Vec<Binding<'a, T>> {
         let mut segments = Split::new(path).lookahead();
-
-        let mut bindings = Vec::new();
+        let mut results = Vec::new();
         let mut branch = Vec::with_capacity(64);
-        let mut nodes = Vec::with_capacity(1);
         let mut next = SmallVec::<[&[usize]; 2]>::new();
 
         if let Some(root) = self.tree.first() {
-            nodes.push(Match::new(!segments.has_next(), None, &root.route));
-            bindings.push(Binding::new(None, nodes));
+            let mut binding = Binding::new(None, SmallVec::new());
+
             branch.extend_from_slice(&root.children);
+
+            binding.push(Match::new(!segments.has_next(), None, &root.route));
+            results.push(binding);
         }
 
         while let Some((exact, range)) = segments.next() {
-            let mut nodes = Vec::with_capacity(4);
+            let mut binding = Binding::new(None, SmallVec::new());
 
             for key in branch.drain(..) {
                 let node = lookup!(&self.tree, key);
 
                 match &node.pattern {
                     Pattern::Wildcard(param) => {
-                        nodes.push(Match::new(true, Some(param), &node.route))
+                        binding.push(Match::new(true, Some(param), &node.route))
                     }
                     Pattern::Dynamic(param) => {
-                        nodes.push(Match::new(exact, Some(param), &node.route));
                         next.push(&node.children);
+                        binding.push(Match::new(exact, Some(param), &node.route));
                     }
                     Pattern::Static(value) => {
                         let [start, end] = range;
                         if value == &path[start..end] {
-                            nodes.push(Match::new(exact, None, &node.route));
                             next.push(&node.children);
+                            binding.push(Match::new(exact, None, &node.route));
                         }
                     }
                     Pattern::Root => {
@@ -148,8 +149,8 @@ impl<T> Router<T> {
                 }
             }
 
-            if !nodes.is_empty() {
-                bindings.push(Binding::new(Some(range), nodes));
+            if !binding.is_empty() {
+                results.push(binding);
                 branch.extend(next.drain(..).flatten());
             }
         }
@@ -160,10 +161,10 @@ impl<T> Router<T> {
             .peekable();
 
         if wildcards.peek().is_some() {
-            bindings.push(Binding::new(None, wildcards.collect()));
+            results.push(Binding::new(None, wildcards.collect()));
         }
 
-        bindings
+        results
     }
 }
 
