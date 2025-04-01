@@ -34,8 +34,8 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
     type Response = http::Response<HttpBody<ResponseBody>>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
-        let mut params = PathParams::new(Vec::with_capacity(4));
-        let mut next = Next::new(VecDeque::with_capacity(6));
+        let mut params = PathParams::new(Vec::with_capacity(6));
+        let mut next = Next::new(VecDeque::new());
 
         for binding in self.app.visit(request.uri().path()) {
             for matched in binding.iter() {
