@@ -1,5 +1,6 @@
 use hyper::server::conn;
 use hyper_util::rt::TokioTimer;
+use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,9 +35,8 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
-    // Create a JoinSet to track inflight connections. We'll use this to wait for
-    // all connections to close before the server exits.
-    let mut connections = JoinSet::new();
+    // Wrap app in an arc so it can be cloned into the connection task.
+    let app = Arc::new(app);
 
     // Create a watch channel to notify the connections to initiate a
     // graceful shutdown process when the `ctrl_c` future resolves.
@@ -46,8 +46,9 @@ where
         rx
     };
 
-    // Wrap app in an arc so it can be cloned into the connection task.
-    let app = Arc::new(app);
+    // Create a JoinSet to track inflight connections. We'll use this to wait for
+    // all connections to close before the server exits.
+    let mut connections = JoinSet::new();
 
     // Start accepting incoming connections.
     let exit_code = 'accept: loop {
@@ -83,69 +84,54 @@ where
             }
         };
 
-        // Clone the watch receiver so we can shutdown the connection if we get
-        // a Ctrl+C signal sent to the process.
+        // Clone the app so it can be moved into the connection task.
+        let app = Arc::clone(&app);
+
+        // Clone acceptor so negotiation can happen in the connection task.
+        let mut acceptor = acceptor.clone();
+
+        // Clone the watch receiver so we can shutdown the connection if a
+        // ctrl+c signal is sent to the process.
         let mut shutdown_rx = shutdown_rx.clone();
-
-        // A future that exists purely to limit the scope in which acceptor
-        // and app can be used.
-        let negotiate = {
-            let mut acceptor = acceptor.clone();
-            let app = Arc::clone(&app);
-
-            async move {
-                match acceptor.accept(tcp_stream).await {
-                    Ok(stream) => Ok((app, stream)),
-                    Err(error) => Err(error),
-                }
-            }
-        };
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            match negotiate.await {
-                Err(error) => {
-                    let _ = &error; // Placeholder for tracing...
+            let stream = match acceptor.accept(tcp_stream).await {
+                Ok(accepted) => accepted,
+                Err(_) => {
+                    // Placeholder for tracing...
                     drop(permit);
-                }
-                Ok((app, stream)) => {
-                    // Create a new HTTP/2 connection.
-                    #[cfg(feature = "http2")]
-                    let mut connection = Box::pin(
-                        conn::http2::Builder::new(TokioExecutor::new())
-                            .timer(TokioTimer::new())
-                            .serve_connection(
-                                IoStream::new(stream),
-                                AppService::new(app, max_body_size),
-                            ),
-                    );
-
-                    // Create a new HTTP/1.1 connection.
-                    #[cfg(all(feature = "http1", not(feature = "http2")))]
-                    let mut connection = Box::pin(
-                        conn::http1::Builder::new()
-                            .timer(TokioTimer::new())
-                            .serve_connection(
-                                IoStream::new(stream),
-                                AppService::new(app, max_body_size),
-                            )
-                            .with_upgrades(),
-                    );
-
-                    // Serve the connection.
-                    if let Err(error) = tokio::select!(
-                        result = connection.as_mut() => result,
-                        _ = shutdown_rx.changed() => {
-                            connection.as_mut().graceful_shutdown();
-                            connection.await
-                        }
-                    ) {
-                        let _ = &error; // Placeholder for tracing...
-                    }
-
-                    drop(permit);
+                    return;
                 }
             };
+
+            // Create a new HTTP/2 connection.
+            #[cfg(feature = "http2")]
+            let mut connection = conn::http2::Builder::new(TokioExecutor::new())
+                .timer(TokioTimer::new())
+                .serve_connection(IoStream::new(stream), AppService::new(app, max_body_size));
+
+            // Create a new HTTP/1.1 connection.
+            #[cfg(all(feature = "http1", not(feature = "http2")))]
+            let mut connection = conn::http1::Builder::new()
+                .timer(TokioTimer::new())
+                .serve_connection(IoStream::new(stream), AppService::new(app, max_body_size))
+                .with_upgrades();
+
+            let mut conn_mut = Pin::new(&mut connection);
+
+            // Serve the connection.
+            if let Err(_) = tokio::select!(
+                result = conn_mut.as_mut() => result,
+                _ = shutdown_rx.changed() => {
+                    conn_mut.as_mut().graceful_shutdown();
+                    conn_mut.as_mut().await
+                }
+            ) {
+                // Placeholder for tracing...
+            }
+
+            drop(permit);
         });
     };
 
