@@ -50,10 +50,12 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
         let mut params = PathParams::new(Vec::with_capacity(6));
         let mut next = Next::new(VecDeque::new());
-        let request = request.map(|body| HttpBody::request(self.max_body_size, body));
-        let state = Arc::clone(&self.app.state);
 
-        for binding in self.app.router.visit(request.uri().path()) {
+        let max_body_size = self.max_body_size;
+        let state = Arc::clone(&self.app.state);
+        let path = request.uri().path();
+
+        for binding in self.app.router.visit(path) {
             for match_kind in binding.nodes() {
                 match match_kind {
                     MatchKind::Edge(MatchCond::Partial(partial)) => {
@@ -67,9 +69,9 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
                     MatchKind::Wildcard(wildcard) => {
                         next.extend(wildcard.route().map(MatchCond::as_either).cloned());
                         params.extend(lazy_clone_param(wildcard.param(), binding.range()).map(
-                            |mut param| {
-                                param.1[1] = request.uri().path().len();
-                                param
+                            |(name, mut range)| {
+                                std::mem::swap(&mut range[1], &mut path.len());
+                                (name, range)
                             },
                         ));
                     }
@@ -78,7 +80,11 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         }
 
         ServeRequest {
-            future: next.call(Request::new(state, params, request)),
+            future: next.call(Request::new(
+                state,
+                params,
+                request.map(|body| HttpBody::request(max_body_size, body)),
+            )),
         }
     }
 }
