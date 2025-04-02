@@ -51,11 +51,10 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         let mut params = PathParams::new(Vec::with_capacity(6));
         let mut next = Next::new(VecDeque::new());
 
-        let max_body_size = self.max_body_size;
-        let state = Arc::clone(&self.app.state);
         let path = request.uri().path();
+        let routes = self.app.router.visit(path);
 
-        for binding in self.app.router.visit(path) {
+        for binding in &routes {
             for match_kind in binding.nodes() {
                 match match_kind {
                     MatchKind::Edge(MatchCond::Partial(partial)) => {
@@ -81,9 +80,9 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
 
         ServeRequest {
             future: next.call(Request::new(
-                state,
+                Arc::clone(&self.app.state),
                 params,
-                request.map(|body| HttpBody::request(max_body_size, body)),
+                request.map(|body| HttpBody::request(self.max_body_size, body)),
             )),
         }
     }

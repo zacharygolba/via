@@ -301,14 +301,10 @@ mod tests {
 
             assert_eq!(results.len(), 2);
 
-            // /
-            // ^ as Binding(None)
             assert_init_binding(results.get(0).unwrap(), |kind| {
                 matches!(kind, MatchKind::Edge(MatchCond::Exact(_)))
             });
 
-            // /
-            //  ^ as Binding(None)
             {
                 let binding = results.get(1).unwrap();
 
@@ -340,7 +336,7 @@ mod tests {
         //             route: [Partial("/")],
         //         })),
         //     ],
-        //     Binding(Some([1, 6])) [
+        //     Binding(Some([1, 4])) [
         //         Wildcard(Node {
         //             children: [],
         //             pattern: Wildcard(Param("path")),
@@ -354,225 +350,191 @@ mod tests {
 
             assert_eq!(results.len(), 2);
 
-            // /not/a/path
-            // ^ as Pattern::Root
             assert_init_binding(results.get(0).unwrap(), |match_kind| {
                 matches!(match_kind, MatchKind::Edge(MatchCond::Partial(_)))
             });
 
-            // {
-            //     // /not/a/path
-            //     //  ^^^^^^^^^^ as Pattern::CatchAll("*path")
-            //     let binding = results.get(1).unwrap();
+            {
+                let binding = results.get(1).unwrap();
 
-            //     assert_eq!(binding.nodes().count(), 1);
-            //     assert_eq!(Some(&path[1..]), binding.range().map(|r| &path[r[0]..]),);
+                assert_eq!(binding.range(), Some(&[1, 4]));
+                assert_eq!(binding.nodes().count(), 1);
 
-            //     let matched = binding.nodes().next().unwrap();
+                let match_kind = binding.nodes().next().unwrap();
 
-            //     assert!(matches!(matched, MatchKind::Wildcard(_)));
+                assert!(matches!(&match_kind, MatchKind::Wildcard(_)));
+                assert_eq!(match_kind.param(), Some(&"path".to_owned().into()));
 
-            //     assert_eq!(matched.param(), Some(&"path".to_owned().into()));
-            //     assert_eq!(matched.route().count(), 1);
-            // }
+                let mut route = match_kind.node().route();
+
+                assert!(matches!(
+                    route.next().map(MatchCond::as_str),
+                    Some(MatchCond::Partial("/*path"))
+                ));
+
+                assert!(route.next().is_none());
+            }
         }
 
+        //
+        // Visit("/echo/*path") [
+        //     Binding(None) [
+        //         Edge(Partial(Node {
+        //             children: [1, 2, 4],
+        //             pattern: Root,
+        //             route: [Partial("/")],
+        //         })),
+        //     ],
+        //     Binding(Some([1, 5])) [
+        //         Wildcard(Node {
+        //             children: [],
+        //             pattern: Wildcard(Param("path")),
+        //             route: [Partial("/*path")],
+        //         }),
+        //         Edge(Partial(Node {
+        //             children: [3],
+        //             pattern: Static("echo"),
+        //             route: [],
+        //         })),
+        //     ],
+        //     Binding(Some([6, 11])) [
+        //         Wildcard(Node {
+        //             children: [],
+        //             pattern: Wildcard(Param("path")),
+        //             route: [Partial("/echo/*path")],
+        //         }),
+        //     ],
+        // ]
+        //
         {
-            // let path = "/echo/hello/world";
-            // let results = router.visit(path);
+            let results = router.visit("/echo/hello/world");
 
-            // assert_eq!(results.len(), 3);
-            // println!("{:#?}", results);
+            assert_eq!(results.len(), 3);
 
-            // {
-            //     // /echo/hello/world
-            //     // ^ as Pattern::Root
-            //     let binding = results.get(0).unwrap();
+            assert_init_binding(results.get(0).unwrap(), |kind| {
+                matches!(kind, MatchKind::Edge(MatchCond::Partial(_)))
+            });
 
-            //     assert_eq!(binding.nodes().count(), 1);
-            //     assert_eq!(binding.range(), None);
+            {
+                let binding = results.get(1).unwrap();
 
-            //     let matched = binding.nodes().next().unwrap();
+                assert_eq!(binding.range(), Some(&[1, 5]));
+                assert_eq!(binding.nodes().count(), 2);
 
-            //     assert!(matches!(matched, MatchKind::Edge(MatchCond::Partial(_))));
+                let mut nodes = binding.nodes();
 
-            //     assert_eq!(matched.param(), None);
-            //     assert_eq!(matched.route().count(), 1);
-            // }
+                {
+                    let match_kind = nodes.next().unwrap();
 
-            // {
-            //     // /echo/hello/world
-            //     //  ^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-            //     let binding = results.get(1).unwrap();
-            //     let segment = {
-            //         let [start, end] = found.range.unwrap();
-            //         &path[start..end]
-            //     };
+                    assert!(matches!(&match_kind, MatchKind::Wildcard(_)));
+                    assert_eq!(match_kind.param(), Some(&"path".to_owned().into()));
 
-            //     assert_eq!(*route, Some(&()));
-            //     assert_eq!(*param, Some(&"path".into()));
-            //     assert_eq!(segment, &path[1..]);
-            //     // Should be considered exact because of the catch-all pattern.
-            //     assert!(found.exact);
-            // }
+                    let node = match_kind.node();
 
-            // {
-            //     // /echo/hello/world
-            //     //  ^^^^ as Pattern::Static("echo")
-            //     let binding = results.get(2).unwrap();
+                    assert_eq!(node.route().count(), 1);
+                    assert!(matches!(
+                        node.route().next().map(MatchCond::as_str),
+                        Some(MatchCond::Partial("/*path"))
+                    ));
+                }
 
-            //     assert_eq!(*route, None);
-            //     assert_eq!(*param, None);
-            //     assert!(!found.exact);
-            // }
+                {
+                    let match_kind = nodes.next().unwrap();
 
-            // {
-            //     // /echo/hello/world
-            //     //       ^^^^^^^^^^^ as Pattern::CatchAll("*path")
-            //     let binding = results.get(3).unwrap();
-            //     let segment = {
-            //         let [start, end] = found.range.unwrap();
-            //         &path[start..end]
-            //     };
+                    assert!(matches!(
+                        &match_kind,
+                        MatchKind::Edge(MatchCond::Partial(_))
+                    ));
 
-            //     assert_eq!(*route, Some(&()));
-            //     assert_eq!(*param, Some(&"path".into()));
-            //     assert_eq!(segment, "hello/world");
-            //     assert!(found.exact);
-            // }
+                    assert!(match_kind.param().is_none());
+                    assert_eq!(match_kind.node().route().count(), 0);
+                }
+            }
+
+            {
+                let binding = results.get(2).unwrap();
+
+                assert_eq!(binding.range(), Some(&[6, 11]));
+                assert_eq!(binding.nodes().count(), 1);
+
+                let match_kind = binding.nodes().next().unwrap();
+
+                assert!(matches!(&match_kind, MatchKind::Wildcard(_)));
+                assert_eq!(match_kind.param(), Some(&"path".to_owned().into()));
+
+                let node = match_kind.node();
+
+                assert_eq!(node.route().count(), 1);
+                assert!(matches!(
+                    node.route().next().map(MatchCond::as_str),
+                    Some(MatchCond::Partial("/echo/*path"))
+                ));
+            }
         }
 
-        // {
-        //     let path = "/articles/100";
-        //     let results = router.visit(path);
+        // Visit("/articles/8869") [
+        //     Binding(None) [
+        //         Edge(Partial(Node {
+        //             children: [1, 2, 4],
+        //             pattern: Root,
+        //             route: [Partial("/")],
+        //         })),
+        //     ],
+        //     Binding(Some([1, 9])) [
+        //         Wildcard(Node {
+        //             children: [],
+        //             pattern: Wildcard(Param("path")),
+        //             route: [Partial("/*path")],
+        //         }),
+        //         Edge(Partial(Node {
+        //             children: [5],
+        //             pattern: Static("articles"),
+        //             route: [],
+        //         })),
+        //     ],
+        //     Binding(Some([10, 14])) [
+        //         Edge(Exact(Node {
+        //             children: [6],
+        //             pattern: Dynamic(Param("id")),
+        //             route: [Partial("/articles/:id")],
+        //         })),
+        //     ],
+        // ]
 
-        //     assert_eq!(results.len(), 4);
-
-        //     {
-        //         // /articles/100
-        //         // ^ as Pattern::Root
-
-        //         assert!(binding.range.is_none());
-
-        //         assert!(!node.is_exact);
-        //         assert_eq!(node.param, None);
-        //         assert_eq!(node.iter().count(), 1);
-        //         assert!(matches!(node.route.first(), Some(MatchCond::Partial(_))));
-        //     }
-
-        //     {
-        //         // /articles/100
-        //         //  ^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-        //         let binding = results.get(1).unwrap();
-        //         let segment = {
-        //             let [start, end] = found.range.unwrap();
-        //             &path[start..end]
-        //         };
-
-        //         assert_eq!(*route, Some(&()));
-        //         assert_eq!(*param, Some(&"path".into()));
-        //         assert_eq!(segment, &path[1..]);
-        //         // Should be considered exact because of the catch-all pattern.
-        //         assert!(found.exact);
-        //     }
-
-        //     {
-        //         // /articles/100
-        //         //  ^^^^^^^^ as Pattern::Static("articles")
-        //         let binding = results.get(2).unwrap();
-
-        //         assert_eq!(*route, None);
-        //         assert_eq!(*param, None);
-        //         assert!(!found.exact);
-        //     }
-
-        //     {
-        //         // /articles/100
-        //         //           ^^^ as Pattern::Dynamic(":id")
-        //         let binding = results.get(3).unwrap();
-        //         let segment = {
-        //             let [start, end] = found.range.unwrap();
-        //             &path[start..end]
-        //         };
-
-        //         assert_eq!(*route, Some(&()));
-        //         assert_eq!(*param, Some(&"id".into()));
-        //         assert_eq!(segment, "100");
-        //         assert!(found.exact);
-        //     }
-        // }
-
-        // {
-        //     let path = "/articles/100/comments";
-        //     let results = router.visit(path);
-
-        //     assert_eq!(results.len(), 5);
-
-        //     {
-        //         // /articles/100/comments
-        //         // ^ as Pattern::Root
-        //         let binding = results.get(0).unwrap();
-        //         let node = binding.iter().next().unwrap();
-
-        //         assert!(binding.range.is_none());
-
-        //         assert!(!node.is_exact);
-        //         assert_eq!(node.param, None);
-        //         assert_eq!(node.iter().count(), 1);
-        //         assert!(matches!(node.route.first(), Some(MatchCond::Partial(_))));
-        //     }
-
-        //     {
-        //         // /articles/100/comments
-        //         //  ^^^^^^^^^^^^^^^^^^^^^ as Pattern::CatchAll("*path")
-        //         let binding = results.get(1).unwrap();
-        //         let segment = {
-        //             let [start, end] = found.range.unwrap();
-        //             &path[start..end]
-        //         };
-
-        //         assert_eq!(*route, Some(&()));
-        //         assert_eq!(*param, Some(&"path".into()));
-        //         assert_eq!(segment, &path[1..]);
-        //         // Should be considered exact because of the catch-all pattern.
-        //         assert!(found.exact);
-        //     }
-
-        //     {
-        //         // /articles/100/comments
-        //         //  ^^^^^^^^ as Pattern::Static("articles")
-        //         let binding = results.get(2).unwrap();
-
-        //         assert_eq!(*route, None);
-        //         assert_eq!(*param, None);
-        //         assert!(!found.exact);
-        //     }
-
-        //     {
-        //         // /articles/100/comments
-        //         //           ^^^ as Pattern::Dynamic(":id")
-        //         let binding = results.get(3).unwrap();
-        //         let segment = {
-        //             let [start, end] = found.range.unwrap();
-        //             &path[start..end]
-        //         };
-
-        //         assert_eq!(*route, Some(&()));
-        //         assert_eq!(*param, Some(&"id".into()));
-        //         assert_eq!(segment, "100");
-        //         assert!(!found.exact);
-        //     }
-
-        //     {
-        //         // /articles/100/comments
-        //         //               ^^^^^^^^ as Pattern::Static("comments")
-        //         let binding = results.get(4).unwrap();
-
-        //         assert_eq!(*route, Some(&()));
-        //         assert_eq!(*param, None);
-        //         // Should be considered exact because it is the last path segment.
-        //         assert!(found.exact);
-        //     }
-        // }
+        // Visit("/articles/8869/comments") [
+        //     Binding(None) [
+        //         Edge(Partial(Node {
+        //             children: [1, 2, 4],
+        //             pattern: Root,
+        //             route: [Partial("/")],
+        //         })),
+        //     ],
+        //     Binding(Some([1, 9])) [
+        //         Wildcard(Node {
+        //             children: [],
+        //             pattern: Wildcard(Param("path")),
+        //             route: [Partial("/*path")],
+        //         }),
+        //         Edge(Partial(Node {
+        //             children: [5],
+        //             pattern: Static("articles"),
+        //             route: [],
+        //         })),
+        //     ],
+        //     Binding(Some([10, 14])) [
+        //         Edge(Partial(Node {
+        //             children: [6],
+        //             pattern: Dynamic(Param("id")),
+        //             route: [Partial("/articles/:id")],
+        //         })),
+        //     ],
+        //     Binding(Some([15, 23])) [
+        //         Edge(Exact(Node {
+        //             children: [],
+        //             pattern: Static("comments"),
+        //             route: [Partial("/articles/:id/comments")],
+        //         })),
+        //     ],
+        // ]
     }
 }

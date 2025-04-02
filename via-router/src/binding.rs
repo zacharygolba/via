@@ -4,7 +4,7 @@ use std::slice;
 use crate::path::Param;
 use crate::router::Node;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MatchCond<T> {
     Partial(T),
     Exact(T),

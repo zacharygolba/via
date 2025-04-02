@@ -1,5 +1,6 @@
 use hyper::server::conn;
 use hyper_util::rt::TokioTimer;
+use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -113,27 +114,26 @@ where
 
             // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
-            let mut connection = Box::pin(
-                conn::http2::Builder::new(TokioExecutor::new())
-                    .timer(TokioTimer::new())
-                    .serve_connection(IoStream::new(accepted), service),
-            );
+            let mut connection = conn::http2::Builder::new(TokioExecutor::new())
+                .timer(TokioTimer::new())
+                .serve_connection(IoStream::new(accepted), service);
 
             // Create a new HTTP/1.1 connection.
             #[cfg(all(feature = "http1", not(feature = "http2")))]
-            let mut connection = Box::pin(
-                conn::http1::Builder::new()
-                    .timer(TokioTimer::new())
-                    .serve_connection(IoStream::new(accepted), service)
-                    .with_upgrades(),
-            );
+            let mut connection = conn::http1::Builder::new()
+                .timer(TokioTimer::new())
+                .serve_connection(IoStream::new(accepted), service)
+                .with_upgrades();
+
+            // Pin the connection on the stack so it can be polled.
+            let mut connection = Pin::new(&mut connection);
 
             // Serve the connection.
             let result = tokio::select! {
-                served = connection.as_mut() => served.map_err(|e| e.into()),
+                served = &mut connection => served.map_err(|e| e.into()),
                 _ = shutdown_rx.changed() => {
                     connection.as_mut().graceful_shutdown();
-                    connection.as_mut().await.map_err(|e| e.into())
+                    connection.await.map_err(|e| e.into())
                 }
             };
 
