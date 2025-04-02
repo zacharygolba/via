@@ -100,7 +100,7 @@ impl<T> MatchCond<T> {
     }
 }
 
-impl<'a, T> MatchKind<'a, T> {
+impl<T> MatchKind<'_, T> {
     #[inline]
     pub fn param(&self) -> Option<&Param> {
         match *self {
