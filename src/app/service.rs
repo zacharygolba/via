@@ -6,6 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use via_router::{MatchCond, MatchKind, Param};
 
 use crate::app::App;
 use crate::body::{HttpBody, ResponseBody};
@@ -19,6 +20,19 @@ pub struct AppService<T> {
 
 pub struct ServeRequest {
     future: FutureResponse,
+}
+
+/// Lazily increments the ref count for the param name if Some, a copy of the
+/// provided range will be zipped with the param name.
+///
+fn lazy_clone_param(
+    param: Option<&Param>,
+    range: Option<&[usize; 2]>,
+) -> Option<(Param, [usize; 2])> {
+    match (param, range) {
+        (Some(name), Some(&at)) => Some((name.clone(), at)),
+        (None, None) | (None, Some(_)) | (Some(_), None) => None,
+    }
 }
 
 impl<T> AppService<T> {
@@ -36,27 +50,35 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
         let mut params = PathParams::new(Vec::with_capacity(6));
         let mut next = Next::new(VecDeque::new());
+        let request = request.map(|body| HttpBody::request(self.max_body_size, body));
+        let state = Arc::clone(&self.app.state);
 
         for binding in self.app.router.visit(request.uri().path()) {
-            let range = binding.range.as_ref();
-
-            for matched in binding.iter() {
-                for middleware in matched.iter() {
-                    next.push(Arc::clone(middleware));
-                }
-
-                if let Some(name) = matched.param.cloned() {
-                    params.push(name, range.copied());
+            for match_kind in binding.nodes() {
+                match match_kind {
+                    MatchKind::Edge(MatchCond::Partial(partial)) => {
+                        next.extend(partial.route().filter_map(MatchCond::as_partial).cloned());
+                        params.extend(lazy_clone_param(partial.param(), binding.range()));
+                    }
+                    MatchKind::Edge(MatchCond::Exact(exact)) => {
+                        next.extend(exact.route().map(MatchCond::as_either).cloned());
+                        params.extend(lazy_clone_param(exact.param(), binding.range()));
+                    }
+                    MatchKind::Wildcard(wildcard) => {
+                        next.extend(wildcard.route().map(MatchCond::as_either).cloned());
+                        params.extend(lazy_clone_param(wildcard.param(), binding.range()).map(
+                            |mut param| {
+                                param.1[1] = request.uri().path().len();
+                                param
+                            },
+                        ));
+                    }
                 }
             }
         }
 
         ServeRequest {
-            future: next.call(Request::new(
-                Arc::clone(&self.app.state),
-                params,
-                request.map(|body| HttpBody::request(self.max_body_size, body)),
-            )),
+            future: next.call(Request::new(state, params, request)),
         }
     }
 }

@@ -118,7 +118,7 @@ impl<T> Request<T> {
         PathParam::new(
             name,
             self.request.uri().path(),
-            self.params.iter().rev().find_map(
+            Some(self.params.iter().rev().find_map(
                 |(param, at)| {
                     if param == name {
                         Some(*at)
@@ -126,7 +126,7 @@ impl<T> Request<T> {
                         None
                     }
                 },
-            ),
+            )),
         )
     }
 
