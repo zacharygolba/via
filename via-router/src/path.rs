@@ -100,22 +100,26 @@ impl Iterator for Split<'_> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
+        let indices = &mut self.indices;
         let offset = &mut self.offset;
 
-        for (end, _) in &mut self.indices {
-            if end == 0 {
-                *offset += 1;
-                continue;
+        loop {
+            if let Some((end, _)) = indices.next() {
+                if end == 0 {
+                    *offset += 1;
+                    continue;
+                }
+
+                break Some([mem::replace(offset, end + 1), end]);
             }
 
-            return Some([mem::replace(offset, end + 1), end]);
-        }
-
-        if offset == &self.len {
-            None
-        } else {
-            let len = self.len;
-            Some([mem::replace(offset, len), len])
+            return if &self.len > offset {
+                let end = self.len;
+                let start = mem::replace(offset, end);
+                Some([start, end])
+            } else {
+                None
+            };
         }
     }
 }
