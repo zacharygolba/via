@@ -13,9 +13,8 @@ use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
 use super::error::ServerError;
+use super::stream::IoStream;
 use crate::app::{App, AppService};
-use crate::error::DynError;
-use crate::server::stream::IoStream;
 
 pub async fn serve<A, T>(
     listener: TcpListener,
@@ -23,7 +22,7 @@ pub async fn serve<A, T>(
     app: App<T>,
     max_body_size: usize,
     max_connections: usize,
-) -> Result<ExitCode, DynError>
+) -> ExitCode
 where
     A: Acceptor + Send + Sync + 'static,
     T: Send + Sync + 'static,
@@ -52,7 +51,10 @@ where
     // Start accepting incoming connections.
     let exit_code = 'accept: loop {
         // Acquire a permit from the semaphore.
-        let permit = semaphore.clone().acquire_owned().await?;
+        let permit = match semaphore.clone().acquire_owned().await {
+            Ok(acquired) => acquired,
+            Err(_) => break ExitCode::from(1),
+        };
 
         // Wait for something interesting to happen.
         let tcp_stream = loop {
@@ -148,7 +150,7 @@ where
         handle_connection_result(result);
     }
 
-    Ok(exit_code)
+    exit_code
 }
 
 fn handle_connection_result(result: Result<Result<(), ServerError>, JoinError>) {

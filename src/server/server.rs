@@ -8,11 +8,10 @@ use super::serve::serve;
 use crate::app::App;
 use crate::error::DynError;
 
-#[cfg(feature = "rustls")]
-use super::acceptor::{RustlsAcceptor, RustlsConfig};
-
 #[cfg(not(feature = "rustls"))]
 use super::acceptor::HttpAcceptor;
+#[cfg(feature = "rustls")]
+use super::acceptor::{RustlsAcceptor, RustlsConfig};
 
 /// The default value of the maximum number of concurrent connections.
 ///
@@ -131,26 +130,22 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// decommissioning logic of the cluster.
     ///
     pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, DynError> {
-        let listener = TcpListener::bind(address).await?;
-
-        #[cfg(feature = "rustls")]
-        let acceptor = self.rustls_config.map_or_else(
-            || Err("rustls_config is required to use the 'rustls' feature".to_owned()),
-            |config| Ok(RustlsAcceptor::new(Arc::new(config))),
-        )?;
-
-        #[cfg(not(feature = "rustls"))]
-        let acceptor = HttpAcceptor;
-
         // Serve incoming connections until shutdown is requested.
-        serve(
-            listener,
-            acceptor,
+        let exit = serve(
+            TcpListener::bind(address).await?,
+            #[cfg(feature = "rustls")]
+            self.rustls_config.map_or_else(
+                || Err("rustls_config is required to use the 'rustls' feature".to_owned()),
+                |config| Ok(RustlsAcceptor::new(Arc::new(config))),
+            )?,
+            #[cfg(not(feature = "rustls"))]
+            HttpAcceptor,
             self.app,
             self.max_body_size.unwrap_or(DEFAULT_MAX_REQUEST_SIZE),
             self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
-        )
-        .await
+        );
+
+        Ok(exit.await)
     }
 }
 
