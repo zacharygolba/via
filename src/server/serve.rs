@@ -12,9 +12,9 @@ use tokio::task::{JoinError, JoinSet};
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
-use super::error::ServerError;
 use super::stream::IoStream;
 use crate::app::{App, AppService};
+use crate::error::ServerError;
 
 pub async fn serve<A, T>(
     listener: TcpListener,

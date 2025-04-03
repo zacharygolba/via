@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use super::serve::serve;
 use crate::app::App;
-use crate::error::DynError;
+use crate::error::ServerError;
 
 #[cfg(not(feature = "rustls"))]
 use super::acceptor::HttpAcceptor;
@@ -129,15 +129,14 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// process supervisor of an individual node and the replacement and
     /// decommissioning logic of the cluster.
     ///
-    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, DynError> {
+    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, ServerError> {
         // Serve incoming connections until shutdown is requested.
         let exit = serve(
             TcpListener::bind(address).await?,
             #[cfg(feature = "rustls")]
-            self.rustls_config.map_or_else(
-                || Err("rustls_config is required to use the 'rustls' feature".to_owned()),
-                |config| Ok(RustlsAcceptor::new(Arc::new(config))),
-            )?,
+            RustlsAcceptor::new(Arc::new(
+                self.rustls_config.ok_or(ServerError::MissingRustlsConfig)?,
+            )),
             #[cfg(not(feature = "rustls"))]
             HttpAcceptor,
             self.app,

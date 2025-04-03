@@ -2,7 +2,6 @@
 //!
 
 mod acceptor;
-mod error;
 mod serve;
 mod server;
 mod stream;

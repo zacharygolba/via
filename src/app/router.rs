@@ -19,11 +19,17 @@ impl<T> Route<'_, T> {
         scope(self);
     }
 
-    pub fn include(&mut self, middleware: impl Middleware<T> + 'static) {
+    pub fn include<M>(&mut self, middleware: M)
+    where
+        M: Middleware<T> + 'static,
+    {
         self.inner.include(Arc::new(middleware));
     }
 
-    pub fn respond(&mut self, middleware: impl Middleware<T> + 'static) {
+    pub fn respond<M>(&mut self, middleware: M)
+    where
+        M: Middleware<T> + 'static,
+    {
         self.inner.respond(Arc::new(middleware));
     }
 }
