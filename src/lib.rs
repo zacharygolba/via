@@ -39,8 +39,9 @@
 //!     let mut app = via::app(());
 //!
 //!     // Include an error boundary to catch any errors that occur downstream.
-//!     app.include(error_boundary::inspect(|_, error| {
-//!         eprintln!("Error: {}", error);
+//!     app.include(error_boundary::map(|error| {
+//!         eprintln!("error: {}", error);
+//!         error.use_canonical_reason()
 //!     }));
 //!
 //!     // Define a route that listens on /hello/:name.
