@@ -26,7 +26,7 @@ Below is a basic example to demonstrate how to use Via to create a simple web se
 ```rust
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{Next, Request, Response, Server};
+use via::{Next, Request, Response};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -44,8 +44,9 @@ async fn main() -> Result<ExitCode, Error> {
     let mut app = via::app(());
 
     // Include an error boundary to catch any errors that occur downstream.
-    app.include(error_boundary::catch(|_, error| {
-        eprintln!("Error: {}", error);
+    app.include(error_boundary::map(|error| {
+        eprintln!("error: {}", error);
+        error.use_canonical_reason()
     }));
 
     // Define a route that listens on /hello/:name.
