@@ -1,5 +1,4 @@
 use std::process::ExitCode;
-use std::time::Duration;
 use tokio::net::{TcpListener, ToSocketAddrs};
 
 #[cfg(feature = "rustls")]
@@ -23,17 +22,12 @@ const DEFAULT_MAX_CONNECTIONS: usize = 256;
 ///
 const DEFAULT_MAX_REQUEST_SIZE: usize = 104_857_600;
 
-/// The default value of the shutdown timeout in seconds.
-///
-const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
-
 /// Serve an app over HTTP.
 ///
 pub struct Server<T> {
     app: App<T>,
     max_body_size: Option<usize>,
     max_connections: Option<usize>,
-    shutdown_timeout: Option<u64>,
 
     #[cfg(feature = "rustls")]
     rustls_config: Option<RustlsConfig>,
@@ -48,7 +42,6 @@ pub fn start<T>(app: App<T>) -> Server<T> {
         rustls_config: None,
         max_connections: None,
         max_body_size: None,
-        shutdown_timeout: None,
     }
 }
 
@@ -84,17 +77,6 @@ impl<T: Send + Sync + 'static> Server<T> {
     pub fn max_connections(self, limit: usize) -> Self {
         Self {
             max_connections: Some(limit),
-            ..self
-        }
-    }
-
-    /// Set the amount of time in seconds that the server will wait for inflight
-    /// connections to complete before shutting down. The default value is 30
-    /// seconds.
-    ///
-    pub fn shutdown_timeout(self, timeout: u64) -> Self {
-        Self {
-            shutdown_timeout: Some(timeout),
             ..self
         }
     }
@@ -167,10 +149,6 @@ impl<T: Send + Sync + 'static> Server<T> {
             self.app,
             self.max_body_size.unwrap_or(DEFAULT_MAX_REQUEST_SIZE),
             self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
-            self.shutdown_timeout.map_or_else(
-                || Duration::from_secs(DEFAULT_SHUTDOWN_TIMEOUT),
-                Duration::from_secs,
-            ),
         )
         .await
     }

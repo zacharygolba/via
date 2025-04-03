@@ -3,19 +3,19 @@ use hyper_util::rt::TokioTimer;
 use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::net::TcpListener;
+use tokio::signal;
 use tokio::sync::{watch, Semaphore};
 use tokio::task::{JoinError, JoinSet};
-use tokio::{signal, time};
 
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
+use super::error::ServerError;
 use crate::app::{App, AppService};
 use crate::error::DynError;
-use crate::server::io_stream::IoStream;
+use crate::server::stream::IoStream;
 
 pub async fn serve<A, T>(
     listener: TcpListener,
@@ -23,7 +23,6 @@ pub async fn serve<A, T>(
     app: App<T>,
     max_body_size: usize,
     max_connections: usize,
-    shutdown_timeout: Duration,
 ) -> Result<ExitCode, DynError>
 where
     A: Acceptor + Send + Sync + 'static,
@@ -145,18 +144,14 @@ where
         });
     };
 
-    tokio::select! {
-        // Wait for inflight connection to close within the configured timeout.
-        _ = shutdown(&mut connections) => Ok(exit_code),
-
-        // Otherwise, return an error.
-        _ = time::sleep(shutdown_timeout) => {
-            Err("server exited before all connections were closed".into())
-        }
+    while let Some(result) = connections.join_next().await {
+        handle_connection_result(result);
     }
+
+    Ok(exit_code)
 }
 
-fn handle_connection_result(result: Result<Result<(), DynError>, JoinError>) {
+fn handle_connection_result(result: Result<Result<(), ServerError>, JoinError>) {
     match result {
         Err(error) if error.is_panic() => {
             // Placeholder for tracing...
@@ -179,13 +174,5 @@ async fn wait_for_ctrl_c(tx: watch::Sender<Option<bool>>) {
         eprintln!("unable to register the 'ctrl-c' signal.");
     } else if tx.send(Some(false)).is_err() {
         eprintln!("unable to notify connections to shutdown.");
-    }
-}
-
-async fn shutdown(connections: &mut JoinSet<Result<(), DynError>>) {
-    while let Some(result) = connections.join_next().await {
-        if let Err(error) = result {
-            let _ = &error; // Placeholder for tracing...
-        }
     }
 }
