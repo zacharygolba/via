@@ -85,7 +85,7 @@ where
                 }
 
                 // A graceful shutdown was requested.
-                Ok(_) = shutdown_rx.changed() => {
+                _ = shutdown_rx.changed() => {
                     // Break out of the accept loop with the corrosponding exit code.
                     break 'accept match *shutdown_rx.borrow_and_update() {
                         Some(false) => ExitCode::from(0),
@@ -130,7 +130,7 @@ where
                     tokio::select! {
                         biased;
                         result = &mut connection => result.map_err(|e| e.into()),
-                        Ok(_) = shutdown_rx.changed() => {
+                        _ = shutdown_rx.changed() => {
                             connection.as_mut().graceful_shutdown();
                             connection.as_mut().await.map_err(|e| e.into())
                         }
