@@ -65,7 +65,10 @@ where
                     // Accept the stream from the acceptor.
                     Ok((stream, _addr)) => break stream,
                     Err(error) => {
-                        let _ = &error; // Placeholder for tracing...
+                        // Placeholder for tracing...
+                        if cfg!(debug_assertions) {
+                            eprintln!("error(listener): {}", error);
+                        }
                     }
                 },
 
