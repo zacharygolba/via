@@ -7,6 +7,8 @@ use via::Error;
 /// JSON and do not leak sensitive information to the client.
 ///
 pub fn map_error(error: Error) -> Error {
+    eprintln!("error: {}", error);
+
     match error.source().downcast_ref() {
         // The error occurred because a database record was not found.
         Some(DieselError::NotFound) => error

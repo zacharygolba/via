@@ -101,8 +101,8 @@ async fn main() -> Result<ExitCode, Error> {
     });
 
     // Include an error boundary to catch any errors that occur downstream.
-    app.include(error_boundary::map(|_, error| {
-        eprintln!("Error: {}", error);
+    app.include(error_boundary::map(|error| {
+        eprintln!("error: {}", error);
         error.use_canonical_reason()
     }));
 

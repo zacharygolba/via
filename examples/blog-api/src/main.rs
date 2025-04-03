@@ -44,10 +44,7 @@ async fn main() -> Result<ExitCode, Error> {
 
         // Catch any errors that occur in the API namespace and generate a
         // JSON response from a redacted version of the original error.
-        api.include(error_boundary::map(|_, error| {
-            eprintln!("Error: {}", error); // Placeholder for tracing...
-            util::map_error(error)
-        }));
+        api.include(error_boundary::map(util::map_error));
 
         // Add a timeout middleware to the /api routes. This will prevent the
         // server from waiting indefinitely if we lose connection to the
