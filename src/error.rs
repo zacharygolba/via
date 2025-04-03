@@ -157,7 +157,7 @@ impl Error {
     ///     // Add an `ErrorBoundary` middleware to the route tree that maps
     ///     // errors that occur in subsequent middleware by calling the `redact`
     ///     // function.
-    ///     app.include(error_boundary::map(|_, error| {
+    ///     app.include(error_boundary::map(|error| {
     ///         error.redact(|message| {
     ///             if message.contains("password") {
     ///                 // If password is even mentioned in the error, return an
@@ -229,7 +229,7 @@ impl Error {
     ///     // Add an `ErrorBoundary` middleware to the route tree that maps
     ///     // errors that occur in subsequent middleware by calling the
     ///     // `use_canonical_reason` function.
-    ///     app.include(error_boundary::map(|_, error| {
+    ///     app.include(error_boundary::map(|error| {
     ///         // Prevent error messages that occur in downstream middleware from
     ///         // leaking into the response body by using the reason phrase of
     ///         // the status code associated with the error.
