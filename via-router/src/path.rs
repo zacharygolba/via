@@ -110,13 +110,11 @@ impl Iterator for Split<'_> {
                     continue;
                 }
 
-                break Some([mem::replace(offset, end + 1), end]);
+                return Some([mem::replace(offset, end + 1), end]);
             }
 
-            return if &self.len > offset {
-                let end = self.len;
-                let start = mem::replace(offset, end);
-                Some([start, end])
+            break if &self.len > offset {
+                Some([mem::replace(offset, self.len), self.len])
             } else {
                 None
             };
