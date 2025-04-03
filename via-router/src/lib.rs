@@ -1,4 +1,3 @@
-#![allow(clippy::while_let_on_iterator)]
 #![forbid(unsafe_code)]
 
 pub mod binding;
