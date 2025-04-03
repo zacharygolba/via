@@ -86,7 +86,7 @@ where
 
                 // A graceful shutdown was requested.
                 _ = shutdown_rx.changed() => {
-                    // Break out of the accept loop with the corrosponding exit code.
+                    // Break out of the accept loop with the corresponding exit code.
                     break 'accept match *shutdown_rx.borrow_and_update() {
                         Some(false) => ExitCode::from(0),
                         Some(true) | None => ExitCode::from(1),
