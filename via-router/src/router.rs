@@ -225,7 +225,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::{Node, Router};
-    use crate::{Binding, MatchCond, MatchKind};
+    use crate::binding::{Binding, MatchCond, MatchKind};
+    use crate::path::{Param, Pattern};
 
     const PATHS: [&str; 5] = [
         "/",
@@ -234,6 +235,16 @@ mod tests {
         "/articles/:id",
         "/articles/:id/comments",
     ];
+
+    impl Pattern {
+        pub(crate) fn as_static(&self) -> Option<&str> {
+            if let Pattern::Static(value) = self {
+                Some(value)
+            } else {
+                None
+            }
+        }
+    }
 
     impl MatchCond<String> {
         fn as_str(&self) -> MatchCond<&str> {
@@ -246,6 +257,13 @@ mod tests {
             match *self {
                 Self::Edge(ref cond) => cond.as_either(),
                 Self::Wildcard(node) => node,
+            }
+        }
+
+        fn param(&self) -> Option<&Param> {
+            match *self {
+                Self::Edge(ref cond) => cond.as_either().param(),
+                Self::Wildcard(node) => node.param(),
             }
         }
     }
@@ -311,12 +329,12 @@ mod tests {
                 assert!(binding.range().is_none());
                 assert_eq!(binding.nodes().count(), 1);
 
-                let match_kind = binding.nodes().next().unwrap();
+                let kind = binding.nodes().next().unwrap();
 
-                assert!(matches!(&match_kind, MatchKind::Wildcard(_)));
-                assert_eq!(match_kind.param(), Some(&"path".to_owned().into()));
+                assert!(matches!(&kind, MatchKind::Wildcard(_)));
+                assert_eq!(kind.param(), Some(&"path".to_owned().into()));
 
-                let mut route = match_kind.node().route();
+                let mut route = kind.node().route();
 
                 assert!(matches!(
                     route.next().map(MatchCond::as_str),
@@ -350,8 +368,8 @@ mod tests {
 
             assert_eq!(results.len(), 2);
 
-            assert_init_binding(results.get(0).unwrap(), |match_kind| {
-                matches!(match_kind, MatchKind::Edge(MatchCond::Partial(_)))
+            assert_init_binding(results.get(0).unwrap(), |kind| {
+                matches!(kind, MatchKind::Edge(MatchCond::Partial(_)))
             });
 
             {
@@ -360,12 +378,12 @@ mod tests {
                 assert_eq!(binding.range(), Some(&[1, 4]));
                 assert_eq!(binding.nodes().count(), 1);
 
-                let match_kind = binding.nodes().next().unwrap();
+                let kind = binding.nodes().next().unwrap();
 
-                assert!(matches!(&match_kind, MatchKind::Wildcard(_)));
-                assert_eq!(match_kind.param(), Some(&"path".to_owned().into()));
+                assert!(matches!(&kind, MatchKind::Wildcard(_)));
+                assert_eq!(kind.param(), Some(&"path".to_owned().into()));
 
-                let mut route = match_kind.node().route();
+                let mut route = kind.node().route();
 
                 assert!(matches!(
                     route.next().map(MatchCond::as_str),
@@ -424,12 +442,12 @@ mod tests {
                 let mut nodes = binding.nodes();
 
                 {
-                    let match_kind = nodes.next().unwrap();
+                    let kind = nodes.next().unwrap();
 
-                    assert!(matches!(&match_kind, MatchKind::Wildcard(_)));
-                    assert_eq!(match_kind.param(), Some(&"path".to_owned().into()));
+                    assert!(matches!(&kind, MatchKind::Wildcard(_)));
+                    assert_eq!(kind.param(), Some(&"path".to_owned().into()));
 
-                    let node = match_kind.node();
+                    let node = kind.node();
 
                     assert_eq!(node.route().count(), 1);
                     assert!(matches!(
@@ -439,15 +457,16 @@ mod tests {
                 }
 
                 {
-                    let match_kind = nodes.next().unwrap();
+                    let kind = nodes.next().unwrap();
 
-                    assert!(matches!(
-                        &match_kind,
-                        MatchKind::Edge(MatchCond::Partial(_))
-                    ));
+                    assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
 
-                    assert!(match_kind.param().is_none());
-                    assert_eq!(match_kind.node().route().count(), 0);
+                    assert!(kind.param().is_none());
+
+                    let node = kind.node();
+
+                    assert_eq!(node.pattern.as_static(), Some("echo"));
+                    assert_eq!(node.route().count(), 0);
                 }
             }
 
@@ -457,12 +476,12 @@ mod tests {
                 assert_eq!(binding.range(), Some(&[6, 11]));
                 assert_eq!(binding.nodes().count(), 1);
 
-                let match_kind = binding.nodes().next().unwrap();
+                let kind = binding.nodes().next().unwrap();
 
-                assert!(matches!(&match_kind, MatchKind::Wildcard(_)));
-                assert_eq!(match_kind.param(), Some(&"path".to_owned().into()));
+                assert!(matches!(&kind, MatchKind::Wildcard(_)));
+                assert_eq!(kind.param(), Some(&"path".to_owned().into()));
 
-                let node = match_kind.node();
+                let node = kind.node();
 
                 assert_eq!(node.route().count(), 1);
                 assert!(matches!(
@@ -472,7 +491,7 @@ mod tests {
             }
         }
 
-        // Visit("/articles/8869") [
+        // Visit("/articles/12345") [
         //     Binding(None) [
         //         Edge(Partial(Node {
         //             children: [1, 2, 4],
@@ -492,7 +511,7 @@ mod tests {
         //             route: [],
         //         })),
         //     ],
-        //     Binding(Some([10, 14])) [
+        //     Binding(Some([10, 15])) [
         //         Edge(Exact(Node {
         //             children: [6],
         //             pattern: Dynamic(Param("id")),
@@ -500,6 +519,72 @@ mod tests {
         //         })),
         //     ],
         // ]
+        {
+            let results = router.visit("/articles/12345");
+
+            assert_eq!(results.len(), 3);
+
+            assert_init_binding(results.get(0).unwrap(), |kind| {
+                matches!(kind, MatchKind::Edge(MatchCond::Partial(_)))
+            });
+
+            {
+                let binding = results.get(1).unwrap();
+
+                assert_eq!(binding.range(), Some(&[1, 9]));
+                assert_eq!(binding.nodes().count(), 2);
+
+                let mut nodes = binding.nodes();
+
+                {
+                    let kind = nodes.next().unwrap();
+
+                    assert!(matches!(&kind, MatchKind::Wildcard(_)));
+                    assert_eq!(kind.param(), Some(&"path".to_owned().into()));
+
+                    let node = kind.node();
+
+                    assert_eq!(node.route().count(), 1);
+                    assert!(matches!(
+                        node.route().next().map(MatchCond::as_str),
+                        Some(MatchCond::Partial("/*path"))
+                    ));
+                }
+
+                {
+                    let kind = nodes.next().unwrap();
+
+                    assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
+
+                    assert!(kind.param().is_none());
+
+                    let node = kind.node();
+
+                    assert_eq!(node.pattern.as_static(), Some("articles"));
+                    assert_eq!(node.route().count(), 0);
+                }
+            }
+
+            {
+                let binding = results.get(2).unwrap();
+
+                assert_eq!(binding.range(), Some(&[10, 15]));
+                assert_eq!(binding.nodes().count(), 1);
+
+                let kind = binding.nodes().next().unwrap();
+
+                assert!(matches!(&kind, MatchKind::Edge(MatchCond::Exact(_))));
+                assert_eq!(kind.param(), Some(&"id".to_owned().into()));
+
+                let node = kind.node();
+
+                assert_eq!(node.route().count(), 1);
+                assert!(matches!(
+                    node.route().next().map(MatchCond::as_str),
+                    Some(MatchCond::Partial("/articles/:id"))
+                ));
+            }
+        }
 
         // Visit("/articles/8869/comments") [
         //     Binding(None) [
@@ -521,14 +606,14 @@ mod tests {
         //             route: [],
         //         })),
         //     ],
-        //     Binding(Some([10, 14])) [
+        //     Binding(Some([10, 15])) [
         //         Edge(Partial(Node {
         //             children: [6],
         //             pattern: Dynamic(Param("id")),
         //             route: [Partial("/articles/:id")],
         //         })),
         //     ],
-        //     Binding(Some([15, 23])) [
+        //     Binding(Some([16, 24])) [
         //         Edge(Exact(Node {
         //             children: [],
         //             pattern: Static("comments"),
@@ -536,5 +621,91 @@ mod tests {
         //         })),
         //     ],
         // ]
+        {
+            let results = router.visit("/articles/12345/comments");
+
+            assert_eq!(results.len(), 4);
+
+            assert_init_binding(results.get(0).unwrap(), |kind| {
+                matches!(kind, MatchKind::Edge(MatchCond::Partial(_)))
+            });
+
+            {
+                let binding = results.get(1).unwrap();
+
+                assert_eq!(binding.range(), Some(&[1, 9]));
+                assert_eq!(binding.nodes().count(), 2);
+
+                let mut nodes = binding.nodes();
+
+                {
+                    let kind = nodes.next().unwrap();
+
+                    assert!(matches!(&kind, MatchKind::Wildcard(_)));
+                    assert_eq!(kind.param(), Some(&"path".to_owned().into()));
+
+                    let node = kind.node();
+
+                    assert_eq!(node.route().count(), 1);
+                    assert!(matches!(
+                        node.route().next().map(MatchCond::as_str),
+                        Some(MatchCond::Partial("/*path"))
+                    ));
+                }
+
+                {
+                    let kind = nodes.next().unwrap();
+
+                    assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
+
+                    assert!(kind.param().is_none());
+
+                    let node = kind.node();
+
+                    assert_eq!(node.pattern.as_static(), Some("articles"));
+                    assert_eq!(node.route().count(), 0);
+                }
+            }
+
+            {
+                let binding = results.get(2).unwrap();
+
+                assert_eq!(binding.range(), Some(&[10, 15]));
+                assert_eq!(binding.nodes().count(), 1);
+
+                let kind = binding.nodes().next().unwrap();
+
+                assert_eq!(kind.param(), Some(&"id".to_owned().into()));
+                assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
+
+                let node = kind.node();
+
+                assert_eq!(node.route().count(), 1);
+                assert!(matches!(
+                    node.route().next().map(MatchCond::as_str),
+                    Some(MatchCond::Partial("/articles/:id"))
+                ));
+            }
+
+            {
+                let binding = results.get(3).unwrap();
+
+                assert_eq!(binding.range(), Some(&[16, 24]));
+                assert_eq!(binding.nodes().count(), 1);
+
+                let kind = binding.nodes().next().unwrap();
+
+                assert_eq!(kind.param(), None);
+                assert!(matches!(&kind, MatchKind::Edge(MatchCond::Exact(_))));
+
+                let node = kind.node();
+
+                assert_eq!(node.route().count(), 1);
+                assert!(matches!(
+                    node.route().next().map(MatchCond::as_str),
+                    Some(MatchCond::Partial("/articles/:id/comments"))
+                ));
+            }
+        }
     }
 }

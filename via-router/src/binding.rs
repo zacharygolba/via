@@ -1,7 +1,6 @@
 use smallvec::SmallVec;
 use std::slice;
 
-use crate::path::Param;
 use crate::router::Node;
 
 #[derive(Debug, PartialEq)]
@@ -96,16 +95,6 @@ impl<T> MatchCond<T> {
         match *self {
             Self::Exact(ref mut value) => MatchCond::Exact(value),
             Self::Partial(ref mut value) => MatchCond::Partial(value),
-        }
-    }
-}
-
-impl<T> MatchKind<'_, T> {
-    #[inline]
-    pub fn param(&self) -> Option<&Param> {
-        match *self {
-            Self::Edge(ref cond) => cond.as_either().param(),
-            Self::Wildcard(node) => node.param(),
         }
     }
 }
