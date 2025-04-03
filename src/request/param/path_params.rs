@@ -17,20 +17,15 @@ impl PathParams {
     pub fn iter(&self) -> slice::Iter<(Param, [usize; 2])> {
         self.data.iter()
     }
+
+    #[inline]
+    pub fn push(&mut self, name: Param, range: [usize; 2]) {
+        self.data.push((name, range));
+    }
 }
 
 impl Debug for PathParams {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Debug::fmt(&self.data, f)
-    }
-}
-
-impl Extend<(Param, [usize; 2])> for PathParams {
-    #[inline]
-    fn extend<I>(&mut self, iter: I)
-    where
-        I: IntoIterator<Item = (Param, [usize; 2])>,
-    {
-        self.data.extend(iter);
     }
 }
