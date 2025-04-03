@@ -153,7 +153,7 @@ impl<T> Router<T> {
             results.push(binding);
         }
 
-        while let Some((is_exact, range)) = segments.next() {
+        for (is_exact, range) in &mut segments {
             let mut binding = Binding::new(Some(range), SmallVec::new());
             let segment = &path[range[0]..range[1]];
 
@@ -194,7 +194,6 @@ impl<T> Router<T> {
             .drain(..)
             .filter_map(|key| {
                 let node = tree.get(key).unwrap();
-
                 if let Pattern::Wildcard(_) = &node.pattern {
                     Some(MatchKind::wildcard(node))
                 } else {
