@@ -6,6 +6,6 @@ pub mod binding;
 mod path;
 mod router;
 
-pub use binding::{Binding, MatchCond, MatchKind};
+pub use binding::{MatchCond, MatchKind};
 pub use path::Param;
 pub use router::{Node, Route, Router};

@@ -21,21 +21,6 @@ pub struct Route<'a, T> {
     key: usize,
 }
 
-macro_rules! lookup {
-    ($tree:expr, $key:expr) => {
-        match $tree.get($key) {
-            Some(node) => node,
-            None => {
-                // Placeholder for tracing...
-                //
-                // This should never happen but we def want to know
-                // if it does.
-                continue;
-            }
-        }
-    };
-}
-
 impl<T> Node<T> {
     fn new(pattern: Pattern) -> Self {
         Self {
@@ -102,13 +87,66 @@ impl<T> Router<T> {
         }
     }
 
+    /// Match the path argument against nodes in the route tree.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use via_router::{MatchCond, MatchKind, Router};
+    ///
+    /// fn main() {
+    ///     let mut router = Router::new();
+    ///
+    ///     router.at("/articles").scope(|articles| {
+    ///         articles.at("/:id").respond("Hello, world!".to_owned());
+    ///     });
+    ///
+    ///     let path = "articles/12345";
+    ///     let matched = router.visit(path).into_iter().find_map(|binding| {
+    ///         let range = binding.range();
+    ///
+    ///         binding.nodes().find_map(|kind| match kind {
+    ///             // Wildcard paths are not used in this example.
+    ///             MatchKind::Wildcard(_) => None,
+    ///
+    ///             // The node is an exact match. Map it to the desired output and return.
+    ///             MatchKind::Edge(condition) => {
+    ///                 let node = condition.as_either();
+    ///
+    ///                 Some((
+    ///                     condition.matches(node.route().next().cloned()?)?,
+    ///                     node.param().cloned().zip(range.copied()),
+    ///                 ))
+    ///             }
+    ///         })
+    ///     });
+    ///
+    ///     if let Some((route, param)) = matched {
+    ///         println!("matched {}", path);
+    ///
+    ///         if let Some((name, [start, end])) = param {
+    ///             println!("  param: {} = {}", name, &path[start..end]);
+    ///         }
+    ///
+    ///         println!("  => {}", route);
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// If a node referenced by another node does not exist in the route tree.
+    /// This router is insert-only, therefore this is a very unlikely scenario.
+    ///
     pub fn visit<'a>(&'a self, path: &str) -> Vec<Binding<'a, T>> {
         let mut segments = Split::new(path).lookahead();
         let mut results = Vec::new();
         let mut branch = Vec::with_capacity(64);
         let mut next = SmallVec::<[&[usize]; 2]>::new();
 
-        if let Some(root) = self.tree.first() {
+        let tree = &self.tree;
+
+        if let Some(root) = tree.first() {
             let mut binding = Binding::new(None, SmallVec::new());
 
             branch.extend_from_slice(&root.children);
@@ -122,7 +160,7 @@ impl<T> Router<T> {
             let segment = &path[range[0]..range[1]];
 
             for key in branch.drain(..) {
-                let node = lookup!(&self.tree, key);
+                let node = tree.get(key).unwrap();
                 let kind = match &node.pattern {
                     Pattern::Static(value) => {
                         if value == segment {
@@ -156,7 +194,15 @@ impl<T> Router<T> {
 
         let mut wildcards = branch
             .drain(..)
-            .filter_map(|key| self.match_trailing_wildcard(key))
+            .filter_map(|key| {
+                let node = tree.get(key).unwrap();
+
+                if let Pattern::Wildcard(_) = &node.pattern {
+                    Some(MatchKind::wildcard(node))
+                } else {
+                    None
+                }
+            })
             .peekable();
 
         if wildcards.peek().is_some() {
@@ -164,16 +210,6 @@ impl<T> Router<T> {
         }
 
         results
-    }
-
-    fn match_trailing_wildcard(&self, key: usize) -> Option<MatchKind<T>> {
-        let node = self.tree.get(key)?;
-
-        if let Pattern::Wildcard(_) = &node.pattern {
-            Some(MatchKind::wildcard(node))
-        } else {
-            None
-        }
     }
 }
 

@@ -3,7 +3,7 @@ use std::slice;
 
 use crate::router::Node;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MatchCond<T> {
     Partial(T),
     Exact(T),
@@ -63,6 +63,15 @@ impl<T> MatchCond<T> {
         match self {
             Self::Partial(input) => MatchCond::Partial(f(input)),
             Self::Exact(input) => MatchCond::Exact(f(input)),
+        }
+    }
+
+    #[inline]
+    pub fn matches<U>(&self, other: MatchCond<U>) -> Option<U> {
+        match (self, other) {
+            (Self::Partial(_), MatchCond::Partial(value))
+            | (Self::Exact(_), MatchCond::Exact(value)) => Some(value),
+            _ => None,
         }
     }
 

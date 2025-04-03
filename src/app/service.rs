@@ -6,7 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use via_router::{MatchCond, MatchKind};
+use via_router::MatchKind;
 
 use crate::app::App;
 use crate::body::{HttpBody, RequestBody, ResponseBody};
@@ -41,34 +41,38 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         let path = request.uri().path();
 
         for binding in self.app.router.visit(path) {
-            for match_kind in binding.nodes() {
-                match match_kind {
-                    MatchKind::Edge(MatchCond::Partial(node)) => {
-                        next.extend(node.route().filter_map(MatchCond::as_partial).cloned());
-                        if let Some((name, range)) = node.param().zip(binding.range()) {
-                            params.push(name.clone(), *range);
-                        }
-                    }
-                    MatchKind::Edge(MatchCond::Exact(node)) => {
-                        next.extend(node.route().map(MatchCond::as_either).cloned());
-                        if let Some((name, range)) = node.param().zip(binding.range()) {
-                            params.push(name.clone(), *range);
-                        }
-                    }
-                    MatchKind::Wildcard(node) => {
-                        next.extend(node.route().map(MatchCond::as_either).cloned());
-                        if let Some((name, [start, _])) = node.param().zip(binding.range()) {
-                            params.push(name.clone(), [*start, path.len()]);
-                        }
+            let range = binding.range();
+
+            binding.nodes().for_each(|kind| match kind {
+                MatchKind::Edge(cond) => {
+                    let node = cond.as_either();
+                    let param = node.param();
+                    let middleware = node.route().filter_map(|m| cond.matches(m.as_ref()));
+
+                    next.extend(middleware.cloned());
+
+                    if let Some((name, at)) = param.zip(range) {
+                        params.push(name.clone(), *at);
                     }
                 }
-            }
+                MatchKind::Wildcard(node) => {
+                    let param = node.param();
+                    let middleware = node.route().map(|cond| cond.as_either());
+
+                    next.extend(middleware.cloned());
+
+                    if let Some((name, [start, _])) = param.zip(range) {
+                        params.push(name.clone(), [*start, path.len()]);
+                    }
+                }
+            });
         }
 
         ServeRequest {
             response: next.call({
                 let (parts, body) = request.into_parts();
                 let body = HttpBody::Inline(RequestBody::new(self.max_body_size, body));
+
                 Request::new(Arc::clone(&self.app.state), params, parts, body)
             }),
         }
