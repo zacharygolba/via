@@ -23,12 +23,15 @@ impl<T> Next<T> {
 
 impl<T> Next<T> {
     #[inline]
-    pub(crate) fn new(stack: VecDeque<Arc<dyn Middleware<T>>>) -> Self {
-        Self { deque: stack }
+    pub(crate) fn new(deque: VecDeque<Arc<dyn Middleware<T>>>) -> Self {
+        Self { deque }
     }
 
     #[inline]
-    pub(crate) fn push(&mut self, middleware: Arc<dyn Middleware<T>>) {
-        self.deque.push_back(middleware);
+    pub(crate) fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = Arc<dyn Middleware<T>>>,
+    {
+        self.deque.extend(iter);
     }
 }

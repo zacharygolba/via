@@ -1,4 +1,3 @@
-#![allow(clippy::while_let_on_iterator)]
 #![forbid(unsafe_code)]
 
 pub mod binding;
@@ -6,5 +5,6 @@ pub mod binding;
 mod path;
 mod router;
 
+pub use binding::MatchKind;
 pub use path::Param;
-pub use router::{Route, Router};
+pub use router::{Node, Route, Router};

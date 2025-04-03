@@ -5,9 +5,7 @@ use std::str::MatchIndices;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Param {
-    value: Arc<str>,
-}
+pub struct Param(Arc<str>);
 
 pub struct Split<'a> {
     len: usize,
@@ -62,26 +60,25 @@ pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
 
 impl Display for Param {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(&self.value, f)
+        Display::fmt(&self.0, f)
     }
 }
 
 impl From<String> for Param {
     fn from(value: String) -> Self {
-        Self {
-            value: value.into(),
-        }
+        Self(value.into())
     }
 }
 
 impl PartialEq<str> for Param {
     #[inline]
     fn eq(&self, other: &str) -> bool {
-        *self.value == *other
+        *self.0 == *other
     }
 }
 
 impl<'a> Split<'a> {
+    #[inline]
     pub fn new(path: &'a str) -> Self {
         Self {
             len: path.len(),
@@ -90,6 +87,7 @@ impl<'a> Split<'a> {
         }
     }
 
+    #[inline]
     pub fn lookahead(self) -> SplitWithLookahead<'a> {
         SplitWithLookahead {
             split: self.peekable(),
@@ -107,22 +105,21 @@ impl Iterator for Split<'_> {
         for (end, _) in &mut self.indices {
             if end == 0 {
                 *offset += 1;
-                continue;
+            } else {
+                return Some([mem::replace(offset, end + 1), end]);
             }
-
-            return Some([mem::replace(offset, end + 1), end]);
         }
 
-        if offset == &self.len {
-            None
+        if &self.len > offset {
+            Some([mem::replace(offset, self.len), self.len])
         } else {
-            let len = self.len;
-            Some([mem::replace(offset, len), len])
+            None
         }
     }
 }
 
 impl SplitWithLookahead<'_> {
+    #[inline]
     pub fn has_next(&mut self) -> bool {
         self.split.peek().is_some()
     }

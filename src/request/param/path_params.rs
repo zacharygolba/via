@@ -4,22 +4,22 @@ use via_router::Param;
 
 #[derive(Default)]
 pub struct PathParams {
-    data: Vec<(Param, Option<[usize; 2]>)>,
+    data: Vec<(Param, [usize; 2])>,
 }
 
 impl PathParams {
     #[inline]
-    pub fn new(data: Vec<(Param, Option<[usize; 2]>)>) -> Self {
+    pub fn new(data: Vec<(Param, [usize; 2])>) -> Self {
         Self { data }
     }
 
     #[inline]
-    pub fn iter(&self) -> slice::Iter<(Param, Option<[usize; 2]>)> {
+    pub fn iter(&self) -> slice::Iter<(Param, [usize; 2])> {
         self.data.iter()
     }
 
     #[inline]
-    pub fn push(&mut self, name: Param, range: Option<[usize; 2]>) {
+    pub fn push(&mut self, name: Param, range: [usize; 2]) {
         self.data.push((name, range));
     }
 }

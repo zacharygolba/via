@@ -31,8 +31,8 @@ async fn main() -> Result<ExitCode, Error> {
     // Add our hello responder to the endpoint /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
-    via::start(app)
+    Ok(via::start(app)
         .rustls_config(tls_config)
         .listen(("127.0.0.1", 8080))
-        .await
+        .await?)
 }

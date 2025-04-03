@@ -15,7 +15,7 @@ Add the following to dependencies section of your `Cargo.toml`:
 
 ```toml
 [dependencies]
-via = "2.0.0-rc.28"
+via = "2.0.0-rc.31"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 ```
 
@@ -51,7 +51,7 @@ async fn main() -> Result<ExitCode, Error> {
     // Define a route that listens on /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
-    via::start(app).listen(("127.0.0.1", 8080)).await
+    Ok(via::start(app).listen(("127.0.0.1", 8080)).await?)
 }
 ```
 

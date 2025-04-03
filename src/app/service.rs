@@ -6,11 +6,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use via_router::MatchKind;
 
 use crate::app::App;
-use crate::body::{HttpBody, ResponseBody};
+use crate::body::{HttpBody, RequestBody, ResponseBody};
 use crate::middleware::{FutureResponse, Next};
-use crate::request::{PathParams, Request};
+use crate::request::param::PathParams;
+use crate::request::Request;
 
 pub struct AppService<T> {
     app: Arc<App<T>>,
@@ -18,7 +20,7 @@ pub struct AppService<T> {
 }
 
 pub struct ServeRequest {
-    future: FutureResponse,
+    response: FutureResponse,
 }
 
 impl<T> AppService<T> {
@@ -35,28 +37,44 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
         let mut params = PathParams::new(Vec::with_capacity(6));
-        let mut next = Next::new(VecDeque::new());
+        let mut next = Next::new(VecDeque::with_capacity(6));
+        let path = request.uri().path();
 
-        for binding in self.app.router.visit(request.uri().path()) {
-            let range = binding.range.as_ref();
+        for binding in self.app.router.visit(path) {
+            let range = binding.range();
 
-            for matched in binding.iter() {
-                for middleware in matched.iter() {
-                    next.push(Arc::clone(middleware));
+            binding.nodes().for_each(|kind| match kind {
+                MatchKind::Edge(cond) => {
+                    let node = cond.as_either();
+                    let param = node.param();
+                    let middleware = node.route().filter_map(|m| cond.matches(m.as_ref()));
+
+                    next.extend(middleware.cloned());
+
+                    if let Some((name, at)) = param.zip(range) {
+                        params.push(name.clone(), *at);
+                    }
                 }
+                MatchKind::Wildcard(node) => {
+                    let param = node.param();
+                    let middleware = node.route().map(|cond| cond.as_either());
 
-                if let Some(name) = matched.param.cloned() {
-                    params.push(name, range.copied());
+                    next.extend(middleware.cloned());
+
+                    if let Some((name, [start, _])) = param.zip(range) {
+                        params.push(name.clone(), [*start, path.len()]);
+                    }
                 }
-            }
+            });
         }
 
         ServeRequest {
-            future: next.call(Request::new(
-                Arc::clone(&self.app.state),
-                params,
-                request.map(|body| HttpBody::request(self.max_body_size, body)),
-            )),
+            response: next.call({
+                let (parts, body) = request.into_parts();
+                let body = HttpBody::Inline(RequestBody::new(self.max_body_size, body));
+
+                Request::new(Arc::clone(&self.app.state), params, parts, body)
+            }),
         }
     }
 }
@@ -65,7 +83,7 @@ impl Future for ServeRequest {
     type Output = Result<http::Response<HttpBody<ResponseBody>>, Infallible>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        self.future
+        self.response
             .as_mut()
             .poll(context)
             .map(|result| Ok(result.unwrap_or_else(|e| e.into()).into_inner()))

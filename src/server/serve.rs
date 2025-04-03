@@ -1,20 +1,20 @@
 use hyper::server::conn;
 use hyper_util::rt::TokioTimer;
+use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::net::TcpListener;
+use tokio::signal;
 use tokio::sync::{watch, Semaphore};
-use tokio::task::JoinSet;
-use tokio::{signal, time};
+use tokio::task::{JoinError, JoinSet};
 
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
+use super::stream::IoStream;
 use crate::app::{App, AppService};
-use crate::error::DynError;
-use crate::server::io_stream::IoStream;
+use crate::error::ServerError;
 
 pub async fn serve<A, T>(
     listener: TcpListener,
@@ -22,8 +22,7 @@ pub async fn serve<A, T>(
     app: App<T>,
     max_body_size: usize,
     max_connections: usize,
-    shutdown_timeout: Duration,
-) -> Result<ExitCode, DynError>
+) -> ExitCode
 where
     A: Acceptor + Send + Sync + 'static,
     T: Send + Sync + 'static,
@@ -47,45 +46,51 @@ where
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
-    let mut connections = JoinSet::<Result<(), DynError>>::new();
+    let mut connections = JoinSet::new();
 
     // Start accepting incoming connections.
     let exit_code = 'accept: loop {
         // Acquire a permit from the semaphore.
-        let permit = semaphore.clone().acquire_owned().await?;
+        let permit = match semaphore.clone().acquire_owned().await {
+            Ok(acquired) => acquired,
+            Err(_) => break ExitCode::from(1),
+        };
 
         // Wait for something interesting to happen.
         let tcp_stream = loop {
             tokio::select! {
-                // A graceful shutdown was requested.
-                _ = shutdown_rx.changed() => {
-                    // Break out of the accept loop with the corrosponding exit code.
-                    break 'accept match *shutdown_rx.borrow_and_update() {
-                        Some(false) => ExitCode::from(0),
-                        Some(true) | None => ExitCode::from(1),
-                    }
-                }
+                biased;
 
                 // A new connection is ready to be accepted.
                 result = listener.accept() => match result {
                     // Accept the stream from the acceptor.
                     Ok((stream, _addr)) => break stream,
                     Err(error) => {
-                        let _ = &error; // Placeholder for tracing...
+                        // Placeholder for tracing...
+                        if cfg!(debug_assertions) {
+                            eprintln!("error(listener): {}", error);
+                        }
                     }
                 },
 
                 // We have idle time. Join any inflight connections that may
                 // have finished.
-                joined = connections.join_next(), if !connections.is_empty() => {
-                    if let Some(Err(error)) = joined {
-                        let _ = &error; // Placeholder for tracing...
+                first = connections.join_next(), if !connections.is_empty() => {
+                    if let Some(result) = first {
+                        handle_connection_result(result);
                     }
 
                     while let Some(result) = connections.try_join_next() {
-                        if let Err(error) = result {
-                            let _ = &error; // Placeholder for tracing...
-                        }
+                        handle_connection_result(result);
+                    }
+                }
+
+                // A graceful shutdown was requested.
+                _ = shutdown_rx.changed() => {
+                    // Break out of the accept loop with the corresponding exit code.
+                    break 'accept match *shutdown_rx.borrow_and_update() {
+                        Some(false) => ExitCode::from(0),
+                        Some(true) | None => ExitCode::from(1),
                     }
                 }
             }
@@ -103,53 +108,66 @@ where
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            let accepted = match acceptor.accept(tcp_stream).await {
-                Ok(stream) => stream,
-                Err(error) => {
-                    drop(permit);
-                    return Err(error.into());
+            let result = match acceptor.accept(tcp_stream).await {
+                Err(error) => Err(error.into()),
+                Ok(accepted) => {
+                    // Create a new HTTP/2 connection.
+                    #[cfg(feature = "http2")]
+                    let mut connection = conn::http2::Builder::new(TokioExecutor::new())
+                        .timer(TokioTimer::new())
+                        .serve_connection(IoStream::new(accepted), service);
+
+                    // Create a new HTTP/1.1 connection.
+                    #[cfg(all(feature = "http1", not(feature = "http2")))]
+                    let mut connection = conn::http1::Builder::new()
+                        .timer(TokioTimer::new())
+                        .serve_connection(IoStream::new(accepted), service)
+                        .with_upgrades();
+
+                    // Pin the connection on the stack so it can be polled.
+                    let mut connection = Pin::new(&mut connection);
+
+                    // Serve the connection.
+                    tokio::select! {
+                        biased;
+                        result = &mut connection => result.map_err(|e| e.into()),
+                        _ = shutdown_rx.changed() => {
+                            connection.as_mut().graceful_shutdown();
+                            connection.as_mut().await.map_err(|e| e.into())
+                        }
+                    }
                 }
             };
 
-            // Create a new HTTP/2 connection.
-            #[cfg(feature = "http2")]
-            let mut connection = Box::pin(
-                conn::http2::Builder::new(TokioExecutor::new())
-                    .timer(TokioTimer::new())
-                    .serve_connection(IoStream::new(accepted), service),
-            );
-
-            // Create a new HTTP/1.1 connection.
-            #[cfg(all(feature = "http1", not(feature = "http2")))]
-            let mut connection = Box::pin(
-                conn::http1::Builder::new()
-                    .timer(TokioTimer::new())
-                    .serve_connection(IoStream::new(accepted), service)
-                    .with_upgrades(),
-            );
-
-            // Serve the connection.
-            let result = tokio::select! {
-                served = connection.as_mut() => served.map_err(|e| e.into()),
-                _ = shutdown_rx.changed() => {
-                    connection.as_mut().graceful_shutdown();
-                    connection.as_mut().await.map_err(|e| e.into())
-                }
-            };
-
+            // Explicitly drop the semaphore permit.
             drop(permit);
+
             result
         });
     };
 
-    tokio::select! {
-        // Wait for inflight connection to close within the configured timeout.
-        _ = shutdown(&mut connections) => Ok(exit_code),
+    while let Some(result) = connections.join_next().await {
+        handle_connection_result(result);
+    }
 
-        // Otherwise, return an error.
-        _ = time::sleep(shutdown_timeout) => {
-            Err("server exited before all connections were closed".into())
+    exit_code
+}
+
+fn handle_connection_result(result: Result<Result<(), ServerError>, JoinError>) {
+    match result {
+        Err(error) if error.is_panic() => {
+            // Placeholder for tracing...
+            if cfg!(debug_assertions) {
+                eprintln!("error(connection): {}", error);
+            }
         }
+        Ok(Err(error)) => {
+            // Placeholder for tracing...
+            if cfg!(debug_assertions) {
+                eprintln!("error(connection): {}", error);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -158,13 +176,5 @@ async fn wait_for_ctrl_c(tx: watch::Sender<Option<bool>>) {
         eprintln!("unable to register the 'ctrl-c' signal.");
     } else if tx.send(Some(false)).is_err() {
         eprintln!("unable to notify connections to shutdown.");
-    }
-}
-
-async fn shutdown(connections: &mut JoinSet<Result<(), DynError>>) {
-    while let Some(result) = connections.join_next().await {
-        if let Err(error) = result {
-            let _ = &error; // Placeholder for tracing...
-        }
     }
 }

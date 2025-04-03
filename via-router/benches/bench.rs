@@ -2,9 +2,9 @@
 extern crate test;
 
 use test::Bencher;
-use via_router::Router;
+use via_router::{MatchKind, Router};
 
-static ROUTES: [&str; 100] = [
+const ROUTES: [&str; 100] = [
     "/home",
     "/about",
     "/contact",
@@ -117,7 +117,10 @@ fn find_matches_1(b: &mut Bencher) {
 
     b.iter(|| {
         for binding in router.visit("/dashboard") {
-            for _ in binding.iter() {}
+            binding.nodes().fold(0, |sum, kind| match kind {
+                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
+                MatchKind::Wildcard(node) => sum + node.route().count(),
+            });
         }
     });
 }
@@ -132,7 +135,10 @@ fn find_matches_2(b: &mut Bencher) {
 
     b.iter(|| {
         for binding in router.visit("/dashboard/overview") {
-            for _ in binding.iter() {}
+            binding.nodes().fold(0, |sum, kind| match kind {
+                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
+                MatchKind::Wildcard(node) => sum + node.route().count(),
+            });
         }
     });
 }
@@ -147,7 +153,10 @@ fn find_matches_3(b: &mut Bencher) {
 
     b.iter(|| {
         for binding in router.visit("/help/article/12345678987654321") {
-            for _ in binding.iter() {}
+            binding.nodes().fold(0, |sum, kind| match kind {
+                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
+                MatchKind::Wildcard(node) => sum + node.route().count(),
+            });
         }
     });
 }
@@ -162,7 +171,10 @@ fn find_matches_4(b: &mut Bencher) {
 
     b.iter(|| {
         for binding in router.visit("/api/v1/products/12345678987654321") {
-            for _ in binding.iter() {}
+            binding.nodes().fold(0, |sum, kind| match kind {
+                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
+                MatchKind::Wildcard(node) => sum + node.route().count(),
+            });
         }
     });
 }
@@ -178,7 +190,10 @@ fn find_matches_5(b: &mut Bencher) {
     b.iter(|| {
         for binding in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
         {
-            for _ in binding.iter() {}
+            binding.nodes().fold(0, |sum, kind| match kind {
+                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
+                MatchKind::Wildcard(node) => sum + node.route().count(),
+            });
         }
     });
 }
@@ -194,7 +209,10 @@ fn find_matches_6(b: &mut Bencher) {
     b.iter(|| {
         for binding in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
         {
-            for _ in binding.iter() {}
+            binding.nodes().fold(0, |sum, kind| match kind {
+                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
+                MatchKind::Wildcard(node) => sum + node.route().count(),
+            });
         }
     });
 }
@@ -211,7 +229,10 @@ fn find_matches_7(b: &mut Bencher) {
         for binding in
             router.visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
         {
-            for _ in binding.iter() {}
+            binding.nodes().fold(0, |sum, kind| match kind {
+                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
+                MatchKind::Wildcard(node) => sum + node.route().count(),
+            });
         }
     });
 }

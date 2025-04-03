@@ -13,26 +13,21 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 /// A hyper-compatible wrapper for a duplex stream.
 ///
 pub struct IoStream<T> {
-    stream: T,
+    stream: Pin<Box<T>>,
 }
 
 impl<T> IoStream<T> {
     #[inline]
     pub fn new(stream: T) -> Self {
-        Self { stream }
-    }
-}
-
-impl<T> IoStream<T> {
-    #[inline]
-    fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
-        unsafe { self.map_unchecked_mut(|this| &mut this.stream) }
+        Self {
+            stream: Box::pin(stream),
+        }
     }
 }
 
 impl<R: AsyncRead> Read for IoStream<R> {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
         mut cursor: ReadBufCursor<'_>,
     ) -> Poll<Result<(), Error>> {
@@ -46,7 +41,7 @@ impl<R: AsyncRead> Read for IoStream<R> {
         //
         let mut buf = unsafe { ReadBuf::uninit(cursor.as_mut()) };
 
-        let len = match self.project().poll_read(context, &mut buf)? {
+        let len = match self.stream.as_mut().poll_read(context, &mut buf)? {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(_) => buf.filled().len(),
         };
@@ -70,27 +65,30 @@ impl<R: AsyncRead> Read for IoStream<R> {
 
 impl<W: AsyncWrite> Write for IoStream<W> {
     fn poll_write(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, Error>> {
-        self.project().poll_write(context, buf)
+        self.stream.as_mut().poll_write(context, buf)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        self.project().poll_flush(context)
+    fn poll_flush(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        self.stream.as_mut().poll_flush(context)
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        self.project().poll_shutdown(context)
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Result<(), Error>> {
+        self.stream.as_mut().poll_shutdown(context)
     }
 
     fn poll_write_vectored(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
         buf_list: &[IoSlice<'_>],
     ) -> Poll<Result<usize, Error>> {
-        self.project().poll_write_vectored(context, buf_list)
+        self.stream.as_mut().poll_write_vectored(context, buf_list)
     }
 
     fn is_write_vectored(&self) -> bool {

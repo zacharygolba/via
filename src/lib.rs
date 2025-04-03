@@ -46,7 +46,7 @@
 //!     // Define a route that listens on /hello/:name.
 //!     app.at("/hello/:name").respond(via::get(hello));
 //!
-//!     via::start(app).listen(("127.0.0.1", 8080)).await
+//!     Ok(via::start(app).listen(("127.0.0.1", 8080)).await?)
 //! }
 //! ```
 //!
@@ -54,12 +54,12 @@
 #![allow(clippy::module_inception)]
 
 pub mod body;
+pub mod error;
 pub mod middleware;
 pub mod request;
 pub mod response;
 
 mod app;
-mod error;
 mod server;
 
 pub use app::{app, App, Route};
