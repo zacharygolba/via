@@ -92,44 +92,42 @@ impl<T> Router<T> {
     /// # Example
     ///
     /// ```
-    /// use via_router::{MatchCond, MatchKind, Router};
+    /// use via_router::{MatchKind, Router};
     ///
-    /// fn main() {
-    ///     let mut router = Router::new();
+    /// let mut router = Router::new();
     ///
-    ///     router.at("/articles").scope(|articles| {
-    ///         articles.at("/:id").respond("Hello, world!".to_owned());
-    ///     });
+    /// router.at("/articles").scope(|articles| {
+    ///    articles.at("/:id").respond("Hello, world!".to_owned());
+    /// });
     ///
-    ///     let path = "articles/12345";
-    ///     let matched = router.visit(path).into_iter().find_map(|binding| {
-    ///         let range = binding.range();
+    /// let path = "articles/12345";
+    /// let matched = router.visit(path).into_iter().find_map(|binding| {
+    ///    let range = binding.range();
     ///
-    ///         binding.nodes().find_map(|kind| match kind {
-    ///             // Wildcard paths are not used in this example.
-    ///             MatchKind::Wildcard(_) => None,
+    ///    binding.nodes().find_map(|kind| match kind {
+    ///       // Wildcard paths are not used in this example.
+    ///       MatchKind::Wildcard(_) => None,
     ///
-    ///             // The node is an exact match. Map it to the desired output and return.
-    ///             MatchKind::Edge(condition) => {
-    ///                 let node = condition.as_either();
+    ///       // The node is an exact match. Map it to the desired output and return.
+    ///       MatchKind::Edge(cond) => {
+    ///          let node = cond.as_either();
     ///
-    ///                 Some((
-    ///                     condition.matches(node.route().next().cloned()?)?,
-    ///                     node.param().cloned().zip(range.copied()),
-    ///                 ))
-    ///             }
-    ///         })
-    ///     });
+    ///          Some((
+    ///             cond.matches(node.route().next().cloned()?)?,
+    ///             node.param().cloned().zip(range.copied()),
+    ///          ))
+    ///       }
+    ///    })
+    /// });
     ///
-    ///     if let Some((route, param)) = matched {
-    ///         println!("matched {}", path);
+    /// if let Some((route, param)) = matched {
+    ///    println!("matched {}", path);
     ///
-    ///         if let Some((name, [start, end])) = param {
-    ///             println!("  param: {} = {}", name, &path[start..end]);
-    ///         }
+    ///    if let Some((name, [start, end])) = param {
+    ///       println!("  param: {} = {}", name, &path[start..end]);
+    ///    }
     ///
-    ///         println!("  => {}", route);
-    ///     }
+    ///    println!("  => {}", route);
     /// }
     /// ```
     ///
