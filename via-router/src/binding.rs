@@ -19,19 +19,15 @@ pub enum MatchKind<'a, T> {
 ///
 #[derive(Debug)]
 pub struct Binding<'a, T> {
-    range: Option<[usize; 2]>,
+    has_nodes: bool,
     nodes: SmallVec<[MatchKind<'a, T>; 1]>,
+    range: Option<[usize; 2]>,
 }
 
 impl<T> Binding<'_, T> {
     #[inline]
-    pub fn len(&self) -> usize {
-        self.nodes.len()
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
+    pub fn has_nodes(&self) -> bool {
+        self.has_nodes
     }
 
     #[inline]
@@ -47,13 +43,36 @@ impl<T> Binding<'_, T> {
 
 impl<'a, T> Binding<'a, T> {
     #[inline]
-    pub(crate) fn new(range: Option<[usize; 2]>, nodes: SmallVec<[MatchKind<'a, T>; 1]>) -> Self {
-        Self { range, nodes }
+    pub(crate) fn new(range: [usize; 2]) -> Self {
+        Self {
+            has_nodes: false,
+            nodes: SmallVec::new(),
+            range: Some(range),
+        }
+    }
+
+    pub(crate) fn new_with_nodes(
+        range: Option<[usize; 2]>,
+        nodes: SmallVec<[MatchKind<'a, T>; 1]>,
+    ) -> Self {
+        debug_assert!(
+            !nodes.is_empty(),
+            "Binding::new_with_nodes requires that nodes is not empty"
+        );
+
+        Self {
+            has_nodes: true,
+            nodes,
+            range,
+        }
     }
 
     #[inline]
     pub(crate) fn push(&mut self, node: MatchKind<'a, T>) {
         self.nodes.push(node);
+        if !self.has_nodes {
+            self.has_nodes = true;
+        }
     }
 }
 
