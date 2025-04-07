@@ -4,6 +4,11 @@ use std::slice;
 use crate::binding::{Binding, MatchCond, MatchKind};
 use crate::path::{self, Param, Pattern, Split};
 
+/// The capacity of the vec used to store indices (usize) to the children of
+/// the nodes that matched the last path segment.
+///
+const VISIT_BRANCH_CAPACITY: usize = 32;
+
 #[derive(Debug)]
 pub struct Node<T> {
     children: Vec<usize>,
@@ -139,7 +144,7 @@ impl<T> Router<T> {
     pub fn visit<'a>(&'a self, path: &str) -> Vec<Binding<'a, T>> {
         let mut segments = Split::new(path).lookahead();
         let mut results = Vec::new();
-        let mut branch = Vec::with_capacity(64);
+        let mut branch = Vec::with_capacity(VISIT_BRANCH_CAPACITY);
         let mut next = SmallVec::<[&[usize]; 2]>::new();
 
         let tree = &self.tree;
