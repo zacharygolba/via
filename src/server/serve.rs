@@ -133,7 +133,7 @@ where
                         result = &mut connection => result.map_err(|e| e.into()),
                         _ = shutdown_rx.changed() => {
                             connection.as_mut().graceful_shutdown();
-                            connection.as_mut().await.map_err(|e| e.into())
+                            connection.await.map_err(|e| e.into())
                         }
                     }
                 }
