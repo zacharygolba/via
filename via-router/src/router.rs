@@ -203,7 +203,7 @@ impl<T> Router<T> {
 
             nodes.push(wildcard);
             nodes.extend(wildcards);
-            results.push(Binding::new_with_nodes(None, nodes))
+            results.push(Binding::new_with_nodes(None, nodes));
         }
 
         results
