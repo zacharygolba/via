@@ -9,6 +9,11 @@ use crate::path::{self, Param, Pattern, Split};
 ///
 const VISIT_BRANCH_CAPACITY: usize = 32;
 
+/// The capacity of the vec returned from the Router::visit fn. This number is
+/// calculated by assuming 7 path segments plus a binding to the root node.
+///
+const VISIT_RESULTS_CAPACITY: usize = 8;
+
 #[derive(Debug)]
 pub struct Node<T> {
     children: Vec<usize>,
@@ -143,7 +148,7 @@ impl<T> Router<T> {
     ///
     pub fn visit<'a>(&'a self, path: &str) -> Vec<Binding<'a, T>> {
         let mut segments = Split::new(path).lookahead();
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(VISIT_RESULTS_CAPACITY);
         let mut branch = Vec::with_capacity(VISIT_BRANCH_CAPACITY);
         let mut next = SmallVec::<[&[usize]; 2]>::new();
 
