@@ -145,21 +145,22 @@ impl<T> Router<T> {
         let tree = &self.tree;
 
         if let Some(root) = tree.first() {
-            let mut binding = Binding::new(None, SmallVec::new());
+            let mut nodes = SmallVec::new();
 
             branch.extend_from_slice(&root.children);
 
-            binding.push(MatchKind::edge(!segments.has_next(), root));
-            results.push(binding);
+            nodes.push(MatchKind::edge(!segments.has_next(), root));
+            results.push(Binding::new_with_nodes(None, nodes));
         }
 
         for (is_exact, range) in &mut segments {
-            let mut binding = Binding::new(Some(range), SmallVec::new());
+            let mut binding = Binding::new(range);
             let segment = &path[range[0]..range[1]];
 
             for key in branch.drain(..) {
                 let node = tree.get(key).unwrap();
-                let kind = match &node.pattern {
+
+                binding.push(match &node.pattern {
                     Pattern::Static(value) => {
                         if value == segment {
                             next.push(&node.children);
@@ -176,34 +177,33 @@ impl<T> Router<T> {
                     Pattern::Root => {
                         continue;
                     }
-                };
-
-                binding.push(kind);
+                });
             }
 
             for children in next.drain(..) {
                 branch.extend_from_slice(children);
             }
 
-            if !binding.is_empty() {
+            if binding.has_nodes() {
                 results.push(binding);
             }
         }
 
-        let mut wildcards = branch
-            .drain(..)
-            .filter_map(|key| {
-                let node = tree.get(key).unwrap();
-                if let Pattern::Wildcard(_) = &node.pattern {
-                    Some(MatchKind::wildcard(node))
-                } else {
-                    None
-                }
-            })
-            .peekable();
+        let mut wildcards = branch.drain(..).filter_map(|key| {
+            let node = tree.get(key).unwrap();
+            if let Pattern::Wildcard(_) = &node.pattern {
+                Some(MatchKind::wildcard(node))
+            } else {
+                None
+            }
+        });
 
-        if wildcards.peek().is_some() {
-            results.push(Binding::new(None, wildcards.collect()));
+        if let Some(wildcard) = wildcards.next() {
+            let mut nodes = SmallVec::new();
+
+            nodes.push(wildcard);
+            nodes.extend(wildcards);
+            results.push(Binding::new_with_nodes(None, nodes));
         }
 
         results
