@@ -70,9 +70,7 @@ impl<'a, T> Binding<'a, T> {
     #[inline]
     pub(crate) fn push(&mut self, node: MatchKind<'a, T>) {
         self.nodes.push(node);
-        if !self.has_nodes {
-            self.has_nodes = true;
-        }
+        self.has_nodes = true;
     }
 }
 
