@@ -161,22 +161,16 @@ impl<T> Router<T> {
                 let node = tree.get(key).unwrap();
 
                 binding.push(match &node.pattern {
-                    Pattern::Static(value) => {
-                        if value == segment {
-                            next.push(&node.children);
-                            MatchKind::edge(is_exact, node)
-                        } else {
-                            continue;
-                        }
+                    Pattern::Static(value) if value == segment => {
+                        next.push(&node.children);
+                        MatchKind::edge(is_exact, node)
                     }
-                    Pattern::Wildcard(_) => MatchKind::wildcard(node),
                     Pattern::Dynamic(_) => {
                         next.push(&node.children);
                         MatchKind::edge(is_exact, node)
                     }
-                    Pattern::Root => {
-                        continue;
-                    }
+                    Pattern::Static(_) | Pattern::Root => continue,
+                    Pattern::Wildcard(_) => MatchKind::wildcard(node),
                 });
             }
 
