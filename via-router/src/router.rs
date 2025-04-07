@@ -7,7 +7,7 @@ use crate::path::{self, Param, Pattern, Split};
 /// The capacity of the vec used to store indices (usize) to the children of
 /// the nodes that matched the last path segment.
 ///
-const VISIT_BRANCH_CAPACITY: usize = 128;
+const VISIT_BRANCH_CAPACITY: usize = 32;
 
 #[derive(Debug)]
 pub struct Node<T> {
