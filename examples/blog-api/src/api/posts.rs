@@ -17,7 +17,7 @@ pub async fn index(request: Request<State>, _: Next<State>) -> via::Result {
 
 pub async fn create(request: Request<State>, _: Next<State>) -> via::Result {
     let state = request.state().clone();
-    let payload = request.into_body().read_to_end().await?;
+    let payload = request.into_future().await?;
     let new_post = payload.parse_json::<NewPost>()?.insert(&state.pool).await?;
 
     Response::build()
@@ -35,7 +35,7 @@ pub async fn show(request: Request<State>, _: Next<State>) -> via::Result {
 pub async fn update(request: Request<State>, _: Next<State>) -> via::Result {
     let id = request.param("id").parse()?;
     let state = request.state().clone();
-    let payload = request.into_body().read_to_end().await?;
+    let payload = request.into_future().await?;
     let updated_post = payload
         .parse_json::<ChangeSet>()?
         .apply(&state.pool, id)

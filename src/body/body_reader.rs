@@ -10,11 +10,8 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::body::HttpBody;
-use crate::Error;
-
-use super::limit_error::error_from_boxed;
-use super::RequestBody;
+use super::{util, BoxBody};
+use crate::error::Error;
 
 /// The entire contents of a request body, in-memory.
 ///
@@ -26,7 +23,7 @@ pub struct BodyData {
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct BodyReader {
-    body: HttpBody<RequestBody>,
+    body: BoxBody,
     data: Option<BodyData>,
 }
 
@@ -99,7 +96,7 @@ impl BodyData {
 }
 
 impl BodyReader {
-    pub(crate) fn new(body: HttpBody<RequestBody>) -> Self {
+    pub(crate) fn new(body: BoxBody) -> Self {
         Self {
             body,
             data: Some(BodyData {
@@ -108,8 +105,10 @@ impl BodyReader {
             }),
         }
     }
+}
 
-    fn project(self: Pin<&mut Self>) -> (Pin<&mut HttpBody<RequestBody>>, &mut Option<BodyData>) {
+impl BodyReader {
+    fn project(self: Pin<&mut Self>) -> (Pin<&mut BoxBody>, &mut Option<BodyData>) {
         let this = self.get_mut();
         (Pin::new(&mut this.body), &mut this.data)
     }
@@ -124,7 +123,7 @@ impl Future for BodyReader {
         loop {
             return match ready!(body.as_mut().poll_frame(context)) {
                 None => Poll::Ready(data.take().ok_or_else(already_read)),
-                Some(Err(e)) => Poll::Ready(Err(error_from_boxed(e))),
+                Some(Err(e)) => Poll::Ready(Err(util::map_err(e))),
                 Some(Ok(frame)) => {
                     let output = data.as_mut().ok_or_else(already_read)?;
 

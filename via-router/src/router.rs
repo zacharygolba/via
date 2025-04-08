@@ -43,16 +43,43 @@ impl<T> Node<T> {
 
 impl<T> Node<T> {
     #[inline]
-    pub fn param(&self) -> Option<&Param> {
-        match &self.pattern {
-            Pattern::Dynamic(param) | Pattern::Wildcard(param) => Some(param),
-            _ => None,
+    pub fn param<F>(&self, f: F) -> Option<(Param, [usize; 2])>
+    where
+        F: FnOnce() -> Option<[usize; 2]>,
+    {
+        if let Pattern::Dynamic(name) | Pattern::Wildcard(name) = &self.pattern {
+            Some((name.clone(), f()?))
+        } else {
+            None
         }
     }
 
     #[inline]
     pub fn route(&self) -> slice::Iter<MatchCond<T>> {
         self.route.iter()
+    }
+
+    #[inline]
+    pub fn matches<'node, 'predicate, U>(
+        &'node self,
+        predicate: &'predicate MatchCond<U>,
+    ) -> impl Iterator<Item = &'node T> + 'predicate
+    where
+        'node: 'predicate,
+    {
+        self.route
+            .iter()
+            .filter_map(|other| predicate.matches(other.as_ref()))
+    }
+
+    #[inline]
+    pub fn exact(&self) -> impl Iterator<Item = &T> {
+        self.route.iter().map(MatchCond::as_either)
+    }
+
+    #[inline]
+    pub fn partial(&self) -> impl Iterator<Item = &T> {
+        self.route.iter().filter_map(MatchCond::as_partial)
     }
 }
 
@@ -163,7 +190,7 @@ impl<T> Router<T> {
             results.push(Binding::new_with_nodes(None, nodes));
         }
 
-        for (is_exact, range) in &mut segments {
+        while let Some((is_exact, range)) = segments.next() {
             let mut binding = Binding::new(range);
             let segment = &path[range[0]..range[1]];
 
@@ -298,9 +325,9 @@ mod tests {
         }
 
         fn param(&self) -> Option<&Param> {
-            match *self {
-                Self::Edge(ref cond) => cond.as_either().param(),
-                Self::Wildcard(node) => node.param(),
+            match &self.node().pattern {
+                Pattern::Dynamic(name) | Pattern::Wildcard(name) => Some(name),
+                Pattern::Static(_) | Pattern::Root => None,
             }
         }
     }
@@ -412,7 +439,7 @@ mod tests {
             {
                 let binding = results.get(1).unwrap();
 
-                assert_eq!(binding.range(), Some(&[1, 4]));
+                assert_eq!(binding.range(), Some([1, 4]));
                 assert_eq!(binding.nodes().count(), 1);
 
                 let kind = binding.nodes().next().unwrap();
@@ -473,7 +500,7 @@ mod tests {
             {
                 let binding = results.get(1).unwrap();
 
-                assert_eq!(binding.range(), Some(&[1, 5]));
+                assert_eq!(binding.range(), Some([1, 5]));
                 assert_eq!(binding.nodes().count(), 2);
 
                 let mut nodes = binding.nodes();
@@ -510,7 +537,7 @@ mod tests {
             {
                 let binding = results.get(2).unwrap();
 
-                assert_eq!(binding.range(), Some(&[6, 11]));
+                assert_eq!(binding.range(), Some([6, 11]));
                 assert_eq!(binding.nodes().count(), 1);
 
                 let kind = binding.nodes().next().unwrap();
@@ -568,7 +595,7 @@ mod tests {
             {
                 let binding = results.get(1).unwrap();
 
-                assert_eq!(binding.range(), Some(&[1, 9]));
+                assert_eq!(binding.range(), Some([1, 9]));
                 assert_eq!(binding.nodes().count(), 2);
 
                 let mut nodes = binding.nodes();
@@ -605,7 +632,7 @@ mod tests {
             {
                 let binding = results.get(2).unwrap();
 
-                assert_eq!(binding.range(), Some(&[10, 15]));
+                assert_eq!(binding.range(), Some([10, 15]));
                 assert_eq!(binding.nodes().count(), 1);
 
                 let kind = binding.nodes().next().unwrap();
@@ -670,7 +697,7 @@ mod tests {
             {
                 let binding = results.get(1).unwrap();
 
-                assert_eq!(binding.range(), Some(&[1, 9]));
+                assert_eq!(binding.range(), Some([1, 9]));
                 assert_eq!(binding.nodes().count(), 2);
 
                 let mut nodes = binding.nodes();
@@ -707,7 +734,7 @@ mod tests {
             {
                 let binding = results.get(2).unwrap();
 
-                assert_eq!(binding.range(), Some(&[10, 15]));
+                assert_eq!(binding.range(), Some([10, 15]));
                 assert_eq!(binding.nodes().count(), 1);
 
                 let kind = binding.nodes().next().unwrap();
@@ -727,7 +754,7 @@ mod tests {
             {
                 let binding = results.get(3).unwrap();
 
-                assert_eq!(binding.range(), Some(&[16, 24]));
+                assert_eq!(binding.range(), Some([16, 24]));
                 assert_eq!(binding.nodes().count(), 1);
 
                 let kind = binding.nodes().next().unwrap();

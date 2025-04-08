@@ -1,18 +1,17 @@
 mod body_reader;
 mod body_stream;
-mod http_body;
-mod limit_error;
+mod buffer_body;
 mod pipe;
-mod request_body;
-mod response_body;
-mod stream_body;
+mod util;
 
-pub use body_reader::BodyData;
+pub use body_reader::{BodyData, BodyReader};
 pub use body_stream::BodyStream;
-pub use http_body::{BoxBody, HttpBody};
+pub use buffer_body::BufferBody;
 pub use pipe::Pipe;
-pub use request_body::RequestBody;
-pub use response_body::ResponseBody;
 
 #[allow(unused_imports)]
-pub(crate) use response_body::MAX_FRAME_LEN;
+pub(crate) use buffer_body::MAX_FRAME_LEN;
+
+/// A type erased, dynamically dispatched [`Body`].
+///
+pub type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, crate::error::DynError>;

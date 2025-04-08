@@ -1,4 +1,3 @@
-use http::header::CONTENT_TYPE;
 use std::process::ExitCode;
 use via::middleware::error_boundary;
 use via::{Next, Pipe, Request, Response};
@@ -6,16 +5,7 @@ use via::{Next, Pipe, Request, Response};
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 async fn echo(request: Request, _: Next) -> via::Result {
-    let mut response = Response::build();
-
-    // If a Content-Type header is present, include it in the response.
-    if let Some(content_type) = request.header(CONTENT_TYPE).cloned() {
-        response = response.header(CONTENT_TYPE, content_type);
-    }
-
-    // Stream the request payload back to the client with the options configured
-    // in the response builder above.
-    request.into_body().pipe(response)
+    request.pipe(Response::build())
 }
 
 #[tokio::main]

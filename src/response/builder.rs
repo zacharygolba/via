@@ -1,10 +1,11 @@
+use cookie::CookieJar;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use http::{HeaderName, HeaderValue, StatusCode, Version};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
-use super::Response;
-use crate::body::{HttpBody, ResponseBody};
+use super::body::ResponseBody;
+use super::response::Response;
 use crate::error::Error;
 
 #[derive(Debug, Default)]
@@ -51,10 +52,10 @@ impl ResponseBuilder {
     #[inline]
     pub fn body<T>(self, data: T) -> Result<Response, Error>
     where
-        HttpBody<ResponseBody>: From<T>,
+        ResponseBody: From<T>,
     {
         Ok(Response {
-            cookies: None,
+            cookies: CookieJar::new(),
             inner: self.inner.body(data.into())?,
         })
     }
@@ -86,7 +87,7 @@ impl ResponseBuilder {
     ///
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
-        self.body(HttpBody::default())
+        self.body(ResponseBody::default())
     }
 }
 

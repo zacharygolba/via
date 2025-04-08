@@ -44,7 +44,8 @@ async fn count_visits(request: Request<State>, next: Next<State>) -> via::Result
     //
     let mut counter = request
         .cookies()
-        .and_then(|jar| jar.signed(secret).get("n_visits"))
+        .signed(secret)
+        .get("n_visits")
         .and_then(|cookie| cookie.value().parse().ok())
         .unwrap_or(0i32);
 

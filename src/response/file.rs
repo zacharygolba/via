@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, ETAG, LAST_MODIFIED};
+use http_body::Frame;
 use httpdate::HttpDate;
 use std::fs::{File as StdFile, Metadata};
 use std::io::{self, ErrorKind, Read};
@@ -216,7 +217,7 @@ impl FileStream {
 }
 
 impl Stream for FileStream {
-    type Item = Result<Bytes, DynError>;
+    type Item = Result<Frame<Bytes>, DynError>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.remaining == 0 {
@@ -237,7 +238,7 @@ impl Stream for FileStream {
                     let data = Bytes::copy_from_slice(filled);
                     this.remaining = remaining;
                     this.buffer[..len].fill_with(MaybeUninit::uninit);
-                    Poll::Ready(Some(Ok(data)))
+                    Poll::Ready(Some(Ok(Frame::data(data))))
                 } else {
                     this.remaining = 0;
                     this.buffer.fill_with(MaybeUninit::uninit);
