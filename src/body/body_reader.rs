@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use futures_core::ready;
 use http::HeaderMap;
 use http_body::Body;
 use serde::de::DeserializeOwned;
@@ -8,7 +7,7 @@ use std::fmt::{self, Formatter};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 use super::{util, BoxBody};
 use crate::error::Error;
