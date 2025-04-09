@@ -4,10 +4,8 @@ use http_body_util::Either;
 use std::fmt::{self, Debug, Formatter};
 
 use super::builder::ResponseBuilder;
-use crate::{
-    body::{BoxBody, BufferBody},
-    Error,
-};
+use crate::body::{BoxBody, BufferBody};
+use crate::error::Error;
 
 pub type ResponseBody = Either<BufferBody, BoxBody>;
 

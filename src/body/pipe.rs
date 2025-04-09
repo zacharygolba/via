@@ -2,9 +2,9 @@ use bytes::Bytes;
 use futures_core::Stream;
 use http::header::TRANSFER_ENCODING;
 use http_body::Frame;
-use http_body_util::combinators::BoxBody;
 use http_body_util::StreamBody;
 
+use crate::body::BoxBody;
 use crate::error::{DynError, Error};
 use crate::response::{Response, ResponseBuilder};
 

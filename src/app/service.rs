@@ -1,4 +1,3 @@
-use http_body_util::combinators::BoxBody;
 use http_body_util::Limited;
 use hyper::body::Incoming;
 use hyper::service::Service;
@@ -12,6 +11,7 @@ use via_router::binding::MatchCond;
 use via_router::MatchKind;
 
 use crate::app::App;
+use crate::body::BoxBody;
 use crate::middleware::{BoxFuture, Next};
 use crate::request::param::PathParams;
 use crate::request::{Head, Request};
