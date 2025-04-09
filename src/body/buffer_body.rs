@@ -73,14 +73,18 @@ impl From<&'_ str> for BufferBody {
 impl From<Vec<u8>> for BufferBody {
     #[inline]
     fn from(data: Vec<u8>) -> Self {
-        Self::from(data.as_slice())
+        Self {
+            data: Bytes::from(data),
+        }
     }
 }
 
 impl From<&'_ [u8]> for BufferBody {
     #[inline]
     fn from(slice: &'_ [u8]) -> Self {
-        Self::from(Bytes::copy_from_slice(slice))
+        Self {
+            data: Bytes::copy_from_slice(slice),
+        }
     }
 }
 
