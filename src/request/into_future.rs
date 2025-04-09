@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use http::HeaderMap;
 use http_body::Body;
+use http_body_util::LengthLimitError;
 use serde::de::DeserializeOwned;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 use std::fmt::{self, Formatter};
@@ -9,21 +10,21 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{ready, Context, Poll};
 
-use super::{util, BoxBody};
-use crate::error::Error;
+use crate::error::{DynError, Error};
+use crate::BoxBody;
 
 /// The entire contents of a request body, in-memory.
 ///
 #[derive(Debug)]
-pub struct BodyData {
-    payload: Vec<Bytes>,
+pub struct Payload {
+    data: Vec<Bytes>,
     trailers: Option<HeaderMap>,
 }
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct BodyReader {
+pub struct IntoFuture {
     body: BoxBody,
-    data: Option<BodyData>,
+    payload: Option<Payload>,
 }
 
 struct JsonPayload<T> {
@@ -39,9 +40,17 @@ fn already_read() -> Error {
     Error::internal_server_error(message.into())
 }
 
-impl BodyData {
+fn map_err(error: DynError) -> Error {
+    if error.is::<LengthLimitError>() {
+        Error::payload_too_large(error)
+    } else {
+        Error::bad_request(error)
+    }
+}
+
+impl Payload {
     pub fn len(&self) -> usize {
-        self.payload.iter().map(Bytes::len).sum()
+        self.data.iter().map(Bytes::len).sum()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -86,7 +95,7 @@ impl BodyData {
     pub fn to_vec(&self) -> Vec<u8> {
         let mut vec = Vec::with_capacity(self.len());
 
-        for chunk in &self.payload {
+        for chunk in &self.data {
             vec.extend_from_slice(chunk);
         }
 
@@ -94,41 +103,41 @@ impl BodyData {
     }
 }
 
-impl BodyReader {
+impl IntoFuture {
     pub(crate) fn new(body: BoxBody) -> Self {
         Self {
             body,
-            data: Some(BodyData {
-                payload: Vec::new(),
+            payload: Some(Payload {
+                data: Vec::new(),
                 trailers: None,
             }),
         }
     }
 }
 
-impl BodyReader {
-    fn project(self: Pin<&mut Self>) -> (Pin<&mut BoxBody>, &mut Option<BodyData>) {
+impl IntoFuture {
+    fn project(self: Pin<&mut Self>) -> (Pin<&mut BoxBody>, &mut Option<Payload>) {
         let this = self.get_mut();
-        (Pin::new(&mut this.body), &mut this.data)
+        (Pin::new(&mut this.body), &mut this.payload)
     }
 }
 
-impl Future for BodyReader {
-    type Output = Result<BodyData, Error>;
+impl Future for IntoFuture {
+    type Output = Result<Payload, Error>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        let (mut body, data) = self.project();
+        let (mut body, payload) = self.project();
 
         loop {
             return match ready!(body.as_mut().poll_frame(context)) {
-                None => Poll::Ready(data.take().ok_or_else(already_read)),
-                Some(Err(e)) => Poll::Ready(Err(util::map_err(e))),
+                None => Poll::Ready(payload.take().ok_or_else(already_read)),
+                Some(Err(e)) => Poll::Ready(Err(map_err(e))),
                 Some(Ok(frame)) => {
-                    let output = data.as_mut().ok_or_else(already_read)?;
+                    let output = payload.as_mut().ok_or_else(already_read)?;
 
                     match frame.into_data() {
                         Ok(data) => {
-                            output.payload.push(data);
+                            output.data.push(data);
                         }
                         Err(frame) => {
                             let trailers = frame.into_trailers().unwrap();

@@ -11,11 +11,11 @@ use via_router::binding::MatchCond;
 use via_router::MatchKind;
 
 use crate::app::App;
-use crate::body::BoxBody;
 use crate::middleware::{BoxFuture, Next};
 use crate::request::param::PathParams;
 use crate::request::{Head, Request};
 use crate::response::ResponseBody;
+use crate::BoxBody;
 
 pub struct AppService<T> {
     app: Arc<App<T>>,

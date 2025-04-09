@@ -2,13 +2,14 @@ use cookie::CookieJar;
 use http::header::{AsHeaderName, CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
+use http_body_util::BodyStream;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
+use super::into_future::IntoFuture;
 use super::param::{PathParam, PathParams, QueryParam};
-use crate::body::{BodyReader, BodyStream, BoxBody};
-use crate::response::ResponseBuilder;
-use crate::{Error, Pipe, Response};
+use crate::response::{Pipe, Response, ResponseBuilder};
+use crate::{BoxBody, Error};
 
 /// The component parts of a HTTP request.
 ///
@@ -48,6 +49,8 @@ impl Head {
         }
     }
 
+    /// Returns reference to the cookies associated with the request.
+    ///
     #[inline]
     pub fn cookies(&self) -> &CookieJar {
         &self.cookies
@@ -107,11 +110,11 @@ impl<T> Request<T> {
         (self.head, self.body)
     }
 
-    pub fn into_future(self) -> BodyReader {
-        BodyReader::new(self.body)
+    pub fn into_future(self) -> IntoFuture {
+        IntoFuture::new(self.body)
     }
 
-    pub fn into_stream(self) -> BodyStream {
+    pub fn into_stream(self) -> BodyStream<BoxBody> {
         BodyStream::new(self.body)
     }
 
@@ -215,7 +218,7 @@ impl<T> Request<T> {
         &self.state
     }
 
-    /// Returns an optional reference to the cookies associated with the request.
+    /// Returns reference to the cookies associated with the request.
     ///
     #[inline]
     pub fn cookies(&self) -> &CookieJar {

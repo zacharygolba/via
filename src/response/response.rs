@@ -3,9 +3,9 @@ use http::{header::SET_COOKIE, HeaderMap, StatusCode, Version};
 use http_body_util::Either;
 use std::fmt::{self, Debug, Formatter};
 
+use super::buffer_body::BufferBody;
 use super::builder::ResponseBuilder;
-use crate::body::{BoxBody, BufferBody};
-use crate::error::Error;
+use crate::{BoxBody, Error};
 
 pub type ResponseBody = Either<BufferBody, BoxBody>;
 

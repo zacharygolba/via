@@ -14,8 +14,8 @@ use tokio::fs::File as TokioFile;
 use tokio::io::{AsyncRead, ReadBuf};
 use tokio::{task, time};
 
-use super::{Response, ResponseBuilder};
-use crate::body::{Pipe, MAX_FRAME_LEN};
+use super::buffer_body::MAX_FRAME_LEN;
+use super::{Pipe, Response, ResponseBuilder};
 use crate::error::{DynError, Error};
 use crate::middleware;
 
