@@ -87,17 +87,8 @@ impl<T: Send + Sync + 'static> Server<T> {
     ///
     /// # Errors
     ///
-    /// If the server fails to bind to the provided address or is unable to
-    /// finish serving all of the inflight connections within the specified
-    /// [shutdown timeout](Self::shutdown_timeout)
-    /// when a shutdown signal is received.
-    ///
-    ///
-    /// # Panics
-    ///
-    /// If the `rustls` feature is enabled and
-    /// [`rustls_config`](Self::rustls_config)
-    /// has not been provided yet.
+    /// - If the server fails to bind to the provided address.
+    /// - If the `rustls` feature is enabled and `rustls_config` is missing.
     ///
     /// # Exit Codes
     ///

@@ -66,7 +66,7 @@ mod server;
 pub use app::{app, App, Route};
 pub use body::Pipe;
 pub use error::Error;
-pub use middleware::respond_to::{connect, delete, get, head, options, patch, post, put, trace};
+pub use middleware::method::*;
 pub use middleware::{Middleware, Next, Result};
 pub use request::Request;
 pub use response::Response;

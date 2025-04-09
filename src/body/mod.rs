@@ -12,6 +12,6 @@ pub use pipe::Pipe;
 #[allow(unused_imports)]
 pub(crate) use buffer_body::MAX_FRAME_LEN;
 
-/// A type erased, dynamically dispatched [`Body`].
+/// A type erased, dynamically dispatched [`Body`](http_body::Body).
 ///
 pub type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, crate::error::DynError>;

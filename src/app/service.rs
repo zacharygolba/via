@@ -12,7 +12,7 @@ use via_router::binding::MatchCond;
 use via_router::MatchKind;
 
 use crate::app::App;
-use crate::middleware::{FutureResponse, Next};
+use crate::middleware::{BoxFuture, Next};
 use crate::request::param::PathParams;
 use crate::request::{Head, Request};
 use crate::response::ResponseBody;
@@ -23,7 +23,7 @@ pub struct AppService<T> {
 }
 
 pub struct ServeRequest {
-    response: FutureResponse,
+    response: BoxFuture,
 }
 
 impl<T> AppService<T> {

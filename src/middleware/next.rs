@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use super::middleware::{FutureResponse, Middleware};
+use super::middleware::{BoxFuture, Middleware};
 use crate::error::Error;
 use crate::request::Request;
 
@@ -10,7 +10,7 @@ pub struct Next<T = ()> {
 }
 
 impl<T> Next<T> {
-    pub fn call(mut self, request: Request<T>) -> FutureResponse {
+    pub fn call(mut self, request: Request<T>) -> BoxFuture {
         match self.deque.pop_front() {
             Some(middleware) => middleware.call(request, self),
             None => Box::pin(async {
