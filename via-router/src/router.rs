@@ -190,7 +190,7 @@ impl<T> Router<T> {
             results.push(Binding::new_with_nodes(None, nodes));
         }
 
-        while let Some((is_exact, range)) = segments.next() {
+        for (is_exact, range) in &mut segments {
             let mut binding = Binding::new(range);
             let segment = &path[range[0]..range[1]];
 

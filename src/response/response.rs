@@ -1,18 +1,19 @@
-use cookie::CookieJar;
-use http::response::Parts;
-use http::{HeaderMap, StatusCode, Version};
+use cookie::{Cookie, CookieJar};
+use http::{header::SET_COOKIE, HeaderMap, StatusCode, Version};
 use http_body_util::Either;
 use std::fmt::{self, Debug, Formatter};
 
-use crate::body::{BoxBody, BufferBody};
-
-use super::body::ResponseBody;
 use super::builder::ResponseBuilder;
+use crate::{
+    body::{BoxBody, BufferBody},
+    Error,
+};
 
-#[derive(Default)]
+pub type ResponseBody = Either<BufferBody, BoxBody>;
+
 pub struct Response {
-    pub(crate) cookies: CookieJar,
-    pub(crate) inner: http::Response<ResponseBody>,
+    cookies: CookieJar,
+    inner: http::Response<ResponseBody>,
 }
 
 impl Response {
@@ -35,12 +36,10 @@ impl Response {
     #[inline]
     pub fn map<F>(self, map: F) -> Self
     where
-        F: FnOnce(Either<BufferBody, BoxBody>) -> Either<BufferBody, BoxBody>,
+        F: FnOnce(ResponseBody) -> ResponseBody,
     {
         Self {
-            inner: self.inner.map(|body| ResponseBody {
-                inner: map(body.inner),
-            }),
+            inner: self.inner.map(map),
             ..self
         }
     }
@@ -85,6 +84,21 @@ impl Response {
     }
 }
 
+impl Response {
+    pub(crate) fn set_cookies<F>(&mut self, f: F) -> Result<(), Error>
+    where
+        F: Fn(&Cookie) -> String,
+    {
+        let headers = self.inner.headers_mut();
+
+        for cookie in self.cookies.delta() {
+            headers.try_append(SET_COOKIE, f(cookie).parse()?)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl Debug for Response {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Response")
@@ -97,11 +111,19 @@ impl Debug for Response {
     }
 }
 
-impl From<(Parts, ResponseBody)> for Response {
-    fn from((parts, body): (Parts, ResponseBody)) -> Self {
+impl From<http::Response<ResponseBody>> for Response {
+    #[inline]
+    fn from(inner: http::Response<ResponseBody>) -> Self {
         Self {
             cookies: CookieJar::new(),
-            inner: http::Response::from_parts(parts, body),
+            inner,
         }
+    }
+}
+
+impl From<Response> for http::Response<ResponseBody> {
+    #[inline]
+    fn from(response: Response) -> Self {
+        response.inner
     }
 }

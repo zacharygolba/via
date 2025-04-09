@@ -1,7 +1,7 @@
 use cookie::CookieJar;
 use http::header::{AsHeaderName, CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::request::Parts;
-use http::{HeaderMap, HeaderValue, Method, Uri, Version};
+use http::{HeaderMap, Method, Uri, Version};
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
@@ -115,13 +115,25 @@ impl<T> Request<T> {
         BodyStream::new(self.body)
     }
 
-    /// Returns a reference to the header value associated with the key.
+    /// Returns a result that contains an Option<&str> with the header value
+    /// associated with the provided key.
     ///
-    pub fn header<K>(&self, key: K) -> Option<&HeaderValue>
+    /// # Errors
+    ///
+    /// *Status Code:* `400`
+    ///
+    /// If the header value associated with key contains a char that is not
+    /// considered to be visible ascii.
+    ///
+    pub fn header<K>(&self, key: K) -> Result<Option<&str>, Error>
     where
         K: AsHeaderName,
     {
-        self.headers().get(key)
+        match self.headers().get(key).map(|value| value.to_str()) {
+            Some(Ok(value_as_str)) => Ok(Some(value_as_str)),
+            Some(Err(error)) => Err(Error::bad_request(error.into())),
+            None => Ok(None),
+        }
     }
 
     /// Returns a reference to a map that contains the headers associated with
@@ -248,9 +260,11 @@ impl<T> Debug for Request<T> {
 
 impl<T> Pipe for Request<T> {
     fn pipe(self, builder: ResponseBuilder) -> Result<Response, Error> {
-        match self.header(CONTENT_LENGTH) {
-            Some(len) => builder.header(CONTENT_LENGTH, len).body(self.body),
-            None => builder.header(TRANSFER_ENCODING, "chunked").body(self.body),
-        }
+        let response = match self.headers().get(CONTENT_LENGTH) {
+            Some(len) => builder.header(CONTENT_LENGTH, len),
+            None => builder.header(TRANSFER_ENCODING, "chunked"),
+        };
+
+        response.boxed(self.body)
     }
 }

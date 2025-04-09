@@ -33,9 +33,9 @@ impl<T> Pipe for T
 where
     T: Stream<Item = Result<Frame<Bytes>, DynError>> + Send + Sync + 'static,
 {
-    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
-        response
+    fn pipe(self, builder: ResponseBuilder) -> Result<Response, Error> {
+        builder
             .header(TRANSFER_ENCODING, "chunked")
-            .body(BoxBody::new(StreamBody::new(self)))
+            .boxed(BoxBody::new(StreamBody::new(self)))
     }
 }

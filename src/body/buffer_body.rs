@@ -1,6 +1,5 @@
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use http_body::{Body, Frame, SizeHint};
-use std::marker::PhantomPinned;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -14,9 +13,7 @@ pub const MAX_FRAME_LEN: usize = 8192; // 8KB
 ///
 #[derive(Debug, Default)]
 pub struct BufferBody {
-    offset: usize,
-    parts: Vec<Bytes>,
-    _pin: PhantomPinned,
+    data: Bytes,
 }
 
 impl Body for BufferBody {
@@ -24,48 +21,45 @@ impl Body for BufferBody {
     type Error = DynError;
 
     fn poll_frame(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         _: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let this = unsafe { self.get_unchecked_mut() };
+        let remaining = self.data.remaining();
 
-        Poll::Ready(if let Some(next) = this.parts.get(this.offset) {
-            this.offset += 1;
-            Some(Ok(Frame::data(next.clone())))
+        if remaining == 0 {
+            Poll::Ready(None)
         } else {
-            None
-        })
+            Poll::Ready(Some(Ok(Frame::data(
+                self.data.split_to(remaining.min(MAX_FRAME_LEN)),
+            ))))
+        }
     }
 
     fn is_end_stream(&self) -> bool {
-        self.offset >= self.parts.len()
+        self.data.is_empty()
     }
 
     fn size_hint(&self) -> SizeHint {
-        // The following type casts are safe because:
-        //
-        //   - MAX_FRAME_LEN is a constant
-        //   - rest.len() is never > isize::MAX
-        //   - last.len() is never > MAX_FRAME_LEN
-        //
-        self.parts
-            .iter()
-            .try_fold(0u64, |n, chunk| n.checked_add(chunk.len() as u64))
-            .map_or_else(SizeHint::new, SizeHint::with_exact)
+        match self.data.len().try_into() {
+            Ok(exact) => SizeHint::with_exact(exact),
+            Err(_) => panic!("BufferBody::size_hint would overflow u64"),
+        }
     }
 }
 
 impl From<Bytes> for BufferBody {
     #[inline]
     fn from(data: Bytes) -> Self {
-        Self::from(data.as_ref())
+        Self { data }
     }
 }
 
 impl From<String> for BufferBody {
     #[inline]
     fn from(data: String) -> Self {
-        Self::from(data.as_bytes())
+        Self {
+            data: Bytes::from(data),
+        }
     }
 }
 
@@ -86,15 +80,7 @@ impl From<Vec<u8>> for BufferBody {
 impl From<&'_ [u8]> for BufferBody {
     #[inline]
     fn from(slice: &'_ [u8]) -> Self {
-        let mut chunks = Vec::with_capacity(slice.len().div_ceil(MAX_FRAME_LEN));
-
-        chunks.extend(slice.chunks(MAX_FRAME_LEN).map(Bytes::copy_from_slice));
-
-        Self {
-            offset: 0,
-            parts: chunks,
-            _pin: PhantomPinned,
-        }
+        Self::from(Bytes::copy_from_slice(slice))
     }
 }
 
@@ -103,36 +89,8 @@ mod tests {
     use bytes::Bytes;
     use http_body::Body;
     use http_body_util::BodyExt;
-    use std::marker::PhantomPinned;
 
     use super::{BufferBody, MAX_FRAME_LEN};
-
-    impl BufferBody {
-        fn new(chunks: Vec<Bytes>) -> Self {
-            Self {
-                offset: 0,
-                parts: chunks,
-                _pin: PhantomPinned,
-            }
-        }
-    }
-
-    #[test]
-    fn test_response_body_from_bytes() {
-        let body = BufferBody::from(Bytes::copy_from_slice(&vec![b' '; MAX_FRAME_LEN * 10]));
-
-        assert_eq!(
-            body.parts.len(),
-            10,
-            "the byte buffer is split into chunks no larger than MAX_FRAME_LEN"
-        );
-
-        assert_eq!(
-            body.parts.len(),
-            body.parts.capacity(),
-            "the capacity of the vec that stores each chunk is also it's length"
-        );
-    }
 
     #[tokio::test]
     async fn test_is_end_stream() {
@@ -141,12 +99,7 @@ mod tests {
             "is_end_stream should be true for an empty response"
         );
 
-        let body = BufferBody::new(vec![
-            Bytes::copy_from_slice(b"Hello"),
-            Bytes::copy_from_slice(b", world!"),
-        ]);
-
-        tokio::pin!(body);
+        let mut body = BufferBody::from(format!("Hello,{}world", " ".repeat(MAX_FRAME_LEN - 6)));
 
         assert!(
             !body.is_end_stream(),
@@ -163,14 +116,11 @@ mod tests {
 
     #[test]
     fn test_size_hint() {
-        let single_frame = Body::size_hint(&BufferBody::new(vec![Bytes::copy_from_slice(
-            b"Hello, world!",
-        )]));
-
-        let many_frames = Body::size_hint(&BufferBody::new(vec![
-            Bytes::copy_from_slice(b"Hello"),
-            Bytes::copy_from_slice(b", world!"),
-        ]));
+        let single_frame = Body::size_hint(&BufferBody::from("Hello, world!"));
+        let many_frames = Body::size_hint(&BufferBody::from(format!(
+            "Hello,{}world",
+            " ".repeat(MAX_FRAME_LEN - 6)
+        )));
 
         assert_eq!(single_frame.exact(), Some("Hello, world!".len() as u64));
         assert_eq!(many_frames.exact(), Some("Hello, world!".len() as u64));
@@ -178,16 +128,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_poll_frame_empty() {
-        let body = BufferBody::from("");
-        tokio::pin!(body);
-        assert!(body.frame().await.is_none());
+        assert!(BufferBody::default().frame().await.is_none());
     }
 
     #[tokio::test]
     async fn test_poll_frame_one() {
-        let body = BufferBody::from("Hello, world!");
-        tokio::pin!(body);
-
+        let mut body = BufferBody::from("Hello, world!");
         let hello_world = body.frame().await.unwrap().unwrap().into_data().unwrap();
 
         assert_eq!(hello_world, Bytes::copy_from_slice(b"Hello, world!"));
@@ -201,8 +147,7 @@ mod tests {
             "world".to_owned(),
         ];
 
-        let body = BufferBody::from(frames.concat());
-        tokio::pin!(body);
+        let mut body = BufferBody::from(frames.concat());
 
         for part in &frames {
             let next = body.frame().await.unwrap().unwrap().into_data().unwrap();

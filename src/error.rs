@@ -1,15 +1,15 @@
 //! Conviently work with errors that may occur in an application.
 //!
 
-use http::header::CONTENT_TYPE;
 use http::StatusCode;
+use http_body_util::Either;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::error::Error as StdError;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io;
 
-use crate::response::Response;
+use crate::response::{Response, ResponseBody};
 
 /// A type alias for a boxed
 /// [`Error`](std::error::Error)
@@ -570,26 +570,18 @@ where
 }
 
 impl From<Error> for Response {
-    fn from(error: Error) -> Response {
+    fn from(error: Error) -> Self {
         let mut respond_with_json = error.as_json;
 
         loop {
             if !respond_with_json {
-                let mut response = Response::new(error.to_string().into());
-
+                let mut response = Self::new(Either::Left(error.to_string().into()));
                 *response.status_mut() = error.status;
                 break response;
             }
 
-            match serde_json::to_string(&error)
-                .map_err(Error::from)
-                .and_then(|json| {
-                    Response::build()
-                        .status(error.status)
-                        .header(CONTENT_TYPE, "application/json; charset=utf-8")
-                        .body(json)
-                }) {
-                Ok(response) => break response,
+            match Self::build().status(error.status).json(&error) {
+                Ok(response) => return response,
                 Err(error) => {
                     respond_with_json = false;
                     // Placeholder for tracing...
@@ -599,6 +591,12 @@ impl From<Error> for Response {
                 }
             }
         }
+    }
+}
+
+impl From<Error> for http::Response<ResponseBody> {
+    fn from(error: Error) -> Self {
+        Response::from(error).into()
     }
 }
 

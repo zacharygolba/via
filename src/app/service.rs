@@ -7,7 +7,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 use via_router::binding::MatchCond;
 use via_router::MatchKind;
 
@@ -81,9 +81,9 @@ impl Future for ServeRequest {
     type Output = Result<http::Response<ResponseBody>, Infallible>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        self.response
-            .as_mut()
-            .poll(context)
-            .map(|result| Ok(result.unwrap_or_else(|e| e.into()).inner))
+        Poll::Ready(Ok(match ready!(self.response.as_mut().poll(context)) {
+            Ok(response) => response.into(),
+            Err(error) => error.into(),
+        }))
     }
 }

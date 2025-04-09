@@ -1,11 +1,11 @@
-use cookie::CookieJar;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use http::{HeaderName, HeaderValue, StatusCode, Version};
+use http_body_util::Either;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
-use super::body::ResponseBody;
 use super::response::Response;
+use crate::body::{BoxBody, BufferBody};
 use crate::error::Error;
 
 #[derive(Debug, Default)]
@@ -50,14 +50,11 @@ impl ResponseBuilder {
     }
 
     #[inline]
-    pub fn body<T>(self, data: T) -> Result<Response, Error>
+    pub fn body<T>(self, body: T) -> Result<Response, Error>
     where
-        ResponseBody: From<T>,
+        BufferBody: From<T>,
     {
-        Ok(Response {
-            cookies: CookieJar::new(),
-            inner: self.inner.body(data.into())?,
-        })
+        Ok(self.inner.body(Either::Left(body.into()))?.into())
     }
 
     #[inline]
@@ -83,11 +80,16 @@ impl ResponseBuilder {
             .body(data)
     }
 
+    #[inline]
+    pub fn boxed(self, body: BoxBody) -> Result<Response, Error> {
+        Ok(self.inner.body(Either::Right(body))?.into())
+    }
+
     /// Convert self into a [Response] with an empty payload.
     ///
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
-        self.body(ResponseBody::default())
+        self.body(BufferBody::default())
     }
 }
 
