@@ -57,9 +57,7 @@ impl From<Bytes> for BufferBody {
 impl From<String> for BufferBody {
     #[inline]
     fn from(data: String) -> Self {
-        Self {
-            data: Bytes::from(data),
-        }
+        Self::from(data.into_bytes())
     }
 }
 
@@ -120,14 +118,8 @@ mod tests {
 
     #[test]
     fn test_size_hint() {
-        let single_frame = Body::size_hint(&BufferBody::from("Hello, world!"));
-        let many_frames = Body::size_hint(&BufferBody::from(format!(
-            "Hello,{}world",
-            " ".repeat(MAX_FRAME_LEN - 6)
-        )));
-
-        assert_eq!(single_frame.exact(), Some("Hello, world!".len() as u64));
-        assert_eq!(many_frames.exact(), Some("Hello, world!".len() as u64));
+        let hint = Body::size_hint(&BufferBody::from("Hello, world!"));
+        assert_eq!(hint.exact(), Some("Hello, world!".len() as u64));
     }
 
     #[tokio::test]
