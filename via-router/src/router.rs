@@ -151,7 +151,7 @@ impl<T> Router<T> {
     ///
     ///          Some((
     ///             cond.matches(node.route().next().cloned()?)?,
-    ///             node.param().cloned().zip(range.copied()),
+    ///             node.param(|| binding.range()),
     ///          ))
     ///       }
     ///    })
