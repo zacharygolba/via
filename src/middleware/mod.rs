@@ -11,4 +11,4 @@ mod timeout;
 pub use filter::{filter, Filter, Predicate};
 pub use middleware::{BoxFuture, Middleware, Result};
 pub use next::Next;
-pub use timeout::timeout;
+pub use timeout::{timeout, Timeout};

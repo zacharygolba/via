@@ -10,10 +10,10 @@ pub struct Filter<P, M> {
     middleware: M,
 }
 
-pub fn filter<T, P, M>(predicate: P, middleware: M) -> Filter<P, M>
+pub fn filter<M, T, P>(predicate: P, middleware: M) -> Filter<P, M>
 where
-    P: Predicate<T>,
     M: Middleware<T>,
+    P: Predicate<T>,
 {
     Filter {
         predicate,
@@ -31,10 +31,10 @@ where
     }
 }
 
-impl<T, P, M> Middleware<T> for Filter<P, M>
+impl<M, T, P> Middleware<T> for Filter<P, M>
 where
-    P: Predicate<T>,
     M: Middleware<T>,
+    P: Predicate<T>,
 {
     fn call(&self, request: Request<T>, next: Next<T>) -> BoxFuture {
         if self.predicate.matches(&request) {

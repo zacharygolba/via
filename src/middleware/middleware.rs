@@ -15,7 +15,7 @@ pub trait Middleware<T>: Send + Sync {
     fn call(&self, request: Request<T>, next: Next<T>) -> BoxFuture;
 }
 
-impl<T, F, M> Middleware<T> for M
+impl<M, T, F> Middleware<T> for M
 where
     M: Fn(Request<T>, Next<T>) -> F + Send + Sync,
     F: Future<Output = Result> + Send + 'static,
