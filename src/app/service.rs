@@ -22,7 +22,7 @@ pub struct AppService<T> {
 }
 
 pub struct ServeRequest {
-    response: Result<BoxFuture, via_router::Error>,
+    result: Result<BoxFuture, via_router::Error>,
 }
 
 impl<T> AppService<T> {
@@ -42,16 +42,12 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         let mut next = Next::new(VecDeque::with_capacity(7));
 
         let path = request.uri().path();
-        let hits = match self.app.router.visit(path) {
+        let results = match self.app.router.visit(path) {
+            Err(error) => return ServeRequest { result: Err(error) },
             Ok(visted) => visted,
-            Err(error) => {
-                return ServeRequest {
-                    response: Err(error),
-                }
-            }
         };
 
-        for binding in &hits {
+        for binding in &results {
             for kind in binding.nodes() {
                 params.extend(match kind {
                     MatchKind::Edge(MatchCond::Partial(node)) => {
@@ -71,7 +67,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         }
 
         ServeRequest {
-            response: Ok(next.call({
+            result: Ok(next.call({
                 let (parts, body) = request.into_parts();
 
                 Request::new(
@@ -88,7 +84,7 @@ impl Future for ServeRequest {
     type Output = Result<http::Response<ResponseBody>, via_router::Error>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        match &mut self.response {
+        match &mut self.result {
             Ok(future) => match future.as_mut().poll(context) {
                 Poll::Ready(Ok(response)) => Poll::Ready(Ok(response.into())),
                 Poll::Ready(Err(error)) => Poll::Ready(Ok(error.into())),

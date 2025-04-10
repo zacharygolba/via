@@ -92,16 +92,14 @@ where
         // Accept the next stream from the tcp listener.
         let (stream, _addr) = tokio::select! {
             biased;
-            result = listener.accept() => {
-                match result {
-                    Ok(accepted) => accepted,
-                    Err(error) => {
-                        eprintln!("error(listener): {}", error);
-                        drop(permit);
-                        continue;
-                    }
+            result = listener.accept() => match result {
+                Ok(accepted) => accepted,
+                Err(error) => {
+                    eprintln!("error(listener): {}", error);
+                    drop(permit);
+                    continue;
                 }
-            }
+            },
             _ = shutdown_rx.changed() => {
                 drop(permit);
                 break 'accept match *shutdown_rx.borrow_and_update() {
@@ -159,21 +157,10 @@ where
         });
 
         for _ in 0..CONNECTION_JOIN_LIMIT {
-            let result = match connections.try_join_next() {
-                Some(next) => next,
+            match connections.try_join_next() {
+                Some(result) => joined!(&result),
                 None => break,
-            };
-
-            joined!(&result; else let Err(error) {
-                let is_router_error = error.source().is_some_and(|e| {
-                    e.is::<via_router::Error>()
-                });
-
-                if is_router_error {
-                    eprintln!("error(router): {}", error);
-                    break 'accept 1.into();
-                }
-            });
+            }
         }
     };
 
