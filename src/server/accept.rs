@@ -1,6 +1,5 @@
 use hyper::server::conn;
-use hyper_util::rt::TokioTimer;
-use std::pin::Pin;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,7 +12,6 @@ use tokio::{signal, time};
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
-use super::stream::IoStream;
 use crate::app::{App, AppService};
 use crate::error::ServerError;
 
@@ -132,19 +130,20 @@ where
                     Ok(accepted) => {
                         // Create a new HTTP/2 connection.
                         #[cfg(feature = "http2")]
-                        let mut connection = conn::http2::Builder::new(TokioExecutor::new())
-                            .timer(TokioTimer::new())
-                            .serve_connection(IoStream::new(accepted), service);
+                        let mut connection = Box::pin(
+                            conn::http2::Builder::new(TokioExecutor::new())
+                                .timer(TokioTimer::new())
+                                .serve_connection(TokioIo::new(accepted), service),
+                        );
 
                         // Create a new HTTP/1.1 connection.
                         #[cfg(all(feature = "http1", not(feature = "http2")))]
-                        let mut connection = conn::http1::Builder::new()
-                            .timer(TokioTimer::new())
-                            .serve_connection(IoStream::new(accepted), service)
-                            .with_upgrades();
-
-                        // Pin the connection on the stack so it can be polled.
-                        let mut connection = Pin::new(&mut connection);
+                        let mut connection = Box::pin(
+                            conn::http1::Builder::new()
+                                .timer(TokioTimer::new())
+                                .serve_connection(TokioIo::new(accepted), service)
+                                .with_upgrades(),
+                        );
 
                         // Serve the connection.
                         tokio::select! {
