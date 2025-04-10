@@ -17,14 +17,6 @@ use crate::response::{Response, ResponseBody};
 ///
 pub type DynError = Box<dyn std::error::Error + Send + Sync>;
 
-#[derive(Debug)]
-pub enum ServerError {
-    Io(io::Error),
-    Hyper(hyper::Error),
-    #[cfg(feature = "rustls")]
-    MissingRustlsConfig,
-}
-
 /// An error type that can act as a specialized version of a
 /// [`ResponseBuilder`](crate::response::ResponseBuilder).
 ///
@@ -40,33 +32,6 @@ pub struct Error {
 ///
 struct SerializeError<'a> {
     message: &'a str,
-}
-
-impl std::error::Error for ServerError {}
-
-impl Display for ServerError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Self::Io(e) => Display::fmt(e, f),
-            Self::Hyper(e) => Display::fmt(e, f),
-            #[cfg(feature = "rustls")]
-            Self::MissingRustlsConfig => {
-                write!(f, "rustls_config is required to use the 'rustls' feature")
-            }
-        }
-    }
-}
-
-impl From<io::Error> for ServerError {
-    fn from(e: io::Error) -> Self {
-        Self::Io(e)
-    }
-}
-
-impl From<hyper::Error> for ServerError {
-    fn from(e: hyper::Error) -> Self {
-        Self::Hyper(e)
-    }
 }
 
 impl Error {

@@ -13,7 +13,7 @@ use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
 use crate::app::{App, AppService};
-use crate::error::ServerError;
+use crate::error::DynError;
 
 macro_rules! joined {
     ($result:expr) => {
@@ -68,7 +68,7 @@ where
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
-    let mut connections = JoinSet::<Result<(), ServerError>>::new();
+    let mut connections = JoinSet::new();
 
     // Wrap app in an arc so it can be cloned into the connection task.
     let app = Arc::new(app);
@@ -174,7 +174,7 @@ where
     }
 }
 
-async fn drain_connections(connections: &mut JoinSet<Result<(), ServerError>>) {
+async fn drain_connections(connections: &mut JoinSet<Result<(), DynError>>) {
     if cfg!(debug_assertions) {
         println!("draining {} inflight connections...", connections.len());
     }

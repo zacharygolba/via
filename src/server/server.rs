@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use super::accept::accept;
 use crate::app::App;
-use crate::error::ServerError;
+use crate::error::DynError;
 
 #[cfg(not(feature = "rustls"))]
 use super::acceptor::HttpAcceptor;
@@ -141,18 +141,30 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// process supervisor of an individual node and the replacement and
     /// decommissioning logic of the cluster.
     ///
-    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, ServerError> {
-        // Start accepting incoming connections.
-        //
-        // A future that resolves with an exit code when the server is shutdown.
+    #[cfg(feature = "rustls")]
+    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, DynError> {
+        let rustls_config = match self.rustls_config {
+            Some(config) => Arc::new(config),
+            None => panic!("rustls_config is required when the 'rustls' feature is enabled."),
+        };
+
         let exit = accept(
             TcpListener::bind(address).await?,
-            #[cfg(feature = "rustls")]
-            RustlsAcceptor::new(Arc::new(
-                self.rustls_config.ok_or(ServerError::MissingRustlsConfig)?,
-            )),
-            #[cfg(not(feature = "rustls"))]
-            HttpAcceptor,
+            RustlsAcceptor::new(rustls_config),
+            self.app,
+            self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
+            self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
+            self.shutdown_timeout.unwrap_or(DEFAULT_SHUTDOWN_TIMEOUT),
+        );
+
+        Ok(exit.await)
+    }
+
+    #[cfg(not(feature = "rustls"))]
+    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, DynError> {
+        let exit = accept(
+            TcpListener::bind(address).await?,
+            HttpAcceptor::new(),
             self.app,
             self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
             self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
