@@ -1,5 +1,5 @@
 use hyper::server::conn;
-use hyper_util::rt::{TokioIo, TokioTimer};
+use hyper_util::rt::TokioTimer;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,6 +14,7 @@ use hyper_util::rt::TokioExecutor;
 use super::acceptor::Acceptor;
 use crate::app::{App, AppService};
 use crate::error::DynError;
+use crate::server::stream::IoStream;
 
 macro_rules! joined {
     ($result:expr) => {
@@ -130,20 +131,18 @@ where
                     Ok(accepted) => {
                         // Create a new HTTP/2 connection.
                         #[cfg(feature = "http2")]
-                        let mut connection = Box::pin(
-                            conn::http2::Builder::new(TokioExecutor::new())
-                                .timer(TokioTimer::new())
-                                .serve_connection(TokioIo::new(accepted), service),
-                        );
+                        let connection = conn::http2::Builder::new(TokioExecutor::new())
+                            .timer(TokioTimer::new())
+                            .serve_connection(IoStream::new(accepted), service);
 
                         // Create a new HTTP/1.1 connection.
                         #[cfg(all(feature = "http1", not(feature = "http2")))]
-                        let mut connection = Box::pin(
-                            conn::http1::Builder::new()
-                                .timer(TokioTimer::new())
-                                .serve_connection(TokioIo::new(accepted), service)
-                                .with_upgrades(),
-                        );
+                        let connection = conn::http1::Builder::new()
+                            .timer(TokioTimer::new())
+                            .serve_connection(IoStream::new(accepted), service)
+                            .with_upgrades();
+
+                        tokio::pin!(connection);
 
                         // Serve the connection.
                         tokio::select! {
