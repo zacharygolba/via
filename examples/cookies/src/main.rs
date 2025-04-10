@@ -119,5 +119,5 @@ async fn main() -> Result<ExitCode, Error> {
     // Add a route that responds with a greeting message.
     app.at("/hello/:name").respond(via::get(hello));
 
-    Ok(via::start(app).listen(("127.0.0.1", 8080)).await?)
+    via::start(app).listen(("127.0.0.1", 8080)).await
 }

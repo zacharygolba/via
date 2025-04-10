@@ -26,5 +26,5 @@ async fn main() -> Result<ExitCode, Error> {
     // `via::post` function is used to specify that the `echo` middleware should
     // only accept POST requests.
 
-    Ok(via::start(app).listen(("127.0.0.1", 8080)).await?)
+    via::start(app).listen(("127.0.0.1", 8080)).await
 }

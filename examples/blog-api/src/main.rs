@@ -79,5 +79,5 @@ async fn main() -> Result<ExitCode, Error> {
         });
     });
 
-    Ok(via::start(app).listen(("127.0.0.1", 8080)).await?)
+    via::start(app).listen(("127.0.0.1", 8080)).await
 }
