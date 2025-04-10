@@ -4,7 +4,7 @@ use tokio::net::{TcpListener, ToSocketAddrs};
 #[cfg(feature = "rustls")]
 use std::sync::Arc;
 
-use super::serve::serve;
+use super::accept::accept;
 use crate::app::App;
 use crate::error::ServerError;
 
@@ -15,11 +15,15 @@ use super::acceptor::{RustlsAcceptor, RustlsConfig};
 
 /// The default value of the maximum number of concurrent connections.
 ///
-const DEFAULT_MAX_CONNECTIONS: usize = 256;
+const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 
 /// The default value of the maximum request body size in bytes (100MB).
 ///
-const DEFAULT_MAX_REQUEST_SIZE: usize = 104_857_600;
+const DEFAULT_MAX_BODY_SIZE: usize = 104_857_600;
+
+/// The default value of the shutdown timeout in seconds.
+///
+const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
 
 /// Serve an app over HTTP.
 ///
@@ -27,6 +31,7 @@ pub struct Server<T> {
     app: App<T>,
     max_body_size: Option<usize>,
     max_connections: Option<usize>,
+    shutdown_timeout: Option<u64>,
 
     #[cfg(feature = "rustls")]
     rustls_config: Option<RustlsConfig>,
@@ -37,16 +42,19 @@ pub struct Server<T> {
 pub fn start<T>(app: App<T>) -> Server<T> {
     Server {
         app,
+        max_body_size: None,
+        max_connections: None,
+        shutdown_timeout: None,
+
         #[cfg(feature = "rustls")]
         rustls_config: None,
-        max_connections: None,
-        max_body_size: None,
     }
 }
 
 impl<T: Send + Sync + 'static> Server<T> {
-    /// Set the maximum body size allowed for requests. The default value is
-    /// `100 MiB`.
+    /// Set the maximum request body size in bytes.
+    ///
+    /// Default: `100 MiB`
     ///
     pub fn max_body_size(self, limit: usize) -> Self {
         Self {
@@ -56,7 +64,9 @@ impl<T: Send + Sync + 'static> Server<T> {
     }
 
     /// Sets the maximum number of concurrent connections that the server can
-    /// accept. The default value is `256`.
+    /// accept.
+    ///
+    /// Default: `1024`
     ///
     /// We suggest not setting this value unless you know what you are doing and
     /// have a good reason to do so. If you are unsure, it is best to leave this
@@ -76,6 +86,17 @@ impl<T: Send + Sync + 'static> Server<T> {
     pub fn max_connections(self, limit: usize) -> Self {
         Self {
             max_connections: Some(limit),
+            ..self
+        }
+    }
+
+    /// Set the amount of time in seconds that the server will wait for inflight
+    /// connections to complete before shutting down. The default value is 30
+    /// seconds.
+    ///
+    pub fn shutdown_timeout(self, timeout: u64) -> Self {
+        Self {
+            shutdown_timeout: Some(timeout),
             ..self
         }
     }
@@ -121,8 +142,10 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// decommissioning logic of the cluster.
     ///
     pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, ServerError> {
-        // Serve incoming connections until shutdown is requested.
-        let exit = serve(
+        // Start accepting incoming connections.
+        //
+        // A future that resolves with an exit code when the server is shutdown.
+        let exit = accept(
             TcpListener::bind(address).await?,
             #[cfg(feature = "rustls")]
             RustlsAcceptor::new(Arc::new(
@@ -131,8 +154,9 @@ impl<T: Send + Sync + 'static> Server<T> {
             #[cfg(not(feature = "rustls"))]
             HttpAcceptor,
             self.app,
-            self.max_body_size.unwrap_or(DEFAULT_MAX_REQUEST_SIZE),
+            self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
             self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
+            self.shutdown_timeout.unwrap_or(DEFAULT_SHUTDOWN_TIMEOUT),
         );
 
         Ok(exit.await)

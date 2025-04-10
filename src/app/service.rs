@@ -19,7 +19,7 @@ use crate::BoxBody;
 
 pub struct AppService<T> {
     app: Arc<App<T>>,
-    req_len_limit: usize,
+    max_body_size: usize,
 }
 
 pub struct ServeRequest {
@@ -28,8 +28,8 @@ pub struct ServeRequest {
 
 impl<T> AppService<T> {
     #[inline]
-    pub(crate) fn new(app: Arc<App<T>>, req_len_limit: usize) -> Self {
-        Self { app, req_len_limit }
+    pub(crate) fn new(app: Arc<App<T>>, max_body_size: usize) -> Self {
+        Self { app, max_body_size }
     }
 }
 
@@ -70,7 +70,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
                 Request::new(
                     Arc::clone(&self.app.state),
                     Box::new(Head::new(parts, params)),
-                    BoxBody::new(Limited::new(body, self.req_len_limit)),
+                    BoxBody::new(Limited::new(body, self.max_body_size)),
                 )
             }),
         }
