@@ -10,8 +10,8 @@ use crate::{BoxBody, Error};
 pub type ResponseBody = Either<BufferBody, BoxBody>;
 
 pub struct Response {
-    cookies: CookieJar,
-    inner: http::Response<ResponseBody>,
+    pub(super) cookies: CookieJar,
+    pub(super) inner: http::Response<ResponseBody>,
 }
 
 impl Response {
@@ -106,16 +106,6 @@ impl Debug for Response {
             .field("cookies", &self.cookies)
             .field("body", self.inner.body())
             .finish()
-    }
-}
-
-impl From<http::Response<ResponseBody>> for Response {
-    #[inline]
-    fn from(inner: http::Response<ResponseBody>) -> Self {
-        Self {
-            cookies: CookieJar::new(),
-            inner,
-        }
     }
 }
 

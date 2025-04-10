@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use cookie::CookieJar;
 use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::{HeaderName, HeaderValue, StatusCode, Version};
@@ -73,7 +74,10 @@ impl ResponseBuilder {
     where
         BufferBody: From<T>,
     {
-        Ok(self.inner.body(Either::Left(body.into()))?.into())
+        Ok(Response {
+            cookies: CookieJar::new(),
+            inner: self.inner.body(Either::Left(body.into()))?,
+        })
     }
 
     #[inline]
@@ -101,7 +105,10 @@ impl ResponseBuilder {
 
     #[inline]
     pub fn boxed(self, body: BoxBody) -> Result<Response, Error> {
-        Ok(self.inner.body(Either::Right(body))?.into())
+        Ok(Response {
+            cookies: CookieJar::new(),
+            inner: self.inner.body(Either::Right(body))?,
+        })
     }
 
     /// Convert self into a [Response] with an empty payload.
