@@ -1,9 +1,10 @@
-use cookie::{Cookie, SplitCookies};
-use http::header::{COOKIE, SET_COOKIE};
+use cookie::{Cookie, ParseError, SplitCookies};
+use http::header::COOKIE;
 
 use super::middleware::Middleware;
 use super::next::Next;
-use crate::{Error, Request};
+use crate::request::Request;
+use crate::Error;
 
 pub fn parse_encoded<T>() -> impl Middleware<T> {
     cookie_parser::<ParseEncoded, _>()
@@ -16,9 +17,7 @@ pub fn parse_unencoded<T>() -> impl Middleware<T> {
 /// Defines how to parse cookies from a cookie string.
 ///
 trait ParseCookies {
-    type Iter: Iterator<Item = Result<Cookie<'static>, Self::Error>> + Send + 'static;
-    type Error: Into<Error> + Send;
-
+    type Iter: Iterator<Item = Result<Cookie<'static>, ParseError>> + Send + 'static;
     fn parse_cookies(input: String) -> Self::Iter;
 }
 
@@ -31,9 +30,52 @@ struct ParseEncoded;
 ///
 struct ParseUnencoded;
 
+fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
+    move |mut request: Request<T>, next: Next<T>| {
+        let parse_result = 'parse: {
+            let mut existing = Vec::new();
+            let input = match request.header(COOKIE) {
+                Ok(Some(str)) => str.to_owned(),
+                Err(error) => break 'parse Err(error),
+                Ok(None) => break 'parse Ok(existing),
+            };
+
+            let jar = request.cookies_mut();
+            for result in P::parse_cookies(input) {
+                match result {
+                    Ok(cookie) => {
+                        existing.push(cookie.clone());
+                        jar.add_original(cookie);
+                    }
+                    Err(error) => {
+                        break 'parse Err(Error::bad_request(error.into()));
+                    }
+                }
+            }
+
+            Ok(existing)
+        };
+
+        let future = next.call(request);
+
+        async {
+            let existing = parse_result?;
+            let mut response = future.await?;
+
+            let jar = response.cookies_mut();
+            for cookie in existing {
+                jar.add_original(cookie);
+            }
+
+            response.set_cookies(|cookie| cookie.encoded().to_string())?;
+
+            Ok(response)
+        }
+    }
+}
+
 impl ParseCookies for ParseEncoded {
     type Iter = SplitCookies<'static>;
-    type Error = cookie::ParseError;
 
     fn parse_cookies(input: String) -> Self::Iter {
         Cookie::split_parse_encoded(input)
@@ -42,92 +84,8 @@ impl ParseCookies for ParseEncoded {
 
 impl ParseCookies for ParseUnencoded {
     type Iter = SplitCookies<'static>;
-    type Error = cookie::ParseError;
 
     fn parse_cookies(input: String) -> Self::Iter {
         Cookie::split_parse(input)
-    }
-}
-
-fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
-    move |mut request: Request<T>, next: Next<T>| {
-        // Attempt to parse the value of the `Cookie` header if it exists and
-        // contains a valid cookie string.
-        //
-        let existing = request
-            .header(COOKIE)
-            .map(|c| c.to_str().map(|s| s.to_owned()))
-            .and_then(|to_str_result| match to_str_result {
-                // The cookie header contains a valid cookie string. Parse it.
-                Ok(input) => {
-                    let mut cookies = vec![];
-
-                    P::parse_cookies(input).for_each(|result| match result {
-                        Ok(cookie) => cookies.push(cookie),
-                        Err(error) => {
-                            // Placeholder for tracing...
-                            let _ = &error;
-                        }
-                    });
-
-                    if !cookies.is_empty() {
-                        Some(cookies)
-                    } else {
-                        None
-                    }
-                }
-
-                // The cookie header contains characters that are not visible ASCII.
-                Err(error) => {
-                    let _ = &error; // Placeholder for tracing...
-                    None
-                }
-            });
-
-        if let Some(cookies) = &existing {
-            let jar = request.cookies_mut();
-            for cookie in cookies {
-                jar.add_original(cookie.clone());
-            }
-        }
-
-        // Call the next middleware to get a response.
-        let future = next.call(request);
-
-        async {
-            // Await the response future.
-            let mut response = future.await?;
-
-            if let Some(cookies) = existing {
-                let jar = response.cookies_mut();
-                for cookie in cookies {
-                    jar.add_original(cookie);
-                }
-            }
-
-            let delta = match response.cookies.as_ref() {
-                Some(jar) => jar.delta(),
-                None => return Ok(response),
-            };
-
-            let headers = response.inner.headers_mut();
-
-            for cookie in delta {
-                let set_cookie = match cookie.encoded().to_string().parse() {
-                    Ok(header_value) => header_value,
-                    Err(error) => {
-                        let _ = &error; // Placeholder for tracing
-                        continue;
-                    }
-                };
-
-                if let Err(error) = headers.try_append(SET_COOKIE, set_cookie) {
-                    let _ = &error; // Placeholder for tracing
-                }
-            }
-
-            // Return the response.
-            Ok(response)
-        }
     }
 }

@@ -36,8 +36,8 @@ impl<T> Binding<'_, T> {
     }
 
     #[inline]
-    pub fn range(&self) -> Option<&[usize; 2]> {
-        self.range.as_ref()
+    pub fn range(&self) -> Option<[usize; 2]> {
+        self.range
     }
 }
 

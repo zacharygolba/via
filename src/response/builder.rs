@@ -1,11 +1,32 @@
-use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
+use bytes::Bytes;
+use cookie::CookieJar;
+use futures_core::Stream;
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::{HeaderName, HeaderValue, StatusCode, Version};
+use http_body::Frame;
+use http_body_util::{Either, StreamBody};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
-use super::Response;
-use crate::body::{HttpBody, ResponseBody};
-use crate::error::Error;
+use super::response::Response;
+use super::BufferBody;
+use crate::error::{DynError, Error};
+use crate::BoxBody;
+
+/// Define how a type can finalize a [`ResponseBuilder`].
+///
+/// ```
+/// use via::{Next, Request, Response, Pipe};
+///
+/// async fn echo(request: Request, _: Next) -> via::Result {
+///     let mut response = Response::build();
+///     request.pipe(response.header("X-Powered-By", "Via"))
+/// }
+/// ```
+///
+pub trait Pipe {
+    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error>;
+}
 
 #[derive(Debug, Default)]
 pub struct ResponseBuilder {
@@ -49,13 +70,13 @@ impl ResponseBuilder {
     }
 
     #[inline]
-    pub fn body<T>(self, data: T) -> Result<Response, Error>
+    pub fn body<T>(self, body: T) -> Result<Response, Error>
     where
-        HttpBody<ResponseBody>: From<T>,
+        BufferBody: From<T>,
     {
         Ok(Response {
-            cookies: None,
-            inner: self.inner.body(data.into())?,
+            cookies: CookieJar::new(),
+            inner: self.inner.body(Either::Left(body.into()))?,
         })
     }
 
@@ -82,11 +103,30 @@ impl ResponseBuilder {
             .body(data)
     }
 
+    #[inline]
+    pub fn boxed(self, body: BoxBody) -> Result<Response, Error> {
+        Ok(Response {
+            cookies: CookieJar::new(),
+            inner: self.inner.body(Either::Right(body))?,
+        })
+    }
+
     /// Convert self into a [Response] with an empty payload.
     ///
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
-        self.body(HttpBody::default())
+        self.body(BufferBody::default())
+    }
+}
+
+impl<T> Pipe for T
+where
+    T: Stream<Item = Result<Frame<Bytes>, DynError>> + Send + Sync + 'static,
+{
+    fn pipe(self, builder: ResponseBuilder) -> Result<Response, Error> {
+        builder
+            .header(TRANSFER_ENCODING, "chunked")
+            .boxed(BoxBody::new(StreamBody::new(self)))
     }
 }
 

@@ -12,4 +12,4 @@ repository = "https://github.com/zacharygolba/via"
 default = []
 
 [dependencies]
-smallvec = "1.14.0"
+smallvec = "1"

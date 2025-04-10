@@ -1,18 +1,20 @@
+use http_body_util::Limited;
 use hyper::body::Incoming;
 use hyper::service::Service;
 use std::collections::VecDeque;
-use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use via_router::binding::MatchCond;
 use via_router::MatchKind;
 
 use crate::app::App;
-use crate::body::{HttpBody, RequestBody, ResponseBody};
-use crate::middleware::{FutureResponse, Next};
+use crate::middleware::{BoxFuture, Next};
 use crate::request::param::PathParams;
-use crate::request::Request;
+use crate::request::{Head, Request};
+use crate::response::ResponseBody;
+use crate::BoxBody;
 
 pub struct AppService<T> {
     app: Arc<App<T>>,
@@ -20,7 +22,7 @@ pub struct AppService<T> {
 }
 
 pub struct ServeRequest {
-    response: FutureResponse,
+    result: Result<BoxFuture, via_router::Error>,
 }
 
 impl<T> AppService<T> {
@@ -31,61 +33,64 @@ impl<T> AppService<T> {
 }
 
 impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
-    type Error = Infallible;
+    type Error = via_router::Error;
     type Future = ServeRequest;
-    type Response = http::Response<HttpBody<ResponseBody>>;
+    type Response = http::Response<ResponseBody>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
-        let mut params = PathParams::new(Vec::with_capacity(6));
-        let mut next = Next::new(VecDeque::with_capacity(6));
+        let mut params = PathParams::new(Vec::with_capacity(7));
+        let mut next = Next::new(VecDeque::with_capacity(7));
+
         let path = request.uri().path();
+        let results = match self.app.router.visit(path) {
+            Err(error) => return ServeRequest { result: Err(error) },
+            Ok(visted) => visted,
+        };
 
-        for binding in self.app.router.visit(path) {
-            let range = binding.range();
-
-            binding.nodes().for_each(|kind| match kind {
-                MatchKind::Edge(cond) => {
-                    let node = cond.as_either();
-                    let param = node.param();
-                    let middleware = node.route().filter_map(|m| cond.matches(m.as_ref()));
-
-                    next.extend(middleware.cloned());
-
-                    if let Some((name, at)) = param.zip(range) {
-                        params.push(name.clone(), *at);
+        for binding in &results {
+            for kind in binding.nodes() {
+                params.extend(match kind {
+                    MatchKind::Edge(MatchCond::Partial(node)) => {
+                        next.extend(node.route().filter_map(MatchCond::as_partial).cloned());
+                        node.param(|| binding.range())
                     }
-                }
-                MatchKind::Wildcard(node) => {
-                    let param = node.param();
-                    let middleware = node.route().map(|cond| cond.as_either());
-
-                    next.extend(middleware.cloned());
-
-                    if let Some((name, [start, _])) = param.zip(range) {
-                        params.push(name.clone(), [*start, path.len()]);
+                    MatchKind::Edge(MatchCond::Exact(node)) => {
+                        next.extend(node.route().map(MatchCond::as_either).cloned());
+                        node.param(|| binding.range())
                     }
-                }
-            });
+                    MatchKind::Wildcard(node) => {
+                        next.extend(node.route().map(MatchCond::as_either).cloned());
+                        node.param(|| binding.range().map(|[start, _]| [start, path.len()]))
+                    }
+                });
+            }
         }
 
         ServeRequest {
-            response: next.call({
+            result: Ok(next.call({
                 let (parts, body) = request.into_parts();
-                let body = HttpBody::Inline(RequestBody::new(self.max_body_size, body));
 
-                Request::new(Arc::clone(&self.app.state), params, parts, body)
-            }),
+                Request::new(
+                    Arc::clone(&self.app.state),
+                    Box::new(Head::new(parts, params)),
+                    BoxBody::new(Limited::new(body, self.max_body_size)),
+                )
+            })),
         }
     }
 }
 
 impl Future for ServeRequest {
-    type Output = Result<http::Response<HttpBody<ResponseBody>>, Infallible>;
+    type Output = Result<http::Response<ResponseBody>, via_router::Error>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        self.response
-            .as_mut()
-            .poll(context)
-            .map(|result| Ok(result.unwrap_or_else(|e| e.into()).into_inner()))
+        match &mut self.result {
+            Ok(future) => match future.as_mut().poll(context) {
+                Poll::Ready(Ok(response)) => Poll::Ready(Ok(response.into())),
+                Poll::Ready(Err(error)) => Poll::Ready(Ok(error.into())),
+                Poll::Pending => Poll::Pending,
+            },
+            Err(error) => Poll::Ready(Err(*error)),
+        }
     }
 }

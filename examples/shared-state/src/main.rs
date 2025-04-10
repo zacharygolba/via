@@ -93,5 +93,5 @@ async fn main() -> Result<ExitCode, Error> {
     // Add the `totals` responder to the endpoint GET /totals.
     app.at("/totals").respond(via::get(totals));
 
-    Ok(via::start(app).listen(("127.0.0.1", 8080)).await?)
+    via::start(app).listen(("127.0.0.1", 8080)).await
 }

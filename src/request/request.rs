@@ -1,12 +1,31 @@
-use cookie::{Cookie, CookieJar};
-use http::header::AsHeaderName;
+use cookie::CookieJar;
+use http::header::{AsHeaderName, CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::request::Parts;
-use http::{HeaderMap, HeaderValue, Method, Uri, Version};
+use http::{HeaderMap, Method, Uri, Version};
+use http_body_util::BodyStream;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
+use super::into_future::IntoFuture;
 use super::param::{PathParam, PathParams, QueryParam};
-use crate::body::{HttpBody, RequestBody};
+use crate::response::{Pipe, Response, ResponseBuilder};
+use crate::{BoxBody, Error};
+
+/// The component parts of a HTTP request.
+///
+pub struct Head {
+    pub parts: Parts,
+
+    /// The cookies associated with the request. If there is not a
+    /// [CookieParser](crate::middleware::CookieParser)
+    /// middleware in the middleware stack for the request, this will be empty.
+    ///
+    cookies: CookieJar,
+
+    /// The request's path and query parameters.
+    ///
+    params: PathParams,
+}
 
 pub struct Request<T = ()> {
     /// The shared application state passed to the
@@ -15,23 +34,55 @@ pub struct Request<T = ()> {
     ///
     state: Arc<T>,
 
-    head: Box<RequestHead>,
+    head: Box<Head>,
 
-    body: HttpBody<RequestBody>,
+    body: BoxBody,
 }
 
-struct RequestHead {
-    parts: Parts,
+impl Head {
+    #[inline]
+    pub(crate) fn new(parts: Parts, params: PathParams) -> Self {
+        Self {
+            parts,
+            params,
+            cookies: CookieJar::new(),
+        }
+    }
 
-    /// The request's path and query parameters.
+    /// Returns reference to the cookies associated with the request.
     ///
-    params: PathParams,
+    #[inline]
+    pub fn cookies(&self) -> &CookieJar {
+        &self.cookies
+    }
 
-    /// The cookies associated with the request. If there is not a
-    /// [CookieParser](crate::middleware::CookieParser)
-    /// middleware in the middleware stack for the request, this will be empty.
+    /// Returns a convenient wrapper around an optional reference to the path
+    /// parameter in the request's uri with the provided `name`.
     ///
-    cookies: Option<CookieJar>,
+    #[inline]
+    pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
+        PathParam::new(
+            name,
+            self.parts.uri.path(),
+            Some(self.params.iter().find_map(
+                |(param, range)| {
+                    if param == name {
+                        Some(*range)
+                    } else {
+                        None
+                    }
+                },
+            )),
+        )
+    }
+
+    /// Returns a convenient wrapper around an optional references to the query
+    /// parameters in the request's uri with the provided `name`.
+    ///
+    #[inline]
+    pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
+        QueryParam::new(name, self.parts.uri.query().unwrap_or(""))
+    }
 }
 
 impl<T> Request<T> {
@@ -41,7 +92,7 @@ impl<T> Request<T> {
     #[inline]
     pub fn map<F>(self, map: F) -> Self
     where
-        F: FnOnce(HttpBody<RequestBody>) -> HttpBody<RequestBody>,
+        F: FnOnce(BoxBody) -> BoxBody,
     {
         Self {
             body: map(self.body),
@@ -49,44 +100,43 @@ impl<T> Request<T> {
         }
     }
 
-    /// Consumes the request and returns the body.
-    ///
     #[inline]
-    pub fn into_body(self) -> HttpBody<RequestBody> {
+    pub fn into_body(self) -> BoxBody {
         self.body
     }
 
     #[inline]
-    pub fn into_parts(self) -> (Parts, HttpBody<RequestBody>) {
-        (self.head.parts, self.body)
+    pub fn into_parts(self) -> (Box<Head>, BoxBody) {
+        (self.head, self.body)
     }
 
-    /// Returns a reference to the body associated with the request.
-    ///
-    #[inline]
-    pub fn body(&self) -> &HttpBody<RequestBody> {
-        &self.body
+    pub fn into_future(self) -> IntoFuture {
+        IntoFuture::new(self.body)
     }
 
-    /// Returns an optional reference to the cookie with the provided `name`.
-    ///
-    #[inline]
-    pub fn cookie(&self, name: &str) -> Option<&Cookie<'static>> {
-        self.cookies()?.get(name)
+    pub fn into_stream(self) -> BodyStream<BoxBody> {
+        BodyStream::new(self.body)
     }
 
-    /// Returns an optional reference to the cookies associated with the request.
+    /// Returns a result that contains an Option<&str> with the header value
+    /// associated with the provided key.
     ///
-    #[inline]
-    pub fn cookies(&self) -> Option<&CookieJar> {
-        self.head.cookies.as_ref()
-    }
-
-    /// Returns a reference to the header value associated with the key.
+    /// # Errors
     ///
-    #[inline]
-    pub fn header<K: AsHeaderName>(&self, key: K) -> Option<&HeaderValue> {
-        self.headers().get(key)
+    /// *Status Code:* `400`
+    ///
+    /// If the header value associated with key contains a char that is not
+    /// considered to be visible ascii.
+    ///
+    pub fn header<K>(&self, key: K) -> Result<Option<&str>, Error>
+    where
+        K: AsHeaderName,
+    {
+        match self.headers().get(key).map(|value| value.to_str()) {
+            Some(Ok(value_as_str)) => Ok(Some(value_as_str)),
+            Some(Err(error)) => Err(Error::bad_request(error.into())),
+            None => Ok(None),
+        }
     }
 
     /// Returns a reference to a map that contains the headers associated with
@@ -104,6 +154,13 @@ impl<T> Request<T> {
         &self.head.parts.method
     }
 
+    /// Returns a reference to the uri associated with the request.
+    ///
+    #[inline]
+    pub fn uri(&self) -> &Uri {
+        &self.head.parts.uri
+    }
+
     /// Returns a convenient wrapper around an optional reference to the path
     /// parameter in the request's uri with the provided `name`.
     ///
@@ -118,21 +175,8 @@ impl<T> Request<T> {
     /// }
     /// ```
     ///
-    #[inline]
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
-        PathParam::new(
-            name,
-            self.uri().path(),
-            Some(self.head.params.iter().find_map(
-                |(param, range)| {
-                    if param == name {
-                        Some(*range)
-                    } else {
-                        None
-                    }
-                },
-            )),
-        )
+        self.head.param(name)
     }
 
     /// Returns a convenient wrapper around an optional references to the query
@@ -160,9 +204,8 @@ impl<T> Request<T> {
     /// }
     /// ```
     ///
-    #[inline]
     pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
-        QueryParam::new(name, self.uri().query().unwrap_or(""))
+        self.head.query(name)
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
@@ -175,11 +218,11 @@ impl<T> Request<T> {
         &self.state
     }
 
-    /// Returns a reference to the uri associated with the request.
+    /// Returns reference to the cookies associated with the request.
     ///
     #[inline]
-    pub fn uri(&self) -> &Uri {
-        &self.head.parts.uri
+    pub fn cookies(&self) -> &CookieJar {
+        &self.head.cookies
     }
 
     /// Returns the HTTP version associated with the request.
@@ -192,28 +235,15 @@ impl<T> Request<T> {
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(
-        state: Arc<T>,
-        params: PathParams,
-        parts: Parts,
-        body: HttpBody<RequestBody>,
-    ) -> Self {
-        Self {
-            state,
-            head: Box::new(RequestHead {
-                cookies: None,
-                params,
-                parts,
-            }),
-            body,
-        }
+    pub(crate) fn new(state: Arc<T>, head: Box<Head>, body: BoxBody) -> Self {
+        Self { state, head, body }
     }
 
     /// Returns a mutable reference to the cookies associated with the request.
     ///
     #[inline]
     pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
-        self.head.cookies.get_or_insert_default()
+        &mut self.head.cookies
     }
 }
 
@@ -226,7 +256,18 @@ impl<T> Debug for Request<T> {
             .field("headers", self.headers())
             .field("params", &self.head.params)
             .field("cookies", &self.head.cookies)
-            .field("body", self.body())
+            .field("body", &self.body)
             .finish()
+    }
+}
+
+impl<T> Pipe for Request<T> {
+    fn pipe(self, builder: ResponseBuilder) -> Result<Response, Error> {
+        let response = match self.headers().get(CONTENT_LENGTH) {
+            Some(len) => builder.header(CONTENT_LENGTH, len),
+            None => builder.header(TRANSFER_ENCODING, "chunked"),
+        };
+
+        response.boxed(self.body)
     }
 }

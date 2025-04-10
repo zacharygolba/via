@@ -65,5 +65,5 @@ async fn main() -> Result<ExitCode, Error> {
     // Serve any file located in the public dir.
     app.at("/*path").respond(via::get(file_server));
 
-    Ok(via::start(app).listen(("127.0.0.1", 8080)).await?)
+    via::start(app).listen(("127.0.0.1", 8080)).await
 }

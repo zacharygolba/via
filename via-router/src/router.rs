@@ -2,6 +2,7 @@ use smallvec::SmallVec;
 use std::slice;
 
 use crate::binding::{Binding, MatchCond, MatchKind};
+use crate::error::Error;
 use crate::path::{self, Param, Pattern, Split};
 
 /// The capacity of the vec used to store indices (usize) to the children of
@@ -43,16 +44,43 @@ impl<T> Node<T> {
 
 impl<T> Node<T> {
     #[inline]
-    pub fn param(&self) -> Option<&Param> {
-        match &self.pattern {
-            Pattern::Dynamic(param) | Pattern::Wildcard(param) => Some(param),
-            _ => None,
+    pub fn param<F>(&self, f: F) -> Option<(Param, [usize; 2])>
+    where
+        F: FnOnce() -> Option<[usize; 2]>,
+    {
+        if let Pattern::Dynamic(name) | Pattern::Wildcard(name) = &self.pattern {
+            Some((name.clone(), f()?))
+        } else {
+            None
         }
     }
 
     #[inline]
     pub fn route(&self) -> slice::Iter<MatchCond<T>> {
         self.route.iter()
+    }
+
+    #[inline]
+    pub fn matches<'node, 'predicate, U>(
+        &'node self,
+        predicate: &'predicate MatchCond<U>,
+    ) -> impl Iterator<Item = &'node T> + 'predicate
+    where
+        'node: 'predicate,
+    {
+        self.route
+            .iter()
+            .filter_map(|other| predicate.matches(other.as_ref()))
+    }
+
+    #[inline]
+    pub fn exact(&self) -> impl Iterator<Item = &T> {
+        self.route.iter().map(MatchCond::as_either)
+    }
+
+    #[inline]
+    pub fn partial(&self) -> impl Iterator<Item = &T> {
+        self.route.iter().filter_map(MatchCond::as_partial)
     }
 }
 
@@ -111,7 +139,7 @@ impl<T> Router<T> {
     /// });
     ///
     /// let path = "articles/12345";
-    /// let matched = router.visit(path).into_iter().find_map(|binding| {
+    /// let matched = router.visit(path).unwrap().into_iter().find_map(|binding| {
     ///    let range = binding.range();
     ///
     ///    binding.nodes().find_map(|kind| match kind {
@@ -124,7 +152,7 @@ impl<T> Router<T> {
     ///
     ///          Some((
     ///             cond.matches(node.route().next().cloned()?)?,
-    ///             node.param().cloned().zip(range.copied()),
+    ///             node.param(|| binding.range()),
     ///          ))
     ///       }
     ///    })
@@ -146,7 +174,7 @@ impl<T> Router<T> {
     /// If a node referenced by another node does not exist in the route tree.
     /// This router is insert-only, therefore this is a very unlikely scenario.
     ///
-    pub fn visit<'a>(&'a self, path: &str) -> Vec<Binding<'a, T>> {
+    pub fn visit<'a>(&'a self, path: &str) -> Result<Vec<Binding<'a, T>>, Error> {
         let mut segments = Split::new(path).lookahead();
         let mut results = Vec::with_capacity(VISIT_RESULTS_CAPACITY);
         let mut branch = Vec::with_capacity(VISIT_BRANCH_CAPACITY);
@@ -165,23 +193,36 @@ impl<T> Router<T> {
 
         for (is_exact, range) in &mut segments {
             let mut binding = Binding::new(range);
-            let segment = &path[range[0]..range[1]];
+            let segment = match path.get(range[0]..range[1]) {
+                Some(value) => value,
+                None => return Err(Error::path()),
+            };
 
-            for key in branch.drain(..) {
-                let node = tree.get(key).unwrap();
+            {
+                let mut drain = branch.drain(..);
 
-                binding.push(match &node.pattern {
-                    Pattern::Static(value) if value == segment => {
-                        next.push(&node.children);
-                        MatchKind::edge(is_exact, node)
-                    }
-                    Pattern::Dynamic(_) => {
-                        next.push(&node.children);
-                        MatchKind::edge(is_exact, node)
-                    }
-                    Pattern::Static(_) | Pattern::Root => continue,
-                    Pattern::Wildcard(_) => MatchKind::wildcard(node),
-                });
+                for key in &mut drain {
+                    let node = match tree.get(key) {
+                        Some(exists) => exists,
+                        None => {
+                            while drain.next().is_some() {}
+                            return Err(Error::router());
+                        }
+                    };
+
+                    binding.push(match &node.pattern {
+                        Pattern::Static(value) if value == segment => {
+                            next.push(&node.children);
+                            MatchKind::edge(is_exact, node)
+                        }
+                        Pattern::Dynamic(_) => {
+                            next.push(&node.children);
+                            MatchKind::edge(is_exact, node)
+                        }
+                        Pattern::Static(_) | Pattern::Root => continue,
+                        Pattern::Wildcard(_) => MatchKind::wildcard(node),
+                    });
+                }
             }
 
             for children in next.drain(..) {
@@ -194,7 +235,7 @@ impl<T> Router<T> {
         }
 
         let mut wildcards = branch.drain(..).filter_map(|key| {
-            let node = tree.get(key).unwrap();
+            let node = tree.get(key)?;
             if let Pattern::Wildcard(_) = &node.pattern {
                 Some(MatchKind::wildcard(node))
             } else {
@@ -210,7 +251,7 @@ impl<T> Router<T> {
             results.push(Binding::new_with_nodes(None, nodes));
         }
 
-        results
+        Ok(results)
     }
 }
 
@@ -298,9 +339,9 @@ mod tests {
         }
 
         fn param(&self) -> Option<&Param> {
-            match *self {
-                Self::Edge(ref cond) => cond.as_either().param(),
-                Self::Wildcard(node) => node.param(),
+            match &self.node().pattern {
+                Pattern::Dynamic(name) | Pattern::Wildcard(name) => Some(name),
+                Pattern::Static(_) | Pattern::Root => None,
             }
         }
     }
@@ -352,7 +393,7 @@ mod tests {
         //
         //
         {
-            let results = router.visit("/");
+            let results = router.visit("/").unwrap();
 
             assert_eq!(results.len(), 2);
 
@@ -401,7 +442,7 @@ mod tests {
         // ]
         //
         {
-            let results = router.visit("/not/a/path");
+            let results = router.visit("/not/a/path").unwrap();
 
             assert_eq!(results.len(), 2);
 
@@ -412,7 +453,7 @@ mod tests {
             {
                 let binding = results.get(1).unwrap();
 
-                assert_eq!(binding.range(), Some(&[1, 4]));
+                assert_eq!(binding.range(), Some([1, 4]));
                 assert_eq!(binding.nodes().count(), 1);
 
                 let kind = binding.nodes().next().unwrap();
@@ -462,7 +503,7 @@ mod tests {
         // ]
         //
         {
-            let results = router.visit("/echo/hello/world");
+            let results = router.visit("/echo/hello/world").unwrap();
 
             assert_eq!(results.len(), 3);
 
@@ -473,7 +514,7 @@ mod tests {
             {
                 let binding = results.get(1).unwrap();
 
-                assert_eq!(binding.range(), Some(&[1, 5]));
+                assert_eq!(binding.range(), Some([1, 5]));
                 assert_eq!(binding.nodes().count(), 2);
 
                 let mut nodes = binding.nodes();
@@ -510,7 +551,7 @@ mod tests {
             {
                 let binding = results.get(2).unwrap();
 
-                assert_eq!(binding.range(), Some(&[6, 11]));
+                assert_eq!(binding.range(), Some([6, 11]));
                 assert_eq!(binding.nodes().count(), 1);
 
                 let kind = binding.nodes().next().unwrap();
@@ -557,7 +598,7 @@ mod tests {
         //     ],
         // ]
         {
-            let results = router.visit("/articles/12345");
+            let results = router.visit("/articles/12345").unwrap();
 
             assert_eq!(results.len(), 3);
 
@@ -568,7 +609,7 @@ mod tests {
             {
                 let binding = results.get(1).unwrap();
 
-                assert_eq!(binding.range(), Some(&[1, 9]));
+                assert_eq!(binding.range(), Some([1, 9]));
                 assert_eq!(binding.nodes().count(), 2);
 
                 let mut nodes = binding.nodes();
@@ -605,7 +646,7 @@ mod tests {
             {
                 let binding = results.get(2).unwrap();
 
-                assert_eq!(binding.range(), Some(&[10, 15]));
+                assert_eq!(binding.range(), Some([10, 15]));
                 assert_eq!(binding.nodes().count(), 1);
 
                 let kind = binding.nodes().next().unwrap();
@@ -659,7 +700,7 @@ mod tests {
         //     ],
         // ]
         {
-            let results = router.visit("/articles/12345/comments");
+            let results = router.visit("/articles/12345/comments").unwrap();
 
             assert_eq!(results.len(), 4);
 
@@ -670,7 +711,7 @@ mod tests {
             {
                 let binding = results.get(1).unwrap();
 
-                assert_eq!(binding.range(), Some(&[1, 9]));
+                assert_eq!(binding.range(), Some([1, 9]));
                 assert_eq!(binding.nodes().count(), 2);
 
                 let mut nodes = binding.nodes();
@@ -707,7 +748,7 @@ mod tests {
             {
                 let binding = results.get(2).unwrap();
 
-                assert_eq!(binding.range(), Some(&[10, 15]));
+                assert_eq!(binding.range(), Some([10, 15]));
                 assert_eq!(binding.nodes().count(), 1);
 
                 let kind = binding.nodes().next().unwrap();
@@ -727,7 +768,7 @@ mod tests {
             {
                 let binding = results.get(3).unwrap();
 
-                assert_eq!(binding.range(), Some(&[16, 24]));
+                assert_eq!(binding.range(), Some([16, 24]));
                 assert_eq!(binding.nodes().count(), 1);
 
                 let kind = binding.nodes().next().unwrap();

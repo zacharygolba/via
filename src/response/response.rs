@@ -1,14 +1,17 @@
-use cookie::CookieJar;
-use http::response::Parts;
-use http::{HeaderMap, StatusCode, Version};
+use cookie::{Cookie, CookieJar};
+use http::{header::SET_COOKIE, HeaderMap, StatusCode, Version};
+use http_body_util::Either;
 use std::fmt::{self, Debug, Formatter};
 
+use super::buffer_body::BufferBody;
 use super::builder::ResponseBuilder;
-use crate::body::{HttpBody, ResponseBody};
+use crate::{BoxBody, Error};
+
+pub type ResponseBody = Either<BufferBody, BoxBody>;
 
 pub struct Response {
-    pub(crate) cookies: Option<Box<CookieJar>>,
-    pub(crate) inner: http::Response<HttpBody<ResponseBody>>,
+    pub(super) cookies: CookieJar,
+    pub(super) inner: http::Response<ResponseBody>,
 }
 
 impl Response {
@@ -18,9 +21,9 @@ impl Response {
     }
 
     #[inline]
-    pub fn new(body: HttpBody<ResponseBody>) -> Self {
+    pub fn new(body: ResponseBody) -> Self {
         Self {
-            cookies: None,
+            cookies: CookieJar::new(),
             inner: http::Response::new(body),
         }
     }
@@ -31,31 +34,12 @@ impl Response {
     #[inline]
     pub fn map<F>(self, map: F) -> Self
     where
-        F: FnOnce(HttpBody<ResponseBody>) -> HttpBody<ResponseBody>,
+        F: FnOnce(ResponseBody) -> ResponseBody,
     {
         Self {
             inner: self.inner.map(map),
             ..self
         }
-    }
-
-    #[inline]
-    pub fn into_inner(self) -> http::Response<HttpBody<ResponseBody>> {
-        self.inner
-    }
-
-    /// Returns a reference to the response cookies.
-    ///
-    #[inline]
-    pub fn cookies(&self) -> Option<&CookieJar> {
-        self.cookies.as_deref()
-    }
-
-    /// Returns a mutable reference to the response cookies.
-    ///
-    #[inline]
-    pub fn cookies_mut(&mut self) -> &mut CookieJar {
-        self.cookies.get_or_insert_default()
     }
 
     #[inline]
@@ -66,6 +50,20 @@ impl Response {
     #[inline]
     pub fn headers_mut(&mut self) -> &mut HeaderMap {
         self.inner.headers_mut()
+    }
+
+    /// Returns a reference to the response cookies.
+    ///
+    #[inline]
+    pub fn cookies(&self) -> &CookieJar {
+        &self.cookies
+    }
+
+    /// Returns a mutable reference to the response cookies.
+    ///
+    #[inline]
+    pub fn cookies_mut(&mut self) -> &mut CookieJar {
+        &mut self.cookies
     }
 
     #[inline]
@@ -84,10 +82,18 @@ impl Response {
     }
 }
 
-impl Default for Response {
-    #[inline]
-    fn default() -> Self {
-        Self::new(HttpBody::default())
+impl Response {
+    pub(crate) fn set_cookies<F>(&mut self, f: F) -> Result<(), Error>
+    where
+        F: Fn(&Cookie) -> String,
+    {
+        let headers = self.inner.headers_mut();
+
+        for cookie in self.cookies.delta() {
+            headers.try_append(SET_COOKIE, f(cookie).parse()?)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -103,11 +109,9 @@ impl Debug for Response {
     }
 }
 
-impl From<(Parts, HttpBody<ResponseBody>)> for Response {
-    fn from((parts, body): (Parts, HttpBody<ResponseBody>)) -> Self {
-        Self {
-            cookies: None,
-            inner: http::Response::from_parts(parts, body),
-        }
+impl From<Response> for http::Response<ResponseBody> {
+    #[inline]
+    fn from(response: Response) -> Self {
+        response.inner
     }
 }
