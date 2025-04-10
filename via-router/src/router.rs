@@ -2,6 +2,7 @@ use smallvec::SmallVec;
 use std::slice;
 
 use crate::binding::{Binding, MatchCond, MatchKind};
+use crate::error::Error;
 use crate::path::{self, Param, Pattern, Split};
 
 /// The capacity of the vec used to store indices (usize) to the children of
@@ -173,7 +174,7 @@ impl<T> Router<T> {
     /// If a node referenced by another node does not exist in the route tree.
     /// This router is insert-only, therefore this is a very unlikely scenario.
     ///
-    pub fn visit<'a>(&'a self, path: &str) -> Vec<Binding<'a, T>> {
+    pub fn visit<'a>(&'a self, path: &str) -> Result<Vec<Binding<'a, T>>, Error> {
         let mut segments = Split::new(path).lookahead();
         let mut results = Vec::with_capacity(VISIT_RESULTS_CAPACITY);
         let mut branch = Vec::with_capacity(VISIT_BRANCH_CAPACITY);
@@ -192,23 +193,36 @@ impl<T> Router<T> {
 
         for (is_exact, range) in &mut segments {
             let mut binding = Binding::new(range);
-            let segment = &path[range[0]..range[1]];
+            let segment = match path.get(range[0]..range[1]) {
+                Some(value) => value,
+                None => return Err(Error::path()),
+            };
 
-            for key in branch.drain(..) {
-                let node = tree.get(key).unwrap();
+            {
+                let mut drain = branch.drain(..);
 
-                binding.push(match &node.pattern {
-                    Pattern::Static(value) if value == segment => {
-                        next.push(&node.children);
-                        MatchKind::edge(is_exact, node)
-                    }
-                    Pattern::Dynamic(_) => {
-                        next.push(&node.children);
-                        MatchKind::edge(is_exact, node)
-                    }
-                    Pattern::Static(_) | Pattern::Root => continue,
-                    Pattern::Wildcard(_) => MatchKind::wildcard(node),
-                });
+                for key in &mut drain {
+                    let node = match tree.get(key) {
+                        Some(exists) => exists,
+                        None => {
+                            while drain.next().is_some() {}
+                            return Err(Error::router());
+                        }
+                    };
+
+                    binding.push(match &node.pattern {
+                        Pattern::Static(value) if value == segment => {
+                            next.push(&node.children);
+                            MatchKind::edge(is_exact, node)
+                        }
+                        Pattern::Dynamic(_) => {
+                            next.push(&node.children);
+                            MatchKind::edge(is_exact, node)
+                        }
+                        Pattern::Static(_) | Pattern::Root => continue,
+                        Pattern::Wildcard(_) => MatchKind::wildcard(node),
+                    });
+                }
             }
 
             for children in next.drain(..) {
@@ -221,7 +235,7 @@ impl<T> Router<T> {
         }
 
         let mut wildcards = branch.drain(..).filter_map(|key| {
-            let node = tree.get(key).unwrap();
+            let node = tree.get(key)?;
             if let Pattern::Wildcard(_) = &node.pattern {
                 Some(MatchKind::wildcard(node))
             } else {
@@ -237,7 +251,7 @@ impl<T> Router<T> {
             results.push(Binding::new_with_nodes(None, nodes));
         }
 
-        results
+        Ok(results)
     }
 }
 
@@ -379,7 +393,7 @@ mod tests {
         //
         //
         {
-            let results = router.visit("/");
+            let results = router.visit("/").unwrap();
 
             assert_eq!(results.len(), 2);
 
@@ -428,7 +442,7 @@ mod tests {
         // ]
         //
         {
-            let results = router.visit("/not/a/path");
+            let results = router.visit("/not/a/path").unwrap();
 
             assert_eq!(results.len(), 2);
 
@@ -489,7 +503,7 @@ mod tests {
         // ]
         //
         {
-            let results = router.visit("/echo/hello/world");
+            let results = router.visit("/echo/hello/world").unwrap();
 
             assert_eq!(results.len(), 3);
 
@@ -584,7 +598,7 @@ mod tests {
         //     ],
         // ]
         {
-            let results = router.visit("/articles/12345");
+            let results = router.visit("/articles/12345").unwrap();
 
             assert_eq!(results.len(), 3);
 
@@ -686,7 +700,7 @@ mod tests {
         //     ],
         // ]
         {
-            let results = router.visit("/articles/12345/comments");
+            let results = router.visit("/articles/12345/comments").unwrap();
 
             assert_eq!(results.len(), 4);
 

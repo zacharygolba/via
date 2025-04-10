@@ -2,11 +2,10 @@ use http_body_util::Limited;
 use hyper::body::Incoming;
 use hyper::service::Service;
 use std::collections::VecDeque;
-use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll};
 use via_router::binding::MatchCond;
 use via_router::MatchKind;
 
@@ -23,7 +22,7 @@ pub struct AppService<T> {
 }
 
 pub struct ServeRequest {
-    response: BoxFuture,
+    response: Result<BoxFuture, via_router::Error>,
 }
 
 impl<T> AppService<T> {
@@ -34,7 +33,7 @@ impl<T> AppService<T> {
 }
 
 impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
-    type Error = Infallible;
+    type Error = via_router::Error;
     type Future = ServeRequest;
     type Response = http::Response<ResponseBody>;
 
@@ -43,8 +42,16 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         let mut next = Next::new(VecDeque::with_capacity(7));
 
         let path = request.uri().path();
+        let hits = match self.app.router.visit(path) {
+            Ok(visted) => visted,
+            Err(error) => {
+                return ServeRequest {
+                    response: Err(error),
+                }
+            }
+        };
 
-        for binding in self.app.router.visit(path) {
+        for binding in &hits {
             for kind in binding.nodes() {
                 params.extend(match kind {
                     MatchKind::Edge(MatchCond::Partial(node)) => {
@@ -64,7 +71,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         }
 
         ServeRequest {
-            response: next.call({
+            response: Ok(next.call({
                 let (parts, body) = request.into_parts();
 
                 Request::new(
@@ -72,18 +79,22 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
                     Box::new(Head::new(parts, params)),
                     BoxBody::new(Limited::new(body, self.max_body_size)),
                 )
-            }),
+            })),
         }
     }
 }
 
 impl Future for ServeRequest {
-    type Output = Result<http::Response<ResponseBody>, Infallible>;
+    type Output = Result<http::Response<ResponseBody>, via_router::Error>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        Poll::Ready(Ok(match ready!(self.response.as_mut().poll(context)) {
-            Ok(response) => response.into(),
-            Err(error) => error.into(),
-        }))
+        match &mut self.response {
+            Ok(future) => match future.as_mut().poll(context) {
+                Poll::Ready(Ok(response)) => Poll::Ready(Ok(response.into())),
+                Poll::Ready(Err(error)) => Poll::Ready(Ok(error.into())),
+                Poll::Pending => Poll::Pending,
+            },
+            Err(error) => Poll::Ready(Err(*error)),
+        }
     }
 }

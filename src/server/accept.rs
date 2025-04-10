@@ -16,8 +16,14 @@ use crate::app::{App, AppService};
 use crate::error::DynError;
 use crate::server::stream::IoStream;
 
+/// The maximum amount of connections that can be join at time while the server
+/// is running.
+///
+const CONNECTION_JOIN_LIMIT: usize = 3;
+
 macro_rules! joined {
-    ($result:expr) => {
+    ($result:expr) => { joined!($result ; else let Err(error) {}) };
+    ($result:expr ; else let Err($error:ident) $else:expr) => {
         match $result {
             // Succussfully joined the connection.
             Ok(Ok(_)) => {}
@@ -26,16 +32,17 @@ macro_rules! joined {
                 if error.is_panic() {
                     // Placeholder for tracing...
                     if cfg!(debug_assertions) {
-                        eprintln!("error(connection): {}", error);
+                        eprintln!("error: {}", error);
                     }
                 }
             }
             // An error occurred that originates from hyper or tokio.
-            Ok(Err(error)) => {
+            Ok(Err($error)) => {
                 // Placeholder for tracing...
                 if cfg!(debug_assertions) {
-                    eprintln!("error(connection): {}", error);
+                    eprintln!("error: {}", $error);
                 }
+                $else
             }
         }
     };
@@ -69,13 +76,13 @@ where
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
-    let mut connections = JoinSet::new();
+    let mut connections = JoinSet::<Result<(), DynError>>::new();
 
     // Wrap app in an arc so it can be cloned into the connection task.
     let app = Arc::new(app);
 
     // Start accepting incoming connections.
-    let exit_code = loop {
+    let exit_code = 'accept: loop {
         // Acquire a permit from the semaphore.
         let permit = match semaphore.clone().acquire_owned().await {
             Ok(acquired) => acquired,
@@ -85,20 +92,11 @@ where
         // Accept the next stream from the tcp listener.
         let (stream, _addr) = tokio::select! {
             biased;
-            result = time::timeout(Duration::from_secs(15), listener.accept()) => {
+            result = listener.accept() => {
                 match result {
-                    Ok(Ok(accepted)) => accepted,
-                    Ok(Err(error)) => {
-                        // Placeholder for tracing...
+                    Ok(accepted) => accepted,
+                    Err(error) => {
                         eprintln!("error(listener): {}", error);
-                        drop(permit);
-                        continue;
-                    }
-                    Err(_) => {
-                        while let Some(result) = connections.try_join_next() {
-                            joined!(&result);
-                        }
-
                         drop(permit);
                         continue;
                     }
@@ -106,7 +104,7 @@ where
             }
             _ = shutdown_rx.changed() => {
                 drop(permit);
-                break match *shutdown_rx.borrow_and_update() {
+                break 'accept match *shutdown_rx.borrow_and_update() {
                     Some(false) => 0.into(),
                     Some(true) | None => 1.into(),
                 }
@@ -159,6 +157,24 @@ where
                 result
             }
         });
+
+        for _ in 0..CONNECTION_JOIN_LIMIT {
+            let result = match connections.try_join_next() {
+                Some(next) => next,
+                None => break,
+            };
+
+            joined!(&result; else let Err(error) {
+                let is_router_error = error.source().is_some_and(|e| {
+                    e.is::<via_router::Error>()
+                });
+
+                if is_router_error {
+                    eprintln!("error(router): {}", error);
+                    break 'accept 1.into();
+                }
+            });
+        }
     };
 
     let drain_all = time::timeout(
