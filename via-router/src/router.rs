@@ -139,7 +139,7 @@ impl<T> Router<T> {
     /// });
     ///
     /// let path = "articles/12345";
-    /// let matched = router.visit(path).into_iter().find_map(|binding| {
+    /// let matched = router.visit(path).unwrap().into_iter().find_map(|binding| {
     ///    let range = binding.range();
     ///
     ///    binding.nodes().find_map(|kind| match kind {

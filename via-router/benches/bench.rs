@@ -116,7 +116,7 @@ fn find_matches_1(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/dashboard") {
+        for binding in router.visit("/dashboard").unwrap() {
             binding.nodes().fold(0, |sum, kind| match kind {
                 MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
                 MatchKind::Wildcard(node) => sum + node.route().count(),
@@ -134,7 +134,7 @@ fn find_matches_2(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/dashboard/overview") {
+        for binding in router.visit("/dashboard/overview").unwrap() {
             binding.nodes().fold(0, |sum, kind| match kind {
                 MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
                 MatchKind::Wildcard(node) => sum + node.route().count(),
@@ -152,7 +152,7 @@ fn find_matches_3(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/help/article/12345678987654321") {
+        for binding in router.visit("/help/article/12345678987654321").unwrap() {
             binding.nodes().fold(0, |sum, kind| match kind {
                 MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
                 MatchKind::Wildcard(node) => sum + node.route().count(),
@@ -170,7 +170,7 @@ fn find_matches_4(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/api/v1/products/12345678987654321") {
+        for binding in router.visit("/api/v1/products/12345678987654321").unwrap() {
             binding.nodes().fold(0, |sum, kind| match kind {
                 MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
                 MatchKind::Wildcard(node) => sum + node.route().count(),
@@ -188,7 +188,9 @@ fn find_matches_5(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+        for binding in router
+            .visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+            .unwrap()
         {
             binding.nodes().fold(0, |sum, kind| match kind {
                 MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
@@ -207,7 +209,9 @@ fn find_matches_6(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+        for binding in router
+            .visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+            .unwrap()
         {
             binding.nodes().fold(0, |sum, kind| match kind {
                 MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
@@ -226,8 +230,9 @@ fn find_matches_7(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in
-            router.visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
+        for binding in router
+            .visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
+            .unwrap()
         {
             binding.nodes().fold(0, |sum, kind| match kind {
                 MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
