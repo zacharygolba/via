@@ -19,7 +19,7 @@ pub fn app<T>(state: T) -> App<T> {
 
 impl App {
     pub fn new() -> Self {
-        Self::with_state(())
+        Default::default()
     }
 }
 
@@ -39,5 +39,11 @@ impl<T> App<T> {
 
     pub fn include(&mut self, middleware: impl Middleware<T> + 'static) {
         self.at("/").include(middleware);
+    }
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::with_state(())
     }
 }
