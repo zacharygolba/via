@@ -91,7 +91,7 @@ where
                             }
 
                             while let Some(result) = connections.try_join_next() {
-                                joined_connection(result);
+                                joined_connection(&result);
                                 if now.elapsed().as_micros() >= 1000 {
                                     break;
                                 }
@@ -182,7 +182,7 @@ where
             }
 
             if let Some(result) = connections.join_next().await {
-                joined_connection(result);
+                joined_connection(&result);
             }
 
             if cfg!(debug_assertions) {
@@ -203,7 +203,7 @@ where
     }
 }
 
-fn joined_connection(result: Result<Result<(), DynError>, JoinError>) {
+fn joined_connection(result: &Result<Result<(), DynError>, JoinError>) {
     match result {
         // An error occurred that originates from hyper or tokio.
         Ok(Err(error)) => {
@@ -242,7 +242,7 @@ async fn drain_connections(connections: &mut JoinSet<Result<(), DynError>>) {
     }
 
     while let Some(result) = connections.join_next().await {
-        joined_connection(result);
+        joined_connection(&result);
     }
 }
 
