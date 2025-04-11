@@ -13,10 +13,10 @@ enum UnitOfTime {
 pub fn fmt_elapsed(duration: Duration) -> Elapsed {
     let micros = duration.as_micros();
 
-    if micros < 1000 {
+    if micros < 1_000 {
         Elapsed(micros, UnitOfTime::Micros)
     } else {
-        Elapsed(micros / 1000, UnitOfTime::Millis)
+        Elapsed(micros / 1_000, UnitOfTime::Millis)
     }
 }
 

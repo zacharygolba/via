@@ -92,7 +92,7 @@ where
 
                             while let Some(result) = connections.try_join_next() {
                                 joined_connection(&result);
-                                if now.elapsed().as_micros() >= 1000 {
+                                if now.elapsed().as_micros() >= 1_000 {
                                     break;
                                 }
                             }
