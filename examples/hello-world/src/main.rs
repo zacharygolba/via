@@ -1,6 +1,6 @@
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{Next, Request, Response};
+use via::{App, Next, Request, Response, Server};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -15,7 +15,7 @@ async fn hello(request: Request, _: Next) -> via::Result {
 #[tokio::main]
 async fn main() -> Result<ExitCode, Error> {
     // Create a new application.
-    let mut app = via::app(());
+    let mut app = App::new();
 
     // Include an error boundary to catch any errors that occur downstream.
     app.include(error_boundary::map(|error| {
@@ -26,5 +26,5 @@ async fn main() -> Result<ExitCode, Error> {
     // Define a route that listens on /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
-    via::start(app).listen(("127.0.0.1", 8080)).await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

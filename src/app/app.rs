@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::router::{Route, Router};
 use crate::middleware::Middleware;
 
-pub struct App<T> {
+pub struct App<T = ()> {
     pub(super) state: Arc<T>,
     pub(super) router: Router<T>,
 }
@@ -17,7 +17,20 @@ pub fn app<T>(state: T) -> App<T> {
     }
 }
 
+impl App {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
 impl<T> App<T> {
+    pub fn with_state(state: T) -> Self {
+        Self {
+            state: Arc::new(state),
+            router: Router::new(),
+        }
+    }
+
     pub fn at(&mut self, path: &'static str) -> Route<T> {
         Route {
             inner: self.router.at(path),
@@ -26,5 +39,11 @@ impl<T> App<T> {
 
     pub fn include(&mut self, middleware: impl Middleware<T> + 'static) {
         self.at("/").include(middleware);
+    }
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::with_state(())
     }
 }

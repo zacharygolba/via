@@ -39,19 +39,23 @@ pub struct Server<T> {
 
 /// Creates a new server for the provided app.
 ///
-pub fn start<T>(app: App<T>) -> Server<T> {
-    Server {
-        app,
-        max_body_size: None,
-        max_connections: None,
-        shutdown_timeout: None,
-
-        #[cfg(feature = "rustls")]
-        rustls_config: None,
-    }
+pub fn start<T: Send + Sync + 'static>(app: App<T>) -> Server<T> {
+    Server::new(app)
 }
 
 impl<T: Send + Sync + 'static> Server<T> {
+    pub fn new(app: App<T>) -> Self {
+        Self {
+            app,
+            max_body_size: None,
+            max_connections: None,
+            shutdown_timeout: None,
+
+            #[cfg(feature = "rustls")]
+            rustls_config: None,
+        }
+    }
+
     /// Set the maximum request body size in bytes.
     ///
     /// Default: `100 MiB`
