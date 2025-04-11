@@ -1,52 +1,28 @@
 use hyper::server::conn;
 use hyper_util::rt::TokioTimer;
+use std::error::Error;
+use std::io;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
-use tokio::task::JoinSet;
+use tokio::task::{JoinError, JoinSet};
 use tokio::{signal, time};
 
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
+use super::util::fmt_elapsed;
 use crate::app::{App, AppService};
 use crate::error::DynError;
 use crate::server::stream::IoStream;
 
-/// The maximum amount of connections that can be join at time while the server
-/// is running.
+/// The amount of time in seconds we'll wait before garbage collecting
+/// connection tasks that finished.
 ///
-const CONNECTION_JOIN_LIMIT: usize = 3;
-
-macro_rules! joined {
-    ($result:expr) => { joined!($result ; else let Err(error) {}) };
-    ($result:expr ; else let Err($error:ident) $else:expr) => {
-        match $result {
-            // Succussfully joined the connection.
-            Ok(Ok(_)) => {}
-            // The connection was cancelled or the panicked.
-            Err(error) => {
-                if error.is_panic() {
-                    // Placeholder for tracing...
-                    if cfg!(debug_assertions) {
-                        eprintln!("error: {}", error);
-                    }
-                }
-            }
-            // An error occurred that originates from hyper or tokio.
-            Ok(Err($error)) => {
-                // Placeholder for tracing...
-                if cfg!(debug_assertions) {
-                    eprintln!("error: {}", $error);
-                }
-                $else
-            }
-        }
-    };
-}
+const IDLE_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub async fn accept<A, T>(
     listener: TcpListener,
@@ -91,15 +67,51 @@ where
 
         // Accept the next stream from the tcp listener.
         let (stream, _addr) = tokio::select! {
+            // The server probably won't shutdown in the next 15 seconds.
             biased;
-            result = listener.accept() => match result {
-                Ok(accepted) => accepted,
-                Err(error) => {
-                    eprintln!("error(listener): {}", error);
-                    drop(permit);
-                    continue;
+            // A connection was accepted or IDLE_TIMEOUT expired.
+            result = time::timeout(IDLE_TIMEOUT, listener.accept()) => {
+                match result {
+                    Ok(Ok(accepted)) => accepted,
+                    Ok(Err(error)) => {
+                        eprintln!("error(listener): {}", error);
+                        drop(permit);
+                        continue;
+                    }
+                    Err(_) => {
+                        let before = connections.len();
+
+                        if before > 0 {
+                            let now = Instant::now();
+
+                            if cfg!(debug_assertions) {
+                                eprintln!("server is idle");
+                                eprintln!("  joining connection tasks that finished");
+                                eprintln!("    {} total tasks", before);
+                            }
+
+                            while let Some(result) = connections.try_join_next() {
+                                joined_connection(result);
+                                if now.elapsed().as_micros() >= 1000 {
+                                    break;
+                                }
+                            }
+
+                            if cfg!(debug_assertions) {
+                                eprintln!(
+                                    "    joined {} tasks in {}",
+                                    before - connections.len(),
+                                    fmt_elapsed(now.elapsed())
+                                );
+                            }
+                        }
+
+                        drop(permit);
+                        continue;
+                    }
                 }
-            },
+            }
+            // A shutdown signal was received.
             _ = shutdown_rx.changed() => {
                 drop(permit);
                 break 'accept match *shutdown_rx.borrow_and_update() {
@@ -122,44 +134,59 @@ where
             let service = AppService::new(Arc::clone(&app), max_body_size);
 
             async move {
-                let result = match acceptor.accept(stream).await {
-                    Err(error) => Err(error.into()),
-                    Ok(accepted) => {
-                        // Create a new HTTP/2 connection.
-                        #[cfg(feature = "http2")]
-                        let connection = conn::http2::Builder::new(TokioExecutor::new())
-                            .timer(TokioTimer::new())
-                            .serve_connection(IoStream::new(accepted), service);
-
-                        // Create a new HTTP/1.1 connection.
-                        #[cfg(all(feature = "http1", not(feature = "http2")))]
-                        let connection = conn::http1::Builder::new()
-                            .timer(TokioTimer::new())
-                            .serve_connection(IoStream::new(accepted), service)
-                            .with_upgrades();
-
-                        tokio::pin!(connection);
-
-                        // Serve the connection.
-                        tokio::select! {
-                            result = &mut connection => result.map_err(|e| e.into()),
-                            _ = shutdown_rx.changed() => {
-                                connection.as_mut().graceful_shutdown();
-                                connection.await.map_err(|e| e.into())
-                            }
-                        }
+                let accepted = match acceptor.accept(stream).await {
+                    Ok(stream) => stream,
+                    Err(error) => {
+                        drop(permit);
+                        return Err(error.into());
                     }
                 };
 
+                // Create a new HTTP/2 connection.
+                #[cfg(feature = "http2")]
+                let connection = conn::http2::Builder::new(TokioExecutor::new())
+                    .timer(TokioTimer::new())
+                    .serve_connection(IoStream::new(accepted), service);
+
+                // Create a new HTTP/1.1 connection.
+                #[cfg(all(feature = "http1", not(feature = "http2")))]
+                let connection = conn::http1::Builder::new()
+                    .timer(TokioTimer::new())
+                    .serve_connection(IoStream::new(accepted), service)
+                    .with_upgrades();
+
+                tokio::pin!(connection);
+
+                // Serve the connection.
+                let result = tokio::select! {
+                    served = &mut connection => served.map_err(|e| e.into()),
+                    _ = shutdown_rx.changed() => {
+                        connection.as_mut().graceful_shutdown();
+                        connection.await.map_err(|e| e.into())
+                    }
+                };
+
+                // Explicitly drop the semaphore permit.
                 drop(permit);
+
                 result
             }
         });
 
-        for _ in 0..CONNECTION_JOIN_LIMIT {
-            match connections.try_join_next() {
-                Some(result) => joined!(&result),
-                None => break,
+        if semaphore.available_permits() == 0 {
+            let now = Instant::now();
+
+            if cfg!(debug_assertions) {
+                eprintln!("server at capacity");
+                eprintln!("  a single connection task will be joined");
+            }
+
+            if let Some(result) = connections.join_next().await {
+                joined_connection(result);
+            }
+
+            if cfg!(debug_assertions) {
+                eprintln!("  task joined in {}", fmt_elapsed(now.elapsed()));
             }
         }
     };
@@ -176,13 +203,46 @@ where
     }
 }
 
+fn joined_connection(result: Result<Result<(), DynError>, JoinError>) {
+    match result {
+        // An error occurred that originates from hyper or tokio.
+        Ok(Err(error)) => {
+            if let Some(e) = error.downcast_ref::<hyper::Error>() {
+                let is_disconnect = e.is_canceled()
+                    || e.is_incomplete_message()
+                    || e.source().is_some_and(|source| {
+                        source
+                            .downcast_ref::<io::Error>()
+                            .is_some_and(|e| e.kind() == io::ErrorKind::NotConnected)
+                    });
+
+                if cfg!(debug_assertions) {
+                    if is_disconnect {
+                        // trace!();
+                    } else {
+                        eprintln!("error(http): {}", e);
+                    }
+                }
+            } else {
+                eprintln!("error(other): {}", error);
+            }
+        }
+        // The connection was cancelled or the panicked.
+        Err(error) if error.is_panic() => {
+            // Placeholder for tracing...
+            eprintln!("panic: {}", error);
+        }
+        _ => {}
+    }
+}
+
 async fn drain_connections(connections: &mut JoinSet<Result<(), DynError>>) {
     if cfg!(debug_assertions) {
         println!("draining {} inflight connections...", connections.len());
     }
 
     while let Some(result) = connections.join_next().await {
-        joined!(&result);
+        joined_connection(result);
     }
 }
 
