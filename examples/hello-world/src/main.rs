@@ -26,8 +26,5 @@ async fn main() -> Result<ExitCode, Error> {
     // Define a route that listens on /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
-    Server::new(app)
-        .max_connections(100)
-        .listen(("127.0.0.1", 8080))
-        .await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

@@ -10,7 +10,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
-use tokio::task::{JoinError, JoinHandle};
+use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tokio::time::{self, timeout, Instant};
 use tokio::{signal, task};
 
@@ -56,7 +56,7 @@ where
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
-    let mut connections = VecDeque::<TaskHandle>::with_capacity(context.max_connections() * 2);
+    let mut connections = VecDeque::<TaskHandle>::with_capacity(4096);
 
     // Create a watch channel to notify the connections to initiate a
     // graceful shutdown process when the `ctrl_c` future resolves.
@@ -170,14 +170,10 @@ where
         });
 
         if semaphore.available_permits() == 0 {
-            let joiner = poll_fn(|context| {
-                Poll::Ready(join_finished(&mut connections, context, MILLISECOND))
-            });
-
-            log!("server at capacity. dedicating 1ms to joining tasks.");
-
-            let total = joiner.await;
-            log!("    joined {} tasks", total);
+            log!("server at capacity. joining the next task.");
+            if let Some(result) = join_next(&mut connections).await {
+                joined(&result);
+            }
         }
     };
 
@@ -219,6 +215,23 @@ fn joined(result: &Result<TaskResult, JoinError>) {
         Err(error) if error.is_panic() => panic!("{}", error),
         Ok(_) | Err(_) => {}
     }
+}
+
+fn join_next(
+    connections: &mut VecDeque<TaskHandle>,
+) -> impl Future<Output = Option<Result<TaskResult, JoinError>>> + use<'_> {
+    poll_fn(|context| {
+        if let Some(next) = connections.front_mut() {
+            if let Poll::Ready(result) = Pin::new(next).poll(context) {
+                connections.pop_front();
+                Poll::Ready(Some(result))
+            } else {
+                Poll::Pending
+            }
+        } else {
+            Poll::Pending
+        }
+    })
 }
 
 fn join_finished(
