@@ -61,6 +61,7 @@ pub mod response;
 
 mod app;
 mod server;
+mod util;
 
 pub use app::{app, App, Route};
 pub use error::Error;

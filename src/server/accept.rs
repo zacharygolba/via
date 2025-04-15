@@ -1,36 +1,48 @@
 use hyper::server::conn;
-use hyper_util::rt::TokioTimer;
+use hyper_util::rt::{TokioIo, TokioTimer};
+use std::collections::VecDeque;
 use std::error::Error;
-use std::io;
+use std::future::{poll_fn, Future};
+use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::task::{Context, Poll};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
-use tokio::task::{JoinError, JoinSet};
-use tokio::{signal, time};
+use tokio::task::{JoinError, JoinHandle};
+use tokio::time::{self, timeout, Instant};
+use tokio::{signal, task};
 
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
-use super::util::fmt_elapsed;
-use crate::app::{App, AppService};
+use super::server::ServerContext;
 use crate::error::DynError;
-use crate::server::stream::IoStream;
+
+type TaskResult = Result<(), DynError>;
+type TaskHandle = JoinHandle<TaskResult>;
 
 /// The amount of time in seconds we'll wait before garbage collecting
 /// connection tasks that finished.
 ///
-const IDLE_TIMEOUT: Duration = Duration::from_secs(15);
+const GC_INTERVAL: Duration = Duration::from_secs(10);
+
+const MILLISECOND: Duration = Duration::from_millis(1);
+
+macro_rules! log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
+        }
+    };
+}
 
 pub async fn accept<A, T>(
     listener: TcpListener,
     acceptor: A,
-    app: App<T>,
-    max_body_size: usize,
-    max_connections: usize,
-    shutdown_timeout: u64,
+    context: &ServerContext<T>,
 ) -> ExitCode
 where
     A: Acceptor + Send + Sync + 'static,
@@ -40,7 +52,11 @@ where
     // of connections that the server can handle concurrently. If the maximum
     // number of connections is reached, we'll wait until a permit is available
     // before accepting a new connection.
-    let semaphore = Arc::new(Semaphore::new(max_connections));
+    let semaphore = Arc::new(Semaphore::new(context.max_connections()));
+
+    // Create a JoinSet to track inflight connections. We'll use this to wait for
+    // all connections to close before the server exits.
+    let mut connections = VecDeque::<TaskHandle>::with_capacity(context.max_connections() * 2);
 
     // Create a watch channel to notify the connections to initiate a
     // graceful shutdown process when the `ctrl_c` future resolves.
@@ -50,13 +66,6 @@ where
         rx
     };
 
-    // Create a JoinSet to track inflight connections. We'll use this to wait for
-    // all connections to close before the server exits.
-    let mut connections = JoinSet::<Result<(), DynError>>::new();
-
-    // Wrap app in an arc so it can be cloned into the connection task.
-    let app = Arc::new(app);
-
     // Start accepting incoming connections.
     let exit_code = 'accept: loop {
         // Acquire a permit from the semaphore.
@@ -65,77 +74,64 @@ where
             Err(_) => break 1.into(),
         };
 
+        let service = context.make_service();
+
         // Accept the next stream from the tcp listener.
-        let (stream, _addr) = tokio::select! {
-            // The server probably won't shutdown in the next 15 seconds.
-            biased;
-            // A connection was accepted or IDLE_TIMEOUT expired.
-            result = time::timeout(IDLE_TIMEOUT, listener.accept()) => {
-                match result {
-                    Ok(Ok(accepted)) => accepted,
-                    Ok(Err(error)) => {
+        let (stream, _addr) = {
+            let accept = poll_fn({
+                let listener = &listener;
+                let connections = &mut connections;
+                let mut interval = time::sleep(GC_INTERVAL);
+
+                move |context| match listener.poll_accept(context) {
+                    ready @ Poll::Ready(_) => ready,
+                    pending => {
+                        let mut sleep = unsafe { Pin::new_unchecked(&mut interval) };
+
+                        if sleep.as_mut().poll(context).is_ready() {
+                            log!("server is idle");
+                            log!("  attempting to join finished tasks");
+
+                            let total = join_finished(connections, context, MILLISECOND);
+                            log!("    joined {} tasks", total);
+
+                            sleep.as_mut().reset(Instant::now() + GC_INTERVAL);
+                        }
+
+                        pending
+                    }
+                }
+            });
+
+            tokio::select! {
+                // A connection was accepted or IDLE_TIMEOUT expired.
+                result = accept => match result {
+                    Ok(accepted) => accepted,
+                    Err(error) => {
                         eprintln!("error(listener): {}", error);
                         drop(permit);
                         continue;
                     }
-                    Err(_) => {
-                        let before = connections.len();
-
-                        if before > 0 {
-                            let now = Instant::now();
-
-                            if cfg!(debug_assertions) {
-                                eprintln!("server is idle");
-                                eprintln!("  joining connection tasks that finished");
-                                eprintln!("    {} total tasks", before);
-                            }
-
-                            while let Some(result) = connections.try_join_next() {
-                                joined_connection(&result);
-                                if now.elapsed().as_micros() >= 1_000 {
-                                    break;
-                                }
-                            }
-
-                            if cfg!(debug_assertions) {
-                                eprintln!(
-                                    "    joined {} tasks in {}",
-                                    before - connections.len(),
-                                    fmt_elapsed(now.elapsed())
-                                );
-                            }
-                        }
-
-                        drop(permit);
-                        continue;
+                },
+                // A shutdown signal was received.
+                _ = shutdown_rx.changed() => {
+                    drop(permit);
+                    break 'accept match *shutdown_rx.borrow_and_update() {
+                        Some(false) => 0.into(),
+                        Some(true) | None => 1.into(),
                     }
-                }
-            }
-            // A shutdown signal was received.
-            _ = shutdown_rx.changed() => {
-                drop(permit);
-                break 'accept match *shutdown_rx.borrow_and_update() {
-                    Some(false) => 0.into(),
-                    Some(true) | None => 1.into(),
                 }
             }
         };
 
-        // Spawn a task to serve the connection.
-        connections.spawn({
-            // Clone acceptor so negotiation can happen in the connection task.
+        connections.push_back({
             let mut acceptor = acceptor.clone();
-
-            // Clone the watch receiver so we can shutdown the connection if a
-            // ctrl+c signal is sent to the process.
             let mut shutdown_rx = shutdown_rx.clone();
 
-            // Create an AppService to serve the connection.
-            let service = AppService::new(Arc::clone(&app), max_body_size);
-
-            async move {
-                let accepted = match acceptor.accept(stream).await {
-                    Ok(stream) => stream,
+            // TODO: Attempt to get the task size in the tls example <= 1024.
+            task::spawn(async move {
+                let io = match acceptor.accept(stream).await {
+                    Ok(accepted) => TokioIo::new(accepted),
                     Err(error) => {
                         drop(permit);
                         return Err(error.into());
@@ -146,13 +142,13 @@ where
                 #[cfg(feature = "http2")]
                 let connection = conn::http2::Builder::new(TokioExecutor::new())
                     .timer(TokioTimer::new())
-                    .serve_connection(IoStream::new(accepted), service);
+                    .serve_connection(io, service);
 
                 // Create a new HTTP/1.1 connection.
                 #[cfg(all(feature = "http1", not(feature = "http2")))]
                 let connection = conn::http1::Builder::new()
                     .timer(TokioTimer::new())
-                    .serve_connection(IoStream::new(accepted), service)
+                    .serve_connection(io, service)
                     .with_upgrades();
 
                 tokio::pin!(connection);
@@ -170,29 +166,23 @@ where
                 drop(permit);
 
                 result
-            }
+            })
         });
 
         if semaphore.available_permits() == 0 {
-            let now = Instant::now();
+            let joiner = poll_fn(|context| {
+                Poll::Ready(join_finished(&mut connections, context, MILLISECOND))
+            });
 
-            if cfg!(debug_assertions) {
-                eprintln!("server at capacity");
-                eprintln!("  a single connection task will be joined");
-            }
+            log!("server at capacity. dedicating 1ms to joining tasks.");
 
-            if let Some(result) = connections.join_next().await {
-                joined_connection(&result);
-            }
-
-            if cfg!(debug_assertions) {
-                eprintln!("  task joined in {}", fmt_elapsed(now.elapsed()));
-            }
+            let total = joiner.await;
+            log!("    joined {} tasks", total);
         }
     };
 
-    let drain_all = time::timeout(
-        Duration::from_secs(shutdown_timeout),
+    let drain_all = timeout(
+        context.shutdown_timeout(),
         drain_connections(&mut connections),
     );
 
@@ -203,7 +193,7 @@ where
     }
 }
 
-fn joined_connection(result: &Result<Result<(), DynError>, JoinError>) {
+fn joined(result: &Result<TaskResult, JoinError>) {
     match result {
         // An error occurred that originates from hyper or tokio.
         Ok(Err(error)) => {
@@ -212,37 +202,57 @@ fn joined_connection(result: &Result<Result<(), DynError>, JoinError>) {
                     || e.is_incomplete_message()
                     || e.source().is_some_and(|source| {
                         source
-                            .downcast_ref::<io::Error>()
-                            .is_some_and(|e| e.kind() == io::ErrorKind::NotConnected)
+                            .downcast_ref::<std::io::Error>()
+                            .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
                     });
 
-                if cfg!(debug_assertions) {
-                    if is_disconnect {
-                        // trace!();
-                    } else {
-                        eprintln!("error(http): {}", e);
-                    }
+                if is_disconnect {
+                    // trace!();
+                } else {
+                    log!("error(http): {}", e);
                 }
             } else {
-                eprintln!("error(other): {}", error);
+                log!("error(other): {}", error);
             }
         }
-        // The connection was cancelled or the panicked.
-        Err(error) if error.is_panic() => {
-            // Placeholder for tracing...
-            eprintln!("panic: {}", error);
-        }
-        _ => {}
+        // The connection task panicked.
+        Err(error) if error.is_panic() => panic!("{}", error),
+        Ok(_) | Err(_) => {}
     }
 }
 
-async fn drain_connections(connections: &mut JoinSet<Result<(), DynError>>) {
+fn join_finished(
+    connections: &mut VecDeque<TaskHandle>,
+    context: &mut Context,
+    timeout: Duration,
+) -> usize {
+    let mut total = 0;
+    let now = Instant::now();
+
+    while let Some(mut task) = connections.pop_front() {
+        if let Poll::Ready(result) = Pin::new(&mut task).poll(context) {
+            joined(&result);
+            total += 1;
+
+            if now.elapsed() < timeout {
+                continue;
+            }
+        }
+
+        connections.push_back(task);
+        break;
+    }
+
+    total
+}
+
+async fn drain_connections(connections: &mut VecDeque<TaskHandle>) {
     if cfg!(debug_assertions) {
         println!("draining {} inflight connections...", connections.len());
     }
 
-    while let Some(result) = connections.join_next().await {
-        joined_connection(&result);
+    while let Some(connection) = connections.pop_front() {
+        joined(&connection.await);
     }
 }
 
