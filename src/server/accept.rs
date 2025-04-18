@@ -1,18 +1,12 @@
 use hyper::server::conn;
 use hyper_util::rt::{TokioIo, TokioTimer};
-use std::collections::VecDeque;
 use std::error::Error;
-use std::future::{poll_fn, Future};
-use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
-use tokio::task::{JoinError, JoinHandle, JoinSet};
-use tokio::time::{self, timeout, Instant};
-use tokio::{signal, task};
+use tokio::task::{JoinError, JoinSet};
+use tokio::{signal, time};
 
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
@@ -22,14 +16,6 @@ use super::server::ServerContext;
 use crate::error::DynError;
 
 type TaskResult = Result<(), DynError>;
-type TaskHandle = JoinHandle<TaskResult>;
-
-/// The amount of time in seconds we'll wait before garbage collecting
-/// connection tasks that finished.
-///
-const GC_INTERVAL: Duration = Duration::from_secs(10);
-
-const MILLISECOND: Duration = Duration::from_millis(1);
 
 macro_rules! log {
     ($($arg:tt)*) => {
@@ -56,7 +42,7 @@ where
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
-    let mut connections = VecDeque::<TaskHandle>::with_capacity(4096);
+    let mut connections = JoinSet::new();
 
     // Create a watch channel to notify the connections to initiate a
     // graceful shutdown process when the `ctrl_c` future resolves.
@@ -77,61 +63,48 @@ where
         let service = context.make_service();
 
         // Accept the next stream from the tcp listener.
-        let (stream, _addr) = {
-            let accept = poll_fn({
-                let listener = &listener;
-                let connections = &mut connections;
-                let mut interval = time::sleep(GC_INTERVAL);
+        let tcp_stream = {
+            let mut will_join_next = !connections.is_empty();
+            let accepted = loop {
+                tokio::select! {
+                    biased;
 
-                move |context| match listener.poll_accept(context) {
-                    ready @ Poll::Ready(_) => ready,
-                    pending => {
-                        let mut sleep = unsafe { Pin::new_unchecked(&mut interval) };
-
-                        if sleep.as_mut().poll(context).is_ready() {
-                            log!("server is idle");
-                            log!("  attempting to join finished tasks");
-
-                            let total = join_finished(connections, context, MILLISECOND);
-                            log!("    joined {} tasks", total);
-
-                            sleep.as_mut().reset(Instant::now() + GC_INTERVAL);
-                        }
-
-                        pending
-                    }
-                }
-            });
-
-            tokio::select! {
-                // A connection was accepted or IDLE_TIMEOUT expired.
-                result = accept => match result {
-                    Ok(accepted) => accepted,
-                    Err(error) => {
-                        eprintln!("error(listener): {}", error);
-                        drop(permit);
+                    joined = connections.join_next(), if will_join_next => {
+                        joined.inspect(handle_joined);
+                        will_join_next = false;
                         continue;
                     }
-                },
-                // A shutdown signal was received.
-                _ = shutdown_rx.changed() => {
-                    drop(permit);
-                    break 'accept match *shutdown_rx.borrow_and_update() {
-                        Some(false) => 0.into(),
-                        Some(true) | None => 1.into(),
+
+                    result = listener.accept() => {
+                        break result;
                     }
+
+                    Ok(()) = shutdown_rx.changed() => {
+                        break 'accept match *shutdown_rx.borrow_and_update() {
+                            Some(false) => 0.into(),
+                            Some(true) | None => 1.into(),
+                        }
+                    }
+                };
+            };
+
+            match accepted {
+                Ok((stream, _)) => stream,
+                Err(error) => {
+                    drop(permit);
+                    eprintln!("error(listener): {}", error);
+                    continue;
                 }
             }
         };
 
-        connections.push_back({
+        connections.spawn({
             let mut acceptor = acceptor.clone();
             let mut shutdown_rx = shutdown_rx.clone();
 
-            // TODO: Attempt to get the task size in the tls example <= 1024.
-            task::spawn(async move {
-                let io = match acceptor.accept(stream).await {
-                    Ok(accepted) => TokioIo::new(accepted),
+            async move {
+                let io = match acceptor.accept(tcp_stream).await {
+                    Ok(stream) => TokioIo::new(stream),
                     Err(error) => {
                         drop(permit);
                         return Err(error.into());
@@ -162,34 +135,30 @@ where
                     }
                 };
 
-                // Explicitly drop the semaphore permit.
                 drop(permit);
 
                 result
-            })
+            }
         });
 
-        if semaphore.available_permits() == 0 {
-            log!("server at capacity. joining the next task.");
-            if let Some(result) = join_next(&mut connections).await {
-                joined(&result);
-            }
+        if let Some(result) = connections.try_join_next() {
+            handle_joined(&result);
         }
     };
 
-    let drain_all = timeout(
+    let shutdown = time::timeout(
         context.shutdown_timeout(),
         drain_connections(&mut connections),
     );
 
-    if drain_all.await.is_ok() {
+    if shutdown.await.is_ok() {
         exit_code
     } else {
         1.into()
     }
 }
 
-fn joined(result: &Result<TaskResult, JoinError>) {
+fn handle_joined(result: &Result<TaskResult, JoinError>) {
     match result {
         // An error occurred that originates from hyper or tokio.
         Ok(Err(error)) => {
@@ -217,55 +186,13 @@ fn joined(result: &Result<TaskResult, JoinError>) {
     }
 }
 
-fn join_next(
-    connections: &mut VecDeque<TaskHandle>,
-) -> impl Future<Output = Option<Result<TaskResult, JoinError>>> + use<'_> {
-    poll_fn(|context| {
-        if let Some(next) = connections.front_mut() {
-            if let Poll::Ready(result) = Pin::new(next).poll(context) {
-                connections.pop_front();
-                Poll::Ready(Some(result))
-            } else {
-                Poll::Pending
-            }
-        } else {
-            Poll::Pending
-        }
-    })
-}
-
-fn join_finished(
-    connections: &mut VecDeque<TaskHandle>,
-    context: &mut Context,
-    timeout: Duration,
-) -> usize {
-    let mut total = 0;
-    let now = Instant::now();
-
-    while let Some(mut task) = connections.pop_front() {
-        if let Poll::Ready(result) = Pin::new(&mut task).poll(context) {
-            joined(&result);
-            total += 1;
-
-            if now.elapsed() < timeout {
-                continue;
-            }
-        }
-
-        connections.push_back(task);
-        break;
-    }
-
-    total
-}
-
-async fn drain_connections(connections: &mut VecDeque<TaskHandle>) {
+async fn drain_connections(connections: &mut JoinSet<TaskResult>) {
     if cfg!(debug_assertions) {
         println!("draining {} inflight connections...", connections.len());
     }
 
-    while let Some(connection) = connections.pop_front() {
-        joined(&connection.await);
+    while let Some(connection) = connections.join_next().await {
+        handle_joined(&connection);
     }
 }
 
