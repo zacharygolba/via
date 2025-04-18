@@ -1,3 +1,7 @@
+use futures_core::future::BoxFuture;
+use std::future::Future;
+use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
@@ -22,10 +26,10 @@ impl RustlsAcceptor {
 }
 
 impl Acceptor for RustlsAcceptor {
-    type Future = Accept<TcpStream>;
-    type Stream = TlsStream<TcpStream>;
+    type Stream = Box<TlsStream<TcpStream>>;
 
-    fn accept(&mut self, stream: TcpStream) -> Self::Future {
-        self.acceptor.accept(stream)
+    fn accept(&self, stream: TcpStream) -> BoxFuture<'static, io::Result<Self::Stream>> {
+        let negotiate = self.acceptor.accept(stream);
+        Box::pin(async { negotiate.await.map(Box::new) })
     }
 }

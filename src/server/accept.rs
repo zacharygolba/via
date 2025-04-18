@@ -40,70 +40,52 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(context.max_connections()));
 
-    // Create a JoinSet to track inflight connections. We'll use this to wait for
-    // all connections to close before the server exits.
-    let mut connections = JoinSet::new();
-
-    // Create a watch channel to notify the connections to initiate a
-    // graceful shutdown process when the `ctrl_c` future resolves.
-    let mut shutdown_rx = {
+    let mut ctrl_c = {
         let (tx, rx) = watch::channel(None);
         tokio::spawn(wait_for_ctrl_c(tx));
         rx
     };
 
-    // Start accepting incoming connections.
-    let exit_code = 'accept: loop {
-        // Acquire a permit from the semaphore.
-        let permit = match semaphore.clone().acquire_owned().await {
-            Ok(acquired) => acquired,
-            Err(_) => break 1.into(),
-        };
+    // Create a JoinSet to track inflight connections. We'll use this to wait for
+    // all connections to close before the server exits.
+    let mut connections = JoinSet::new();
 
-        let service = context.make_service();
+    // Start accepting incoming connections.
+    let exit_code = loop {
+        // Acquire a permit from the semaphore.
+        let permit = semaphore.clone().acquire_owned().await.unwrap();
 
         // Accept the next stream from the tcp listener.
-        let tcp_stream = {
-            let mut will_join_next = !connections.is_empty();
-            let accepted = loop {
-                tokio::select! {
-                    biased;
-
-                    joined = connections.join_next(), if will_join_next => {
-                        joined.inspect(handle_joined);
-                        will_join_next = false;
-                        continue;
-                    }
-
-                    result = listener.accept() => {
-                        break result;
-                    }
-
-                    Ok(()) = shutdown_rx.changed() => {
-                        break 'accept match *shutdown_rx.borrow_and_update() {
-                            Some(false) => 0.into(),
-                            Some(true) | None => 1.into(),
-                        }
-                    }
-                };
-            };
-
-            match accepted {
-                Ok((stream, _)) => stream,
+        let (stream, _) = tokio::select! {
+            joined = connections.join_next(), if !connections.is_empty() => {
+                joined.inspect(handle_joined);
+                drop(permit);
+                continue;
+            }
+            result = listener.accept() => match result {
+                Ok(accepted) => accepted,
                 Err(error) => {
-                    drop(permit);
                     eprintln!("error(listener): {}", error);
+                    drop(permit);
                     continue;
+                }
+            },
+            Ok(()) = ctrl_c.changed() => {
+                drop(permit);
+                break match *ctrl_c.borrow_and_update() {
+                    Some(false) => 0.into(),
+                    Some(true) | None => 1.into(),
                 }
             }
         };
 
         connections.spawn({
-            let mut acceptor = acceptor.clone();
-            let mut shutdown_rx = shutdown_rx.clone();
+            let service = context.make_service();
+            let negotiate = acceptor.accept(stream);
+            let mut ctrl_c = ctrl_c.clone();
 
             async move {
-                let io = match acceptor.accept(tcp_stream).await {
+                let io = match negotiate.await {
                     Ok(stream) => TokioIo::new(stream),
                     Err(error) => {
                         drop(permit);
@@ -128,16 +110,16 @@ where
 
                 // Serve the connection.
                 let result = tokio::select! {
-                    served = &mut connection => served.map_err(|e| e.into()),
-                    _ = shutdown_rx.changed() => {
+                    done = &mut connection => done,
+                    _ = ctrl_c.changed() => {
                         connection.as_mut().graceful_shutdown();
-                        connection.await.map_err(|e| e.into())
+                        (&mut connection).await
                     }
                 };
 
                 drop(permit);
 
-                result
+                result.map_err(|e| e.into())
             }
         });
 

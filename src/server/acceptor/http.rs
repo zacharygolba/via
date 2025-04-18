@@ -1,3 +1,4 @@
+use futures_core::future::BoxFuture;
 use std::future::{self, Ready};
 use std::io;
 use tokio::net::TcpStream;
@@ -19,10 +20,9 @@ impl HttpAcceptor {
 }
 
 impl Acceptor for HttpAcceptor {
-    type Future = Ready<Result<Self::Stream, io::Error>>;
     type Stream = TcpStream;
 
-    fn accept(&mut self, stream: TcpStream) -> Self::Future {
-        future::ready(Ok(stream))
+    fn accept(&self, stream: TcpStream) -> BoxFuture<'static, io::Result<Self::Stream>> {
+        Box::pin(async { Ok(stream) })
     }
 }
