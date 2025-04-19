@@ -37,7 +37,7 @@ impl JoinQueue {
     where
         F: Future<Output = TaskResult> + Send + 'static,
     {
-        self.queue.push_back(task::spawn(Box::pin(future)));
+        self.queue.push_back(task::spawn(future));
     }
 
     pub async fn join_next(&mut self) -> Option<TaskResult> {
