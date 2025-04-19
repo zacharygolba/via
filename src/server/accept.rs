@@ -3,19 +3,17 @@ use hyper_util::rt::{TokioIo, TokioTimer};
 use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
-use tokio::task::{JoinError, JoinSet};
 use tokio::{signal, time};
 
-#[cfg(feature = "http2")]
-use hyper_util::rt::TokioExecutor;
-
 use super::acceptor::Acceptor;
-use super::server::ServerContext;
+use super::conn::JoinQueue;
+use crate::app::AppService;
 use crate::error::DynError;
 
-type TaskResult = Result<(), DynError>;
+const JOIN_NEXT_TIMEOUT: Duration = Duration::from_micros(100);
 
 macro_rules! log {
     ($($arg:tt)*) => {
@@ -25,20 +23,16 @@ macro_rules! log {
     };
 }
 
-pub async fn accept<A, T>(
-    listener: TcpListener,
-    acceptor: A,
-    context: &ServerContext<T>,
-) -> ExitCode
+pub async fn accept<A, T>(listener: &TcpListener, acceptor: &A, service: &AppService<T>) -> ExitCode
 where
-    A: Acceptor + Send + Sync + 'static,
+    A: Acceptor + Clone + Send + 'static,
     T: Send + Sync + 'static,
 {
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently. If the maximum
     // number of connections is reached, we'll wait until a permit is available
     // before accepting a new connection.
-    let semaphore = Arc::new(Semaphore::new(context.max_connections()));
+    let semaphore = Arc::new(Semaphore::new(service.max_connections()));
 
     let mut ctrl_c = {
         let (tx, rx) = watch::channel(None);
@@ -48,24 +42,31 @@ where
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
-    let mut connections = JoinSet::new();
+    let mut connections = JoinQueue::new();
 
     // Start accepting incoming connections.
     let exit_code = loop {
         // Acquire a permit from the semaphore.
-        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let permit = match semaphore.clone().acquire_owned().await {
+            Ok(acquired) => acquired,
+            Err(_) => break ExitCode::from(1),
+        };
 
         // Accept the next stream from the tcp listener.
-        let (stream, _) = tokio::select! {
+        let (tcp_stream, _) = tokio::select! {
             joined = connections.join_next(), if !connections.is_empty() => {
-                joined.inspect(handle_joined);
+                if let Some(result) = joined {
+                    if let Err(error) = result.as_ref() {
+                        handle_error(error);
+                    }
+                }
                 drop(permit);
                 continue;
             }
             result = listener.accept() => match result {
                 Ok(accepted) => accepted,
                 Err(error) => {
-                    eprintln!("error(listener): {}", error);
+                    log!("error(listener): {}", error);
                     drop(permit);
                     continue;
                 }
@@ -73,20 +74,20 @@ where
             Ok(()) = ctrl_c.changed() => {
                 drop(permit);
                 break match *ctrl_c.borrow_and_update() {
-                    Some(false) => 0.into(),
-                    Some(true) | None => 1.into(),
+                    Some(false) => ExitCode::from(0),
+                    Some(true) | None => ExitCode::from(1),
                 }
             }
         };
 
-        connections.spawn({
-            let service = context.make_service();
-            let negotiate = acceptor.accept(stream);
+        connections.push({
+            let acceptor = acceptor.clone();
+            let service = service.clone();
             let mut ctrl_c = ctrl_c.clone();
 
             async move {
-                let io = match negotiate.await {
-                    Ok(stream) => TokioIo::new(stream),
+                let tls_stream = match acceptor.accept(tcp_stream).await {
+                    Ok(stream) => stream,
                     Err(error) => {
                         drop(permit);
                         return Err(error.into());
@@ -95,15 +96,15 @@ where
 
                 // Create a new HTTP/2 connection.
                 #[cfg(feature = "http2")]
-                let connection = conn::http2::Builder::new(TokioExecutor::new())
+                let connection = conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
                     .timer(TokioTimer::new())
-                    .serve_connection(io, service);
+                    .serve_connection(TokioIo::new(tls_stream), service);
 
                 // Create a new HTTP/1.1 connection.
                 #[cfg(all(feature = "http1", not(feature = "http2")))]
                 let connection = conn::http1::Builder::new()
                     .timer(TokioTimer::new())
-                    .serve_connection(io, service)
+                    .serve_connection(TokioIo::new(tls_stream), service)
                     .with_upgrades();
 
                 tokio::pin!(connection);
@@ -123,13 +124,15 @@ where
             }
         });
 
-        if let Some(result) = connections.try_join_next() {
-            handle_joined(&result);
+        if let Some(result) = connections.try_join_next_in(JOIN_NEXT_TIMEOUT).await {
+            if let Err(error) = result.as_ref() {
+                handle_error(error);
+            }
         }
     };
 
     let shutdown = time::timeout(
-        context.shutdown_timeout(),
+        service.shutdown_timeout(),
         drain_connections(&mut connections),
     );
 
@@ -140,41 +143,38 @@ where
     }
 }
 
-fn handle_joined(result: &Result<TaskResult, JoinError>) {
-    match result {
-        // An error occurred that originates from hyper or tokio.
-        Ok(Err(error)) => {
-            if let Some(e) = error.downcast_ref::<hyper::Error>() {
-                let is_disconnect = e.is_canceled()
-                    || e.is_incomplete_message()
-                    || e.source().is_some_and(|source| {
-                        source
-                            .downcast_ref::<std::io::Error>()
-                            .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
-                    });
-
-                if is_disconnect {
-                    // trace!();
-                } else {
-                    log!("error(http): {}", e);
-                }
-            } else {
-                log!("error(other): {}", error);
-            }
+fn handle_error(error: &DynError) {
+    let hyper_error = match error.downcast_ref::<hyper::Error>() {
+        Some(error) => error,
+        None => {
+            log!("error(other): {}", error);
+            return;
         }
-        // The connection task panicked.
-        Err(error) if error.is_panic() => panic!("{}", error),
-        Ok(_) | Err(_) => {}
+    };
+
+    if hyper_error.is_canceled()
+        || hyper_error.is_incomplete_message()
+        || hyper_error.source().is_some_and(|source| {
+            source
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
+        })
+    {
+        // Disconnected.
+    } else {
+        log!("error(http): {}", hyper_error);
     }
 }
 
-async fn drain_connections(connections: &mut JoinSet<TaskResult>) {
+async fn drain_connections(connections: &mut JoinQueue) {
     if cfg!(debug_assertions) {
         println!("draining {} inflight connections...", connections.len());
     }
 
-    while let Some(connection) = connections.join_next().await {
-        handle_joined(&connection);
+    while let Some(result) = connections.join_next().await {
+        if let Err(error) = result.as_ref() {
+            handle_error(error);
+        }
     }
 }
 

@@ -1,18 +1,16 @@
-use std::sync::Arc;
-
 use super::router::{Route, Router};
 use crate::middleware::Middleware;
 
 pub struct App<T = ()> {
-    pub(super) state: Arc<T>,
-    pub(super) router: Router<T>,
+    pub(crate) state: T,
+    pub(crate) router: Router<T>,
 }
 
 /// Constructs a new [`App`] with the provided `state` argument.
 ///
 pub fn app<T>(state: T) -> App<T> {
     App {
-        state: Arc::new(state),
+        state,
         router: Router::new(),
     }
 }
@@ -26,7 +24,7 @@ impl App {
 impl<T> App<T> {
     pub fn with_state(state: T) -> Self {
         Self {
-            state: Arc::new(state),
+            state,
             router: Router::new(),
         }
     }

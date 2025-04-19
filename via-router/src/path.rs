@@ -1,11 +1,8 @@
-use std::fmt::{self, Display, Formatter};
 use std::iter::Peekable;
 use std::mem;
 use std::str::MatchIndices;
-use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Param(Arc<str>);
+pub type Param = Box<str>;
 
 pub struct Split<'a> {
     len: usize,
@@ -56,25 +53,6 @@ pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
             _ => Pattern::Static(segment.into()),
         }
     })
-}
-
-impl Display for Param {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(&self.0, f)
-    }
-}
-
-impl From<String> for Param {
-    fn from(value: String) -> Self {
-        Self(value.into())
-    }
-}
-
-impl PartialEq<str> for Param {
-    #[inline]
-    fn eq(&self, other: &str) -> bool {
-        *self.0 == *other
-    }
 }
 
 impl<'a> Split<'a> {

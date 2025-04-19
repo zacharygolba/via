@@ -7,22 +7,15 @@ use super::Acceptor;
 
 /// Accepts a TCP stream and returns it as-is.
 ///
-#[derive(Clone)]
-pub struct HttpAcceptor(
-    // Pad HttpAcceptor with usize to avoid passing a ZST to accept.
-    #[allow(dead_code)] usize,
-);
-
-impl HttpAcceptor {
-    pub fn new() -> Self {
-        Self(0)
-    }
-}
+#[derive(Clone, Copy)]
+pub struct HttpAcceptor;
 
 impl Acceptor for HttpAcceptor {
     type Stream = TcpStream;
+    type Future = Ready<io::Result<Self::Stream>>;
 
-    fn accept(&self, stream: TcpStream) -> BoxFuture<'static, io::Result<Self::Stream>> {
-        Box::pin(async { Ok(stream) })
+    #[inline]
+    fn accept(&self, stream: TcpStream) -> Self::Future {
+        future::ready(Ok(stream))
     }
 }

@@ -26,10 +26,11 @@ impl RustlsAcceptor {
 }
 
 impl Acceptor for RustlsAcceptor {
-    type Stream = Box<TlsStream<TcpStream>>;
+    type Stream = TlsStream<TcpStream>;
+    type Future = Accept<TcpStream>;
 
-    fn accept(&self, stream: TcpStream) -> BoxFuture<'static, io::Result<Self::Stream>> {
-        let negotiate = self.acceptor.accept(stream);
-        Box::pin(async { negotiate.await.map(Box::new) })
+    #[inline]
+    fn accept(&self, stream: TcpStream) -> Self::Future {
+        self.acceptor.accept(stream)
     }
 }

@@ -19,7 +19,7 @@ struct State {
 ///
 async fn hello(request: Request<State>, _: Next<State>) -> via::Result {
     // Get a reference to the path parameter `name` from the request uri.
-    let name = request.param("name").percent_decode().into_result()?;
+    let name = request.param("name")?;
 
     // Send a plain text response with our greeting message.
     Response::build().text(format!("Hello, {}!", name))

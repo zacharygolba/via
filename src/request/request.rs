@@ -3,11 +3,12 @@ use http::header::{AsHeaderName, CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
 use http_body_util::BodyStream;
+use std::borrow::Cow;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
 use super::into_future::IntoFuture;
-use super::param::{PathParam, PathParams, QueryParam};
+use super::params::Params;
 use crate::response::{Pipe, Response, ResponseBuilder};
 use crate::{BoxBody, Error};
 
@@ -24,7 +25,7 @@ pub struct Head {
 
     /// The request's path and query parameters.
     ///
-    params: PathParams,
+    params: Params,
 }
 
 pub struct Request<T = ()> {
@@ -33,19 +34,17 @@ pub struct Request<T = ()> {
     /// function.
     ///
     state: Arc<T>,
-
-    head: Box<Head>,
-
+    head: Head,
     body: BoxBody,
 }
 
 impl Head {
     #[inline]
-    pub(crate) fn new(parts: Parts, params: PathParams) -> Self {
+    pub(crate) fn new(parts: Parts, params: Params) -> Self {
         Self {
             parts,
-            params,
             cookies: CookieJar::new(),
+            params,
         }
     }
 
@@ -60,28 +59,9 @@ impl Head {
     /// parameter in the request's uri with the provided `name`.
     ///
     #[inline]
-    pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
-        PathParam::new(
-            name,
-            self.parts.uri.path(),
-            Some(self.params.iter().find_map(
-                |(param, range)| {
-                    if param == name {
-                        Some(*range)
-                    } else {
-                        None
-                    }
-                },
-            )),
-        )
-    }
-
-    /// Returns a convenient wrapper around an optional references to the query
-    /// parameters in the request's uri with the provided `name`.
-    ///
-    #[inline]
-    pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
-        QueryParam::new(name, self.parts.uri.query().unwrap_or(""))
+    pub fn param(&self, name: &str) -> Result<Cow<str>, Error> {
+        let path = self.parts.uri.path();
+        self.params.get(path, name)
     }
 }
 
@@ -106,7 +86,7 @@ impl<T> Request<T> {
     }
 
     #[inline]
-    pub fn into_parts(self) -> (Box<Head>, BoxBody) {
+    pub fn into_parts(self) -> (Head, BoxBody) {
         (self.head, self.body)
     }
 
@@ -170,42 +150,13 @@ impl<T> Request<T> {
     /// use via::{Next, Request, Response};
     ///
     /// async fn hello(request: Request, _: Next) -> via::Result {
-    ///     let name = request.param("name").into_result()?;
+    ///     let name = request.param("name")?;
     ///     Response::build().text(format!("Hello, {}!", name))
     /// }
     /// ```
     ///
-    pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
+    pub fn param(&self, name: &str) -> Result<Cow<'_, str>, Error> {
         self.head.param(name)
-    }
-
-    /// Returns a convenient wrapper around an optional references to the query
-    /// parameters in the request's uri with the provided `name`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use via::{Next, Request, Response};
-    ///
-    /// async fn hello(request: Request, _: Next) -> via::Result {
-    ///     // Attempt to parse the first query parameter named `n` to a `usize`
-    ///     // no greater than 1000. If the query parameter doesn't exist or
-    ///     // can't be converted to a `usize`, default to 1.
-    ///     let n = request.query("n").first().parse().unwrap_or(1).min(1000);
-    ///
-    ///     // Get a reference to the path parameter `name` from the request uri.
-    ///     let name = request.param("name").into_result()?;
-    ///
-    ///     // Create a greeting message with the provided `name`.
-    ///     let message = format!("Hello, {}!\n", name);
-    ///
-    ///     // Send a response with our greeting message, repeated `n` times.
-    ///     Response::build().text(message.repeat(n))
-    /// }
-    /// ```
-    ///
-    pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
-        self.head.query(name)
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
@@ -235,7 +186,7 @@ impl<T> Request<T> {
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(state: Arc<T>, head: Box<Head>, body: BoxBody) -> Self {
+    pub(crate) fn new(state: Arc<T>, head: Head, body: BoxBody) -> Self {
         Self { state, head, body }
     }
 

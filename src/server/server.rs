@@ -1,5 +1,5 @@
+use std::future::Future;
 use std::process::ExitCode;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, ToSocketAddrs};
 
@@ -7,8 +7,6 @@ use super::accept::accept;
 use crate::app::{App, AppService};
 use crate::error::DynError;
 
-#[cfg(not(feature = "rustls"))]
-use super::acceptor::HttpAcceptor;
 #[cfg(feature = "rustls")]
 use super::acceptor::{RustlsAcceptor, RustlsConfig};
 
@@ -22,7 +20,7 @@ const DEFAULT_MAX_BODY_SIZE: usize = 104_857_600;
 
 /// The default value of the shutdown timeout in seconds.
 ///
-const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
+const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Serve an app over HTTP.
 ///
@@ -34,13 +32,6 @@ pub struct Server<T> {
 
     #[cfg(feature = "rustls")]
     rustls_config: Option<RustlsConfig>,
-}
-
-pub struct ServerContext<T> {
-    app: Arc<App<T>>,
-    max_body_size: usize,
-    max_connections: usize,
-    shutdown_timeout: u64,
 }
 
 /// Creates a new server for the provided app.
@@ -152,44 +143,50 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// decommissioning logic of the cluster.
     ///
     #[cfg(feature = "rustls")]
-    pub async fn listen<A: ToSocketAddrs>(mut self, address: A) -> Result<ExitCode, DynError> {
-        let tls_config = self
-            .rustls_config
-            .take()
-            .expect("rustls_config is required when the 'rustls' feature is enabled.");
-
-        let context = ServerContext {
-            app: Arc::new(self.app),
-            max_body_size: self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
-            max_connections: self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
-            shutdown_timeout: self.shutdown_timeout.unwrap_or(DEFAULT_SHUTDOWN_TIMEOUT),
-        };
-
-        let future = accept(
-            TcpListener::bind(address).await?,
-            RustlsAcceptor::new(Arc::new(tls_config)),
-            &context,
+    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, DynError>>
+    where
+        A: ToSocketAddrs,
+    {
+        let acceptor = RustlsAcceptor::new(
+            self.rustls_config
+                .expect("rustls_config is required when the 'rustls' feature is enabled.")
+                .into(),
         );
 
-        Ok(future.await)
+        let service = AppService::new(
+            self.app.state,
+            self.app.router,
+            self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
+            self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
+            self.shutdown_timeout
+                .map_or(DEFAULT_SHUTDOWN_TIMEOUT, Duration::from_secs),
+        );
+
+        async move {
+            let listener = TcpListener::bind(address).await?;
+            Ok(accept(&listener, &acceptor, &service).await)
+        }
     }
 
     #[cfg(not(feature = "rustls"))]
-    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, DynError> {
-        let context = ServerContext {
-            app: Arc::new(self.app),
-            max_body_size: self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
-            max_connections: self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
-            shutdown_timeout: self.shutdown_timeout.unwrap_or(DEFAULT_SHUTDOWN_TIMEOUT),
-        };
-
-        let future = accept(
-            TcpListener::bind(address).await?,
-            HttpAcceptor::new(),
-            &context,
+    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, DynError>>
+    where
+        A: ToSocketAddrs,
+    {
+        let acceptor = super::acceptor::HttpAcceptor;
+        let service = AppService::new(
+            self.app.state,
+            self.app.router,
+            self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
+            self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
+            self.shutdown_timeout
+                .map_or(DEFAULT_SHUTDOWN_TIMEOUT, Duration::from_secs),
         );
 
-        Ok(future.await)
+        async move {
+            let listener = TcpListener::bind(address).await?;
+            Ok(accept(&listener, &acceptor, &service).await)
+        }
     }
 }
 
@@ -202,19 +199,5 @@ impl<T: Send + Sync + 'static> Server<T> {
             rustls_config: Some(rustls_config),
             ..self
         }
-    }
-}
-
-impl<T> ServerContext<T> {
-    pub fn make_service(&self) -> AppService<T> {
-        AppService::new(Arc::clone(&self.app), self.max_body_size)
-    }
-
-    pub fn max_connections(&self) -> usize {
-        self.max_connections
-    }
-
-    pub fn shutdown_timeout(&self) -> Duration {
-        Duration::from_secs(self.shutdown_timeout)
     }
 }
