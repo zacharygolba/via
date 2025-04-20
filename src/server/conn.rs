@@ -49,8 +49,16 @@ impl JoinQueue {
             joined = self.join_next() => joined,
             _ = time::sleep(timeout) => {
                 if self.queue.len() > 1 {
-                    self.queue.swap(0, 1);
+                    // If the connection task can't be joined in `timeout`,
+                    // move it to the back of the queue. It might be using
+                    // a websocket.
+                    match self.queue.pop_front() {
+                        Some(handle) => self.queue.push_back(handle),
+                        None => panic!("join_next was not canceled safely"),
+                    }
                 }
+
+                self.idle = true;
 
                 None
             }
