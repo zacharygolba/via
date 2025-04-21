@@ -3,7 +3,6 @@ use hyper_util::rt::{TokioIo, TokioTimer};
 use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
 use tokio::{signal, time};
@@ -12,8 +11,6 @@ use super::acceptor::Acceptor;
 use super::conn::JoinQueue;
 use crate::app::AppService;
 use crate::error::DynError;
-
-const JOIN_NEXT_TIMEOUT: Duration = Duration::from_micros(100);
 
 macro_rules! log {
     ($($arg:tt)*) => {
@@ -80,7 +77,7 @@ where
             }
         };
 
-        connections.push({
+        connections.spawn({
             let acceptor = acceptor.clone();
             let service = service.clone();
             let mut ctrl_c = ctrl_c.clone();
@@ -111,10 +108,10 @@ where
 
                 // Serve the connection.
                 let result = tokio::select! {
-                    done = &mut connection => done,
+                    done = connection.as_mut() => done,
                     _ = ctrl_c.changed() => {
                         connection.as_mut().graceful_shutdown();
-                        (&mut connection).await
+                        connection.as_mut().await
                     }
                 };
 
@@ -123,12 +120,6 @@ where
                 result.map_err(|e| e.into())
             }
         });
-
-        if let Some(result) = connections.try_join_next_in(JOIN_NEXT_TIMEOUT).await {
-            if let Err(error) = result.as_ref() {
-                handle_error(error);
-            }
-        }
     };
 
     let shutdown = time::timeout(
