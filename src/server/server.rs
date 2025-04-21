@@ -1,15 +1,12 @@
+use std::future::Future;
 use std::process::ExitCode;
+use std::time::Duration;
 use tokio::net::{TcpListener, ToSocketAddrs};
 
-#[cfg(feature = "rustls")]
-use std::sync::Arc;
-
 use super::accept::accept;
-use crate::app::App;
+use crate::app::{App, AppService};
 use crate::error::DynError;
 
-#[cfg(not(feature = "rustls"))]
-use super::acceptor::HttpAcceptor;
 #[cfg(feature = "rustls")]
 use super::acceptor::{RustlsAcceptor, RustlsConfig};
 
@@ -23,7 +20,7 @@ const DEFAULT_MAX_BODY_SIZE: usize = 104_857_600;
 
 /// The default value of the shutdown timeout in seconds.
 ///
-const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
+const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Serve an app over HTTP.
 ///
@@ -39,19 +36,23 @@ pub struct Server<T> {
 
 /// Creates a new server for the provided app.
 ///
-pub fn start<T>(app: App<T>) -> Server<T> {
-    Server {
-        app,
-        max_body_size: None,
-        max_connections: None,
-        shutdown_timeout: None,
-
-        #[cfg(feature = "rustls")]
-        rustls_config: None,
-    }
+pub fn start<T: Send + Sync + 'static>(app: App<T>) -> Server<T> {
+    Server::new(app)
 }
 
 impl<T: Send + Sync + 'static> Server<T> {
+    pub fn new(app: App<T>) -> Self {
+        Self {
+            app,
+            max_body_size: None,
+            max_connections: None,
+            shutdown_timeout: None,
+
+            #[cfg(feature = "rustls")]
+            rustls_config: None,
+        }
+    }
+
     /// Set the maximum request body size in bytes.
     ///
     /// Default: `100 MiB`
@@ -142,36 +143,50 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// decommissioning logic of the cluster.
     ///
     #[cfg(feature = "rustls")]
-    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, DynError> {
-        let rustls_config = match self.rustls_config {
-            Some(config) => Arc::new(config),
-            None => panic!("rustls_config is required when the 'rustls' feature is enabled."),
-        };
-
-        let exit = accept(
-            TcpListener::bind(address).await?,
-            RustlsAcceptor::new(rustls_config),
-            self.app,
-            self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
-            self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
-            self.shutdown_timeout.unwrap_or(DEFAULT_SHUTDOWN_TIMEOUT),
+    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, DynError>>
+    where
+        A: ToSocketAddrs,
+    {
+        let acceptor = RustlsAcceptor::new(
+            self.rustls_config
+                .expect("rustls_config is required when the 'rustls' feature is enabled.")
+                .into(),
         );
 
-        Ok(exit.await)
+        let service = AppService::new(
+            self.app.state,
+            self.app.router,
+            self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
+            self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
+            self.shutdown_timeout
+                .map_or(DEFAULT_SHUTDOWN_TIMEOUT, Duration::from_secs),
+        );
+
+        async move {
+            let listener = TcpListener::bind(address).await?;
+            Ok(accept(&listener, &acceptor, &service).await)
+        }
     }
 
     #[cfg(not(feature = "rustls"))]
-    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, DynError> {
-        let exit = accept(
-            TcpListener::bind(address).await?,
-            HttpAcceptor::new(),
-            self.app,
+    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, DynError>>
+    where
+        A: ToSocketAddrs,
+    {
+        let acceptor = super::acceptor::HttpAcceptor;
+        let service = AppService::new(
+            self.app.state,
+            self.app.router,
             self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
             self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
-            self.shutdown_timeout.unwrap_or(DEFAULT_SHUTDOWN_TIMEOUT),
+            self.shutdown_timeout
+                .map_or(DEFAULT_SHUTDOWN_TIMEOUT, Duration::from_secs),
         );
 
-        Ok(exit.await)
+        async move {
+            let listener = TcpListener::bind(address).await?;
+            Ok(accept(&listener, &acceptor, &service).await)
+        }
     }
 }
 

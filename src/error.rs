@@ -11,6 +11,17 @@ use std::io;
 
 use crate::response::{Response, ResponseBody};
 
+#[macro_export]
+macro_rules! raise {
+    (400, $($format_args:tt)*) => {
+        raise!(http::StatusCode::BAD_REQUEST, $($format_args)*)
+    };
+    ($status:expr, $($format_args:tt)*) => {{
+        let message = format!($($format_args)*);
+        return Err(crate::Error::new_with_status($status, message.into()));
+    }};
+}
+
 /// A type alias for a boxed
 /// [`Error`](std::error::Error)
 /// that is `Send + Sync`.
@@ -39,6 +50,16 @@ impl Error {
     ///
     pub fn new(source: DynError) -> Self {
         Self::internal_server_error(source)
+    }
+
+    #[inline]
+    pub fn new_with_status(status: StatusCode, source: DynError) -> Self {
+        Self {
+            as_json: false,
+            message: None,
+            error: source,
+            status,
+        }
     }
 
     /// Create a new [`Error`] from the provided [`io::Error`]. The status code
@@ -499,18 +520,6 @@ impl Error {
     ///
     pub fn network_authentication_required(source: DynError) -> Self {
         Self::new_with_status(StatusCode::NETWORK_AUTHENTICATION_REQUIRED, source)
-    }
-}
-
-impl Error {
-    #[inline]
-    fn new_with_status(status: StatusCode, source: DynError) -> Self {
-        Self {
-            as_json: false,
-            message: None,
-            error: source,
-            status,
-        }
     }
 }
 

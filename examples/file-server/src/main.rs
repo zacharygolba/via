@@ -22,8 +22,8 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 /// Serve the file at the provided path argument.
 ///
 async fn file_server(request: Request, _: Next) -> via::Result {
-    let path_param = request.param("path").percent_decode().into_result()?;
-    let file_path = resolve_path(path_param.as_ref());
+    let path_param = request.param("path")?;
+    let file_path = resolve_path(&path_param);
     let mime_type = mime_guess::from_path(&file_path).first_or_octet_stream();
 
     File::open(&file_path)

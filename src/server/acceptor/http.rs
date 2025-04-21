@@ -1,3 +1,4 @@
+use futures_core::future::BoxFuture;
 use std::future::{self, Ready};
 use std::io;
 use tokio::net::TcpStream;
@@ -6,23 +7,15 @@ use super::Acceptor;
 
 /// Accepts a TCP stream and returns it as-is.
 ///
-#[derive(Clone)]
-pub struct HttpAcceptor(
-    // Pad HttpAcceptor with usize to avoid passing a ZST to accept.
-    #[allow(dead_code)] usize,
-);
-
-impl HttpAcceptor {
-    pub fn new() -> Self {
-        Self(0)
-    }
-}
+#[derive(Clone, Copy)]
+pub struct HttpAcceptor;
 
 impl Acceptor for HttpAcceptor {
-    type Future = Ready<Result<Self::Stream, io::Error>>;
     type Stream = TcpStream;
+    type Future = Ready<io::Result<Self::Stream>>;
 
-    fn accept(&mut self, stream: TcpStream) -> Self::Future {
+    #[inline]
+    fn accept(&self, stream: TcpStream) -> Self::Future {
         future::ready(Ok(stream))
     }
 }

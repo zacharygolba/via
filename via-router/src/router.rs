@@ -3,7 +3,7 @@ use std::slice;
 
 use crate::binding::{Binding, MatchCond, MatchKind};
 use crate::error::Error;
-use crate::path::{self, Param, Pattern, Split};
+use crate::path::{self, Pattern, Split};
 
 /// The capacity of the vec used to store indices (usize) to the children of
 /// the nodes that matched the last path segment.
@@ -44,12 +44,12 @@ impl<T> Node<T> {
 
 impl<T> Node<T> {
     #[inline]
-    pub fn param<F>(&self, f: F) -> Option<(Param, [usize; 2])>
+    pub fn param<F>(&self, f: F) -> Option<(&Box<str>, [usize; 2])>
     where
         F: FnOnce() -> Option<[usize; 2]>,
     {
         if let Pattern::Dynamic(name) | Pattern::Wildcard(name) = &self.pattern {
-            Some((name.clone(), f()?))
+            Some((name, f()?))
         } else {
             None
         }

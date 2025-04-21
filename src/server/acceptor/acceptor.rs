@@ -5,12 +5,12 @@ use tokio::net::TcpStream;
 
 /// A trait for types that can accept a TcpStream.
 ///
-pub trait Acceptor: Clone + Send + Sync {
-    type Future: Future<Output = Result<Self::Stream, io::Error>> + Send + Sync;
-    type Stream: AsyncRead + AsyncWrite + Send + Sync + Unpin;
+pub trait Acceptor {
+    type Stream: AsyncRead + AsyncWrite + Send + Unpin;
+    type Future: Future<Output = io::Result<Self::Stream>> + Send;
 
     /// Defines how to accept a TcpStream. If the connection is served over TLS,
     /// this is where the TLS handshake would be performed.
     ///
-    fn accept(&mut self, stream: TcpStream) -> Self::Future;
+    fn accept(&self, stream: TcpStream) -> Self::Future;
 }
