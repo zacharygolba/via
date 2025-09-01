@@ -14,7 +14,7 @@ impl PathParams {
     }
 
     #[inline]
-    pub fn iter(&self) -> slice::Iter<(Param, [usize; 2])> {
+    pub fn iter(&self) -> slice::Iter<'_, (Param, [usize; 2])> {
         self.data.iter()
     }
 }

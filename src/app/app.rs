@@ -18,7 +18,7 @@ pub fn app<T>(state: T) -> App<T> {
 }
 
 impl<T> App<T> {
-    pub fn at(&mut self, path: &'static str) -> Route<T> {
+    pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
         Route {
             inner: self.router.at(path),
         }
