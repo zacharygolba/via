@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 use std::{iter, mem};
 
-use crate::binding::{Binding, Match, MatchCond};
+use crate::binding::{Binding, MatchCond};
 use crate::path::{self, Param, Pattern, Split};
 
 #[derive(Debug)]
@@ -37,6 +37,11 @@ impl<T> Node<T> {
     }
 
     #[inline]
+    pub fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    #[inline]
     pub fn param(&self) -> Option<&Param> {
         if let Pattern::Dynamic(name) | Pattern::Wildcard(name) = &self.pattern {
             Some(name)
@@ -45,17 +50,17 @@ impl<T> Node<T> {
         }
     }
 
-    pub fn route(&self) -> impl Iterator<Item = &T> {
+    pub fn as_final(&self) -> impl Iterator<Item = &T> {
         self.route.iter().map(|cond| match cond {
             MatchCond::Partial(partial) => partial,
-            MatchCond::Exact(exact) => exact,
+            MatchCond::Final(exact) => exact,
         })
     }
 
-    pub fn partial(&self) -> impl Iterator<Item = &T> {
+    pub fn as_partial(&self) -> impl Iterator<Item = &T> {
         self.route.iter().filter_map(|cond| match cond {
             MatchCond::Partial(partial) => Some(partial),
-            MatchCond::Exact(_) => None,
+            MatchCond::Final(_) => None,
         })
     }
 }
@@ -78,7 +83,7 @@ impl<T> Route<'_, T> {
     }
 
     pub fn respond(&mut self, middleware: T) {
-        self.node.route.push(MatchCond::Exact(middleware));
+        self.node.route.push(MatchCond::Final(middleware));
     }
 }
 
@@ -116,7 +121,7 @@ impl<T> Router<T> {
                 let mut binding = Binding::new(path == "/", None);
 
                 parents.push(&node.children);
-                binding.push(Match::new(&node.pattern, &node.route));
+                binding.push(node);
 
                 return Some(binding);
             }
@@ -125,23 +130,21 @@ impl<T> Router<T> {
                 let mut binding = Binding::new(path_segments.peek().is_none(), Some(range));
 
                 for node in parents.drain(..).flatten() {
-                    let children = &node.children;
-
                     match &node.pattern {
-                        pat @ Pattern::Static(name) => {
-                            if name == segment {
-                                generation.push(children);
-                                binding.push(Match::new(pat, &node.route));
+                        Pattern::Static(name) => {
+                            if &**name == segment {
+                                generation.push(&node.children);
+                                binding.push(node);
                             } else {
                                 // Placeholder for tracing...
                             }
                         }
-                        pat @ Pattern::Dynamic(_) => {
-                            generation.push(children);
-                            binding.push(Match::new(pat, &node.route));
+                        Pattern::Dynamic(_) => {
+                            generation.push(&node.children);
+                            binding.push(node);
                         }
-                        pat @ Pattern::Wildcard(_) => {
-                            binding.push(Match::new(pat, &node.route));
+                        Pattern::Wildcard(_) => {
+                            binding.push(node);
                         }
                         Pattern::Root => {
                             // Placeholder for tracing...
@@ -171,9 +174,9 @@ impl<T> Router<T> {
             if let Some(first) = wildcards.next() {
                 let mut binding = Binding::new(true, None);
 
-                binding.push(Match::new(&first.pattern, &first.route));
+                binding.push(first);
                 for node in wildcards {
-                    binding.push(Match::new(&node.pattern, &node.route));
+                    binding.push(node);
                 }
 
                 Some(binding)
@@ -249,7 +252,7 @@ mod tests {
         assert_eq!(matched.param(), None);
         assert!(!matched.is_wildcard());
 
-        let mut route = matched.exact();
+        let mut route = matched.as_final();
 
         assert!(matches!(route.next().map(String::as_str), Some("/")));
         assert!(route.next().is_none());
@@ -300,7 +303,7 @@ mod tests {
                 assert!(matched.is_wildcard());
                 assert_eq!(matched.param(), Some(&"path".to_owned().into()));
 
-                let mut route = matched.exact();
+                let mut route = matched.as_final();
 
                 assert!(matches!(route.next().map(String::as_str), Some("/*path")));
 
@@ -345,7 +348,7 @@ mod tests {
                 assert!(matched.is_wildcard());
                 assert_eq!(matched.param(), Some(&"path".to_owned().into()));
 
-                let mut route = matched.exact();
+                let mut route = matched.as_final();
 
                 assert!(matches!(route.next().map(String::as_str), Some("/*path")));
 

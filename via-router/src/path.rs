@@ -15,7 +15,7 @@ pub struct Split<'a> {
 #[derive(Debug, PartialEq)]
 pub enum Pattern {
     Root,
-    Static(String),
+    Static(Box<str>),
     Dynamic(Param),
     Wildcard(Param),
 }

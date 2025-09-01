@@ -6,6 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use via_router::Pattern;
 
 use crate::BoxBody;
 use crate::app::App;
@@ -43,20 +44,25 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
 
         for binding in self.app.router.visit(path) {
             for node in binding.results() {
-                if let Some(param) = node.param().cloned()
-                    && let Some(range) = binding.range()
-                {
-                    if node.is_wildcard() {
-                        params.push(param, [range[0], path.len()]);
-                    } else {
-                        params.push(param, *range);
+                let path_pattern = node.pattern();
+                let match_as_final = if let Pattern::Wildcard(name) = path_pattern {
+                    if let Some([start, _]) = binding.range() {
+                        params.push(name.clone(), [*start, path.len()]);
                     }
-                }
-
-                if node.is_wildcard() || binding.is_final() {
-                    next.extend(node.exact().cloned());
+                    true
+                } else if let Pattern::Dynamic(name) = path_pattern
+                    && let Some(range) = binding.range().copied()
+                {
+                    params.push(name.clone(), range);
+                    binding.is_final()
                 } else {
-                    next.extend(node.partial().cloned());
+                    binding.is_final()
+                };
+
+                if match_as_final {
+                    next.extend(node.as_final().cloned());
+                } else {
+                    next.extend(node.as_partial().cloned());
                 }
             }
         }

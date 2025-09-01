@@ -6,7 +6,7 @@ mod error;
 mod path;
 mod router;
 
-pub use binding::{Binding, Match};
+pub use binding::Binding;
 pub use error::Error;
-pub use path::Param;
+pub use path::{Param, Pattern};
 pub use router::{Node, Route, Router};
