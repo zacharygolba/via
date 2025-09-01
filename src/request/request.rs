@@ -34,7 +34,7 @@ pub struct Request<T = ()> {
     ///
     state: Arc<T>,
 
-    head: Box<Head>,
+    head: Head,
 
     body: BoxBody,
 }
@@ -66,11 +66,7 @@ impl Head {
             self.parts.uri.path(),
             Some(self.params.iter().find_map(
                 |(param, range)| {
-                    if param == name {
-                        Some(*range)
-                    } else {
-                        None
-                    }
+                    if param == name { Some(*range) } else { None }
                 },
             )),
         )
@@ -106,7 +102,7 @@ impl<T> Request<T> {
     }
 
     #[inline]
-    pub fn into_parts(self) -> (Box<Head>, BoxBody) {
+    pub fn into_parts(self) -> (Head, BoxBody) {
         (self.head, self.body)
     }
 
@@ -235,7 +231,7 @@ impl<T> Request<T> {
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(state: Arc<T>, head: Box<Head>, body: BoxBody) -> Self {
+    pub(crate) fn new(state: Arc<T>, head: Head, body: BoxBody) -> Self {
         Self { state, head, body }
     }
 

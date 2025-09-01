@@ -2,7 +2,7 @@
 name = "via"
 version = "2.0.0-rc.32"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "An async multi-threaded web framework for people who appreciate simplicity."
 categories = ["web-programming::http-server"]

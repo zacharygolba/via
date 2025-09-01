@@ -17,6 +17,10 @@ impl PathParams {
     pub fn iter(&self) -> slice::Iter<'_, (Param, [usize; 2])> {
         self.data.iter()
     }
+
+    pub(crate) fn push(&mut self, name: Param, range: [usize; 2]) {
+        self.data.push((name, range));
+    }
 }
 
 impl Extend<(Param, [usize; 2])> for PathParams {

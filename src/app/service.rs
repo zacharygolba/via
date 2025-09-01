@@ -6,15 +6,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use via_router::binding::MatchCond;
-use via_router::MatchKind;
 
+use crate::BoxBody;
 use crate::app::App;
 use crate::middleware::{BoxFuture, Next};
 use crate::request::param::PathParams;
 use crate::request::{Head, Request};
 use crate::response::ResponseBody;
-use crate::BoxBody;
 
 pub struct AppService<T> {
     app: Arc<App<T>>,
@@ -38,31 +36,28 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
     type Response = http::Response<ResponseBody>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
-        let mut params = PathParams::new(Vec::with_capacity(7));
-        let mut next = Next::new(VecDeque::with_capacity(7));
+        let mut params = PathParams::new(Vec::with_capacity(8));
+        let mut next = Next::new(VecDeque::new());
 
         let path = request.uri().path();
-        let results = match self.app.router.visit(path) {
-            Err(error) => return ServeRequest { result: Err(error) },
-            Ok(visted) => visted,
-        };
 
-        for binding in &results {
-            for kind in binding.nodes() {
-                params.extend(match kind {
-                    MatchKind::Edge(MatchCond::Partial(node)) => {
-                        next.extend(node.route().filter_map(MatchCond::as_partial).cloned());
-                        node.param(|| binding.range())
+        for binding in self.app.router.visit(path) {
+            for node in binding.results() {
+                if let Some(param) = node.param().cloned()
+                    && let Some(range) = binding.range()
+                {
+                    if node.is_wildcard() {
+                        params.push(param, [range[0], path.len()]);
+                    } else {
+                        params.push(param, *range);
                     }
-                    MatchKind::Edge(MatchCond::Exact(node)) => {
-                        next.extend(node.route().map(MatchCond::as_either).cloned());
-                        node.param(|| binding.range())
-                    }
-                    MatchKind::Wildcard(node) => {
-                        next.extend(node.route().map(MatchCond::as_either).cloned());
-                        node.param(|| binding.range().map(|[start, _]| [start, path.len()]))
-                    }
-                });
+                }
+
+                if node.is_wildcard() || binding.is_final() {
+                    next.extend(node.exact().cloned());
+                } else {
+                    next.extend(node.partial().cloned());
+                }
             }
         }
 
@@ -72,7 +67,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
 
                 Request::new(
                     Arc::clone(&self.app.state),
-                    Box::new(Head::new(parts, params)),
+                    Head::new(parts, params),
                     BoxBody::new(Limited::new(body, self.max_body_size)),
                 )
             })),

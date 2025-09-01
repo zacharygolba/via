@@ -2,7 +2,7 @@
 extern crate test;
 
 use test::Bencher;
-use via_router::{MatchKind, Router};
+use via_router::Router;
 
 const ROUTES: [&str; 100] = [
     "/home",
@@ -116,11 +116,10 @@ fn find_matches_1(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/dashboard").unwrap() {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+        for binding in router.visit("/dashboard") {
+            binding
+                .results()
+                .fold(0, |sum, node| sum + node.exact().count());
         }
     });
 }
@@ -134,11 +133,10 @@ fn find_matches_2(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/dashboard/overview").unwrap() {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+        for binding in router.visit("/dashboard/overview") {
+            binding
+                .results()
+                .fold(0, |sum, node| sum + node.exact().count());
         }
     });
 }
@@ -152,11 +150,10 @@ fn find_matches_3(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/help/article/12345678987654321").unwrap() {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+        for binding in router.visit("/help/article/12345678987654321") {
+            binding
+                .results()
+                .fold(0, |sum, node| sum + node.exact().count());
         }
     });
 }
@@ -170,11 +167,10 @@ fn find_matches_4(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/api/v1/products/12345678987654321").unwrap() {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+        for binding in router.visit("/api/v1/products/12345678987654321") {
+            binding
+                .results()
+                .fold(0, |sum, node| sum + node.exact().count());
         }
     });
 }
@@ -188,14 +184,11 @@ fn find_matches_5(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router
-            .visit("/api/v1/products/12345678987654321/comments/12345678987654321")
-            .unwrap()
+        for binding in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
         {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+            binding
+                .results()
+                .fold(0, |sum, node| sum + node.exact().count());
         }
     });
 }
@@ -209,14 +202,11 @@ fn find_matches_6(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router
-            .visit("/api/v1/products/12345678987654321/comments/12345678987654321")
-            .unwrap()
+        for binding in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
         {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+            binding
+                .results()
+                .fold(0, |sum, node| sum + node.exact().count());
         }
     });
 }
@@ -230,14 +220,12 @@ fn find_matches_7(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router
-            .visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
-            .unwrap()
+        for binding in
+            router.visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
         {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+            binding
+                .results()
+                .fold(0, |sum, node| sum + node.exact().count());
         }
     });
 }
