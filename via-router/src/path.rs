@@ -10,9 +10,9 @@ pub struct Split<'a> {
 #[derive(Debug, PartialEq)]
 pub enum Pattern {
     Root,
-    Static(Box<str>),
-    Dynamic(Box<str>),
-    Wildcard(Box<str>),
+    Static(String),
+    Dynamic(String),
+    Wildcard(String),
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.

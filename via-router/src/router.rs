@@ -63,7 +63,7 @@ fn match_descendents<'a, T>(
         .drain(..)
         .flatten()
         .for_each(|node| match &node.pattern {
-            Pattern::Static(name) if &**name == segment => {
+            Pattern::Static(name) if name == segment => {
                 queue.push(&node.children);
                 binding.results.push(node);
             }
@@ -130,16 +130,12 @@ impl<'a, T: Clone> Binding<'a, T> {
     > + use<'_, 'a, T> {
         self.results.iter().map(move |node| {
             let (param, match_as_final) = match &node.pattern {
-                Pattern::Wildcard(name) => {
-                    let name = name.clone().into_string();
-
-                    match &self.range {
-                        Some([start, _]) => (Some((name, [*start, self.path_len])), true),
-                        None => (Some((name, [self.path_len; 2])), true),
-                    }
-                }
+                Pattern::Wildcard(name) => match &self.range {
+                    Some([start, _]) => (Some((name.clone(), [*start, self.path_len])), true),
+                    None => (Some((name.clone(), [self.path_len; 2])), true),
+                },
                 Pattern::Dynamic(name) => match self.range {
-                    Some(range) => (Some((name.clone().into_string(), range)), self.is_final),
+                    Some(range) => (Some((name.clone(), range)), self.is_final),
                     None => (None, self.is_final),
                 },
                 _ => (None, self.is_final),
