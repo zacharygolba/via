@@ -1,4 +1,4 @@
-use smallvec::{IntoIter, SmallVec};
+use smallvec::{smallvec, IntoIter, SmallVec};
 use std::{iter, mem, slice};
 
 use crate::path::{self, Pattern, Split};
@@ -24,14 +24,7 @@ enum MatchCond<T> {
 
 /// A group of nodes that match the path segment at `self.range`.
 ///
-#[derive(Debug)]
 struct Binding<'a, T> {
-    is_final: bool,
-    results: SmallVec<[&'a Node<T>; 1]>,
-    range: Option<[usize; 2]>,
-}
-
-struct Results<'a, T> {
     is_final: bool,
     results: IntoIter<[&'a Node<T>; 1]>,
     range: Option<[usize; 2]>,
@@ -45,42 +38,28 @@ struct Node<T> {
 }
 
 #[inline(always)]
-fn match_root_node<'a, T>(
-    is_final: bool,
-    queue: &mut Level<'a, T>,
-    root: &'a Node<T>,
-) -> Binding<'a, T> {
-    let mut binding = Binding::new(is_final, None);
-
-    queue.push(&root.children);
-    binding.results.push(root);
-
-    binding
-}
-
-#[inline(always)]
-fn match_descendents<'a, T>(
+fn match_next_segment<'a, T>(
     is_final: bool,
     queue: &mut Level<'a, T>,
     branches: &Level<'a, T>,
     segment: &str,
     range: [usize; 2],
 ) -> Option<Binding<'a, T>> {
-    let mut binding = Binding::new(is_final, Some(range));
+    let mut results = SmallVec::new();
 
     for branch in branches {
         for node in branch.iter() {
             match &node.pattern {
                 Pattern::Static(name) if name == segment => {
                     queue.push(&node.children);
-                    binding.results.push(node);
+                    results.push(node);
                 }
                 Pattern::Dynamic(_) => {
                     queue.push(&node.children);
-                    binding.results.push(node);
+                    results.push(node);
                 }
                 Pattern::Wildcard(_) => {
-                    binding.results.push(node);
+                    results.push(node);
                 }
                 Pattern::Static(_) => {
                     // The node does not match the path segment.
@@ -95,40 +74,35 @@ fn match_descendents<'a, T>(
         }
     }
 
-    if binding.results.is_empty() {
-        None
-    } else {
-        Some(binding)
-    }
+    Some(Binding {
+        is_final,
+        results: results.into_iter(),
+        range: Some(range),
+    })
 }
 
 #[inline(always)]
 fn match_trailing_wildcards<'a, T>(branches: &Level<'a, T>) -> Option<Binding<'a, T>> {
-    let mut binding = Binding::new(true, None);
+    let mut results = SmallVec::new();
+    let mut empty = true;
 
     for branch in branches {
         for node in branch.iter() {
             if let Pattern::Wildcard(_) = &node.pattern {
-                binding.results.push(node);
+                empty = false;
+                results.push(node);
             }
         }
     }
 
-    if binding.results.is_empty() {
+    if empty {
         None
     } else {
-        Some(binding)
-    }
-}
-
-impl<'a, T> Binding<'a, T> {
-    #[inline]
-    fn new(is_final: bool, range: Option<[usize; 2]>) -> Self {
-        Self {
-            is_final,
-            results: SmallVec::new(),
-            range,
-        }
+        Some(Binding {
+            is_final: true,
+            results: results.into_iter(),
+            range: None,
+        })
     }
 }
 
@@ -274,7 +248,15 @@ impl<T: Clone> Router<T> {
                 .take()
                 // Unconditional yield the root node to support middleware
                 // functions that are applied to the entire route stack.
-                .map(|node| match_root_node(path == "/", queue, node))
+                .map(|node| {
+                    queue.push(&node.children);
+
+                    Binding {
+                        is_final: path == "/",
+                        results: smallvec![node].into_iter(),
+                        range: None,
+                    }
+                })
                 // We already yielded a binding to the root node. Advance to
                 // the next path segment.
                 .or_else(|| match split.next() {
@@ -283,7 +265,7 @@ impl<T: Clone> Router<T> {
                     // node to the queue to match against the next path
                     // segment.
                     Some((segment, range)) => {
-                        match_descendents(split.peek().is_none(), queue, branches, segment, range)
+                        match_next_segment(split.peek().is_none(), queue, branches, segment, range)
                     }
                     // There are no more path segments to match against. Search
                     // for nodes at the current level with a wildcard pattern
@@ -318,23 +300,10 @@ impl<T> Default for Router<T> {
     }
 }
 
-impl<'a, T: Clone> IntoIterator for Binding<'a, T> {
-    type IntoIter = Results<'a, T>;
-    type Item = <Self::IntoIter as Iterator>::Item;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        Results {
-            is_final: self.is_final,
-            results: self.results.into_iter(),
-            range: self.range,
-        }
-    }
-}
-
-impl<'a, T: Clone> Iterator for Results<'a, T> {
+impl<'a, T: Clone> Iterator for Binding<'a, T> {
     type Item = (Iter<'a, T>, Option<(String, (usize, Option<usize>))>);
 
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.results.next()?;
 
