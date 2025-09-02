@@ -1,7 +1,7 @@
 use percent_encoding::percent_decode_str;
 use std::borrow::Cow;
 
-type QueryParserOutput<'a> = (Cow<'a, str>, Option<[usize; 2]>);
+type QueryParserOutput<'a> = (Cow<'a, str>, Option<(usize, Option<usize>)>);
 
 pub struct QueryParser<'a> {
     input: &'a str,
@@ -13,54 +13,40 @@ fn decode(input: &str) -> Cow<'_, str> {
 }
 
 fn take_name(input: &str, from: usize) -> (usize, Option<Cow<'_, str>>) {
-    // Get the length of the input. We'll use this value as the end index if we
-    // reach the end of the input.
     let len = input.len();
-    // Get the start index of the name by finding the next byte that is not an
-    // `&`. Then, map the index to a tuple containing both the start and end
-    // index of the query parameter name.
+
     let at = take_while(input, from, |byte| byte == b'&').map(|start| {
-        // Continue consuming the input until we reach the terminating `=`.
         match take_while(input, start, |byte| byte != b'=') {
-            // If we find the terminating `=`, return the complete range.
-            Some(end) => [start, end],
-            // Otherwise, return the start index and the length of the input.
-            None => [start, len],
+            Some(end) => (start, end),
+            None => (start, len),
         }
     });
 
     match at {
-        Some([start, end]) => (end, input.get(start..end).map(decode)),
+        Some((start, end)) => (end, input.get(start..end).map(decode)),
         None => (len, None),
     }
 }
 
-fn take_value(input: &str, from: usize) -> (usize, Option<[usize; 2]>) {
-    // Get the length of the input. We'll use this value as the end index if we
-    // reach the end of the input.
+fn take_value(input: &str, from: usize) -> (usize, Option<(usize, Option<usize>)>) {
     let len = input.len();
-    // Get the start index of the name by finding the next byte that is not an
-    // `=`. Then, map the index to a tuple containing both the start and end
-    // index of the query parameter value.
+
     let at = take_while(input, from, |byte| byte == b'=').map(|start| {
-        // Continue consuming the input until we reach the terminating `&`.
         match take_while(input, start, |byte| byte != b'&') {
-            // If we find the terminating `&`, return the complete range.
-            Some(end) => [start, end],
-            // Otherwise, return the start index and the length of the input.
-            None => [start, len],
+            Some(end) => (start, Some(end)),
+            None => (start, None),
         }
     });
 
-    match &at {
-        Some([_, end]) => (*end, at),
+    match at {
+        Some((_, Some(end))) => (end, at),
+        Some((_, None)) => (len, at),
         None => (len, None),
     }
 }
 
 fn take_while(input: &str, from: usize, f: impl Fn(u8) -> bool) -> Option<usize> {
     let rest = input.get(from..)?;
-
     rest.bytes()
         .enumerate()
         .find_map(|(to, byte)| if !f(byte) { from.checked_add(to) } else { None })
@@ -117,46 +103,84 @@ mod tests {
             "%71uery=books&%63ategory=fiction",
             "query=books&ca%74egory=fic%74ion",
             // Invalid UTF-8 characters
-            // (using percent-encoded bytes that don't form valid UTF-8 sequences)
-            "query=books&category=%80%80%80",    // Overlong encoding
-            "query=books&category=%C3%28",       // Invalid UTF-8 sequence in value
-            "query%C3%28=books&category=%C3%28", // Invalid UTF-8 sequence in key
+            "query=books&category=%80%80%80",
+            "query=books&category=%C3%28",
+            "query%C3%28=books&category=%C3%28",
         ];
 
         let expected_results = vec![
             vec![
-                ("query", Some([6, 11])),
-                ("category", Some([21, 28])),
-                ("sort", Some([34, 37])),
+                ("query", Some((6, Some(11)))),
+                ("category", Some((21, Some(28)))),
+                ("sort", Some((34, Some(37)))),
             ],
-            vec![("query", Some([6, 19])), ("category", Some([29, 38]))],
             vec![
-                ("category", Some([9, 14])),
-                ("category", Some([24, 35])),
-                ("category", Some([45, 53])),
+                ("query", Some((6, Some(19)))),
+                ("category", Some((29, Some(38)))),
             ],
-            vec![("query", Some([6, 11])), ("category", None)],
-            vec![("query", Some([6, 22])), ("category", Some([32, 36]))],
-            vec![("query", Some([6, 11])), ("filter", Some([19, 45]))],
             vec![
-                ("items[]", Some([8, 12])),
-                ("items[]", Some([21, 24])),
-                ("items[]", Some([33, 41])),
+                ("category", Some((9, Some(14)))),
+                ("category", Some((24, Some(35)))),
+                ("category", Some((45, Some(53)))),
+            ],
+            vec![("query", Some((6, Some(11)))), ("category", None)],
+            vec![
+                ("query", Some((6, Some(22)))),
+                ("category", Some((32, Some(36)))),
+            ],
+            vec![
+                ("query", Some((6, Some(11)))),
+                ("filter", Some((19, Some(45)))),
+            ],
+            vec![
+                ("items[]", Some((8, Some(12)))),
+                ("items[]", Some((21, Some(24)))),
+                ("items[]", Some((33, Some(41)))),
             ],
             vec![],
-            vec![("data", Some([5, 47]))],
-            vec![("query", Some([6, 11])), ("category", Some([21, 37]))],
-            vec![("query", Some([6, 11])), ("category", Some([22, 29]))],
-            vec![("query", Some([7, 12])), ("category", Some([22, 29]))],
-            vec![("query", Some([6, 11])), ("category", None)],
-            vec![("query", Some([6, 11])), ("", Some([13, 20]))],
-            vec![("query", Some([6, 11])), ("category", Some([21, 28]))],
-            vec![("query", Some([8, 13])), ("category", Some([25, 32]))],
-            vec![("query", Some([8, 13])), ("category", Some([25, 32]))],
-            vec![("query", Some([6, 11])), ("category", Some([23, 32]))],
-            vec![("query", Some([6, 11])), ("category", Some([21, 30]))],
-            vec![("query", Some([6, 11])), ("category", Some([21, 27]))],
-            vec![("query�(", Some([12, 17])), ("category", Some([27, 33]))],
+            vec![("data", Some((5, Some(47))))],
+            vec![
+                ("query", Some((6, Some(11)))),
+                ("category", Some((21, Some(37)))),
+            ],
+            vec![
+                ("query", Some((6, Some(11)))),
+                ("category", Some((22, Some(29)))),
+            ],
+            vec![
+                ("query", Some((7, Some(12)))),
+                ("category", Some((22, Some(29)))),
+            ],
+            vec![("query", Some((6, Some(11)))), ("category", None)],
+            vec![("", Some((13, Some(20))))],
+            vec![
+                ("query", Some((6, Some(11)))),
+                ("category", Some((21, Some(28)))),
+            ],
+            vec![
+                ("query", Some((8, Some(13)))),
+                ("category", Some((25, Some(32)))),
+            ],
+            vec![
+                ("query", Some((8, Some(13)))),
+                ("category", Some((25, Some(32)))),
+            ],
+            vec![
+                ("query", Some((6, Some(11)))),
+                ("category", Some((23, Some(32)))),
+            ],
+            vec![
+                ("query", Some((6, Some(11)))),
+                ("category", Some((21, Some(30)))),
+            ],
+            vec![
+                ("query", Some((6, Some(11)))),
+                ("category", Some((21, Some(27)))),
+            ],
+            vec![
+                ("query�(", Some((12, Some(17)))),
+                ("category", Some((27, Some(33)))),
+            ],
         ];
 
         for (expected_result_index, query) in query_strings.iter().enumerate() {
@@ -176,7 +200,7 @@ mod tests {
             );
 
             for (entry_index, (name, at)) in actual_result.into_iter().enumerate() {
-                let expect = expected_result[entry_index];
+                let expect = &expected_result[entry_index];
 
                 assert_eq!(
                     name, expect.0,

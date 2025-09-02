@@ -27,14 +27,12 @@ enum MatchCond<T> {
 #[derive(Debug)]
 struct Binding<'a, T> {
     is_final: bool,
-    path_len: usize,
     results: SmallVec<[&'a Node<T>; 1]>,
     range: Option<[usize; 2]>,
 }
 
 struct Results<'a, T> {
     is_final: bool,
-    path_len: usize,
     results: IntoIter<[&'a Node<T>; 1]>,
     range: Option<[usize; 2]>,
 }
@@ -49,11 +47,10 @@ struct Node<T> {
 #[inline(always)]
 fn match_root_node<'a, T>(
     is_final: bool,
-    path_len: usize,
     queue: &mut Level<'a, T>,
     root: &'a Node<T>,
 ) -> Binding<'a, T> {
-    let mut binding = Binding::new(is_final, path_len, None);
+    let mut binding = Binding::new(is_final, None);
 
     queue.push(&root.children);
     binding.results.push(root);
@@ -64,13 +61,12 @@ fn match_root_node<'a, T>(
 #[inline(always)]
 fn match_descendents<'a, T>(
     is_final: bool,
-    path_len: usize,
     queue: &mut Level<'a, T>,
     branches: &Level<'a, T>,
     segment: &str,
     range: [usize; 2],
 ) -> Option<Binding<'a, T>> {
-    let mut binding = Binding::new(is_final, path_len, Some(range));
+    let mut binding = Binding::new(is_final, Some(range));
 
     for branch in branches {
         for node in branch.iter() {
@@ -107,11 +103,8 @@ fn match_descendents<'a, T>(
 }
 
 #[inline(always)]
-fn match_trailing_wildcards<'a, T>(
-    path_len: usize,
-    branches: &Level<'a, T>,
-) -> Option<Binding<'a, T>> {
-    let mut binding = Binding::new(true, path_len, None);
+fn match_trailing_wildcards<'a, T>(branches: &Level<'a, T>) -> Option<Binding<'a, T>> {
+    let mut binding = Binding::new(true, None);
 
     for branch in branches {
         for node in branch.iter() {
@@ -130,10 +123,9 @@ fn match_trailing_wildcards<'a, T>(
 
 impl<'a, T> Binding<'a, T> {
     #[inline]
-    fn new(is_final: bool, path_len: usize, range: Option<[usize; 2]>) -> Self {
+    fn new(is_final: bool, range: Option<[usize; 2]>) -> Self {
         Self {
             is_final,
-            path_len,
             results: SmallVec::new(),
             range,
         }
@@ -239,13 +231,10 @@ impl<T: Clone> Router<T> {
     pub fn visit<'a, 'b>(
         &'a self,
         path: &'b str,
-    ) -> impl Iterator<Item = (Iter<'a, T>, Option<(String, [usize; 2])>)> + 'b
+    ) -> impl Iterator<Item = (Iter<'a, T>, Option<(String, (usize, Option<usize>))>)> + 'b
     where
         'a: 'b,
     {
-        // TODO: do not rely on path_len. perhaps refactor path params to use
-        // Option<(usize, Option<usize>)> to better support wildcards.
-
         // Keep a reference to the root node live for the sake of correctness
         // and consistency with graph / tree-like algorithms.
         let root = &self.0;
@@ -285,7 +274,7 @@ impl<T: Clone> Router<T> {
                 .take()
                 // Unconditional yield the root node to support middleware
                 // functions that are applied to the entire route stack.
-                .map(|node| match_root_node(path == "/", path.len(), queue, node))
+                .map(|node| match_root_node(path == "/", queue, node))
                 // We already yielded a binding to the root node. Advance to
                 // the next path segment.
                 .or_else(|| match split.next() {
@@ -293,14 +282,9 @@ impl<T: Clone> Router<T> {
                     // path segment. Then, add the children of each matching
                     // node to the queue to match against the next path
                     // segment.
-                    Some((segment, range)) => match_descendents(
-                        split.peek().is_none(),
-                        path.len(),
-                        queue,
-                        branches,
-                        segment,
-                        range,
-                    ),
+                    Some((segment, range)) => {
+                        match_descendents(split.peek().is_none(), queue, branches, segment, range)
+                    }
                     // There are no more path segments to match against. Search
                     // for nodes at the current level with a wildcard pattern
                     // to support optional path parameters for wildcard nodes.
@@ -309,7 +293,7 @@ impl<T: Clone> Router<T> {
                     // static HTML pages.
                     //
                     // i.e request.param("path").unwrap_or("index.html");
-                    None => match_trailing_wildcards(path.len(), branches),
+                    None => match_trailing_wildcards(branches),
                 });
 
             branches.clear();
@@ -342,7 +326,6 @@ impl<'a, T: Clone> IntoIterator for Binding<'a, T> {
     fn into_iter(self) -> Self::IntoIter {
         Results {
             is_final: self.is_final,
-            path_len: self.path_len,
             results: self.results.into_iter(),
             range: self.range,
         }
@@ -350,22 +333,18 @@ impl<'a, T: Clone> IntoIterator for Binding<'a, T> {
 }
 
 impl<'a, T: Clone> Iterator for Results<'a, T> {
-    type Item = (Iter<'a, T>, Option<(String, [usize; 2])>);
+    type Item = (Iter<'a, T>, Option<(String, (usize, Option<usize>))>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.results.next()?;
 
         match &node.pattern {
-            Pattern::Wildcard(name) => {
-                let param = match &self.range {
-                    Some([start, _]) => Some((name.clone(), [*start, self.path_len])),
-                    None => Some((name.clone(), [self.path_len; 2])),
-                };
-
-                Some((Iter(MatchCond::Final(node.route.iter())), param))
-            }
+            Pattern::Wildcard(name) => Some((
+                Iter(MatchCond::Final(node.route.iter())),
+                self.range.map(|[start, _]| (name.clone(), (start, None))),
+            )),
             Pattern::Dynamic(name) => {
-                let param = self.range.map(|range| (name.clone(), range));
+                let param = Some(name.clone()).zip(self.range.map(|[s, e]| (s, Some(e))));
 
                 Some(if self.is_final {
                     (Iter(MatchCond::Final(node.route.iter())), param)
