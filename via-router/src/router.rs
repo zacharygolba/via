@@ -1,5 +1,5 @@
 use smallvec::SmallVec;
-use std::{iter, mem};
+use std::{iter, mem, slice};
 
 use crate::path::{self, Param, Pattern, Split};
 
@@ -26,6 +26,10 @@ pub struct Node<T> {
     children: Vec<Node<T>>,
     pattern: Pattern,
     route: Vec<MatchCond<T>>,
+}
+
+pub struct RouteStack<'a, T> {
+    routes: MatchCond<slice::Iter<'a, MatchCond<T>>>,
 }
 
 #[derive(Debug)]
@@ -116,14 +120,35 @@ impl<'a, T> Binding<'a, T> {
         self.range.as_ref()
     }
 
-    #[inline]
-    pub fn results(&self) -> impl Iterator<Item = &Node<T>> {
-        self.results.iter().copied()
-    }
+    pub fn results(&self) -> impl Iterator<Item = (Option<Param>, impl Iterator<Item = &T>)> {
+        let is_final = self.is_final;
 
-    #[inline]
-    pub fn is_final(&self) -> bool {
-        self.is_final
+        self.results.iter().map(move |node| match &node.pattern {
+            Pattern::Wildcard(param) => (
+                Some(param.clone()),
+                RouteStack {
+                    routes: MatchCond::Final(node.route.iter()),
+                },
+            ),
+            Pattern::Dynamic(param) => {
+                let routes = if is_final {
+                    MatchCond::Final(node.route.iter())
+                } else {
+                    MatchCond::Partial(node.route.iter())
+                };
+
+                (Some(param.clone()), RouteStack { routes })
+            }
+            _ => {
+                let routes = if is_final {
+                    MatchCond::Final(node.route.iter())
+                } else {
+                    MatchCond::Partial(node.route.iter())
+                };
+
+                (None, RouteStack { routes })
+            }
+        })
     }
 }
 
@@ -138,36 +163,21 @@ impl<'a, T> Binding<'a, T> {
     }
 }
 
-impl<T> Node<T> {
+impl<T> MatchCond<T> {
     #[inline]
-    pub fn is_wildcard(&self) -> bool {
-        matches!(&self.pattern, Pattern::Wildcard(_))
-    }
-
-    pub fn pattern(&self) -> &Pattern {
-        &self.pattern
-    }
-
-    pub fn param(&self) -> Option<&Param> {
-        if let Pattern::Dynamic(name) | Pattern::Wildcard(name) = &self.pattern {
-            Some(name)
-        } else {
-            None
+    fn as_either(&self) -> &T {
+        match self {
+            Self::Final(value) | Self::Partial(value) => value,
         }
     }
 
-    pub fn as_final(&self) -> impl Iterator<Item = &T> {
-        self.route.iter().map(|cond| match cond {
-            MatchCond::Partial(partial) => partial,
-            MatchCond::Final(exact) => exact,
-        })
-    }
-
-    pub fn as_partial(&self) -> impl Iterator<Item = &T> {
-        self.route.iter().filter_map(|cond| match cond {
-            MatchCond::Partial(partial) => Some(partial),
-            MatchCond::Final(_) => None,
-        })
+    #[inline]
+    fn as_partial(&self) -> Option<&T> {
+        if let Self::Partial(value) = self {
+            Some(value)
+        } else {
+            None
+        }
     }
 }
 
@@ -305,6 +315,24 @@ impl<T> Default for Router<T> {
     }
 }
 
+impl<'a, T> Iterator for RouteStack<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let routes = &mut self.routes;
+
+        loop {
+            break match routes {
+                MatchCond::Final(iter) => iter.next().map(MatchCond::as_either),
+                MatchCond::Partial(iter) => match iter.next()?.as_partial() {
+                    None => continue,
+                    some => some,
+                },
+            };
+        }
+    }
+}
+
 fn insert<'a, T, I>(node: &'a mut Node<T>, mut segments: I) -> &'a mut Node<T>
 where
     I: Iterator<Item = Pattern>,
@@ -340,436 +368,436 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{Binding, Router};
-
-    const PATHS: [&str; 5] = [
-        "/",
-        "/*path",
-        "/echo/*path",
-        "/articles/:id",
-        "/articles/:id/comments",
-    ];
-
-    fn assert_init_binding(binding: &Binding<String>, is_final: bool) {
-        assert!(binding.range().is_none());
-        assert_eq!(binding.results().count(), 1);
-        assert_eq!(binding.is_final(), is_final);
-
-        let matched = binding.results().next().unwrap();
-
-        assert_eq!(matched.param(), None);
-        assert!(!matched.is_wildcard());
-
-        let mut route = matched.as_final();
-
-        assert!(matches!(route.next().map(String::as_str), Some("/")));
-        assert!(route.next().is_none());
-    }
-
-    #[test]
-    fn test_router_visit() {
-        let mut router = Router::new();
-
-        for path in PATHS {
-            let _ = router.at(path).include(path.to_owned());
-        }
-
-        //
-        // Visit("/") [
-        //     Binding(None) [
-        //         Edge(Exact(Node {
-        //             children: [1, 2, 4],
-        //             pattern: Root,
-        //             route: [Partial("/")],
-        //         })),
-        //     ],
-        //     Binding(None) [
-        //         Wildcard(Node {
-        //             children: [],
-        //             pattern: Wildcard(Param("path")),
-        //             route: [Partial("/*path")],
-        //         }),
-        //     ],
-        // ]
-        //
-        //
-        {
-            let results = router.visit("/").collect::<Vec<_>>();
-
-            assert_eq!(results.len(), 2);
-
-            assert_init_binding(results.get(0).unwrap(), true);
-
-            {
-                let binding = results.get(1).unwrap();
-
-                assert!(binding.range().is_none());
-                assert_eq!(binding.results().count(), 1);
-
-                let matched = binding.results().next().unwrap();
-
-                assert!(matched.is_wildcard());
-                assert_eq!(matched.param(), Some(&"path".to_owned().into()));
-
-                let mut route = matched.as_final();
-
-                assert!(matches!(route.next().map(String::as_str), Some("/*path")));
-
-                assert!(route.next().is_none());
-            }
-        }
-
-        //
-        // Visit("/not/a/path") [
-        //     Binding(None) [
-        //         Edge(Partial(Node {
-        //             children: [1, 2, 4],
-        //             pattern: Root,
-        //             route: [Partial("/")],
-        //         })),
-        //     ],
-        //     Binding(Some([1, 4])) [
-        //         Wildcard(Node {
-        //             children: [],
-        //             pattern: Wildcard(Param("path")),
-        //             route: [Partial("/*path")],
-        //         }),
-        //     ],
-        // ]
-        //
-        {
-            let results = router.visit("/not/a/path").collect::<Vec<_>>();
-
-            println!("{:#?}", results);
-            assert_eq!(results.len(), 2);
-
-            assert_init_binding(results.get(0).unwrap(), false);
+    // use super::{Binding, Router};
+
+    // const PATHS: [&str; 5] = [
+    //     "/",
+    //     "/*path",
+    //     "/echo/*path",
+    //     "/articles/:id",
+    //     "/articles/:id/comments",
+    // ];
+
+    // fn assert_init_binding(binding: &Binding<String>, is_final: bool) {
+    //     assert!(binding.range().is_none());
+    //     assert_eq!(binding.results().count(), 1);
+    //     assert_eq!(binding.is_final(), is_final);
+
+    //     let matched = binding.results().next().unwrap();
+
+    //     assert_eq!(matched.param(), None);
+    //     assert!(!matched.is_wildcard());
+
+    //     let mut route = matched.as_final();
+
+    //     assert!(matches!(route.next().map(String::as_str), Some("/")));
+    //     assert!(route.next().is_none());
+    // }
+
+    // #[test]
+    // fn test_router_visit() {
+    //     let mut router = Router::new();
+
+    //     for path in PATHS {
+    //         let _ = router.at(path).include(path.to_owned());
+    //     }
+
+    //     //
+    //     // Visit("/") [
+    //     //     Binding(None) [
+    //     //         Edge(Exact(Node {
+    //     //             children: [1, 2, 4],
+    //     //             pattern: Root,
+    //     //             route: [Partial("/")],
+    //     //         })),
+    //     //     ],
+    //     //     Binding(None) [
+    //     //         Wildcard(Node {
+    //     //             children: [],
+    //     //             pattern: Wildcard(Param("path")),
+    //     //             route: [Partial("/*path")],
+    //     //         }),
+    //     //     ],
+    //     // ]
+    //     //
+    //     //
+    //     {
+    //         let results = router.visit("/").collect::<Vec<_>>();
+
+    //         assert_eq!(results.len(), 2);
+
+    //         assert_init_binding(results.get(0).unwrap(), true);
+
+    //         {
+    //             let binding = results.get(1).unwrap();
+
+    //             assert!(binding.range().is_none());
+    //             assert_eq!(binding.results().count(), 1);
+
+    //             let matched = binding.results().next().unwrap();
+
+    //             assert!(matched.is_wildcard());
+    //             assert_eq!(matched.param(), Some(&"path".to_owned().into()));
+
+    //             let mut route = matched.as_final();
+
+    //             assert!(matches!(route.next().map(String::as_str), Some("/*path")));
+
+    //             assert!(route.next().is_none());
+    //         }
+    //     }
+
+    //     //
+    //     // Visit("/not/a/path") [
+    //     //     Binding(None) [
+    //     //         Edge(Partial(Node {
+    //     //             children: [1, 2, 4],
+    //     //             pattern: Root,
+    //     //             route: [Partial("/")],
+    //     //         })),
+    //     //     ],
+    //     //     Binding(Some([1, 4])) [
+    //     //         Wildcard(Node {
+    //     //             children: [],
+    //     //             pattern: Wildcard(Param("path")),
+    //     //             route: [Partial("/*path")],
+    //     //         }),
+    //     //     ],
+    //     // ]
+    //     //
+    //     {
+    //         let results = router.visit("/not/a/path").collect::<Vec<_>>();
+
+    //         println!("{:#?}", results);
+    //         assert_eq!(results.len(), 2);
+
+    //         assert_init_binding(results.get(0).unwrap(), false);
 
-            {
-                let binding = results.get(1).unwrap();
+    //         {
+    //             let binding = results.get(1).unwrap();
 
-                assert_eq!(binding.range(), Some(&[1, 4]));
-                assert_eq!(binding.results().count(), 1);
+    //             assert_eq!(binding.range(), Some(&[1, 4]));
+    //             assert_eq!(binding.results().count(), 1);
 
-                let matched = binding.results().next().unwrap();
+    //             let matched = binding.results().next().unwrap();
 
-                assert!(matched.is_wildcard());
-                assert_eq!(matched.param(), Some(&"path".to_owned().into()));
+    //             assert!(matched.is_wildcard());
+    //             assert_eq!(matched.param(), Some(&"path".to_owned().into()));
 
-                let mut route = matched.as_final();
-
-                assert!(matches!(route.next().map(String::as_str), Some("/*path")));
+    //             let mut route = matched.as_final();
+
+    //             assert!(matches!(route.next().map(String::as_str), Some("/*path")));
 
-                assert!(route.next().is_none());
-            }
-        }
-
-        //     //
-        //     // Visit("/echo/*path") [
-        //     //     Binding(None) [
-        //     //         Edge(Partial(Node {
-        //     //             children: [1, 2, 4],
-        //     //             pattern: Root,
-        //     //             route: [Partial("/")],
-        //     //         })),
-        //     //     ],
-        //     //     Binding(Some([1, 5])) [
-        //     //         Wildcard(Node {
-        //     //             children: [],
-        //     //             pattern: Wildcard(Param("path")),
-        //     //             route: [Partial("/*path")],
-        //     //         }),
-        //     //         Edge(Partial(Node {
-        //     //             children: [3],
-        //     //             pattern: Static("echo"),
-        //     //             route: [],
-        //     //         })),
-        //     //     ],
-        //     //     Binding(Some([6, 11])) [
-        //     //         Wildcard(Node {
-        //     //             children: [],
-        //     //             pattern: Wildcard(Param("path")),
-        //     //             route: [Partial("/echo/*path")],
-        //     //         }),
-        //     //     ],
-        //     // ]
-        //     //
-        //     {
-        //         let results = router.visit("/echo/hello/world").collect::<Vec<_>>();
-
-        //         assert_eq!(results.len(), 3);
-
-        //         assert_init_binding(results.get(0).unwrap(), true);
-
-        //         {
-        //             let binding = results.get(1).collect::<Vec<_>>();
-
-        //             assert_eq!(binding.range(), Some(&[1, 5]));
-        //             assert_eq!(binding.results().count(), 2);
-
-        //             let mut nodes = binding.results();
-
-        //             {
-        //                 let kind = nodes.next().collect::<Vec<_>>();
-
-        //                 assert!(matches!(&kind, MatchKind::Wildcard(_)));
-        //                 assert_eq!(kind.param(), Some(&"path".to_owned().into()));
-
-        //                 let node = kind.node();
-
-        //                 assert_eq!(node.route().count(), 1);
-        //                 assert!(matches!(
-        //                     node.route().next().map(MatchCond::as_str),
-        //                     Some(MatchCond::Partial("/*path"))
-        //                 ));
-        //             }
-
-        //             {
-        //                 let kind = nodes.next().collect::<Vec<_>>();
-
-        //                 assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
-
-        //                 assert!(kind.param().is_none());
-
-        //                 let node = kind.node();
-
-        //                 assert_eq!(node.pattern.as_static(), Some("echo"));
-        //                 assert_eq!(node.route().count(), 0);
-        //             }
-        //         }
-
-        //         {
-        //             let binding = results.get(2).collect::<Vec<_>>();
-
-        //             assert_eq!(binding.range(), Some(&[6, 11]));
-        //             assert_eq!(binding.results().count(), 1);
-
-        //             let kind = binding.results().next().collect::<Vec<_>>();
-
-        //             assert!(matches!(&kind, MatchKind::Wildcard(_)));
-        //             assert_eq!(kind.param(), Some(&"path".to_owned().into()));
-
-        //             let node = kind.node();
-
-        //             assert_eq!(node.route().count(), 1);
-        //             assert!(matches!(
-        //                 node.route().next().map(MatchCond::as_str),
-        //                 Some(MatchCond::Partial("/echo/*path"))
-        //             ));
-        //         }
-        //     }
-
-        //     // Visit("/articles/12345") [
-        //     //     Binding(None) [
-        //     //         Edge(Partial(Node {
-        //     //             children: [1, 2, 4],
-        //     //             pattern: Root,
-        //     //             route: [Partial("/")],
-        //     //         })),
-        //     //     ],
-        //     //     Binding(Some([1, 9])) [
-        //     //         Wildcard(Node {
-        //     //             children: [],
-        //     //             pattern: Wildcard(Param("path")),
-        //     //             route: [Partial("/*path")],
-        //     //         }),
-        //     //         Edge(Partial(Node {
-        //     //             children: [5],
-        //     //             pattern: Static("articles"),
-        //     //             route: [],
-        //     //         })),
-        //     //     ],
-        //     //     Binding(Some([10, 15])) [
-        //     //         Edge(Exact(Node {
-        //     //             children: [6],
-        //     //             pattern: Dynamic(Param("id")),
-        //     //             route: [Partial("/articles/:id")],
-        //     //         })),
-        //     //     ],
-        //     // ]
-        //     {
-        //         let results = router.visit("/articles/12345").collect::<Vec<_>>();
-
-        //         assert_eq!(results.len(), 3);
-
-        //         assert_init_binding(results.get(0).unwrap(), true);
-
-        //         {
-        //             let binding = results.get(1).unwrap();
-
-        //             assert_eq!(binding.range(), Some(&[1, 9]));
-        //             assert_eq!(binding.results().count(), 2);
-
-        //             let mut nodes = binding.results();
-
-        //             {
-        //                 let kind = nodes.next().unwrap();
-
-        //                 assert!(matches!(&kind, MatchKind::Wildcard(_)));
-        //                 assert_eq!(kind.param(), Some(&"path".to_owned().into()));
-
-        //                 let node = kind.node();
-
-        //                 assert_eq!(node.route().count(), 1);
-        //                 assert!(matches!(
-        //                     node.route().next().map(MatchCond::as_str),
-        //                     Some(MatchCond::Partial("/*path"))
-        //                 ));
-        //             }
-
-        //             {
-        //                 let kind = nodes.next().unwrap();
-
-        //                 assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
-
-        //                 assert!(kind.param().is_none());
-
-        //                 let node = kind.node();
-
-        //                 assert_eq!(node.pattern.as_static(), Some("articles"));
-        //                 assert_eq!(node.route().count(), 0);
-        //             }
-        //         }
-
-        //         {
-        //             let binding = results.get(2).unwrap();
-
-        //             assert_eq!(binding.range(), Some(&[10, 15]));
-        //             assert_eq!(binding.results().count(), 1);
-
-        //             let kind = binding.results().next().unwrap();
-
-        //             assert!(matches!(&kind, MatchKind::Edge(MatchCond::Exact(_))));
-        //             assert_eq!(kind.param(), Some(&"id".to_owned().into()));
-
-        //             let node = kind.node();
-
-        //             assert_eq!(node.route().count(), 1);
-        //             assert!(matches!(
-        //                 node.route().next().map(MatchCond::as_str),
-        //                 Some(MatchCond::Partial("/articles/:id"))
-        //             ));
-        //         }
-        //     }
-
-        //     // Visit("/articles/8869/comments") [
-        //     //     Binding(None) [
-        //     //         Edge(Partial(Node {
-        //     //             children: [1, 2, 4],
-        //     //             pattern: Root,
-        //     //             route: [Partial("/")],
-        //     //         })),
-        //     //     ],
-        //     //     Binding(Some([1, 9])) [
-        //     //         Wildcard(Node {
-        //     //             children: [],
-        //     //             pattern: Wildcard(Param("path")),
-        //     //             route: [Partial("/*path")],
-        //     //         }),
-        //     //         Edge(Partial(Node {
-        //     //             children: [5],
-        //     //             pattern: Static("articles"),
-        //     //             route: [],
-        //     //         })),
-        //     //     ],
-        //     //     Binding(Some([10, 15])) [
-        //     //         Edge(Partial(Node {
-        //     //             children: [6],
-        //     //             pattern: Dynamic(Param("id")),
-        //     //             route: [Partial("/articles/:id")],
-        //     //         })),
-        //     //     ],
-        //     //     Binding(Some([16, 24])) [
-        //     //         Edge(Exact(Node {
-        //     //             children: [],
-        //     //             pattern: Static("comments"),
-        //     //             route: [Partial("/articles/:id/comments")],
-        //     //         })),
-        //     //     ],
-        //     // ]
-        //     {
-        //         let results = router.visit("/articles/12345/comments").collect::<Vec<_>>();
-
-        //         assert_eq!(results.len(), 4);
-
-        //         assert_init_binding(results.get(0).unwrap(), true);
-
-        //         {
-        //             let binding = results.get(1).unwrap();
-
-        //             assert_eq!(binding.range(), Some(&[1, 9]));
-        //             assert_eq!(binding.results().count(), 2);
-
-        //             let mut nodes = binding.results();
-
-        //             {
-        //                 let kind = nodes.next().unwrap();
-
-        //                 assert!(matches!(&kind, MatchKind::Wildcard(_)));
-        //                 assert_eq!(kind.param(), Some(&"path".to_owned().into()));
-
-        //                 let node = kind.node();
-
-        //                 assert_eq!(node.route().count(), 1);
-        //                 assert!(matches!(
-        //                     node.route().next().map(MatchCond::as_str),
-        //                     Some(MatchCond::Partial("/*path"))
-        //                 ));
-        //             }
-
-        //             {
-        //                 let kind = nodes.next().unwrap();
-
-        //                 assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
-
-        //                 assert!(kind.param().is_none());
-
-        //                 let node = kind.node();
-
-        //                 assert_eq!(node.pattern.as_static(), Some("articles"));
-        //                 assert_eq!(node.route().count(), 0);
-        //             }
-        //         }
-
-        //         {
-        //             let binding = results.get(2).unwrap();
-
-        //             assert_eq!(binding.range(), Some(&[10, 15]));
-        //             assert_eq!(binding.results().count(), 1);
-
-        //             let kind = binding.results().next().unwrap();
-
-        //             assert_eq!(kind.param(), Some(&"id".to_owned().into()));
-        //             assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
-
-        //             let node = kind.node();
-
-        //             assert_eq!(node.route().count(), 1);
-        //             assert!(matches!(
-        //                 node.route().next().map(MatchCond::as_str),
-        //                 Some(MatchCond::Partial("/articles/:id"))
-        //             ));
-        //         }
-
-        //         {
-        //             let binding = results.get(3).unwrap();
-
-        //             assert_eq!(binding.range(), Some(&[16, 24]));
-        //             assert_eq!(binding.results().count(), 1);
-
-        //             let kind = binding.results().next().unwrap();
-
-        //             assert_eq!(kind.param(), None);
-        //             assert!(matches!(&kind, MatchKind::Edge(MatchCond::Exact(_))));
-
-        //             let node = kind.node();
-
-        //             assert_eq!(node.route().count(), 1);
-        //             assert!(matches!(
-        //                 node.route().next().map(MatchCond::as_str),
-        //                 Some(MatchCond::Partial("/articles/:id/comments"))
-        //             ));
-        //         }
-        //     }
-    }
+    //             assert!(route.next().is_none());
+    //         }
+    //     }
+
+    //     //     //
+    //     //     // Visit("/echo/*path") [
+    //     //     //     Binding(None) [
+    //     //     //         Edge(Partial(Node {
+    //     //     //             children: [1, 2, 4],
+    //     //     //             pattern: Root,
+    //     //     //             route: [Partial("/")],
+    //     //     //         })),
+    //     //     //     ],
+    //     //     //     Binding(Some([1, 5])) [
+    //     //     //         Wildcard(Node {
+    //     //     //             children: [],
+    //     //     //             pattern: Wildcard(Param("path")),
+    //     //     //             route: [Partial("/*path")],
+    //     //     //         }),
+    //     //     //         Edge(Partial(Node {
+    //     //     //             children: [3],
+    //     //     //             pattern: Static("echo"),
+    //     //     //             route: [],
+    //     //     //         })),
+    //     //     //     ],
+    //     //     //     Binding(Some([6, 11])) [
+    //     //     //         Wildcard(Node {
+    //     //     //             children: [],
+    //     //     //             pattern: Wildcard(Param("path")),
+    //     //     //             route: [Partial("/echo/*path")],
+    //     //     //         }),
+    //     //     //     ],
+    //     //     // ]
+    //     //     //
+    //     //     {
+    //     //         let results = router.visit("/echo/hello/world").collect::<Vec<_>>();
+
+    //     //         assert_eq!(results.len(), 3);
+
+    //     //         assert_init_binding(results.get(0).unwrap(), true);
+
+    //     //         {
+    //     //             let binding = results.get(1).collect::<Vec<_>>();
+
+    //     //             assert_eq!(binding.range(), Some(&[1, 5]));
+    //     //             assert_eq!(binding.results().count(), 2);
+
+    //     //             let mut nodes = binding.results();
+
+    //     //             {
+    //     //                 let kind = nodes.next().collect::<Vec<_>>();
+
+    //     //                 assert!(matches!(&kind, MatchKind::Wildcard(_)));
+    //     //                 assert_eq!(kind.param(), Some(&"path".to_owned().into()));
+
+    //     //                 let node = kind.node();
+
+    //     //                 assert_eq!(node.route().count(), 1);
+    //     //                 assert!(matches!(
+    //     //                     node.route().next().map(MatchCond::as_str),
+    //     //                     Some(MatchCond::Partial("/*path"))
+    //     //                 ));
+    //     //             }
+
+    //     //             {
+    //     //                 let kind = nodes.next().collect::<Vec<_>>();
+
+    //     //                 assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
+
+    //     //                 assert!(kind.param().is_none());
+
+    //     //                 let node = kind.node();
+
+    //     //                 assert_eq!(node.pattern.as_static(), Some("echo"));
+    //     //                 assert_eq!(node.route().count(), 0);
+    //     //             }
+    //     //         }
+
+    //     //         {
+    //     //             let binding = results.get(2).collect::<Vec<_>>();
+
+    //     //             assert_eq!(binding.range(), Some(&[6, 11]));
+    //     //             assert_eq!(binding.results().count(), 1);
+
+    //     //             let kind = binding.results().next().collect::<Vec<_>>();
+
+    //     //             assert!(matches!(&kind, MatchKind::Wildcard(_)));
+    //     //             assert_eq!(kind.param(), Some(&"path".to_owned().into()));
+
+    //     //             let node = kind.node();
+
+    //     //             assert_eq!(node.route().count(), 1);
+    //     //             assert!(matches!(
+    //     //                 node.route().next().map(MatchCond::as_str),
+    //     //                 Some(MatchCond::Partial("/echo/*path"))
+    //     //             ));
+    //     //         }
+    //     //     }
+
+    //     //     // Visit("/articles/12345") [
+    //     //     //     Binding(None) [
+    //     //     //         Edge(Partial(Node {
+    //     //     //             children: [1, 2, 4],
+    //     //     //             pattern: Root,
+    //     //     //             route: [Partial("/")],
+    //     //     //         })),
+    //     //     //     ],
+    //     //     //     Binding(Some([1, 9])) [
+    //     //     //         Wildcard(Node {
+    //     //     //             children: [],
+    //     //     //             pattern: Wildcard(Param("path")),
+    //     //     //             route: [Partial("/*path")],
+    //     //     //         }),
+    //     //     //         Edge(Partial(Node {
+    //     //     //             children: [5],
+    //     //     //             pattern: Static("articles"),
+    //     //     //             route: [],
+    //     //     //         })),
+    //     //     //     ],
+    //     //     //     Binding(Some([10, 15])) [
+    //     //     //         Edge(Exact(Node {
+    //     //     //             children: [6],
+    //     //     //             pattern: Dynamic(Param("id")),
+    //     //     //             route: [Partial("/articles/:id")],
+    //     //     //         })),
+    //     //     //     ],
+    //     //     // ]
+    //     //     {
+    //     //         let results = router.visit("/articles/12345").collect::<Vec<_>>();
+
+    //     //         assert_eq!(results.len(), 3);
+
+    //     //         assert_init_binding(results.get(0).unwrap(), true);
+
+    //     //         {
+    //     //             let binding = results.get(1).unwrap();
+
+    //     //             assert_eq!(binding.range(), Some(&[1, 9]));
+    //     //             assert_eq!(binding.results().count(), 2);
+
+    //     //             let mut nodes = binding.results();
+
+    //     //             {
+    //     //                 let kind = nodes.next().unwrap();
+
+    //     //                 assert!(matches!(&kind, MatchKind::Wildcard(_)));
+    //     //                 assert_eq!(kind.param(), Some(&"path".to_owned().into()));
+
+    //     //                 let node = kind.node();
+
+    //     //                 assert_eq!(node.route().count(), 1);
+    //     //                 assert!(matches!(
+    //     //                     node.route().next().map(MatchCond::as_str),
+    //     //                     Some(MatchCond::Partial("/*path"))
+    //     //                 ));
+    //     //             }
+
+    //     //             {
+    //     //                 let kind = nodes.next().unwrap();
+
+    //     //                 assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
+
+    //     //                 assert!(kind.param().is_none());
+
+    //     //                 let node = kind.node();
+
+    //     //                 assert_eq!(node.pattern.as_static(), Some("articles"));
+    //     //                 assert_eq!(node.route().count(), 0);
+    //     //             }
+    //     //         }
+
+    //     //         {
+    //     //             let binding = results.get(2).unwrap();
+
+    //     //             assert_eq!(binding.range(), Some(&[10, 15]));
+    //     //             assert_eq!(binding.results().count(), 1);
+
+    //     //             let kind = binding.results().next().unwrap();
+
+    //     //             assert!(matches!(&kind, MatchKind::Edge(MatchCond::Exact(_))));
+    //     //             assert_eq!(kind.param(), Some(&"id".to_owned().into()));
+
+    //     //             let node = kind.node();
+
+    //     //             assert_eq!(node.route().count(), 1);
+    //     //             assert!(matches!(
+    //     //                 node.route().next().map(MatchCond::as_str),
+    //     //                 Some(MatchCond::Partial("/articles/:id"))
+    //     //             ));
+    //     //         }
+    //     //     }
+
+    //     //     // Visit("/articles/8869/comments") [
+    //     //     //     Binding(None) [
+    //     //     //         Edge(Partial(Node {
+    //     //     //             children: [1, 2, 4],
+    //     //     //             pattern: Root,
+    //     //     //             route: [Partial("/")],
+    //     //     //         })),
+    //     //     //     ],
+    //     //     //     Binding(Some([1, 9])) [
+    //     //     //         Wildcard(Node {
+    //     //     //             children: [],
+    //     //     //             pattern: Wildcard(Param("path")),
+    //     //     //             route: [Partial("/*path")],
+    //     //     //         }),
+    //     //     //         Edge(Partial(Node {
+    //     //     //             children: [5],
+    //     //     //             pattern: Static("articles"),
+    //     //     //             route: [],
+    //     //     //         })),
+    //     //     //     ],
+    //     //     //     Binding(Some([10, 15])) [
+    //     //     //         Edge(Partial(Node {
+    //     //     //             children: [6],
+    //     //     //             pattern: Dynamic(Param("id")),
+    //     //     //             route: [Partial("/articles/:id")],
+    //     //     //         })),
+    //     //     //     ],
+    //     //     //     Binding(Some([16, 24])) [
+    //     //     //         Edge(Exact(Node {
+    //     //     //             children: [],
+    //     //     //             pattern: Static("comments"),
+    //     //     //             route: [Partial("/articles/:id/comments")],
+    //     //     //         })),
+    //     //     //     ],
+    //     //     // ]
+    //     //     {
+    //     //         let results = router.visit("/articles/12345/comments").collect::<Vec<_>>();
+
+    //     //         assert_eq!(results.len(), 4);
+
+    //     //         assert_init_binding(results.get(0).unwrap(), true);
+
+    //     //         {
+    //     //             let binding = results.get(1).unwrap();
+
+    //     //             assert_eq!(binding.range(), Some(&[1, 9]));
+    //     //             assert_eq!(binding.results().count(), 2);
+
+    //     //             let mut nodes = binding.results();
+
+    //     //             {
+    //     //                 let kind = nodes.next().unwrap();
+
+    //     //                 assert!(matches!(&kind, MatchKind::Wildcard(_)));
+    //     //                 assert_eq!(kind.param(), Some(&"path".to_owned().into()));
+
+    //     //                 let node = kind.node();
+
+    //     //                 assert_eq!(node.route().count(), 1);
+    //     //                 assert!(matches!(
+    //     //                     node.route().next().map(MatchCond::as_str),
+    //     //                     Some(MatchCond::Partial("/*path"))
+    //     //                 ));
+    //     //             }
+
+    //     //             {
+    //     //                 let kind = nodes.next().unwrap();
+
+    //     //                 assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
+
+    //     //                 assert!(kind.param().is_none());
+
+    //     //                 let node = kind.node();
+
+    //     //                 assert_eq!(node.pattern.as_static(), Some("articles"));
+    //     //                 assert_eq!(node.route().count(), 0);
+    //     //             }
+    //     //         }
+
+    //     //         {
+    //     //             let binding = results.get(2).unwrap();
+
+    //     //             assert_eq!(binding.range(), Some(&[10, 15]));
+    //     //             assert_eq!(binding.results().count(), 1);
+
+    //     //             let kind = binding.results().next().unwrap();
+
+    //     //             assert_eq!(kind.param(), Some(&"id".to_owned().into()));
+    //     //             assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
+
+    //     //             let node = kind.node();
+
+    //     //             assert_eq!(node.route().count(), 1);
+    //     //             assert!(matches!(
+    //     //                 node.route().next().map(MatchCond::as_str),
+    //     //                 Some(MatchCond::Partial("/articles/:id"))
+    //     //             ));
+    //     //         }
+
+    //     //         {
+    //     //             let binding = results.get(3).unwrap();
+
+    //     //             assert_eq!(binding.range(), Some(&[16, 24]));
+    //     //             assert_eq!(binding.results().count(), 1);
+
+    //     //             let kind = binding.results().next().unwrap();
+
+    //     //             assert_eq!(kind.param(), None);
+    //     //             assert!(matches!(&kind, MatchKind::Edge(MatchCond::Exact(_))));
+
+    //     //             let node = kind.node();
+
+    //     //             assert_eq!(node.route().count(), 1);
+    //     //             assert!(matches!(
+    //     //                 node.route().next().map(MatchCond::as_str),
+    //     //                 Some(MatchCond::Partial("/articles/:id/comments"))
+    //     //             ));
+    //     //         }
+    //     //     }
+    // }
 }

@@ -3,5 +3,5 @@
 mod path;
 mod router;
 
-pub use path::{Param, Pattern};
-pub use router::{Binding, Node, Route, Router};
+pub use path::Param;
+pub use router::{Binding, Route, RouteStack, Router};
