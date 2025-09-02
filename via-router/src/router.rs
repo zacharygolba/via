@@ -46,6 +46,7 @@ struct Node<T> {
     route: Vec<MatchCond<T>>,
 }
 
+#[inline(always)]
 fn match_root_node<'a, T>(
     is_final: bool,
     path_len: usize,
@@ -60,41 +61,43 @@ fn match_root_node<'a, T>(
     binding
 }
 
+#[inline(always)]
 fn match_descendents<'a, T>(
     is_final: bool,
     path_len: usize,
-    branches: &mut Level<'a, T>,
     queue: &mut Level<'a, T>,
+    branches: &Level<'a, T>,
     segment: &str,
     range: [usize; 2],
 ) -> Option<Binding<'a, T>> {
     let mut binding = Binding::new(is_final, path_len, Some(range));
 
-    branches
-        .drain(..)
-        .flatten()
-        .for_each(|node| match &node.pattern {
-            Pattern::Static(name) if name == segment => {
-                queue.push(&node.children);
-                binding.results.push(node);
+    for branch in branches {
+        for node in branch.iter() {
+            match &node.pattern {
+                Pattern::Static(name) if name == segment => {
+                    queue.push(&node.children);
+                    binding.results.push(node);
+                }
+                Pattern::Dynamic(_) => {
+                    queue.push(&node.children);
+                    binding.results.push(node);
+                }
+                Pattern::Wildcard(_) => {
+                    binding.results.push(node);
+                }
+                Pattern::Static(_) => {
+                    // The node does not match the path segment.
+                }
+                Pattern::Root => {
+                    // The root node was matched as a descendant of a child node.
+                    // Either an error occurred during the construction of the
+                    // route tree or the memory where the route tree is stored
+                    // became corrupt.
+                }
             }
-            Pattern::Dynamic(_) => {
-                queue.push(&node.children);
-                binding.results.push(node);
-            }
-            Pattern::Wildcard(_) => {
-                binding.results.push(node);
-            }
-            Pattern::Static(_) => {
-                // The node does not match the path segment.
-            }
-            Pattern::Root => {
-                // The root node was matched as a descendant of a child node.
-                // Either an error occurred during the construction of the
-                // route tree or the memory where the route tree is stored
-                // became corrupt.
-            }
-        });
+        }
+    }
 
     if binding.results.is_empty() {
         None
@@ -103,28 +106,26 @@ fn match_descendents<'a, T>(
     }
 }
 
+#[inline(always)]
 fn match_trailing_wildcards<'a, T>(
     path_len: usize,
-    branches: &mut Level<'a, T>,
+    branches: &Level<'a, T>,
 ) -> Option<Binding<'a, T>> {
-    let mut wildcards = branches.drain(..).flat_map(|branch| {
-        branch.iter().filter_map(|node| {
+    let mut binding = Binding::new(true, path_len, None);
+
+    for branch in branches {
+        for node in branch.iter() {
             if let Pattern::Wildcard(_) = &node.pattern {
-                Some(node)
-            } else {
-                None
+                binding.results.push(node);
             }
-        })
-    });
+        }
+    }
 
-    wildcards.next().map(|node| {
-        let mut binding = Binding::new(true, path_len, None);
-
-        binding.results.push(node);
-        binding.results.extend(wildcards);
-
-        binding
-    })
+    if binding.results.is_empty() {
+        None
+    } else {
+        Some(binding)
+    }
 }
 
 impl<'a, T> Binding<'a, T> {
@@ -242,6 +243,9 @@ impl<T: Clone> Router<T> {
     where
         'a: 'b,
     {
+        // TODO: do not rely on path_len. perhaps refactor path params to use
+        // Option<(usize, Option<usize>)> to better support wildcards.
+
         // Keep a reference to the root node live for the sake of correctness
         // and consistency with graph / tree-like algorithms.
         let root = &self.0;
@@ -292,8 +296,8 @@ impl<T: Clone> Router<T> {
                     Some((segment, range)) => match_descendents(
                         split.peek().is_none(),
                         path.len(),
-                        branches,
                         queue,
+                        branches,
                         segment,
                         range,
                     ),
@@ -307,6 +311,8 @@ impl<T: Clone> Router<T> {
                     // i.e request.param("path").unwrap_or("index.html");
                     None => match_trailing_wildcards(path.len(), branches),
                 });
+
+            branches.clear();
 
             // Swap the current level with the queue to source matching nodes
             // during the next iteration. Any allocations that were made at
@@ -332,6 +338,7 @@ impl<'a, T: Clone> IntoIterator for Binding<'a, T> {
     type IntoIter = Results<'a, T>;
     type Item = <Self::IntoIter as Iterator>::Item;
 
+    #[inline]
     fn into_iter(self) -> Self::IntoIter {
         Results {
             is_final: self.is_final,
