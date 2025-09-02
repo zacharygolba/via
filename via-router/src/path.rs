@@ -1,9 +1,5 @@
-use std::fmt::{self, Display, Formatter};
 use std::mem;
 use std::str::MatchIndices;
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Param(Box<str>);
 
 pub struct Split<'a> {
     path: &'a str,
@@ -15,8 +11,8 @@ pub struct Split<'a> {
 pub enum Pattern {
     Root,
     Static(Box<str>),
-    Dynamic(Param),
-    Wildcard(Param),
+    Dynamic(Box<str>),
+    Wildcard(Box<str>),
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
@@ -45,25 +41,6 @@ pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
             _ => Pattern::Static(segment.into()),
         }
     })
-}
-
-impl Display for Param {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(&self.0, f)
-    }
-}
-
-impl From<String> for Param {
-    fn from(value: String) -> Self {
-        Self(value.into())
-    }
-}
-
-impl PartialEq<str> for Param {
-    #[inline]
-    fn eq(&self, other: &str) -> bool {
-        *self.0 == *other
-    }
 }
 
 impl<'a> Split<'a> {

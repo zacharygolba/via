@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
-use std::{iter, mem, slice};
+use std::{iter, mem};
 
-use crate::path::{self, Param, Pattern, Split};
+use crate::path::{self, Pattern, Split};
 
 /// A multi-dimensional set of branches at a given depth in the route tree.
 ///
@@ -17,6 +17,7 @@ pub struct Router<T>(Node<T>);
 #[derive(Debug)]
 pub struct Binding<'a, T> {
     is_final: bool,
+    path_len: usize,
     results: SmallVec<[&'a Node<T>; 1]>,
     range: Option<[usize; 2]>,
 }
@@ -28,10 +29,6 @@ pub struct Node<T> {
     route: Vec<MatchCond<T>>,
 }
 
-pub struct RouteStack<'a, T> {
-    routes: MatchCond<slice::Iter<'a, MatchCond<T>>>,
-}
-
 #[derive(Debug)]
 enum MatchCond<T> {
     Partial(T),
@@ -40,10 +37,11 @@ enum MatchCond<T> {
 
 fn match_root_node<'a, T>(
     is_final: bool,
+    path_len: usize,
     queue: &mut Level<'a, T>,
     root: &'a Node<T>,
 ) -> Binding<'a, T> {
-    let mut binding = Binding::new(is_final, None);
+    let mut binding = Binding::new(is_final, path_len, None);
 
     queue.push(&root.children);
     binding.results.push(root);
@@ -53,12 +51,13 @@ fn match_root_node<'a, T>(
 
 fn match_descendents<'a, T>(
     is_final: bool,
+    path_len: usize,
     branches: &mut Level<'a, T>,
     queue: &mut Level<'a, T>,
     segment: &str,
     range: [usize; 2],
 ) -> Option<Binding<'a, T>> {
-    let mut binding = Binding::new(is_final, Some(range));
+    let mut binding = Binding::new(is_final, path_len, Some(range));
 
     branches
         .drain(..)
@@ -93,7 +92,10 @@ fn match_descendents<'a, T>(
     }
 }
 
-fn match_trailing_wildcards<'a, T>(branches: &mut Level<'a, T>) -> Option<Binding<'a, T>> {
+fn match_trailing_wildcards<'a, T>(
+    path_len: usize,
+    branches: &mut Level<'a, T>,
+) -> Option<Binding<'a, T>> {
     let mut wildcards = branches.drain(..).flat_map(|branch| {
         branch.iter().filter_map(|node| {
             if let Pattern::Wildcard(_) = &node.pattern {
@@ -105,7 +107,7 @@ fn match_trailing_wildcards<'a, T>(branches: &mut Level<'a, T>) -> Option<Bindin
     });
 
     wildcards.next().map(|node| {
-        let mut binding = Binding::new(true, None);
+        let mut binding = Binding::new(true, path_len, None);
 
         binding.results.push(node);
         binding.results.extend(wildcards);
@@ -114,39 +116,39 @@ fn match_trailing_wildcards<'a, T>(branches: &mut Level<'a, T>) -> Option<Bindin
     })
 }
 
-impl<'a, T> Binding<'a, T> {
-    #[inline]
-    pub fn range(&self) -> Option<&[usize; 2]> {
-        self.range.as_ref()
-    }
+impl<'a, T: Clone> Binding<'a, T> {
+    // TODO:
+    // Make a named type for the iterators returned from this fn. Then, impl
+    // IntoIterator for Binding and consider making it private.
+    pub fn results(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            Option<(String, [usize; 2])>,
+            impl Iterator<Item = T> + use<'_, T>,
+        ),
+    > + use<'_, 'a, T> {
+        self.results.iter().map(move |node| {
+            let (param, match_as_final) = match &node.pattern {
+                Pattern::Wildcard(name) => {
+                    let name = name.clone().into_string();
 
-    pub fn results(&self) -> impl Iterator<Item = (Option<Param>, impl Iterator<Item = &T>)> {
-        let is_final = self.is_final;
-
-        self.results.iter().map(move |node| match &node.pattern {
-            Pattern::Wildcard(param) => (
-                Some(param.clone()),
-                RouteStack {
-                    routes: MatchCond::Final(node.route.iter()),
+                    match &self.range {
+                        Some([start, _]) => (Some((name, [*start, self.path_len])), true),
+                        None => (Some((name, [self.path_len; 2])), true),
+                    }
+                }
+                Pattern::Dynamic(name) => match self.range {
+                    Some(range) => (Some((name.clone().into_string(), range)), self.is_final),
+                    None => (None, self.is_final),
                 },
-            ),
-            Pattern::Dynamic(param) => {
-                let routes = if is_final {
-                    MatchCond::Final(node.route.iter())
-                } else {
-                    MatchCond::Partial(node.route.iter())
-                };
+                _ => (None, self.is_final),
+            };
 
-                (Some(param.clone()), RouteStack { routes })
-            }
-            _ => {
-                let routes = if is_final {
-                    MatchCond::Final(node.route.iter())
-                } else {
-                    MatchCond::Partial(node.route.iter())
-                };
-
-                (None, RouteStack { routes })
+            if match_as_final {
+                (param, MatchCond::Final(node.route.iter()).cloned())
+            } else {
+                (param, MatchCond::Partial(node.route.iter()).cloned())
             }
         })
     }
@@ -154,9 +156,10 @@ impl<'a, T> Binding<'a, T> {
 
 impl<'a, T> Binding<'a, T> {
     #[inline]
-    fn new(is_final: bool, range: Option<[usize; 2]>) -> Self {
+    fn new(is_final: bool, path_len: usize, range: Option<[usize; 2]>) -> Self {
         Self {
             is_final,
+            path_len,
             results: SmallVec::new(),
             range,
         }
@@ -177,6 +180,26 @@ impl<T> MatchCond<T> {
             Some(value)
         } else {
             None
+        }
+    }
+}
+
+impl<'a, T, U> Iterator for MatchCond<T>
+where
+    T: Iterator<Item = &'a MatchCond<U>>,
+    U: 'a,
+{
+    type Item = &'a U;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            break match self {
+                MatchCond::Final(iter) => iter.next().map(MatchCond::as_either),
+                MatchCond::Partial(iter) => match iter.next()?.as_partial() {
+                    None => continue,
+                    some => some,
+                },
+            };
         }
     }
 }
@@ -214,7 +237,7 @@ impl<T> Route<'_, T> {
     }
 }
 
-impl<T> Router<T> {
+impl<T: Clone> Router<T> {
     pub fn new() -> Self {
         Default::default()
     }
@@ -273,7 +296,7 @@ impl<T> Router<T> {
                 .take()
                 // Unconditional yield the root node to support middleware
                 // functions that are applied to the entire route stack.
-                .map(|node| match_root_node(path == "/", queue, node))
+                .map(|node| match_root_node(path == "/", path.len(), queue, node))
                 // We already yielded a binding to the root node. Advance to
                 // the next path segment.
                 .or_else(|| match split.next() {
@@ -281,9 +304,14 @@ impl<T> Router<T> {
                     // path segment. Then, add the children of each matching
                     // node to the queue to match against the next path
                     // segment.
-                    Some((segment, range)) => {
-                        match_descendents(split.peek().is_none(), branches, queue, segment, range)
-                    }
+                    Some((segment, range)) => match_descendents(
+                        split.peek().is_none(),
+                        path.len(),
+                        branches,
+                        queue,
+                        segment,
+                        range,
+                    ),
                     // There are no more path segments to match against. Search
                     // for nodes at the current level with a wildcard pattern
                     // to support optional path parameters for wildcard nodes.
@@ -292,7 +320,7 @@ impl<T> Router<T> {
                     // static HTML pages.
                     //
                     // i.e request.param("path").unwrap_or("index.html");
-                    None => match_trailing_wildcards(branches),
+                    None => match_trailing_wildcards(path.len(), branches),
                 });
 
             // Swap the current level with the queue to source matching nodes
@@ -312,24 +340,6 @@ impl<T> Default for Router<T> {
             pattern: Pattern::Root,
             route: Vec::new(),
         })
-    }
-}
-
-impl<'a, T> Iterator for RouteStack<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let routes = &mut self.routes;
-
-        loop {
-            break match routes {
-                MatchCond::Final(iter) => iter.next().map(MatchCond::as_either),
-                MatchCond::Partial(iter) => match iter.next()?.as_partial() {
-                    None => continue,
-                    some => some,
-                },
-            };
-        }
     }
 }
 
