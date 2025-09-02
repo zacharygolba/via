@@ -1,10 +1,9 @@
 use std::fmt::{self, Display, Formatter};
 use std::mem;
 use std::str::MatchIndices;
-use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Param(Arc<str>);
+pub struct Param(Box<str>);
 
 pub struct Split<'a> {
     path: &'a str,

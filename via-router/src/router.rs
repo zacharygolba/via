@@ -1,8 +1,25 @@
 use smallvec::SmallVec;
 use std::{iter, mem};
 
-use crate::binding::{Binding, MatchCond};
 use crate::path::{self, Param, Pattern, Split};
+
+/// A multi-dimensional set of branches at a given depth in the route tree.
+///
+type Level<'a, T> = SmallVec<[&'a [Node<T>]; 2]>;
+
+pub struct Route<'a, T>(&'a mut Node<T>);
+
+#[derive(Debug)]
+pub struct Router<T>(Node<T>);
+
+/// A group of nodes that match the path segment at `self.range`.
+///
+#[derive(Debug)]
+pub struct Binding<'a, T> {
+    is_final: bool,
+    results: SmallVec<[&'a Node<T>; 1]>,
+    range: Option<[usize; 2]>,
+}
 
 #[derive(Debug)]
 pub struct Node<T> {
@@ -12,20 +29,111 @@ pub struct Node<T> {
 }
 
 #[derive(Debug)]
-pub struct Router<T> {
-    root: Node<T>,
+enum MatchCond<T> {
+    Partial(T),
+    Final(T),
 }
 
-pub struct Route<'a, T> {
-    node: &'a mut Node<T>,
+fn match_root_node<'a, T>(
+    is_final: bool,
+    queue: &mut Level<'a, T>,
+    root: &'a Node<T>,
+) -> Binding<'a, T> {
+    let mut binding = Binding::new(is_final, None);
+
+    queue.push(&root.children);
+    binding.results.push(root);
+
+    binding
 }
 
-impl<T> Node<T> {
-    fn new(pattern: Pattern) -> Self {
+fn match_descendents<'a, T>(
+    is_final: bool,
+    branches: &mut Level<'a, T>,
+    queue: &mut Level<'a, T>,
+    segment: &str,
+    range: [usize; 2],
+) -> Option<Binding<'a, T>> {
+    let mut binding = Binding::new(is_final, Some(range));
+
+    branches
+        .drain(..)
+        .flatten()
+        .for_each(|node| match &node.pattern {
+            Pattern::Static(name) if &**name == segment => {
+                queue.push(&node.children);
+                binding.results.push(node);
+            }
+            Pattern::Dynamic(_) => {
+                queue.push(&node.children);
+                binding.results.push(node);
+            }
+            Pattern::Wildcard(_) => {
+                binding.results.push(node);
+            }
+            Pattern::Static(_) => {
+                // The node does not match the path segment.
+            }
+            Pattern::Root => {
+                // The root node was matched as a descendant of a child node.
+                // Either an error occurred during the construction of the
+                // route tree or the memory where the route tree is stored
+                // became corrupt.
+            }
+        });
+
+    if binding.results.is_empty() {
+        None
+    } else {
+        Some(binding)
+    }
+}
+
+fn match_trailing_wildcards<'a, T>(branches: &mut Level<'a, T>) -> Option<Binding<'a, T>> {
+    let mut wildcards = branches.drain(..).flat_map(|branch| {
+        branch.iter().filter_map(|node| {
+            if let Pattern::Wildcard(_) = &node.pattern {
+                Some(node)
+            } else {
+                None
+            }
+        })
+    });
+
+    wildcards.next().map(|node| {
+        let mut binding = Binding::new(true, None);
+
+        binding.results.push(node);
+        binding.results.extend(wildcards);
+
+        binding
+    })
+}
+
+impl<'a, T> Binding<'a, T> {
+    #[inline]
+    pub fn range(&self) -> Option<&[usize; 2]> {
+        self.range.as_ref()
+    }
+
+    #[inline]
+    pub fn results(&self) -> impl Iterator<Item = &Node<T>> {
+        self.results.iter().copied()
+    }
+
+    #[inline]
+    pub fn is_final(&self) -> bool {
+        self.is_final
+    }
+}
+
+impl<'a, T> Binding<'a, T> {
+    #[inline]
+    fn new(is_final: bool, range: Option<[usize; 2]>) -> Self {
         Self {
-            children: Vec::new(),
-            pattern,
-            route: Vec::new(),
+            is_final,
+            results: SmallVec::new(),
+            range,
         }
     }
 }
@@ -36,12 +144,10 @@ impl<T> Node<T> {
         matches!(&self.pattern, Pattern::Wildcard(_))
     }
 
-    #[inline]
     pub fn pattern(&self) -> &Pattern {
         &self.pattern
     }
 
-    #[inline]
     pub fn param(&self) -> Option<&Param> {
         if let Pattern::Dynamic(name) | Pattern::Wildcard(name) = &self.pattern {
             Some(name)
@@ -65,13 +171,24 @@ impl<T> Node<T> {
     }
 }
 
+impl<T> Node<T> {
+    fn push(&mut self, pattern: Pattern) -> &mut Node<T> {
+        let children = &mut self.children;
+        let index = children.len();
+
+        children.push(Node {
+            children: Vec::new(),
+            pattern,
+            route: Vec::new(),
+        });
+
+        &mut children[index]
+    }
+}
+
 impl<T> Route<'_, T> {
     pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
-        let mut segments = path::patterns(path);
-
-        Route {
-            node: insert(self.node, &mut segments),
-        }
+        Route(insert(self.0, path::patterns(path)))
     }
 
     pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) {
@@ -79,11 +196,11 @@ impl<T> Route<'_, T> {
     }
 
     pub fn include(&mut self, middleware: T) {
-        self.node.route.push(MatchCond::Partial(middleware));
+        self.0.route.push(MatchCond::Partial(middleware));
     }
 
     pub fn respond(&mut self, middleware: T) {
-        self.node.route.push(MatchCond::Final(middleware));
+        self.0.route.push(MatchCond::Final(middleware));
     }
 }
 
@@ -93,11 +210,7 @@ impl<T> Router<T> {
     }
 
     pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
-        let mut segments = path::patterns(path);
-
-        Route {
-            node: insert(&mut self.root, &mut segments),
-        }
+        Route(insert(&mut self.0, path::patterns(path)))
     }
 
     /// Match the path argument against nodes in the route tree.
@@ -111,95 +224,92 @@ impl<T> Router<T> {
     where
         'a: 'b,
     {
-        let mut root = Some(&self.root);
-        let mut parents = SmallVec::<[&[Node<T>]; 2]>::new();
-        let mut generation = SmallVec::<[&[Node<T>]; 2]>::new();
-        let mut path_segments = Split::new(path).peekable();
+        // Keep a reference to the root node live for the sake of correctness
+        // and consistency with graph / tree-like algorithms.
+        let root = &self.0;
+
+        // An option containing a reference to the root node. We use this to
+        // yield the first binding and seed the iterator with nodes to match
+        // against subsequent path segments.
+        let mut entrypoint = Some(root);
+
+        // A multi-dimensional vec that can store up to 2 branches inline to
+        // match against the current path segment.
+        let mut branches = Level::new();
+
+        // Same as `branches` but used to accumulate branches to match against
+        // the next path segment. This value is swapped with `branches` during
+        // each iteration.
+        let mut queue = Level::new();
+
+        // A peekable iterator that yields the next path segment and the range
+        // at which it can be found in path. We have to peek in order to
+        // determine if a binding is "final".
+        let mut split = Split::new(path).peekable();
 
         iter::from_fn(move || {
-            if let Some(node) = root.take() {
-                let mut binding = Binding::new(path == "/", None);
+            // We'll need this pointer at least once and also in 2 of the 3
+            // possible branches that will run before the next binding is
+            // returned
+            let branches = &mut branches;
 
-                parents.push(&node.children);
-                binding.push(node);
+            // Same as `branches`, we'll likely use this pointer twice. We're
+            // better of building the reference early.
+            let queue = &mut queue;
 
-                return Some(binding);
-            }
-
-            if let Some((segment, range)) = path_segments.next() {
-                let mut binding = Binding::new(path_segments.peek().is_none(), Some(range));
-
-                for node in parents.drain(..).flatten() {
-                    match &node.pattern {
-                        Pattern::Static(name) => {
-                            if &**name == segment {
-                                generation.push(&node.children);
-                                binding.push(node);
-                            } else {
-                                // Placeholder for tracing...
-                            }
-                        }
-                        Pattern::Dynamic(_) => {
-                            generation.push(&node.children);
-                            binding.push(node);
-                        }
-                        Pattern::Wildcard(_) => {
-                            binding.push(node);
-                        }
-                        Pattern::Root => {
-                            // Placeholder for tracing...
-                        }
+            // An optional Binding that contains nodes at the current depth
+            // that match the next path segment.
+            let next = entrypoint
+                .take()
+                // Unconditional yield the root node to support middleware
+                // functions that are applied to the entire route stack.
+                .map(|node| match_root_node(path == "/", queue, node))
+                // We already yielded a binding to the root node. Advance to
+                // the next path segment.
+                .or_else(|| match split.next() {
+                    // Match the nodes at the current level against the current
+                    // path segment. Then, add the children of each matching
+                    // node to the queue to match against the next path
+                    // segment.
+                    Some((segment, range)) => {
+                        match_descendents(split.peek().is_none(), branches, queue, segment, range)
                     }
-                }
+                    // There are no more path segments to match against. Search
+                    // for nodes at the current level with a wildcard pattern
+                    // to support optional path parameters for wildcard nodes.
+                    //
+                    // This is a pattern that is commonly used when serving
+                    // static HTML pages.
+                    //
+                    // i.e request.param("path").unwrap_or("index.html");
+                    None => match_trailing_wildcards(branches),
+                });
 
-                mem::swap(&mut parents, &mut generation);
+            // Swap the current level with the queue to source matching nodes
+            // during the next iteration. Any allocations that were made at
+            // this depth will be reused.
+            mem::swap(branches, queue);
 
-                return if binding.is_empty() {
-                    None
-                } else {
-                    Some(binding)
-                };
-            }
-
-            let mut wildcards = parents.drain(..).flat_map(|children| {
-                children.iter().filter_map(|node| {
-                    if let Pattern::Wildcard(_) = &node.pattern {
-                        Some(node)
-                    } else {
-                        None
-                    }
-                })
-            });
-
-            if let Some(first) = wildcards.next() {
-                let mut binding = Binding::new(true, None);
-
-                binding.push(first);
-                for node in wildcards {
-                    binding.push(node);
-                }
-
-                Some(binding)
-            } else {
-                None
-            }
+            next
         })
     }
 }
 
 impl<T> Default for Router<T> {
     fn default() -> Self {
-        Self {
-            root: Node::new(Pattern::Root),
-        }
+        Self(Node {
+            children: Vec::new(),
+            pattern: Pattern::Root,
+            route: Vec::new(),
+        })
     }
 }
 
-fn insert<'a, T, I>(into: &'a mut Node<T>, segments: &mut I) -> &'a mut Node<T>
+fn insert<'a, T, I>(node: &'a mut Node<T>, mut segments: I) -> &'a mut Node<T>
 where
     I: Iterator<Item = Pattern>,
 {
-    let mut parent = into;
+    let mut parent = node;
 
     loop {
         // If the current node is a catch-all, we can skip the rest of the segments.
@@ -216,23 +326,21 @@ where
             None => return parent,
         };
 
-        if let Some(index) = parent
+        parent = if let Some(index) = parent
             .children
             .iter()
             .position(|node| pattern == node.pattern)
         {
-            parent = &mut parent.children[index];
+            &mut parent.children[index]
         } else {
-            parent.children.push(Node::new(pattern));
-            parent = parent.children.last_mut().unwrap();
-        }
+            parent.push(pattern)
+        };
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Router;
-    use crate::binding::Binding;
+    use super::{Binding, Router};
 
     const PATHS: [&str; 5] = [
         "/",
