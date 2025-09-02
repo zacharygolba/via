@@ -1,4 +1,4 @@
-use smallvec::{smallvec, IntoIter, SmallVec};
+use smallvec::{IntoIter, SmallVec};
 use std::{iter, mem, slice};
 
 use crate::path::{self, Pattern, Split};
@@ -249,11 +249,14 @@ impl<T: Clone> Router<T> {
                 // Unconditional yield the root node to support middleware
                 // functions that are applied to the entire route stack.
                 .map(|node| {
+                    let mut results = SmallVec::new();
+
                     queue.push(&node.children);
+                    results.push(node);
 
                     Binding {
                         is_final: path == "/",
-                        results: smallvec![node].into_iter(),
+                        results: results.into_iter(),
                         range: None,
                     }
                 })
