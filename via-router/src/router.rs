@@ -5,7 +5,7 @@ use crate::path::{self, Param, Pattern, Split};
 
 /// A multi-dimensional set of branches at a given depth in the route tree.
 ///
-type Level<'a, T> = SmallVec<[&'a [Node<T>]; 2]>;
+type Level<'a, T> = SmallVec<[&'a [Node<T>]; 1]>;
 
 pub struct Route<'a, T>(&'a mut Node<T>);
 
@@ -233,7 +233,7 @@ impl<T> Router<T> {
         // against subsequent path segments.
         let mut entrypoint = Some(root);
 
-        // A multi-dimensional vec that can store up to 2 branches inline to
+        // A multi-dimensional vec that can store a single branch inline to
         // match against the current path segment.
         let mut branches = Level::new();
 
