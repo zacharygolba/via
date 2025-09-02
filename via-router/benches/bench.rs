@@ -116,11 +116,7 @@ fn find_matches_1(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/dashboard") {
-            binding
-                .results()
-                .fold(0, |sum, (_, iter)| sum + iter.count());
-        }
+        router.visit("/dashboard").count();
     });
 }
 
@@ -133,11 +129,7 @@ fn find_matches_2(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/dashboard/overview") {
-            binding
-                .results()
-                .fold(0, |sum, (_, iter)| sum + iter.count());
-        }
+        router.visit("/dashboard/overview").count();
     });
 }
 
@@ -150,11 +142,7 @@ fn find_matches_3(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/help/article/12345678987654321") {
-            binding
-                .results()
-                .fold(0, |sum, (_, iter)| sum + iter.count());
-        }
+        router.visit("/help/article/12345678987654321").count();
     });
 }
 
@@ -167,11 +155,7 @@ fn find_matches_4(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/api/v1/products/12345678987654321") {
-            binding
-                .results()
-                .fold(0, |sum, (_, iter)| sum + iter.count());
-        }
+        router.visit("/api/v1/products/12345678987654321").count();
     });
 }
 
@@ -184,12 +168,9 @@ fn find_matches_5(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
-        {
-            binding
-                .results()
-                .fold(0, |sum, (_, iter)| sum + iter.count());
-        }
+        router
+            .visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+            .count();
     });
 }
 
@@ -202,12 +183,9 @@ fn find_matches_6(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
-        {
-            binding
-                .results()
-                .fold(0, |sum, (_, iter)| sum + iter.count());
-        }
+        router
+            .visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+            .count();
     });
 }
 
@@ -220,12 +198,8 @@ fn find_matches_7(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for binding in
-            router.visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
-        {
-            binding
-                .results()
-                .fold(0, |sum, (_, iter)| sum + iter.count());
-        }
+        router
+            .visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
+            .count();
     });
 }
