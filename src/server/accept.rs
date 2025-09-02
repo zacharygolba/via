@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::{watch, Semaphore};
+use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinSet;
 use tokio::{signal, time};
 
@@ -118,8 +118,8 @@ where
             // ctrl+c signal is sent to the process.
             let mut shutdown_rx = shutdown_rx.clone();
 
-            // Create an AppService to serve the connection.
-            let service = AppService::new(Arc::clone(&app), max_body_size);
+            // Clone the arc pointer to app so it can be moved into the task.
+            let app = Arc::clone(&app);
 
             async move {
                 let result = match acceptor.accept(stream).await {
@@ -129,13 +129,19 @@ where
                         #[cfg(feature = "http2")]
                         let connection = conn::http2::Builder::new(TokioExecutor::new())
                             .timer(TokioTimer::new())
-                            .serve_connection(IoStream::new(accepted), service);
+                            .serve_connection(
+                                IoStream::new(accepted),
+                                AppService::new(app, max_body_size),
+                            );
 
                         // Create a new HTTP/1.1 connection.
                         #[cfg(all(feature = "http1", not(feature = "http2")))]
                         let connection = conn::http1::Builder::new()
                             .timer(TokioTimer::new())
-                            .serve_connection(IoStream::new(accepted), service)
+                            .serve_connection(
+                                IoStream::new(accepted),
+                                AppService::new(app, max_body_size),
+                            )
                             .with_upgrades();
 
                         tokio::pin!(connection);

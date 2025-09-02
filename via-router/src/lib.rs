@@ -3,4 +3,4 @@
 mod path;
 mod router;
 
-pub use router::{Binding, Route, Router};
+pub use router::{Iter, Route, Router};

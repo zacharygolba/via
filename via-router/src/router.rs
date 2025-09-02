@@ -1,5 +1,5 @@
-use smallvec::SmallVec;
-use std::{iter, mem};
+use smallvec::{IntoIter, SmallVec};
+use std::{iter, mem, slice};
 
 use crate::path::{self, Pattern, Split};
 
@@ -7,32 +7,43 @@ use crate::path::{self, Pattern, Split};
 ///
 type Level<'a, T> = SmallVec<[&'a [Node<T>]; 1]>;
 
+/// An iterator over the middleware for a matched route.
+///
+pub struct Iter<'a, T>(MatchCond<slice::Iter<'a, MatchCond<T>>>);
+
 pub struct Route<'a, T>(&'a mut Node<T>);
 
 #[derive(Debug)]
 pub struct Router<T>(Node<T>);
 
+#[derive(Debug)]
+enum MatchCond<T> {
+    Partial(T),
+    Final(T),
+}
+
 /// A group of nodes that match the path segment at `self.range`.
 ///
 #[derive(Debug)]
-pub struct Binding<'a, T> {
+struct Binding<'a, T> {
     is_final: bool,
     path_len: usize,
     results: SmallVec<[&'a Node<T>; 1]>,
     range: Option<[usize; 2]>,
 }
 
-#[derive(Debug)]
-pub struct Node<T> {
-    children: Vec<Node<T>>,
-    pattern: Pattern,
-    route: Vec<MatchCond<T>>,
+struct Results<'a, T> {
+    is_final: bool,
+    path_len: usize,
+    results: IntoIter<[&'a Node<T>; 1]>,
+    range: Option<[usize; 2]>,
 }
 
 #[derive(Debug)]
-enum MatchCond<T> {
-    Partial(T),
-    Final(T),
+struct Node<T> {
+    children: Vec<Node<T>>,
+    pattern: Pattern,
+    route: Vec<MatchCond<T>>,
 }
 
 fn match_root_node<'a, T>(
@@ -116,40 +127,6 @@ fn match_trailing_wildcards<'a, T>(
     })
 }
 
-impl<'a, T: Clone> Binding<'a, T> {
-    // TODO:
-    // Make a named type for the iterators returned from this fn. Then, impl
-    // IntoIterator for Binding and consider making it private.
-    pub fn results(
-        &self,
-    ) -> impl Iterator<
-        Item = (
-            Option<(String, [usize; 2])>,
-            impl Iterator<Item = T> + use<'_, T>,
-        ),
-    > + use<'_, 'a, T> {
-        self.results.iter().map(move |node| {
-            let (param, match_as_final) = match &node.pattern {
-                Pattern::Wildcard(name) => match &self.range {
-                    Some([start, _]) => (Some((name.clone(), [*start, self.path_len])), true),
-                    None => (Some((name.clone(), [self.path_len; 2])), true),
-                },
-                Pattern::Dynamic(name) => match self.range {
-                    Some(range) => (Some((name.clone(), range)), self.is_final),
-                    None => (None, self.is_final),
-                },
-                _ => (None, self.is_final),
-            };
-
-            if match_as_final {
-                (param, MatchCond::Final(node.route.iter()).cloned())
-            } else {
-                (param, MatchCond::Partial(node.route.iter()).cloned())
-            }
-        })
-    }
-}
-
 impl<'a, T> Binding<'a, T> {
     #[inline]
     fn new(is_final: bool, path_len: usize, range: Option<[usize; 2]>) -> Self {
@@ -197,6 +174,15 @@ where
                 },
             };
         }
+    }
+}
+
+impl<'a, T: Clone> Iterator for Iter<'a, T> {
+    type Item = T;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().cloned()
     }
 }
 
@@ -249,7 +235,10 @@ impl<T: Clone> Router<T> {
     /// If a node referenced by another node does not exist in the route tree.
     /// This router is insert-only, therefore this is a very unlikely scenario.
     ///
-    pub fn visit<'a, 'b>(&'a self, path: &'b str) -> impl Iterator<Item = Binding<'a, T>> + 'b
+    pub fn visit<'a, 'b>(
+        &'a self,
+        path: &'b str,
+    ) -> impl Iterator<Item = (Iter<'a, T>, Option<(String, [usize; 2])>)> + 'b
     where
         'a: 'b,
     {
@@ -276,7 +265,7 @@ impl<T: Clone> Router<T> {
         // determine if a binding is "final".
         let mut split = Split::new(path).peekable();
 
-        iter::from_fn(move || {
+        Iterator::flatten(iter::from_fn(move || {
             // We'll need this pointer at least once and also in 2 of the 3
             // possible branches that will run before the next binding is
             // returned
@@ -325,7 +314,7 @@ impl<T: Clone> Router<T> {
             mem::swap(branches, queue);
 
             next
-        })
+        }))
     }
 }
 
@@ -336,6 +325,53 @@ impl<T> Default for Router<T> {
             pattern: Pattern::Root,
             route: Vec::new(),
         })
+    }
+}
+
+impl<'a, T: Clone> IntoIterator for Binding<'a, T> {
+    type IntoIter = Results<'a, T>;
+    type Item = <Self::IntoIter as Iterator>::Item;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Results {
+            is_final: self.is_final,
+            path_len: self.path_len,
+            results: self.results.into_iter(),
+            range: self.range,
+        }
+    }
+}
+
+impl<'a, T: Clone> Iterator for Results<'a, T> {
+    type Item = (Iter<'a, T>, Option<(String, [usize; 2])>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let node = self.results.next()?;
+
+        match &node.pattern {
+            Pattern::Wildcard(name) => {
+                let param = match &self.range {
+                    Some([start, _]) => Some((name.clone(), [*start, self.path_len])),
+                    None => Some((name.clone(), [self.path_len; 2])),
+                };
+
+                Some((Iter(MatchCond::Final(node.route.iter())), param))
+            }
+            Pattern::Dynamic(name) => {
+                let param = self.range.map(|range| (name.clone(), range));
+
+                Some(if self.is_final {
+                    (Iter(MatchCond::Final(node.route.iter())), param)
+                } else {
+                    (Iter(MatchCond::Partial(node.route.iter())), param)
+                })
+            }
+            _ => Some(if self.is_final {
+                (Iter(MatchCond::Final(node.route.iter())), None)
+            } else {
+                (Iter(MatchCond::Partial(node.route.iter())), None)
+            }),
+        }
     }
 }
 

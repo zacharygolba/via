@@ -38,11 +38,9 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         let mut params = PathParams::new(Vec::with_capacity(8));
         let mut next = Next::new(VecDeque::new());
 
-        for binding in self.app.router.visit(request.uri().path()) {
-            for (param, middleware) in binding.results() {
-                params.extend(param);
-                next.extend(middleware);
-            }
+        for (stack, param) in self.app.router.visit(request.uri().path()) {
+            params.extend(param);
+            next.extend(stack);
         }
 
         let (parts, body) = request.into_parts();
