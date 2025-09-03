@@ -64,10 +64,11 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
             )
         };
 
-        // TODO:
-        // Consider using SmallVec instead of VecDeque. For now, we preallocate
-        // under the assumption that there is at least a global ErrorBoundary
-        // middleware that runs on every request.
+        // Preallocate for the middleware stack.
+        //
+        // In the future, we can cache lazily resolved middleware stacks to
+        // avoid this allocation and limit the atomic operations that occur
+        // during route resolution to 1 per dynamic param name.
         let mut next = Next::new(VecDeque::with_capacity(8));
 
         // Get a mutable reference to the path params associated with the
