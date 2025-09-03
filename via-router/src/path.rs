@@ -1,6 +1,8 @@
 use std::mem;
 use std::str::MatchIndices;
 
+pub type Param = (String, (usize, Option<usize>));
+
 pub struct Split<'a> {
     path: &'a str,
     offset: usize,
@@ -41,6 +43,16 @@ pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
             _ => Pattern::Static(segment.into()),
         }
     })
+}
+
+impl Pattern {
+    pub fn to_param(&self, range: &[usize; 2]) -> Option<(String, (usize, Option<usize>))> {
+        match self {
+            Self::Dynamic(name) => Some((name.clone(), (range[0], Some(range[1])))),
+            Self::Wildcard(name) => Some((name.clone(), (range[0], None))),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> Split<'a> {
@@ -127,22 +139,24 @@ mod tests {
         ]
     }
 
-    // #[test]
-    // fn test_split_into() {
-    //     let expected_results = get_expected_results();
+    #[test]
+    fn test_split_into() {
+        let expected_results = get_expected_results();
 
-    //     for (i, path) in PATHS.iter().enumerate() {
-    //         assert_eq!(
-    //             Split::new(path).count(),
-    //             expected_results[i].len(),
-    //             "Split produced more or less segments than expected for {}",
-    //             path
-    //         );
+        for (i, path) in PATHS.iter().enumerate() {
+            assert_eq!(
+                Split::new(path).count(),
+                expected_results[i].len(),
+                "Split produced more or less segments than expected for {}",
+                path
+            );
 
-    //         for (j, segment) in Split::new(path).enumerate() {
-    //             let expect = expected_results[i][j];
-    //             assert_eq!(segment, expect, "{} ({}, {:?})", path, j, segment);
-    //         }
-    //     }
-    // }
+            for (j, segment) in Split::new(path).enumerate() {
+                let [start, end] = expected_results[i][j];
+                let expect = (&path[start..end], [start, end]);
+
+                assert_eq!(segment, expect, "{} ({}, {:?})", path, j, segment);
+            }
+        }
+    }
 }

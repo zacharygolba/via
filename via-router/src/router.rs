@@ -1,7 +1,7 @@
 use smallvec::{IntoIter, SmallVec};
 use std::{iter, mem, slice};
 
-use crate::path::{self, Pattern, Split};
+use crate::path::{self, Param, Pattern, Split};
 
 /// A multi-dimensional set of branches at a given depth in the route tree.
 ///
@@ -26,7 +26,7 @@ enum MatchCond<T> {
 ///
 struct Binding<'a, T> {
     is_final: bool,
-    results: IntoIter<[&'a Node<T>; 1]>,
+    results: IntoIter<[&'a Node<T>; 2]>,
     range: Option<[usize; 2]>,
 }
 
@@ -45,21 +45,21 @@ fn match_next_segment<'a, T>(
     segment: &str,
     range: [usize; 2],
 ) -> Option<Binding<'a, T>> {
-    let mut results = SmallVec::new();
+    let mut results: Option<SmallVec<_>> = None;
 
     for branch in branches {
         for node in branch.iter() {
             match &node.pattern {
                 Pattern::Static(name) if name == segment => {
                     queue.push(&node.children);
-                    results.push(node);
+                    results.get_or_insert_default().push(node);
                 }
                 Pattern::Dynamic(_) => {
                     queue.push(&node.children);
-                    results.push(node);
+                    results.get_or_insert_default().push(node);
                 }
                 Pattern::Wildcard(_) => {
-                    results.push(node);
+                    results.get_or_insert_default().push(node);
                 }
                 Pattern::Static(_) => {
                     // The node does not match the path segment.
@@ -74,36 +74,30 @@ fn match_next_segment<'a, T>(
         }
     }
 
-    Some(Binding {
+    results.map(|vec| Binding {
         is_final,
-        results: results.into_iter(),
+        results: vec.into_iter(),
         range: Some(range),
     })
 }
 
 #[inline(always)]
 fn match_trailing_wildcards<'a, T>(branches: &Level<'a, T>) -> Option<Binding<'a, T>> {
-    let mut results = SmallVec::new();
-    let mut empty = true;
+    let mut results: Option<SmallVec<_>> = None;
 
     for branch in branches {
         for node in branch.iter() {
             if let Pattern::Wildcard(_) = &node.pattern {
-                empty = false;
-                results.push(node);
+                results.get_or_insert_default().push(node);
             }
         }
     }
 
-    if empty {
-        None
-    } else {
-        Some(Binding {
-            is_final: true,
-            results: results.into_iter(),
-            range: None,
-        })
-    }
+    results.map(|vec| Binding {
+        is_final: true,
+        results: vec.into_iter(),
+        range: None,
+    })
 }
 
 impl<T> MatchCond<T> {
@@ -205,7 +199,7 @@ impl<T: Clone> Router<T> {
     pub fn visit<'a, 'b>(
         &'a self,
         path: &'b str,
-    ) -> impl Iterator<Item = (Iter<'a, T>, Option<(String, (usize, Option<usize>))>)> + 'b
+    ) -> impl Iterator<Item = (Iter<'a, T>, Option<Param>)> + 'b
     where
         'a: 'b,
     {
@@ -246,7 +240,7 @@ impl<T: Clone> Router<T> {
             // that match the next path segment.
             let next = entrypoint
                 .take()
-                // Unconditional yield the root node to support middleware
+                // Unconditionally yield the root node to support middleware
                 // functions that are applied to the entire route stack.
                 .map(|node| {
                     let mut results = SmallVec::new();
@@ -304,31 +298,20 @@ impl<T> Default for Router<T> {
 }
 
 impl<'a, T: Clone> Iterator for Binding<'a, T> {
-    type Item = (Iter<'a, T>, Option<(String, (usize, Option<usize>))>);
+    type Item = (Iter<'a, T>, Option<Param>);
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.results.next()?;
+        let param = self
+            .range
+            .as_ref()
+            .and_then(|range| node.pattern.to_param(range));
 
-        match &node.pattern {
-            Pattern::Wildcard(name) => Some((
-                Iter(MatchCond::Final(node.route.iter())),
-                self.range.map(|[start, _]| (name.clone(), (start, None))),
-            )),
-            Pattern::Dynamic(name) => {
-                let param = Some(name.clone()).zip(self.range.map(|[s, e]| (s, Some(e))));
-
-                Some(if self.is_final {
-                    (Iter(MatchCond::Final(node.route.iter())), param)
-                } else {
-                    (Iter(MatchCond::Partial(node.route.iter())), param)
-                })
-            }
-            _ => Some(if self.is_final {
-                (Iter(MatchCond::Final(node.route.iter())), None)
-            } else {
-                (Iter(MatchCond::Partial(node.route.iter())), None)
-            }),
+        if self.is_final || matches!(&node.pattern, Pattern::Wildcard(_)) {
+            Some((Iter(MatchCond::Final(node.route.iter())), param))
+        } else {
+            Some((Iter(MatchCond::Partial(node.route.iter())), param))
         }
     }
 }
