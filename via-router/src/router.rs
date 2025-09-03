@@ -5,7 +5,7 @@ use crate::path::{self, Param, Pattern, Split};
 
 /// A multi-dimensional set of branches at a given depth in the route tree.
 ///
-type Level<'a, T> = SmallVec<[&'a [Node<T>]; 1]>;
+type Level<'a, T> = SmallVec<[&'a [Node<T>]; 2]>;
 
 /// An iterator over the middleware for a matched route.
 ///
