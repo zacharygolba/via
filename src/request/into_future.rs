@@ -8,10 +8,10 @@ use std::fmt::{self, Formatter};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 
+use super::RequestBody;
 use crate::error::{DynError, Error};
-use crate::BoxBody;
 
 /// The entire contents of a request body, in-memory.
 ///
@@ -23,7 +23,7 @@ pub struct Payload {
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct IntoFuture {
-    body: BoxBody,
+    body: RequestBody,
     payload: Option<Payload>,
 }
 
@@ -104,7 +104,7 @@ impl Payload {
 }
 
 impl IntoFuture {
-    pub(crate) fn new(body: BoxBody) -> Self {
+    pub(crate) fn new(body: RequestBody) -> Self {
         Self {
             body,
             payload: Some(Payload {
@@ -116,7 +116,7 @@ impl IntoFuture {
 }
 
 impl IntoFuture {
-    fn project(self: Pin<&mut Self>) -> (Pin<&mut BoxBody>, &mut Option<Payload>) {
+    fn project(self: Pin<&mut Self>) -> (Pin<&mut RequestBody>, &mut Option<Payload>) {
         let this = self.get_mut();
         (Pin::new(&mut this.body), &mut this.payload)
     }

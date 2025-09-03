@@ -8,7 +8,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use crate::BoxBody;
 use crate::app::App;
 use crate::middleware::{BoxFuture, Next};
 use crate::request::param::PathParams;
@@ -35,21 +34,45 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
     type Response = http::Response<ResponseBody>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
-        // Allocate early for path parameters to confirm that we are able to
-        // perform an allocation before serving the request.
-        //
-        // It's safer to fail here than later on when application specific
-        // business logic takes over.
-        let mut params = PathParams::new(Vec::with_capacity(8));
+        // Wrap the raw HTTP request in our custom Request struct.
+        let mut request = {
+            // Split the incoming request into it's component parts.
+            let (parts, body) = request.into_parts();
 
-        // Dynamically allocate to store the middleware stack for the request.
-        let mut next = Next::new(VecDeque::new());
+            Request::new(
+                // Request type owns an Arc to the global application state.
+                // This requires an atomic op. Performing it early is likely
+                // beneficial to synchronize "the state of the world" before
+                // routing the request. Subsequent atomic ops are conditional.
+                Arc::clone(&self.app.state),
+                // Allocate early for path parameters to confirm that we are
+                // able to perform an allocation before serving the request.
+                //
+                // It's safer to fail here than later on when application
+                // specific business logic takes over.
+                Head::new(parts, PathParams::new(Vec::with_capacity(8))),
+                // Do not allocate for the request body until it's absolutely
+                // necessary.
+                //
+                // They are buffered by default behind a channel. Therefore,
+                // there is no risk of the request body overflowing the stack.
+                //
+                // This is also a small performance optimization that avoids an
+                // additional allocation if you end up reading the entire body
+                // into memory, a common case for backend JSON APIs.
+                Limited::new(body, self.max_body_size),
+            )
+        };
 
-        // The request type owns an Arc to the global application state. This
-        // requires an atomic op. Performing it early is likely beneficial to
-        // synchronize "the state of the world" before routing the request.
-        // Every other atomic op performed is conditional.
-        let state = Arc::clone(&self.app.state);
+        // TODO:
+        // Consider using SmallVec instead of VecDeque. For now, we preallocate
+        // under the assumption that there is at least a global ErrorBoundary
+        // middleware that runs on every request.
+        let mut next = Next::new(VecDeque::with_capacity(8));
+
+        // Get a mutable reference to the path params associated with the
+        // request as well as a str to the uri path.
+        let (params, path) = request.params_mut_with_path();
 
         // 1 atomic op per matched middleware fn and an additional op if the
         // path segment matched a dynamic segment.
@@ -57,20 +80,17 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         // Allocations only occur if a path segment has 2 :dynamic or *wildcard
         // patterns and a static a static pattern that matches the path
         // segment.
-        for (stack, param) in self.app.router.visit(request.uri().path()) {
+        for (stack, param) in self.app.router.visit(path) {
+            // Add the matched route's middleware to the call stack.
             next.extend(stack.map(Arc::clone));
+
             if let Some((name, range)) = param {
+                // Include the resolved dynamic parameter in params.
                 params.push(Arc::clone(name), range);
             }
         }
 
-        let (parts, body) = request.into_parts();
-        let request = Request::new(
-            state,
-            Head::new(parts, params),
-            BoxBody::new(Limited::new(body, self.max_body_size)),
-        );
-
+        // Call the middleware stack to get a response.
         ServeRequest(next.call(request))
     }
 }
