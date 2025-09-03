@@ -1,7 +1,8 @@
 use std::mem;
 use std::str::MatchIndices;
+use std::sync::Arc;
 
-pub type Param = (String, (usize, Option<usize>));
+pub type Param = (Arc<str>, (usize, Option<usize>));
 
 pub struct Split<'a> {
     path: &'a str,
@@ -13,8 +14,8 @@ pub struct Split<'a> {
 pub enum Pattern {
     Root,
     Static(String),
-    Dynamic(String),
-    Wildcard(String),
+    Dynamic(Arc<str>),
+    Wildcard(Arc<str>),
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
@@ -46,10 +47,10 @@ pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
 }
 
 impl Pattern {
-    pub fn to_param(&self, range: &[usize; 2]) -> Option<(String, (usize, Option<usize>))> {
+    pub fn to_param(&self, range: &[usize; 2]) -> Option<Param> {
         match self {
-            Self::Dynamic(name) => Some((name.clone(), (range[0], Some(range[1])))),
-            Self::Wildcard(name) => Some((name.clone(), (range[0], None))),
+            Self::Dynamic(name) => Some((Arc::clone(name), (range[0], Some(range[1])))),
+            Self::Wildcard(name) => Some((Arc::clone(name), (range[0], None))),
             _ => None,
         }
     }

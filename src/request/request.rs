@@ -66,7 +66,7 @@ impl Head {
             self.parts.uri.path(),
             Some(self.params.iter().find_map(
                 |(param, range)| {
-                    if param == name { Some(*range) } else { None }
+                    if &**param == name { Some(*range) } else { None }
                 },
             )),
         )

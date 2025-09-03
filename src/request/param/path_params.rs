@@ -1,28 +1,29 @@
 use std::fmt::{self, Debug, Formatter};
 use std::slice;
+use via_router::Param;
 
 #[derive(Default)]
 pub struct PathParams {
-    data: Vec<(String, (usize, Option<usize>))>,
+    data: Vec<Param>,
 }
 
 impl PathParams {
     #[inline]
-    pub fn new(data: Vec<(String, (usize, Option<usize>))>) -> Self {
+    pub fn new(data: Vec<Param>) -> Self {
         Self { data }
     }
 
     #[inline]
-    pub fn iter(&self) -> slice::Iter<'_, (String, (usize, Option<usize>))> {
+    pub fn iter(&self) -> slice::Iter<'_, Param> {
         self.data.iter()
     }
 }
 
-impl Extend<(String, (usize, Option<usize>))> for PathParams {
+impl Extend<Param> for PathParams {
     #[inline]
     fn extend<I>(&mut self, iter: I)
     where
-        I: IntoIterator<Item = (String, (usize, Option<usize>))>,
+        I: IntoIterator<Item = Param>,
     {
         self.data.extend(iter);
     }
