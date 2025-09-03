@@ -35,17 +35,38 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
     type Response = http::Response<ResponseBody>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
+        // Allocate early for path parameters to confirm that we are able to
+        // perform an allocation before serving the request.
+        //
+        // It's safer to fail here than later on when application specific
+        // business logic takes over.
         let mut params = PathParams::new(Vec::with_capacity(8));
+
+        // Dynamically allocate to store the middleware stack for the request.
         let mut next = Next::new(VecDeque::new());
 
+        // The request type owns an Arc to the global application state. This
+        // requires an atomic op. Performing it early is likely beneficial to
+        // synchronize "the state of the world" before routing the request.
+        // Every other atomic op performed is conditional.
+        let state = Arc::clone(&self.app.state);
+
+        // 1 atomic op per matched middleware fn and an additional op if the
+        // path segment matched a dynamic segment.
+        //
+        // Allocations only occur if a path segment has 2 :dynamic or *wildcard
+        // patterns and a static a static pattern that matches the path
+        // segment.
         for (stack, param) in self.app.router.visit(request.uri().path()) {
-            params.extend(param);
-            next.extend(stack);
+            next.extend(stack.map(Arc::clone));
+            if let Some((name, range)) = param {
+                params.push(Arc::clone(name), range);
+            }
         }
 
         let (parts, body) = request.into_parts();
         let request = Request::new(
-            Arc::clone(&self.app.state),
+            state,
             Head::new(parts, params),
             BoxBody::new(Limited::new(body, self.max_body_size)),
         );

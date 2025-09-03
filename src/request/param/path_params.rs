@@ -1,36 +1,25 @@
-use std::fmt::{self, Debug, Formatter};
 use std::slice;
+use std::sync::Arc;
 use via_router::Param;
 
-#[derive(Default)]
-pub struct PathParams {
-    data: Vec<Param>,
-}
+#[derive(Debug)]
+pub struct PathParams(Vec<Param>);
 
 impl PathParams {
     #[inline]
     pub fn new(data: Vec<Param>) -> Self {
-        Self { data }
+        Self(data)
     }
 
     #[inline]
     pub fn iter(&self) -> slice::Iter<'_, Param> {
-        self.data.iter()
+        self.0.iter()
     }
 }
 
-impl Extend<Param> for PathParams {
+impl PathParams {
     #[inline]
-    fn extend<I>(&mut self, iter: I)
-    where
-        I: IntoIterator<Item = Param>,
-    {
-        self.data.extend(iter);
-    }
-}
-
-impl Debug for PathParams {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Debug::fmt(&self.data, f)
+    pub(crate) fn push(&mut self, name: Arc<str>, range: (usize, Option<usize>)) {
+        self.0.push((name, range));
     }
 }

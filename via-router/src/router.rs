@@ -1,7 +1,7 @@
 use smallvec::{IntoIter, SmallVec};
-use std::{iter, mem, slice};
+use std::{iter, mem, slice, sync::Arc};
 
-use crate::path::{self, Param, Pattern, Split};
+use crate::path::{self, Pattern, Split};
 
 /// A multi-dimensional set of branches at a given depth in the route tree.
 ///
@@ -138,12 +138,12 @@ where
     }
 }
 
-impl<'a, T: Clone> Iterator for Iter<'a, T> {
-    type Item = T;
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().cloned()
+        self.0.next()
     }
 }
 
@@ -180,7 +180,7 @@ impl<T> Route<'_, T> {
     }
 }
 
-impl<T: Clone> Router<T> {
+impl<T> Router<T> {
     pub fn new() -> Self {
         Default::default()
     }
@@ -199,7 +199,7 @@ impl<T: Clone> Router<T> {
     pub fn visit<'a, 'b>(
         &'a self,
         path: &'b str,
-    ) -> impl Iterator<Item = (Iter<'a, T>, Option<Param>)> + 'b
+    ) -> impl Iterator<Item = (Iter<'a, T>, Option<(&'a Arc<str>, (usize, Option<usize>))>)> + 'b
     where
         'a: 'b,
     {
@@ -297,8 +297,8 @@ impl<T> Default for Router<T> {
     }
 }
 
-impl<'a, T: Clone> Iterator for Binding<'a, T> {
-    type Item = (Iter<'a, T>, Option<Param>);
+impl<'a, T> Iterator for Binding<'a, T> {
+    type Item = (Iter<'a, T>, Option<(&'a Arc<str>, (usize, Option<usize>))>);
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {

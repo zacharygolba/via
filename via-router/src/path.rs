@@ -47,10 +47,10 @@ pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
 }
 
 impl Pattern {
-    pub fn to_param(&self, range: &[usize; 2]) -> Option<Param> {
+    pub fn to_param(&self, range: &[usize; 2]) -> Option<(&Arc<str>, (usize, Option<usize>))> {
         match self {
-            Self::Dynamic(name) => Some((Arc::clone(name), (range[0], Some(range[1])))),
-            Self::Wildcard(name) => Some((Arc::clone(name), (range[0], None))),
+            Self::Dynamic(name) => Some((name, (range[0], Some(range[1])))),
+            Self::Wildcard(name) => Some((name, (range[0], None))),
             _ => None,
         }
     }
