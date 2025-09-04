@@ -45,21 +45,21 @@ fn match_next_segment<'a, T>(
     segment: &str,
     range: [usize; 2],
 ) -> Option<Binding<'a, T>> {
-    let mut results: Option<SmallVec<_>> = None;
+    let mut results = SmallVec::new();
 
     for branch in branches {
         for node in branch.iter() {
             match &node.pattern {
                 Pattern::Static(name) if name == segment => {
                     queue.push(&node.children);
-                    results.get_or_insert_default().push(node);
+                    results.push(node);
                 }
                 Pattern::Dynamic(_) => {
                     queue.push(&node.children);
-                    results.get_or_insert_default().push(node);
+                    results.push(node);
                 }
                 Pattern::Wildcard(_) => {
-                    results.get_or_insert_default().push(node);
+                    results.push(node);
                 }
                 Pattern::Static(_) => {
                     // The node does not match the path segment.
@@ -74,30 +74,38 @@ fn match_next_segment<'a, T>(
         }
     }
 
-    results.map(|vec| Binding {
-        is_final,
-        results: vec.into_iter(),
-        range: Some(range),
-    })
+    if results.is_empty() {
+        None
+    } else {
+        Some(Binding {
+            is_final,
+            results: results.into_iter(),
+            range: Some(range),
+        })
+    }
 }
 
 #[inline(always)]
 fn match_trailing_wildcards<'a, T>(branches: &Level<'a, T>) -> Option<Binding<'a, T>> {
-    let mut results: Option<SmallVec<_>> = None;
+    let mut results = SmallVec::new();
 
     for branch in branches {
         for node in branch.iter() {
             if let Pattern::Wildcard(_) = &node.pattern {
-                results.get_or_insert_default().push(node);
+                results.push(node);
             }
         }
     }
 
-    results.map(|vec| Binding {
-        is_final: true,
-        results: vec.into_iter(),
-        range: None,
-    })
+    if results.is_empty() {
+        None
+    } else {
+        Some(Binding {
+            is_final: true,
+            results: results.into_iter(),
+            range: None,
+        })
+    }
 }
 
 impl<T> MatchCond<T> {
