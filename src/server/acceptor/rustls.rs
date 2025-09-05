@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use tokio::net::TcpStream;
-use tokio_rustls::server::TlsStream;
 use tokio_rustls::TlsAcceptor;
-use tokio_rustls::{rustls, Accept};
+use tokio_rustls::server::TlsStream;
+use tokio_rustls::{Accept, rustls};
 
 pub use rustls::ServerConfig as RustlsConfig;
 

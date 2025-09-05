@@ -8,7 +8,7 @@ mod middleware;
 mod next;
 mod timeout;
 
-pub use filter::{filter, Filter, Predicate};
+pub use filter::{Filter, Predicate, filter};
 pub use middleware::{BoxFuture, Middleware, Result};
 pub use next::Next;
-pub use timeout::{timeout, Timeout};
+pub use timeout::{Timeout, timeout};

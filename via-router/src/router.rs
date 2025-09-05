@@ -1,98 +1,186 @@
-use smallvec::SmallVec;
-use std::slice;
+use smallvec::{smallvec, IntoIter, SmallVec};
+use std::iter::Peekable;
+use std::sync::Arc;
+use std::{mem, slice};
 
-use crate::binding::{Binding, MatchCond, MatchKind};
-use crate::error::Error;
 use crate::path::{self, Param, Pattern, Split};
 
-/// The capacity of the vec used to store indices (usize) to the children of
-/// the nodes that matched the last path segment.
+/// A multi-dimensional set of branches at a given depth in the route tree.
 ///
-const VISIT_BRANCH_CAPACITY: usize = 32;
+type Level<'a, T> = SmallVec<[&'a [Node<T>]; 2]>;
 
-/// The capacity of the vec returned from the Router::visit fn. This number is
-/// calculated by assuming 7 path segments plus a binding to the root node.
+/// An iterator over the middleware for a matched route.
 ///
-const VISIT_RESULTS_CAPACITY: usize = 8;
+pub struct Route<'a, T>(MatchCond<slice::Iter<'a, MatchCond<T>>>);
+
+pub struct RouteMut<'a, T>(&'a mut Node<T>);
 
 #[derive(Debug)]
-pub struct Node<T> {
-    children: Vec<usize>,
+pub struct Router<T>(Node<T>);
+
+pub struct Traverse<'a, 'b, T> {
+    depth: Option<Binding<'a, T>>,
+    queue: Level<'a, T>,
+    branches: Level<'a, T>,
+    path_segments: Peekable<Split<'b>>,
+}
+
+#[derive(Debug)]
+enum MatchCond<T> {
+    Partial(T),
+    Final(T),
+}
+
+/// A group of nodes that match the path segment at `self.range`.
+///
+struct Binding<'a, T> {
+    is_final: bool,
+    results: IntoIter<[&'a Node<T>; 2]>,
+    range: Option<[usize; 2]>,
+}
+
+#[derive(Debug)]
+struct Node<T> {
+    children: Vec<Node<T>>,
     pattern: Pattern,
     route: Vec<MatchCond<T>>,
 }
 
-#[derive(Debug)]
-pub struct Router<T> {
-    tree: Vec<Node<T>>,
-}
+#[inline(always)]
+fn match_next_segment<'a, T>(
+    is_final: bool,
+    queue: &mut Level<'a, T>,
+    branches: &Level<'a, T>,
+    segment: &str,
+    range: [usize; 2],
+) -> Option<Binding<'a, T>> {
+    let mut results = SmallVec::new();
 
-pub struct Route<'a, T> {
-    tree: &'a mut Vec<Node<T>>,
-    key: usize,
-}
-
-impl<T> Node<T> {
-    fn new(pattern: Pattern) -> Self {
-        Self {
-            children: Vec::new(),
-            pattern,
-            route: Vec::new(),
+    for branch in branches {
+        for node in *branch {
+            match &node.pattern {
+                Pattern::Static(name) if name == segment => {
+                    queue.push(&node.children);
+                    results.push(node);
+                }
+                Pattern::Dynamic(_) => {
+                    queue.push(&node.children);
+                    results.push(node);
+                }
+                Pattern::Wildcard(_) => {
+                    results.push(node);
+                }
+                Pattern::Static(_) => {
+                    // The node does not match the path segment.
+                }
+                Pattern::Root => {
+                    // The root node was matched as a descendant of a child node.
+                    // Either an error occurred during the construction of the
+                    // route tree or the memory where the route tree is stored
+                    // became corrupt.
+                }
+            }
         }
+    }
+
+    if results.is_empty() {
+        None
+    } else {
+        Some(Binding {
+            is_final,
+            results: results.into_iter(),
+            range: Some(range),
+        })
     }
 }
 
-impl<T> Node<T> {
+#[inline(always)]
+fn match_trailing_wildcards<'a, T>(branches: &Level<'a, T>) -> Option<Binding<'a, T>> {
+    let mut results = SmallVec::new();
+
+    for branch in branches {
+        for node in *branch {
+            if let Pattern::Wildcard(_) = &node.pattern {
+                results.push(node);
+            }
+        }
+    }
+
+    if results.is_empty() {
+        None
+    } else {
+        Some(Binding {
+            is_final: true,
+            results: results.into_iter(),
+            range: None,
+        })
+    }
+}
+
+impl<T> MatchCond<T> {
     #[inline]
-    pub fn param<F>(&self, f: F) -> Option<(Param, [usize; 2])>
-    where
-        F: FnOnce() -> Option<[usize; 2]>,
-    {
-        if let Pattern::Dynamic(name) | Pattern::Wildcard(name) = &self.pattern {
-            Some((name.clone(), f()?))
+    fn as_either(&self) -> &T {
+        match self {
+            Self::Final(value) | Self::Partial(value) => value,
+        }
+    }
+
+    #[inline]
+    fn as_partial(&self) -> Option<&T> {
+        if let Self::Partial(value) = self {
+            Some(value)
         } else {
             None
         }
     }
+}
 
-    #[inline]
-    pub fn route(&self) -> slice::Iter<'_, MatchCond<T>> {
-        self.route.iter()
-    }
+impl<'a, T, U> Iterator for MatchCond<T>
+where
+    T: Iterator<Item = &'a MatchCond<U>>,
+    U: 'a,
+{
+    type Item = &'a U;
 
-    #[inline]
-    pub fn matches<'node, 'predicate, U>(
-        &'node self,
-        predicate: &'predicate MatchCond<U>,
-    ) -> impl Iterator<Item = &'node T> + 'predicate
-    where
-        'node: 'predicate,
-    {
-        self.route
-            .iter()
-            .filter_map(|other| predicate.matches(other.as_ref()))
-    }
-
-    #[inline]
-    pub fn exact(&self) -> impl Iterator<Item = &T> {
-        self.route.iter().map(MatchCond::as_either)
-    }
-
-    #[inline]
-    pub fn partial(&self) -> impl Iterator<Item = &T> {
-        self.route.iter().filter_map(MatchCond::as_partial)
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            break match self {
+                MatchCond::Final(iter) => iter.next().map(MatchCond::as_either),
+                MatchCond::Partial(iter) => match iter.next()?.as_partial() {
+                    None => continue,
+                    some => some,
+                },
+            };
+        }
     }
 }
 
-impl<T> Route<'_, T> {
-    pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
-        let mut segments = path::patterns(path);
-        let key = insert(self.tree, &mut segments, self.key);
+impl<'a, T> Iterator for Route<'a, T> {
+    type Item = &'a T;
 
-        Route {
-            tree: self.tree,
-            key,
-        }
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+}
+
+impl<T> Node<T> {
+    fn push(&mut self, pattern: Pattern) -> &mut Node<T> {
+        let children = &mut self.children;
+        let index = children.len();
+
+        children.push(Node {
+            children: Vec::new(),
+            pattern,
+            route: Vec::new(),
+        });
+
+        &mut children[index]
+    }
+}
+
+impl<T> RouteMut<'_, T> {
+    pub fn at(&mut self, path: &'static str) -> RouteMut<'_, T> {
+        RouteMut(insert(self.0, path::patterns(path)))
     }
 
     pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) {
@@ -100,13 +188,11 @@ impl<T> Route<'_, T> {
     }
 
     pub fn include(&mut self, middleware: T) {
-        let node = &mut self.tree[self.key];
-        node.route.push(MatchCond::Partial(middleware));
+        self.0.route.push(MatchCond::Partial(middleware));
     }
 
     pub fn respond(&mut self, middleware: T) {
-        let node = &mut self.tree[self.key];
-        node.route.push(MatchCond::Exact(middleware));
+        self.0.route.push(MatchCond::Final(middleware));
     }
 }
 
@@ -115,196 +201,144 @@ impl<T> Router<T> {
         Default::default()
     }
 
-    pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
-        let mut segments = path::patterns(path);
-        let key = insert(&mut self.tree, &mut segments, 0);
-
-        Route {
-            tree: &mut self.tree,
-            key,
-        }
+    pub fn at(&mut self, path: &'static str) -> RouteMut<'_, T> {
+        RouteMut(insert(&mut self.0, path::patterns(path)))
     }
 
     /// Match the path argument against nodes in the route tree.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use via_router::{MatchKind, Router};
-    ///
-    /// let mut router = Router::new();
-    ///
-    /// router.at("/articles").scope(|articles| {
-    ///    articles.at("/:id").respond("Hello, world!".to_owned());
-    /// });
-    ///
-    /// let path = "articles/12345";
-    /// let matched = router.visit(path).unwrap().into_iter().find_map(|binding| {
-    ///    let range = binding.range();
-    ///
-    ///    binding.nodes().find_map(|kind| match kind {
-    ///       // Wildcard paths are not used in this example.
-    ///       MatchKind::Wildcard(_) => None,
-    ///
-    ///       // The node is an exact match. Map it to the desired output and return.
-    ///       MatchKind::Edge(cond) => {
-    ///          let node = cond.as_either();
-    ///
-    ///          Some((
-    ///             cond.matches(node.route().next().cloned()?)?,
-    ///             node.param(|| binding.range()),
-    ///          ))
-    ///       }
-    ///    })
-    /// });
-    ///
-    /// if let Some((route, param)) = matched {
-    ///    println!("matched {}", path);
-    ///
-    ///    if let Some((name, [start, end])) = param {
-    ///       println!("  param: {} = {}", name, &path[start..end]);
-    ///    }
-    ///
-    ///    println!("  => {}", route);
-    /// }
-    /// ```
     ///
     /// # Panics
     ///
     /// If a node referenced by another node does not exist in the route tree.
     /// This router is insert-only, therefore this is a very unlikely scenario.
     ///
-    pub fn visit<'a>(&'a self, path: &str) -> Result<Vec<Binding<'a, T>>, Error> {
-        let mut segments = Split::new(path).lookahead();
-        let mut results = Vec::with_capacity(VISIT_RESULTS_CAPACITY);
-        let mut branch = Vec::with_capacity(VISIT_BRANCH_CAPACITY);
-        let mut next = SmallVec::<[&[usize]; 2]>::new();
+    pub fn traverse<'a, 'b>(&'a self, path: &'b str) -> Traverse<'a, 'b, T>
+    where
+        'a: 'b,
+    {
+        let root = &self.0;
 
-        let tree = &self.tree;
+        let mut path_segments = Split::new(path).peekable();
 
-        if let Some(root) = tree.first() {
-            let mut nodes = SmallVec::new();
-
-            branch.extend_from_slice(&root.children);
-
-            nodes.push(MatchKind::edge(!segments.has_next(), root));
-            results.push(Binding::new_with_nodes(None, nodes));
+        Traverse {
+            depth: Some(Binding {
+                is_final: path_segments.peek().is_none(),
+                results: smallvec![root].into_iter(),
+                range: None,
+            }),
+            queue: SmallVec::new(),
+            branches: smallvec![&*root.children],
+            path_segments,
         }
-
-        for (is_exact, range) in &mut segments {
-            let mut binding = Binding::new(range);
-            let segment = match path.get(range[0]..range[1]) {
-                Some(value) => value,
-                None => return Err(Error::path()),
-            };
-
-            {
-                let mut drain = branch.drain(..);
-
-                for key in &mut drain {
-                    let node = match tree.get(key) {
-                        Some(exists) => exists,
-                        None => {
-                            while drain.next().is_some() {}
-                            return Err(Error::router());
-                        }
-                    };
-
-                    binding.push(match &node.pattern {
-                        Pattern::Static(value) if value == segment => {
-                            next.push(&node.children);
-                            MatchKind::edge(is_exact, node)
-                        }
-                        Pattern::Dynamic(_) => {
-                            next.push(&node.children);
-                            MatchKind::edge(is_exact, node)
-                        }
-                        Pattern::Static(_) | Pattern::Root => continue,
-                        Pattern::Wildcard(_) => MatchKind::wildcard(node),
-                    });
-                }
-            }
-
-            for children in next.drain(..) {
-                branch.extend_from_slice(children);
-            }
-
-            if binding.has_nodes() {
-                results.push(binding);
-            }
-        }
-
-        let mut wildcards = branch.drain(..).filter_map(|key| {
-            let node = tree.get(key)?;
-            if let Pattern::Wildcard(_) = &node.pattern {
-                Some(MatchKind::wildcard(node))
-            } else {
-                None
-            }
-        });
-
-        if let Some(wildcard) = wildcards.next() {
-            let mut nodes = SmallVec::new();
-
-            nodes.push(wildcard);
-            nodes.extend(wildcards);
-            results.push(Binding::new_with_nodes(None, nodes));
-        }
-
-        Ok(results)
     }
 }
 
 impl<T> Default for Router<T> {
     fn default() -> Self {
-        Self {
-            tree: vec![Node::new(Pattern::Root)],
+        Self(Node {
+            children: Vec::new(),
+            pattern: Pattern::Root,
+            route: Vec::new(),
+        })
+    }
+}
+
+impl<'a, T> Iterator for Binding<'a, T> {
+    type Item = (Route<'a, T>, Option<(&'a Arc<str>, Param)>);
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        let node = self.results.next()?;
+        let param = match &self.range {
+            Some(range) => node.pattern.param(range),
+            None => None,
+        };
+
+        if self.is_final || matches!(&node.pattern, Pattern::Wildcard(_)) {
+            Some((Route(MatchCond::Final(node.route.iter())), param))
+        } else {
+            Some((Route(MatchCond::Partial(node.route.iter())), param))
         }
     }
 }
 
-fn insert<T, I>(tree: &mut Vec<Node<T>>, segments: &mut I, parent_key: usize) -> usize
+impl<'a, 'b, T> Iterator for Traverse<'a, 'b, T> {
+    type Item = (Route<'a, T>, Option<(&'a Arc<str>, Param)>);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let depth = &mut self.depth;
+        let branches = &mut self.branches;
+
+        loop {
+            if let Some(binding) = depth {
+                if let Some(next) = binding.next() {
+                    return Some(next);
+                }
+            }
+
+            *depth = match self.path_segments.next() {
+                None => match_trailing_wildcards(branches),
+                Some((segment, range)) => match_next_segment(
+                    self.path_segments.peek().is_none(),
+                    &mut self.queue,
+                    branches,
+                    segment,
+                    range,
+                ),
+            };
+
+            match depth {
+                None => return None,
+                Some(_) => {
+                    branches.clear();
+                    mem::swap(branches, &mut self.queue);
+                }
+            }
+        }
+    }
+}
+
+fn insert<T, I>(node: &mut Node<T>, mut segments: I) -> &mut Node<T>
 where
     I: Iterator<Item = Pattern>,
 {
-    // If the current node is a catch-all, we can skip the rest of the segments.
-    // In the future we may want to panic if the caller tries to insert a node
-    // into a catch-all node rather than silently ignoring the rest of the
-    // segments.
-    if let Pattern::Wildcard(_) = &tree[parent_key].pattern {
-        return parent_key;
-    }
+    let mut parent = node;
 
-    // If there are no more segments, we can return the current key.
-    let pattern = match segments.next() {
-        Some(value) => value,
-        None => return parent_key,
-    };
-
-    // Check if the pattern already exists in the node at `current_key`. If it
-    // does, we can continue to the next segment.
-    for key in tree[parent_key].children.iter().copied() {
-        if pattern == tree[key].pattern {
-            return insert(tree, segments, key);
+    loop {
+        // If the current node is a catch-all, we can skip the rest of the segments.
+        // In the future we may want to panic if the caller tries to insert a node
+        // into a catch-all node rather than silently ignoring the rest of the
+        // segments.
+        if let Pattern::Wildcard(_) = &parent.pattern {
+            return parent;
         }
+
+        // If there are no more segments, we can return the current key.
+        let pattern = match segments.next() {
+            Some(value) => value,
+            None => return parent,
+        };
+
+        parent = if let Some(index) = parent
+            .children
+            .iter()
+            .position(|node| pattern == node.pattern)
+        {
+            &mut parent.children[index]
+        } else {
+            parent.push(pattern)
+        };
     }
-
-    let next_key = tree.len();
-    tree.push(Node::new(pattern));
-
-    tree[parent_key].children.push(next_key);
-
-    // If the pattern does not exist in the node at `current_key`, we need to create
-    // a new node as a descendant of the node at `current_key` and then insert it
-    // into the store.
-    insert(tree, segments, next_key)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Node, Router};
-    use crate::binding::{Binding, MatchCond, MatchKind};
-    use crate::path::{Param, Pattern};
+    use std::iter::Map;
+    use std::sync::Arc;
+
+    use super::{Route, Router};
+    use crate::path::Param;
 
     const PATHS: [&str; 5] = [
         "/",
@@ -314,476 +348,213 @@ mod tests {
         "/articles/:id/comments",
     ];
 
-    impl Pattern {
-        pub(crate) fn as_static(&self) -> Option<&str> {
-            if let Pattern::Static(value) = self {
-                Some(value)
-            } else {
-                None
-            }
+    type Match<'a, N = Arc<str>> = (
+        Map<Route<'a, String>, fn(&'a String) -> &'a str>,
+        Option<(&'a N, Param)>,
+    );
+
+    macro_rules! assert_param_matches {
+        ($param:expr, $pat:pat) => {
+            assert!(
+                matches!($param, $pat),
+                "\n{} => {:?}\n",
+                stringify!($pat),
+                $param
+            )
+        };
+    }
+
+    fn expect_match<'a>(
+        resolved: Option<(Route<'a, String>, Option<(&'a Arc<str>, Param)>)>,
+    ) -> Match<'a, str> {
+        if let Some((stack, param)) = resolved {
+            (
+                stack.map(String::as_str),
+                param.map(|(name, range)| (name.as_ref(), range)),
+            )
+        } else {
+            panic!("unexpected end of matched routes");
         }
     }
 
-    impl MatchCond<String> {
-        fn as_str(&self) -> MatchCond<&str> {
-            self.as_ref().map(|string| string.as_str())
-        }
-    }
+    fn assert_matches_root((mut stack, param): Match<'_, str>) {
+        assert!(matches!(stack.next(), Some("/")));
+        assert!(stack.next().is_none());
 
-    impl<T> MatchKind<'_, T> {
-        fn node(&self) -> &Node<T> {
-            match *self {
-                Self::Edge(ref cond) => cond.as_either(),
-                Self::Wildcard(node) => node,
-            }
-        }
-
-        fn param(&self) -> Option<&Param> {
-            match &self.node().pattern {
-                Pattern::Dynamic(name) | Pattern::Wildcard(name) => Some(name),
-                Pattern::Static(_) | Pattern::Root => None,
-            }
-        }
-    }
-
-    fn assert_init_binding(binding: &Binding<String>, f: impl Fn(&MatchKind<String>) -> bool) {
-        assert!(binding.range().is_none());
-        assert_eq!(binding.nodes().count(), 1);
-
-        let match_kind = binding.nodes().next().unwrap();
-
-        assert_eq!(match_kind.param(), None);
-        assert!(f(&match_kind));
-
-        let mut route = match_kind.node().route();
-
-        assert!(matches!(
-            route.next().map(MatchCond::as_str),
-            Some(MatchCond::Partial("/"))
-        ));
-
-        assert!(route.next().is_none());
+        assert!(param.is_none());
     }
 
     #[test]
-    fn test_router_visit() {
+    fn test_router_resolve() {
         let mut router = Router::new();
 
         for path in PATHS {
             let _ = router.at(path).include(path.to_owned());
         }
 
-        //
-        // Visit("/") [
-        //     Binding(None) [
-        //         Edge(Exact(Node {
-        //             children: [1, 2, 4],
-        //             pattern: Root,
-        //             route: [Partial("/")],
-        //         })),
-        //     ],
-        //     Binding(None) [
-        //         Wildcard(Node {
-        //             children: [],
-        //             pattern: Wildcard(Param("path")),
-        //             route: [Partial("/*path")],
-        //         }),
-        //     ],
-        // ]
-        //
-        //
+        fn assert_matches_wildcard_at_root<'a, I, F>(results: &mut I, assert_param: F)
+        where
+            I: Iterator<Item = (Route<'a, String>, Option<(&'a Arc<str>, Param)>)>,
+            F: FnOnce(&Option<(&'a str, (usize, Option<usize>))>),
         {
-            let results = router.visit("/").unwrap();
+            let (mut stack, param) = expect_match(results.next());
 
-            assert_eq!(results.len(), 2);
+            assert!(matches!(stack.next(), Some("/*path")));
+            assert!(stack.next().is_none());
 
-            assert_init_binding(results.get(0).unwrap(), |kind| {
-                matches!(kind, MatchKind::Edge(MatchCond::Exact(_)))
-            });
-
-            {
-                let binding = results.get(1).unwrap();
-
-                assert!(binding.range().is_none());
-                assert_eq!(binding.nodes().count(), 1);
-
-                let kind = binding.nodes().next().unwrap();
-
-                assert!(matches!(&kind, MatchKind::Wildcard(_)));
-                assert_eq!(kind.param(), Some(&"path".to_owned().into()));
-
-                let mut route = kind.node().route();
-
-                assert!(matches!(
-                    route.next().map(MatchCond::as_str),
-                    Some(MatchCond::Partial("/*path"))
-                ));
-
-                assert!(route.next().is_none());
-            }
+            assert_param(&param);
         }
 
         //
-        // Visit("/not/a/path") [
-        //     Binding(None) [
-        //         Edge(Partial(Node {
-        //             children: [1, 2, 4],
-        //             pattern: Root,
-        //             route: [Partial("/")],
-        //         })),
-        //     ],
-        //     Binding(Some([1, 4])) [
-        //         Wildcard(Node {
-        //             children: [],
-        //             pattern: Wildcard(Param("path")),
-        //             route: [Partial("/*path")],
-        //         }),
-        //     ],
-        // ]
+        // visit /
+        //
+        // -> match "/" to root
+        //     -> match "not/a/path" to Wildcard("/*path")
         //
         {
-            let results = router.visit("/not/a/path").unwrap();
+            let mut results = router.traverse("/");
 
-            assert_eq!(results.len(), 2);
-
-            assert_init_binding(results.get(0).unwrap(), |kind| {
-                matches!(kind, MatchKind::Edge(MatchCond::Partial(_)))
+            assert_matches_root(expect_match(results.next()));
+            assert_matches_wildcard_at_root(&mut results, |param| {
+                assert_param_matches!(param, None);
             });
 
-            {
-                let binding = results.get(1).unwrap();
-
-                assert_eq!(binding.range(), Some([1, 4]));
-                assert_eq!(binding.nodes().count(), 1);
-
-                let kind = binding.nodes().next().unwrap();
-
-                assert!(matches!(&kind, MatchKind::Wildcard(_)));
-                assert_eq!(kind.param(), Some(&"path".to_owned().into()));
-
-                let mut route = kind.node().route();
-
-                assert!(matches!(
-                    route.next().map(MatchCond::as_str),
-                    Some(MatchCond::Partial("/*path"))
-                ));
-
-                assert!(route.next().is_none());
-            }
+            assert!(results.next().is_none());
         }
 
         //
-        // Visit("/echo/*path") [
-        //     Binding(None) [
-        //         Edge(Partial(Node {
-        //             children: [1, 2, 4],
-        //             pattern: Root,
-        //             route: [Partial("/")],
-        //         })),
-        //     ],
-        //     Binding(Some([1, 5])) [
-        //         Wildcard(Node {
-        //             children: [],
-        //             pattern: Wildcard(Param("path")),
-        //             route: [Partial("/*path")],
-        //         }),
-        //         Edge(Partial(Node {
-        //             children: [3],
-        //             pattern: Static("echo"),
-        //             route: [],
-        //         })),
-        //     ],
-        //     Binding(Some([6, 11])) [
-        //         Wildcard(Node {
-        //             children: [],
-        //             pattern: Wildcard(Param("path")),
-        //             route: [Partial("/echo/*path")],
-        //         }),
-        //     ],
-        // ]
+        // visit /not/a/path
+        //
+        // -> match "/" to root
+        //     -> match "not/a/path" to Wildcard("/*path")
         //
         {
-            let results = router.visit("/echo/hello/world").unwrap();
+            let mut results = router.traverse("/not/a/path");
 
-            assert_eq!(results.len(), 3);
-
-            assert_init_binding(results.get(0).unwrap(), |kind| {
-                matches!(kind, MatchKind::Edge(MatchCond::Partial(_)))
+            assert_matches_root(expect_match(results.next()));
+            assert_matches_wildcard_at_root(&mut results, |param| {
+                assert_param_matches!(param, Some(("path", (1, None))))
             });
 
-            {
-                let binding = results.get(1).unwrap();
-
-                assert_eq!(binding.range(), Some([1, 5]));
-                assert_eq!(binding.nodes().count(), 2);
-
-                let mut nodes = binding.nodes();
-
-                {
-                    let kind = nodes.next().unwrap();
-
-                    assert!(matches!(&kind, MatchKind::Wildcard(_)));
-                    assert_eq!(kind.param(), Some(&"path".to_owned().into()));
-
-                    let node = kind.node();
-
-                    assert_eq!(node.route().count(), 1);
-                    assert!(matches!(
-                        node.route().next().map(MatchCond::as_str),
-                        Some(MatchCond::Partial("/*path"))
-                    ));
-                }
-
-                {
-                    let kind = nodes.next().unwrap();
-
-                    assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
-
-                    assert!(kind.param().is_none());
-
-                    let node = kind.node();
-
-                    assert_eq!(node.pattern.as_static(), Some("echo"));
-                    assert_eq!(node.route().count(), 0);
-                }
-            }
-
-            {
-                let binding = results.get(2).unwrap();
-
-                assert_eq!(binding.range(), Some([6, 11]));
-                assert_eq!(binding.nodes().count(), 1);
-
-                let kind = binding.nodes().next().unwrap();
-
-                assert!(matches!(&kind, MatchKind::Wildcard(_)));
-                assert_eq!(kind.param(), Some(&"path".to_owned().into()));
-
-                let node = kind.node();
-
-                assert_eq!(node.route().count(), 1);
-                assert!(matches!(
-                    node.route().next().map(MatchCond::as_str),
-                    Some(MatchCond::Partial("/echo/*path"))
-                ));
-            }
+            assert!(results.next().is_none());
         }
 
-        // Visit("/articles/12345") [
-        //     Binding(None) [
-        //         Edge(Partial(Node {
-        //             children: [1, 2, 4],
-        //             pattern: Root,
-        //             route: [Partial("/")],
-        //         })),
-        //     ],
-        //     Binding(Some([1, 9])) [
-        //         Wildcard(Node {
-        //             children: [],
-        //             pattern: Wildcard(Param("path")),
-        //             route: [Partial("/*path")],
-        //         }),
-        //         Edge(Partial(Node {
-        //             children: [5],
-        //             pattern: Static("articles"),
-        //             route: [],
-        //         })),
-        //     ],
-        //     Binding(Some([10, 15])) [
-        //         Edge(Exact(Node {
-        //             children: [6],
-        //             pattern: Dynamic(Param("id")),
-        //             route: [Partial("/articles/:id")],
-        //         })),
-        //     ],
-        // ]
+        //
+        // visit /echo/hello/world
+        //
+        // -> match "/" to root
+        //     -> match "echo/hello/world" to Wildcard("/*path")
+        //     -> match "echo" to Static("echo")
+        //         -> match "hello/world" to Wildcard("*path")
+        //
         {
-            let results = router.visit("/articles/12345").unwrap();
+            let mut results = router.traverse("/echo/hello/world");
 
-            assert_eq!(results.len(), 3);
-
-            assert_init_binding(results.get(0).unwrap(), |kind| {
-                matches!(kind, MatchKind::Edge(MatchCond::Partial(_)))
+            assert_matches_root(expect_match(results.next()));
+            assert_matches_wildcard_at_root(&mut results, |param| {
+                assert_param_matches!(param, Some(("path", (1, None))))
             });
 
+            // Intermediate match to /echo.
             {
-                let binding = results.get(1).unwrap();
+                let (mut stack, param) = expect_match(results.next());
 
-                assert_eq!(binding.range(), Some([1, 9]));
-                assert_eq!(binding.nodes().count(), 2);
-
-                let mut nodes = binding.nodes();
-
-                {
-                    let kind = nodes.next().unwrap();
-
-                    assert!(matches!(&kind, MatchKind::Wildcard(_)));
-                    assert_eq!(kind.param(), Some(&"path".to_owned().into()));
-
-                    let node = kind.node();
-
-                    assert_eq!(node.route().count(), 1);
-                    assert!(matches!(
-                        node.route().next().map(MatchCond::as_str),
-                        Some(MatchCond::Partial("/*path"))
-                    ));
-                }
-
-                {
-                    let kind = nodes.next().unwrap();
-
-                    assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
-
-                    assert!(kind.param().is_none());
-
-                    let node = kind.node();
-
-                    assert_eq!(node.pattern.as_static(), Some("articles"));
-                    assert_eq!(node.route().count(), 0);
-                }
+                assert!(stack.next().is_none());
+                assert!(param.is_none());
             }
 
             {
-                let binding = results.get(2).unwrap();
+                let (mut stack, param) = expect_match(results.next());
 
-                assert_eq!(binding.range(), Some([10, 15]));
-                assert_eq!(binding.nodes().count(), 1);
+                assert!(matches!(stack.next(), Some("/echo/*path")));
+                assert!(stack.next().is_none());
 
-                let kind = binding.nodes().next().unwrap();
-
-                assert!(matches!(&kind, MatchKind::Edge(MatchCond::Exact(_))));
-                assert_eq!(kind.param(), Some(&"id".to_owned().into()));
-
-                let node = kind.node();
-
-                assert_eq!(node.route().count(), 1);
-                assert!(matches!(
-                    node.route().next().map(MatchCond::as_str),
-                    Some(MatchCond::Partial("/articles/:id"))
-                ));
+                assert_param_matches!(param, Some(("path", (6, None))));
             }
+
+            assert!(results.next().is_none());
         }
 
-        // Visit("/articles/8869/comments") [
-        //     Binding(None) [
-        //         Edge(Partial(Node {
-        //             children: [1, 2, 4],
-        //             pattern: Root,
-        //             route: [Partial("/")],
-        //         })),
-        //     ],
-        //     Binding(Some([1, 9])) [
-        //         Wildcard(Node {
-        //             children: [],
-        //             pattern: Wildcard(Param("path")),
-        //             route: [Partial("/*path")],
-        //         }),
-        //         Edge(Partial(Node {
-        //             children: [5],
-        //             pattern: Static("articles"),
-        //             route: [],
-        //         })),
-        //     ],
-        //     Binding(Some([10, 15])) [
-        //         Edge(Partial(Node {
-        //             children: [6],
-        //             pattern: Dynamic(Param("id")),
-        //             route: [Partial("/articles/:id")],
-        //         })),
-        //     ],
-        //     Binding(Some([16, 24])) [
-        //         Edge(Exact(Node {
-        //             children: [],
-        //             pattern: Static("comments"),
-        //             route: [Partial("/articles/:id/comments")],
-        //         })),
-        //     ],
-        // ]
+        //
+        // visit /articles/12345
+        //
+        // -> match "/" to root
+        //     -> match "articles/12345/comments" to Wildcard("/*path")
+        //     -> match "articles" to Static("articles")
+        //         -> match "12345" to Dynamic(":id")
+        //
         {
-            let results = router.visit("/articles/12345/comments").unwrap();
+            let mut results = router.traverse("/articles/12345");
 
-            assert_eq!(results.len(), 4);
-
-            assert_init_binding(results.get(0).unwrap(), |kind| {
-                matches!(kind, MatchKind::Edge(MatchCond::Partial(_)))
+            assert_matches_root(expect_match(results.next()));
+            assert_matches_wildcard_at_root(&mut results, |param| {
+                assert_param_matches!(param, Some(("path", (1, None))))
             });
 
+            // Intermediate match to articles.
             {
-                let binding = results.get(1).unwrap();
+                let (mut stack, param) = expect_match(results.next());
 
-                assert_eq!(binding.range(), Some([1, 9]));
-                assert_eq!(binding.nodes().count(), 2);
-
-                let mut nodes = binding.nodes();
-
-                {
-                    let kind = nodes.next().unwrap();
-
-                    assert!(matches!(&kind, MatchKind::Wildcard(_)));
-                    assert_eq!(kind.param(), Some(&"path".to_owned().into()));
-
-                    let node = kind.node();
-
-                    assert_eq!(node.route().count(), 1);
-                    assert!(matches!(
-                        node.route().next().map(MatchCond::as_str),
-                        Some(MatchCond::Partial("/*path"))
-                    ));
-                }
-
-                {
-                    let kind = nodes.next().unwrap();
-
-                    assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
-
-                    assert!(kind.param().is_none());
-
-                    let node = kind.node();
-
-                    assert_eq!(node.pattern.as_static(), Some("articles"));
-                    assert_eq!(node.route().count(), 0);
-                }
+                assert!(stack.next().is_none());
+                assert_param_matches!(param, None);
             }
 
             {
-                let binding = results.get(2).unwrap();
+                let (mut stack, param) = expect_match(results.next());
 
-                assert_eq!(binding.range(), Some([10, 15]));
-                assert_eq!(binding.nodes().count(), 1);
+                assert!(matches!(stack.next(), Some("/articles/:id")));
+                assert!(stack.next().is_none());
 
-                let kind = binding.nodes().next().unwrap();
+                assert_param_matches!(param, Some(("id", (10, Some(15)))));
+            }
 
-                assert_eq!(kind.param(), Some(&"id".to_owned().into()));
-                assert!(matches!(&kind, MatchKind::Edge(MatchCond::Partial(_))));
+            assert!(results.next().is_none());
+        }
 
-                let node = kind.node();
+        //
+        // visit /articles/12345/comments
+        //
+        // -> match "/" to root
+        //     -> match "articles/12345/comments" to Wildcard("/*path")
+        //     -> match "articles" to Static("articles")
+        //         -> match "12345" to Dynamic(":id")
+        //             -> match "comments" to Static("comments")
+        //
+        {
+            let mut results = router.traverse("/articles/12345/comments");
 
-                assert_eq!(node.route().count(), 1);
-                assert!(matches!(
-                    node.route().next().map(MatchCond::as_str),
-                    Some(MatchCond::Partial("/articles/:id"))
-                ));
+            assert_matches_root(expect_match(results.next()));
+            assert_matches_wildcard_at_root(&mut results, |param| {
+                assert_param_matches!(param, Some(("path", (1, None))))
+            });
+
+            // Intermediate match to articles.
+            {
+                let (mut stack, param) = expect_match(results.next());
+
+                assert!(stack.next().is_none());
+                assert_param_matches!(param, None);
             }
 
             {
-                let binding = results.get(3).unwrap();
+                let (mut stack, param) = expect_match(results.next());
 
-                assert_eq!(binding.range(), Some([16, 24]));
-                assert_eq!(binding.nodes().count(), 1);
+                assert!(matches!(stack.next(), Some("/articles/:id")));
+                assert!(stack.next().is_none());
 
-                let kind = binding.nodes().next().unwrap();
-
-                assert_eq!(kind.param(), None);
-                assert!(matches!(&kind, MatchKind::Edge(MatchCond::Exact(_))));
-
-                let node = kind.node();
-
-                assert_eq!(node.route().count(), 1);
-                assert!(matches!(
-                    node.route().next().map(MatchCond::as_str),
-                    Some(MatchCond::Partial("/articles/:id/comments"))
-                ));
+                assert_param_matches!(param, Some(("id", (10, Some(15)))));
             }
+
+            {
+                let (mut stack, param) = expect_match(results.next());
+
+                assert!(matches!(stack.next(), Some("/articles/:id/comments")));
+                assert!(stack.next().is_none());
+
+                assert_param_matches!(param, None);
+            }
+
+            assert!(results.next().is_none());
         }
     }
 }

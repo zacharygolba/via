@@ -2,7 +2,8 @@ use cookie::CookieJar;
 use http::header::{AsHeaderName, CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
-use http_body_util::BodyStream;
+use http_body_util::{BodyStream, Either, Limited};
+use hyper::body::Incoming;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
@@ -10,6 +11,8 @@ use super::into_future::IntoFuture;
 use super::param::{PathParam, PathParams, QueryParam};
 use crate::response::{Pipe, Response, ResponseBuilder};
 use crate::{BoxBody, Error};
+
+pub type RequestBody = Either<Limited<Incoming>, BoxBody>;
 
 /// The component parts of a HTTP request.
 ///
@@ -34,9 +37,9 @@ pub struct Request<T = ()> {
     ///
     state: Arc<T>,
 
-    head: Box<Head>,
+    head: Head,
 
-    body: BoxBody,
+    body: RequestBody,
 }
 
 impl Head {
@@ -66,11 +69,7 @@ impl Head {
             self.parts.uri.path(),
             Some(self.params.iter().find_map(
                 |(param, range)| {
-                    if param == name {
-                        Some(*range)
-                    } else {
-                        None
-                    }
+                    if &**param == name { Some(*range) } else { None }
                 },
             )),
         )
@@ -92,21 +91,21 @@ impl<T> Request<T> {
     #[inline]
     pub fn map<F>(self, map: F) -> Self
     where
-        F: FnOnce(BoxBody) -> BoxBody,
+        F: FnOnce(RequestBody) -> BoxBody,
     {
         Self {
-            body: map(self.body),
+            body: Either::Right(map(self.body)),
             ..self
         }
     }
 
     #[inline]
-    pub fn into_body(self) -> BoxBody {
+    pub fn into_body(self) -> RequestBody {
         self.body
     }
 
     #[inline]
-    pub fn into_parts(self) -> (Box<Head>, BoxBody) {
+    pub fn into_parts(self) -> (Head, RequestBody) {
         (self.head, self.body)
     }
 
@@ -114,7 +113,7 @@ impl<T> Request<T> {
         IntoFuture::new(self.body)
     }
 
-    pub fn into_stream(self) -> BodyStream<BoxBody> {
+    pub fn into_stream(self) -> BodyStream<RequestBody> {
         BodyStream::new(self.body)
     }
 
@@ -235,8 +234,20 @@ impl<T> Request<T> {
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(state: Arc<T>, head: Box<Head>, body: BoxBody) -> Self {
-        Self { state, head, body }
+    pub(crate) fn new(state: Arc<T>, head: Head, body: Limited<Incoming>) -> Self {
+        Self {
+            state,
+            head,
+            body: Either::Left(body),
+        }
+    }
+
+    /// Returns a mutable reference to the associated path params.
+    ///
+    #[inline]
+    pub(crate) fn params_mut_with_path(&mut self) -> (&mut PathParams, &str) {
+        let Head { params, parts, .. } = &mut self.head;
+        (params, parts.uri.path())
     }
 
     /// Returns a mutable reference to the cookies associated with the request.
@@ -268,6 +279,9 @@ impl<T> Pipe for Request<T> {
             None => builder.header(TRANSFER_ENCODING, "chunked"),
         };
 
-        response.boxed(self.body)
+        response.boxed(match self.body {
+            Either::Left(inline) => BoxBody::new(inline),
+            Either::Right(boxed) => boxed,
+        })
     }
 }

@@ -1,8 +1,10 @@
 #![feature(test)]
 extern crate test;
 
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 use test::Bencher;
-use via_router::{MatchKind, Router};
+use via_router::Router;
 
 const ROUTES: [&str; 100] = [
     "/home",
@@ -109,135 +111,146 @@ const ROUTES: [&str; 100] = [
 
 #[bench]
 fn find_matches_1(b: &mut Bencher) {
-    let mut router: Router<()> = Router::new();
+    let mut router: Router<Arc<()>> = Router::new();
+    let mut params = HashMap::with_capacity(8);
+    let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(());
+        let _ = router.at(path).include(Arc::new(()));
     }
 
     b.iter(|| {
-        for binding in router.visit("/dashboard").unwrap() {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+        for (stack, param) in router.traverse("/dashboard") {
+            next.extend(stack.map(Arc::clone));
+            if let Some((name, range)) = param {
+                params.insert(Arc::clone(name), range);
+            }
         }
     });
 }
 
 #[bench]
 fn find_matches_2(b: &mut Bencher) {
-    let mut router: Router<()> = Router::new();
+    let mut router: Router<Arc<()>> = Router::new();
+    let mut params = HashMap::with_capacity(8);
+    let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(());
+        let _ = router.at(path).include(Arc::new(()));
     }
 
     b.iter(|| {
-        for binding in router.visit("/dashboard/overview").unwrap() {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+        for (stack, param) in router.traverse("/dashboard/overview") {
+            next.extend(stack.map(Arc::clone));
+            if let Some((name, range)) = param {
+                params.insert(Arc::clone(name), range);
+            }
         }
     });
 }
 
 #[bench]
 fn find_matches_3(b: &mut Bencher) {
-    let mut router: Router<()> = Router::new();
+    let mut router: Router<Arc<()>> = Router::new();
+    let mut params = HashMap::with_capacity(8);
+    let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(());
+        let _ = router.at(path).include(Arc::new(()));
     }
 
     b.iter(|| {
-        for binding in router.visit("/help/article/12345678987654321").unwrap() {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+        for (stack, param) in router.traverse("/help/article/12345678987654321") {
+            next.extend(stack.map(Arc::clone));
+            if let Some((name, range)) = param {
+                params.insert(Arc::clone(name), range);
+            }
         }
     });
 }
 
 #[bench]
 fn find_matches_4(b: &mut Bencher) {
-    let mut router: Router<()> = Router::new();
+    let mut router: Router<Arc<()>> = Router::new();
+    let mut params = HashMap::with_capacity(8);
+    let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(());
+        let _ = router.at(path).include(Arc::new(()));
     }
 
     b.iter(|| {
-        for binding in router.visit("/api/v1/products/12345678987654321").unwrap() {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+        for (stack, param) in router.traverse("/api/v1/products/12345678987654321") {
+            next.extend(stack.map(Arc::clone));
+            if let Some((name, range)) = param {
+                params.insert(Arc::clone(name), range);
+            }
         }
     });
 }
 
 #[bench]
 fn find_matches_5(b: &mut Bencher) {
-    let mut router: Router<()> = Router::new();
+    let mut router: Router<Arc<()>> = Router::new();
+    let mut params = HashMap::with_capacity(8);
+    let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(());
+        let _ = router.at(path).include(Arc::new(()));
     }
 
     b.iter(|| {
-        for binding in router
-            .visit("/api/v1/products/12345678987654321/comments/12345678987654321")
-            .unwrap()
+        for (stack, param) in
+            router.traverse("/api/v1/products/12345678987654321/comments/12345678987654321")
         {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+            next.extend(stack.map(Arc::clone));
+            if let Some((name, range)) = param {
+                params.insert(Arc::clone(name), range);
+            }
         }
     });
 }
 
 #[bench]
 fn find_matches_6(b: &mut Bencher) {
-    let mut router: Router<()> = Router::new();
+    let mut router: Router<Arc<()>> = Router::new();
+    let mut params = HashMap::with_capacity(8);
+    let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(());
+        let _ = router.at(path).include(Arc::new(()));
     }
 
     b.iter(|| {
-        for binding in router
-            .visit("/api/v1/products/12345678987654321/comments/12345678987654321")
-            .unwrap()
+        for (stack, param) in
+            router.traverse("/api/v1/products/12345678987654321/comments/12345678987654321")
         {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+            next.extend(stack.map(Arc::clone));
+            if let Some((name, range)) = param {
+                params.insert(Arc::clone(name), range);
+            }
         }
     });
 }
 
 #[bench]
 fn find_matches_7(b: &mut Bencher) {
-    let mut router: Router<()> = Router::new();
+    let mut router: Router<Arc<()>> = Router::new();
+    let mut params = HashMap::with_capacity(8);
+    let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(());
+        let _ = router.at(path).include(Arc::new(()));
     }
 
     b.iter(|| {
-        for binding in router
-            .visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
-            .unwrap()
+        for (stack, param) in
+            router.traverse("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
         {
-            binding.nodes().fold(0, |sum, kind| match kind {
-                MatchKind::Edge(cond) => sum + cond.as_either().route().count(),
-                MatchKind::Wildcard(node) => sum + node.route().count(),
-            });
+            next.extend(stack.map(Arc::clone));
+            if let Some((name, range)) = param {
+                params.insert(Arc::clone(name), range);
+            }
         }
     });
 }

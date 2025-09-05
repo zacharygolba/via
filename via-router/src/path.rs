@@ -1,39 +1,27 @@
-use std::fmt::{self, Display, Formatter};
-use std::iter::Peekable;
 use std::mem;
 use std::str::MatchIndices;
 use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Param(Arc<str>);
+pub type Param = (usize, Option<usize>);
 
 pub struct Split<'a> {
-    len: usize,
+    path: &'a str,
     offset: usize,
     indices: MatchIndices<'a, char>,
 }
 
-pub struct SplitWithLookahead<'a> {
-    split: Peekable<Split<'a>>,
-}
-
 #[derive(Debug, PartialEq)]
-pub(crate) enum Pattern {
+pub enum Pattern {
     Root,
     Static(String),
-    Dynamic(Param),
-    Wildcard(Param),
+    Dynamic(Arc<str>),
+    Wildcard(Arc<str>),
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
 ///
 pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
-    Split::new(path).map(|[start, end]| {
-        let segment = match path.get(start..end) {
-            Some(slice) => slice,
-            None => panic!("Path segments cannot be empty when defining a route."),
-        };
-
+    Split::new(path).map(|(segment, _)| {
         match segment.chars().next() {
             // Path segments that start with a colon are considered a Dynamic
             // pattern. The remaining characters in the segment are considered
@@ -58,22 +46,13 @@ pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
     })
 }
 
-impl Display for Param {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(&self.0, f)
-    }
-}
-
-impl From<String> for Param {
-    fn from(value: String) -> Self {
-        Self(value.into())
-    }
-}
-
-impl PartialEq<str> for Param {
-    #[inline]
-    fn eq(&self, other: &str) -> bool {
-        *self.0 == *other
+impl Pattern {
+    pub fn param(&self, range: &[usize; 2]) -> Option<(&Arc<str>, Param)> {
+        match self {
+            Self::Dynamic(name) => Some((name, (range[0], Some(range[1])))),
+            Self::Wildcard(name) => Some((name, (range[0], None))),
+            _ => None,
+        }
     }
 }
 
@@ -81,57 +60,39 @@ impl<'a> Split<'a> {
     #[inline]
     pub fn new(path: &'a str) -> Self {
         Self {
-            len: path.len(),
+            path,
             offset: 0,
             indices: path.match_indices('/'),
         }
     }
-
-    #[inline]
-    pub fn lookahead(self) -> SplitWithLookahead<'a> {
-        SplitWithLookahead {
-            split: self.peekable(),
-        }
-    }
 }
 
-impl Iterator for Split<'_> {
-    type Item = [usize; 2];
+impl<'a> Iterator for Split<'a> {
+    type Item = (&'a str, [usize; 2]);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
+        let indices = &mut self.indices;
         let offset = &mut self.offset;
+        let path = self.path;
 
-        for (end, _) in &mut self.indices {
+        for (end, _) in indices {
             if end == 0 {
                 *offset += 1;
             } else {
-                return Some([mem::replace(offset, end + 1), end]);
+                let start = mem::replace(offset, end + 1);
+                return Some((&path[start..end], [start, end]));
             }
         }
 
-        if &self.len > offset {
-            Some([mem::replace(offset, self.len), self.len])
+        let end = path.len();
+
+        if end > *offset {
+            let start = mem::replace(offset, end);
+            Some((&path[start..end], [start, end]))
         } else {
             None
         }
-    }
-}
-
-impl SplitWithLookahead<'_> {
-    #[inline]
-    pub fn has_next(&mut self) -> bool {
-        self.split.peek().is_some()
-    }
-}
-
-impl Iterator for SplitWithLookahead<'_> {
-    type Item = (bool, [usize; 2]);
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let next = self.split.next()?;
-        Some((self.split.peek().is_none(), next))
     }
 }
 
@@ -192,7 +153,9 @@ mod tests {
             );
 
             for (j, segment) in Split::new(path).enumerate() {
-                let expect = expected_results[i][j];
+                let [start, end] = expected_results[i][j];
+                let expect = (&path[start..end], [start, end]);
+
                 assert_eq!(segment, expect, "{} ({}, {:?})", path, j, segment);
             }
         }

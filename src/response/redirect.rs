@@ -1,4 +1,4 @@
-use http::{header, StatusCode};
+use http::{StatusCode, header};
 
 use crate::error::Error;
 use crate::response::Response;

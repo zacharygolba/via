@@ -1,5 +1,5 @@
 use cookie::{Cookie, CookieJar};
-use http::{header::SET_COOKIE, HeaderMap, StatusCode, Version};
+use http::{HeaderMap, StatusCode, Version, header::SET_COOKIE};
 use http_body_util::Either;
 use std::fmt::{self, Debug, Formatter};
 

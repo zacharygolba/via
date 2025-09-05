@@ -6,4 +6,4 @@ mod acceptor;
 mod server;
 mod stream;
 
-pub use server::{start, Server};
+pub use server::{Server, start};

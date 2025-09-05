@@ -8,10 +8,10 @@ use http_body_util::{Either, StreamBody};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
-use super::response::Response;
 use super::BufferBody;
-use crate::error::{DynError, Error};
+use super::response::Response;
 use crate::BoxBody;
+use crate::error::{DynError, Error};
 
 /// Define how a type can finalize a [`ResponseBuilder`].
 ///
