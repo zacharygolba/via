@@ -126,28 +126,30 @@ where
                     Ok(accepted) => {
                         // Create a new HTTP/2 connection.
                         #[cfg(feature = "http2")]
-                        let connection = conn::http2::Builder::new(TokioExecutor::new())
-                            .timer(TokioTimer::new())
-                            .serve_connection(
-                                TokioIo::new(accepted),
-                                AppService::new(app, max_body_size),
-                            );
+                        let mut connection = Box::pin(
+                            conn::http2::Builder::new(TokioExecutor::new())
+                                .timer(TokioTimer::new())
+                                .serve_connection(
+                                    TokioIo::new(accepted),
+                                    AppService::new(app, max_body_size),
+                                ),
+                        );
 
                         // Create a new HTTP/1.1 connection.
                         #[cfg(all(feature = "http1", not(feature = "http2")))]
-                        let connection = conn::http1::Builder::new()
-                            .timer(TokioTimer::new())
-                            .serve_connection(
-                                TokioIo::new(accepted),
-                                AppService::new(app, max_body_size),
-                            )
-                            .with_upgrades();
-
-                        tokio::pin!(connection);
+                        let mut connection = Box::pin(
+                            conn::http1::Builder::new()
+                                .timer(TokioTimer::new())
+                                .serve_connection(
+                                    TokioIo::new(accepted),
+                                    AppService::new(app, max_body_size),
+                                )
+                                .with_upgrades(),
+                        );
 
                         // Serve the connection.
                         tokio::select! {
-                            result = &mut connection => result.map_err(|e| e.into()),
+                            result = connection.as_mut() => result.map_err(|e| e.into()),
                             _ = shutdown_rx.changed() => {
                                 connection.as_mut().graceful_shutdown();
                                 connection.await.map_err(|e| e.into())
