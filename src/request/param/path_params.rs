@@ -3,16 +3,16 @@ use std::sync::Arc;
 use via_router::Param;
 
 #[derive(Debug)]
-pub struct PathParams(Vec<Param>);
+pub struct PathParams(Vec<(Arc<str>, Param)>);
 
 impl PathParams {
     #[inline]
-    pub fn new(data: Vec<Param>) -> Self {
+    pub fn new(data: Vec<(Arc<str>, Param)>) -> Self {
         Self(data)
     }
 
     #[inline]
-    pub fn iter(&self) -> slice::Iter<'_, Param> {
+    pub fn iter(&self) -> slice::Iter<'_, (Arc<str>, Param)> {
         self.0.iter()
     }
 }

@@ -2,7 +2,7 @@ use std::mem;
 use std::str::MatchIndices;
 use std::sync::Arc;
 
-pub type Param = (Arc<str>, (usize, Option<usize>));
+pub type Param = (usize, Option<usize>);
 
 pub struct Split<'a> {
     path: &'a str,
