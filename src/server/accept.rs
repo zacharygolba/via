@@ -1,9 +1,10 @@
 use hyper::server::conn;
 use hyper_util::rt::{TokioIo, TokioTimer};
+use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinSet;
 use tokio::{signal, time};
@@ -12,37 +13,13 @@ use tokio::{signal, time};
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
+use super::error::ServerError;
 use crate::app::{App, AppService};
-use crate::error::DynError;
 
-/// The maximum amount of connections that can be join at time while the server
-/// is running.
-///
-const CONNECTION_JOIN_LIMIT: usize = 3;
-
-macro_rules! joined {
-    ($result:expr) => { joined!($result ; else let Err(error) {}) };
-    ($result:expr ; else let Err($error:ident) $else:expr) => {
-        match $result {
-            // Succussfully joined the connection.
-            Ok(Ok(_)) => {}
-            // The connection was cancelled or the panicked.
-            Err(error) => {
-                if error.is_panic() {
-                    // Placeholder for tracing...
-                    if cfg!(debug_assertions) {
-                        eprintln!("error: {}", error);
-                    }
-                }
-            }
-            // An error occurred that originates from hyper or tokio.
-            Ok(Err($error)) => {
-                // Placeholder for tracing...
-                if cfg!(debug_assertions) {
-                    eprintln!("error: {}", $error);
-                }
-                $else
-            }
+macro_rules! log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
         }
     };
 }
@@ -75,13 +52,13 @@ where
 
     // Create a JoinSet to track inflight connections. We'll use this to wait for
     // all connections to close before the server exits.
-    let mut connections = JoinSet::<Result<(), DynError>>::new();
+    let mut connections = JoinSet::<Result<(), ServerError>>::new();
 
     // Wrap app in an arc so it can be cloned into the connection task.
     let app = Arc::new(app);
 
     // Start accepting incoming connections.
-    let exit_code = 'accept: loop {
+    let exit_code = loop {
         // Acquire a permit from the semaphore.
         let permit = match semaphore.clone().acquire_owned().await {
             Ok(acquired) => acquired,
@@ -89,84 +66,35 @@ where
         };
 
         // Accept the next stream from the tcp listener.
-        let (stream, _addr) = tokio::select! {
-            biased;
-            result = listener.accept() => match result {
-                Ok(accepted) => accepted,
-                Err(error) => {
-                    eprintln!("error(listener): {}", error);
-                    drop(permit);
-                    continue;
+        tokio::select! {
+            accept = listener.accept() => match accept {
+                Err(error) => log!("error(listener): {}", error),
+                Ok((stream, _)) => {
+                    let future = handle_connection(
+                        stream,
+                        acceptor.clone(),
+                        shutdown_rx.clone(),
+                        Arc::clone(&app),
+                        max_body_size,
+                    );
+
+                    // Spawn a task to serve the connection.
+                    connections.spawn(async {
+                        let _permit = permit; // RAII-guard
+                        future.await
+                    });
                 }
             },
-            _ = shutdown_rx.changed() => {
-                drop(permit);
-                break 'accept match *shutdown_rx.borrow_and_update() {
+            join_next = connections.join_next(), if !connections.is_empty() => {
+                if let Some(Err(error)) = &join_next {
+                    handle_error(error);
+                }
+            }
+            _shutdown_signal = shutdown_rx.changed() => {
+                break match *shutdown_rx.borrow_and_update() {
                     Some(false) => 0.into(),
                     Some(true) | None => 1.into(),
                 }
-            }
-        };
-
-        // Spawn a task to serve the connection.
-        connections.spawn({
-            // Clone acceptor so negotiation can happen in the connection task.
-            let mut acceptor = acceptor.clone();
-
-            // Clone the watch receiver so we can shutdown the connection if a
-            // ctrl+c signal is sent to the process.
-            let mut shutdown_rx = shutdown_rx.clone();
-
-            // Clone the arc pointer to app so it can be moved into the task.
-            let app = Arc::clone(&app);
-
-            async move {
-                let result = match acceptor.accept(stream).await {
-                    Err(error) => Err(error.into()),
-                    Ok(accepted) => {
-                        // Create a new HTTP/2 connection.
-                        #[cfg(feature = "http2")]
-                        let mut connection = Box::pin(
-                            conn::http2::Builder::new(TokioExecutor::new())
-                                .timer(TokioTimer::new())
-                                .serve_connection(
-                                    TokioIo::new(accepted),
-                                    AppService::new(app, max_body_size),
-                                ),
-                        );
-
-                        // Create a new HTTP/1.1 connection.
-                        #[cfg(all(feature = "http1", not(feature = "http2")))]
-                        let mut connection = Box::pin(
-                            conn::http1::Builder::new()
-                                .timer(TokioTimer::new())
-                                .serve_connection(
-                                    TokioIo::new(accepted),
-                                    AppService::new(app, max_body_size),
-                                )
-                                .with_upgrades(),
-                        );
-
-                        // Serve the connection.
-                        tokio::select! {
-                            result = connection.as_mut() => result.map_err(|e| e.into()),
-                            _ = shutdown_rx.changed() => {
-                                connection.as_mut().graceful_shutdown();
-                                connection.await.map_err(|e| e.into())
-                            }
-                        }
-                    }
-                };
-
-                drop(permit);
-                result
-            }
-        });
-
-        for _ in 0..CONNECTION_JOIN_LIMIT {
-            match connections.try_join_next() {
-                Some(result) => joined!(&result),
-                None => break,
             }
         }
     };
@@ -183,13 +111,79 @@ where
     }
 }
 
-async fn drain_connections(connections: &mut JoinSet<Result<(), DynError>>) {
+fn handle_error(error: &(dyn Error + 'static)) {
+    let hyper_error = match error.downcast_ref::<hyper::Error>() {
+        Some(error) => error,
+        None => {
+            log!("error(other): {}", error);
+            return;
+        }
+    };
+
+    if hyper_error.is_canceled()
+        || hyper_error.is_incomplete_message()
+        || hyper_error.source().is_some_and(|source| {
+            source
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
+        })
+    {
+        // Disconnected.
+    } else {
+        log!("error(http): {}", hyper_error);
+    }
+}
+
+async fn handle_connection<A, T>(
+    tcp_stream: TcpStream,
+    mut acceptor: A,
+    mut shutdown_rx: watch::Receiver<Option<bool>>,
+    app: Arc<App<T>>,
+    max_body_size: usize,
+) -> Result<(), ServerError>
+where
+    A: Acceptor + 'static,
+    T: Send + Sync,
+{
+    let io_stream = TokioIo::new(acceptor.accept(tcp_stream).await?);
+    let app_service = AppService::new(app, max_body_size);
+
+    // Create a new HTTP/2 connection.
+    #[cfg(feature = "http2")]
+    let mut connection = Box::pin(
+        conn::http2::Builder::new(TokioExecutor::new())
+            .timer(TokioTimer::new())
+            .serve_connection(io_stream, app_service),
+    );
+
+    // Create a new HTTP/1.1 connection.
+    #[cfg(all(feature = "http1", not(feature = "http2")))]
+    let mut connection = Box::pin(
+        conn::http1::Builder::new()
+            .timer(TokioTimer::new())
+            .serve_connection(io_stream, app_service)
+            .with_upgrades(),
+    );
+
+    // Serve the connection.
+    tokio::select! {
+        result = connection.as_mut() => result.map_err(|e| e.into()),
+        _ = shutdown_rx.changed() => {
+            connection.as_mut().graceful_shutdown();
+            connection.await.map_err(|e| e.into())
+        }
+    }
+}
+
+async fn drain_connections(connections: &mut JoinSet<Result<(), ServerError>>) {
     if cfg!(debug_assertions) {
         println!("draining {} inflight connections...", connections.len());
     }
 
     while let Some(result) = connections.join_next().await {
-        joined!(&result);
+        if let Err(error) = result.as_ref() {
+            handle_error(error);
+        }
     }
 }
 
