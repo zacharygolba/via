@@ -4,11 +4,13 @@ use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
 use http_body_util::{BodyStream, Either, Limited};
 use hyper::body::Incoming;
+use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
+use via_router::Param;
 
 use super::into_future::IntoFuture;
-use super::param::{PathParam, PathParams, QueryParam};
+use super::param::{PathParam, QueryParam};
 use crate::response::{Pipe, Response, ResponseBuilder};
 use crate::{BoxBody, Error};
 
@@ -27,7 +29,7 @@ pub struct Head {
 
     /// The request's path and query parameters.
     ///
-    params: PathParams,
+    params: HashMap<Arc<str>, Param>,
 }
 
 pub struct Request<T = ()> {
@@ -44,7 +46,7 @@ pub struct Request<T = ()> {
 
 impl Head {
     #[inline]
-    pub(crate) fn new(parts: Parts, params: PathParams) -> Self {
+    pub(crate) fn new(parts: Parts, params: HashMap<Arc<str>, Param>) -> Self {
         Self {
             parts,
             params,
@@ -64,15 +66,7 @@ impl Head {
     ///
     #[inline]
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
-        PathParam::new(
-            name,
-            self.parts.uri.path(),
-            Some(self.params.iter().find_map(
-                |(param, range)| {
-                    if &**param == name { Some(*range) } else { None }
-                },
-            )),
-        )
+        PathParam::new(name, self.parts.uri.path(), self.params.get(name).copied())
     }
 
     /// Returns a convenient wrapper around an optional references to the query
@@ -245,7 +239,7 @@ impl<T> Request<T> {
     /// Returns a mutable reference to the associated path params.
     ///
     #[inline]
-    pub(crate) fn params_mut_with_path(&mut self) -> (&mut PathParams, &str) {
+    pub(crate) fn params_mut_with_path(&mut self) -> (&mut HashMap<Arc<str>, Param>, &str) {
         let Head { params, parts, .. } = &mut self.head;
         (params, parts.uri.path())
     }

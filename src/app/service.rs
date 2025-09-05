@@ -1,7 +1,7 @@
 use http_body_util::Limited;
 use hyper::body::Incoming;
 use hyper::service::Service;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
@@ -10,7 +10,6 @@ use std::task::{Context, Poll};
 
 use crate::app::App;
 use crate::middleware::{BoxFuture, Next};
-use crate::request::param::PathParams;
 use crate::request::{Head, Request};
 use crate::response::ResponseBody;
 
@@ -50,7 +49,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
                 //
                 // It's safer to fail here than later on when application
                 // specific business logic takes over.
-                Head::new(parts, PathParams::new(Vec::with_capacity(8))),
+                Head::new(parts, HashMap::with_capacity(8)),
                 // Do not allocate for the request body until it's absolutely
                 // necessary.
                 //
@@ -87,7 +86,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
 
             if let Some((name, range)) = param {
                 // Include the resolved dynamic parameter in params.
-                params.push(Arc::clone(name), range);
+                params.insert(Arc::clone(name), range);
             }
         }
 
