@@ -4,4 +4,4 @@ mod path;
 mod router;
 
 pub use path::Param;
-pub use router::{Iter, Route, Router, Traverse};
+pub use router::{Route, RouteMut, Router, Traverse};

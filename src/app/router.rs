@@ -5,7 +5,7 @@ use crate::middleware::Middleware;
 pub type Router<T> = via_router::Router<Arc<dyn Middleware<T>>>;
 
 pub struct Route<'a, T> {
-    pub(super) inner: via_router::Route<'a, Arc<dyn Middleware<T>>>,
+    pub(super) inner: via_router::RouteMut<'a, Arc<dyn Middleware<T>>>,
 }
 
 impl<T> Route<'_, T> {

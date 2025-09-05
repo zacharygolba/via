@@ -11,9 +11,9 @@ type Level<'a, T> = SmallVec<[&'a [Node<T>]; 2]>;
 
 /// An iterator over the middleware for a matched route.
 ///
-pub struct Iter<'a, T>(MatchCond<slice::Iter<'a, MatchCond<T>>>);
+pub struct Route<'a, T>(MatchCond<slice::Iter<'a, MatchCond<T>>>);
 
-pub struct Route<'a, T>(&'a mut Node<T>);
+pub struct RouteMut<'a, T>(&'a mut Node<T>);
 
 #[derive(Debug)]
 pub struct Router<T>(Node<T>);
@@ -155,7 +155,7 @@ where
     }
 }
 
-impl<'a, T> Iterator for Iter<'a, T> {
+impl<'a, T> Iterator for Route<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -178,9 +178,9 @@ impl<T> Node<T> {
     }
 }
 
-impl<T> Route<'_, T> {
-    pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
-        Route(insert(self.0, path::patterns(path)))
+impl<T> RouteMut<'_, T> {
+    pub fn at(&mut self, path: &'static str) -> RouteMut<'_, T> {
+        RouteMut(insert(self.0, path::patterns(path)))
     }
 
     pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) {
@@ -201,8 +201,8 @@ impl<T> Router<T> {
         Default::default()
     }
 
-    pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
-        Route(insert(&mut self.0, path::patterns(path)))
+    pub fn at(&mut self, path: &'static str) -> RouteMut<'_, T> {
+        RouteMut(insert(&mut self.0, path::patterns(path)))
     }
 
     /// Match the path argument against nodes in the route tree.
@@ -244,7 +244,7 @@ impl<T> Default for Router<T> {
 }
 
 impl<'a, T> Iterator for Binding<'a, T> {
-    type Item = (Iter<'a, T>, Option<(&'a Arc<str>, Param)>);
+    type Item = (Route<'a, T>, Option<(&'a Arc<str>, Param)>);
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -255,15 +255,15 @@ impl<'a, T> Iterator for Binding<'a, T> {
         };
 
         if self.is_final || matches!(&node.pattern, Pattern::Wildcard(_)) {
-            Some((Iter(MatchCond::Final(node.route.iter())), param))
+            Some((Route(MatchCond::Final(node.route.iter())), param))
         } else {
-            Some((Iter(MatchCond::Partial(node.route.iter())), param))
+            Some((Route(MatchCond::Partial(node.route.iter())), param))
         }
     }
 }
 
 impl<'a, 'b, T> Iterator for Traverse<'a, 'b, T> {
-    type Item = (Iter<'a, T>, Option<(&'a Arc<str>, Param)>);
+    type Item = (Route<'a, T>, Option<(&'a Arc<str>, Param)>);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -337,7 +337,7 @@ mod tests {
     use std::iter::Map;
     use std::sync::Arc;
 
-    use super::{Iter, Router};
+    use super::{Route, Router};
     use crate::path::Param;
 
     const PATHS: [&str; 5] = [
@@ -349,7 +349,7 @@ mod tests {
     ];
 
     type Match<'a, N = Arc<str>> = (
-        Map<Iter<'a, String>, fn(&'a String) -> &'a str>,
+        Map<Route<'a, String>, fn(&'a String) -> &'a str>,
         Option<(&'a N, Param)>,
     );
 
@@ -365,7 +365,7 @@ mod tests {
     }
 
     fn expect_match<'a>(
-        resolved: Option<(Iter<'a, String>, Option<(&'a Arc<str>, Param)>)>,
+        resolved: Option<(Route<'a, String>, Option<(&'a Arc<str>, Param)>)>,
     ) -> Match<'a, str> {
         if let Some((stack, param)) = resolved {
             (
@@ -394,7 +394,7 @@ mod tests {
 
         fn assert_matches_wildcard_at_root<'a, I, F>(results: &mut I, assert_param: F)
         where
-            I: Iterator<Item = (Iter<'a, String>, Option<(&'a Arc<str>, Param)>)>,
+            I: Iterator<Item = (Route<'a, String>, Option<(&'a Arc<str>, Param)>)>,
             F: FnOnce(&Option<(&'a str, (usize, Option<usize>))>),
         {
             let (mut stack, param) = expect_match(results.next());

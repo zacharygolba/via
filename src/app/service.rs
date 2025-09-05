@@ -81,9 +81,9 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         // Allocations only occur if a path segment has 2 :dynamic or *wildcard
         // patterns and a static a static pattern that matches the path
         // segment.
-        for (stack, param) in self.app.router.traverse(path) {
+        for (route, param) in self.app.router.traverse(path) {
             // Add the matched route's middleware to the call stack.
-            next.extend(stack.map(Arc::clone));
+            next.extend(route.map(Arc::clone));
 
             if let Some((name, range)) = param {
                 // Include the resolved dynamic parameter in params.
