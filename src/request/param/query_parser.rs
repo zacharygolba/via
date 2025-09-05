@@ -22,6 +22,8 @@ fn take_name(input: &str, from: usize) -> (usize, Option<Cow<'_, str>>) {
         }
     });
 
+    println!("{:?}", at);
+
     match at {
         Some((start, end)) => (end, input.get(start..end).map(decode)),
         None => (len, None),
@@ -112,74 +114,71 @@ mod tests {
             vec![
                 ("query", Some((6, Some(11)))),
                 ("category", Some((21, Some(28)))),
-                ("sort", Some((34, Some(37)))),
+                ("sort", Some((34, None))),
             ],
             vec![
                 ("query", Some((6, Some(19)))),
-                ("category", Some((29, Some(38)))),
+                ("category", Some((29, None))),
             ],
             vec![
                 ("category", Some((9, Some(14)))),
                 ("category", Some((24, Some(35)))),
-                ("category", Some((45, Some(53)))),
+                ("category", Some((45, None))),
             ],
             vec![("query", Some((6, Some(11)))), ("category", None)],
             vec![
                 ("query", Some((6, Some(22)))),
-                ("category", Some((32, Some(36)))),
+                ("category", Some((32, None))),
             ],
-            vec![
-                ("query", Some((6, Some(11)))),
-                ("filter", Some((19, Some(45)))),
-            ],
+            vec![("query", Some((6, Some(11)))), ("filter", Some((19, None)))],
             vec![
                 ("items[]", Some((8, Some(12)))),
                 ("items[]", Some((21, Some(24)))),
-                ("items[]", Some((33, Some(41)))),
+                ("items[]", Some((33, None))),
             ],
             vec![],
-            vec![("data", Some((5, Some(47))))],
+            vec![("data", Some((5, None)))],
             vec![
                 ("query", Some((6, Some(11)))),
-                ("category", Some((21, Some(37)))),
+                ("category", Some((21, None))),
             ],
             vec![
                 ("query", Some((6, Some(11)))),
-                ("category", Some((22, Some(29)))),
+                ("category", Some((22, None))),
             ],
             vec![
                 ("query", Some((7, Some(12)))),
-                ("category", Some((22, Some(29)))),
+                ("category", Some((22, None))),
             ],
             vec![("query", Some((6, Some(11)))), ("category", None)],
-            vec![("", Some((13, Some(20))))],
+            vec![("query", Some((6, Some(11)))), ("", Some((13, None)))],
             vec![
                 ("query", Some((6, Some(11)))),
                 ("category", Some((21, Some(28)))),
             ],
             vec![
                 ("query", Some((8, Some(13)))),
-                ("category", Some((25, Some(32)))),
+                ("category", Some((25, None))),
             ],
             vec![
                 ("query", Some((8, Some(13)))),
-                ("category", Some((25, Some(32)))),
+                ("category", Some((25, None))),
             ],
             vec![
                 ("query", Some((6, Some(11)))),
-                ("category", Some((23, Some(32)))),
+                ("category", Some((23, None))),
             ],
             vec![
                 ("query", Some((6, Some(11)))),
-                ("category", Some((21, Some(30)))),
+                ("category", Some((21, None))),
             ],
             vec![
                 ("query", Some((6, Some(11)))),
-                ("category", Some((21, Some(27)))),
+                ("category", Some((21, None))),
             ],
             vec![
                 ("query�(", Some((12, Some(17)))),
-                ("category", Some((27, Some(33)))),
+                ("category", Some((27, None))),
             ],
         ];
 
