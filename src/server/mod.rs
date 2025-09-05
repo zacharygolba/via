@@ -4,6 +4,5 @@
 mod accept;
 mod acceptor;
 mod server;
-mod stream;
 
 pub use server::{Server, start};

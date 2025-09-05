@@ -1,5 +1,5 @@
 use hyper::server::conn;
-use hyper_util::rt::TokioTimer;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,7 +14,6 @@ use hyper_util::rt::TokioExecutor;
 use super::acceptor::Acceptor;
 use crate::app::{App, AppService};
 use crate::error::DynError;
-use crate::server::stream::IoStream;
 
 /// The maximum amount of connections that can be join at time while the server
 /// is running.
@@ -130,7 +129,7 @@ where
                         let connection = conn::http2::Builder::new(TokioExecutor::new())
                             .timer(TokioTimer::new())
                             .serve_connection(
-                                IoStream::new(accepted),
+                                TokioIo::new(accepted),
                                 AppService::new(app, max_body_size),
                             );
 
@@ -139,7 +138,7 @@ where
                         let connection = conn::http1::Builder::new()
                             .timer(TokioTimer::new())
                             .serve_connection(
-                                IoStream::new(accepted),
+                                TokioIo::new(accepted),
                                 AppService::new(app, max_body_size),
                             )
                             .with_upgrades();
