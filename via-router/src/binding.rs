@@ -24,14 +24,14 @@ pub struct Binding<'a, T> {
     range: Option<[usize; 2]>,
 }
 
-impl<T> Binding<'_, T> {
+impl<'a, T> Binding<'a, T> {
     #[inline]
     pub fn has_nodes(&self) -> bool {
         self.has_nodes
     }
 
     #[inline]
-    pub fn nodes(&self) -> slice::Iter<MatchKind<T>> {
+    pub fn nodes(&self) -> slice::Iter<'_, MatchKind<'a, T>> {
         self.nodes.iter()
     }
 

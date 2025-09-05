@@ -9,7 +9,7 @@ pub struct Route<'a, T> {
 }
 
 impl<T> Route<'_, T> {
-    pub fn at(&mut self, path: &'static str) -> Route<T> {
+    pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
         Route {
             inner: self.inner.at(path),
         }

@@ -56,7 +56,7 @@ impl<T> Node<T> {
     }
 
     #[inline]
-    pub fn route(&self) -> slice::Iter<MatchCond<T>> {
+    pub fn route(&self) -> slice::Iter<'_, MatchCond<T>> {
         self.route.iter()
     }
 
@@ -85,7 +85,7 @@ impl<T> Node<T> {
 }
 
 impl<T> Route<'_, T> {
-    pub fn at(&mut self, path: &'static str) -> Route<T> {
+    pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
         let mut segments = path::patterns(path);
         let key = insert(self.tree, &mut segments, self.key);
 
@@ -115,7 +115,7 @@ impl<T> Router<T> {
         Default::default()
     }
 
-    pub fn at(&mut self, path: &'static str) -> Route<T> {
+    pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
         let mut segments = path::patterns(path);
         let key = insert(&mut self.tree, &mut segments, 0);
 

@@ -8,11 +8,11 @@ pub struct QueryParser<'a> {
     from: usize,
 }
 
-fn decode(input: &str) -> Cow<str> {
+fn decode(input: &str) -> Cow<'_, str> {
     percent_decode_str(input).decode_utf8_lossy()
 }
 
-fn take_name(input: &str, from: usize) -> (usize, Option<Cow<str>>) {
+fn take_name(input: &str, from: usize) -> (usize, Option<Cow<'_, str>>) {
     // Get the length of the input. We'll use this value as the end index if we
     // reach the end of the input.
     let len = input.len();
