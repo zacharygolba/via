@@ -47,7 +47,7 @@ pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
 }
 
 impl Pattern {
-    pub fn to_param(&self, range: &[usize; 2]) -> Option<(&Arc<str>, (usize, Option<usize>))> {
+    pub fn param(&self, range: &[usize; 2]) -> Option<(&Arc<str>, Param)> {
         match self {
             Self::Dynamic(name) => Some((name, (range[0], Some(range[1])))),
             Self::Wildcard(name) => Some((name, (range[0], None))),

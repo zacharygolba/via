@@ -120,7 +120,7 @@ fn find_matches_1(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for (stack, param) in router.visit("/dashboard") {
+        for (stack, param) in router.traverse("/dashboard") {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
                 params.insert(Arc::clone(name), range);
@@ -140,7 +140,7 @@ fn find_matches_2(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for (stack, param) in router.visit("/dashboard/overview") {
+        for (stack, param) in router.traverse("/dashboard/overview") {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
                 params.insert(Arc::clone(name), range);
@@ -160,7 +160,7 @@ fn find_matches_3(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for (stack, param) in router.visit("/help/article/12345678987654321") {
+        for (stack, param) in router.traverse("/help/article/12345678987654321") {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
                 params.insert(Arc::clone(name), range);
@@ -180,7 +180,7 @@ fn find_matches_4(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        for (stack, param) in router.visit("/api/v1/products/12345678987654321") {
+        for (stack, param) in router.traverse("/api/v1/products/12345678987654321") {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
                 params.insert(Arc::clone(name), range);
@@ -201,7 +201,7 @@ fn find_matches_5(b: &mut Bencher) {
 
     b.iter(|| {
         for (stack, param) in
-            router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+            router.traverse("/api/v1/products/12345678987654321/comments/12345678987654321")
         {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
@@ -223,7 +223,7 @@ fn find_matches_6(b: &mut Bencher) {
 
     b.iter(|| {
         for (stack, param) in
-            router.visit("/api/v1/products/12345678987654321/comments/12345678987654321")
+            router.traverse("/api/v1/products/12345678987654321/comments/12345678987654321")
         {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
@@ -245,7 +245,7 @@ fn find_matches_7(b: &mut Bencher) {
 
     b.iter(|| {
         for (stack, param) in
-            router.visit("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
+            router.traverse("/api/v1/products/12345678987654321/comments/12345678987654321/edit")
         {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
