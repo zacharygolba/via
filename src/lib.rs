@@ -62,13 +62,13 @@ pub mod response;
 mod app;
 mod server;
 
-pub use app::{app, App, Route};
+pub use app::{App, Route, app};
 pub use error::Error;
 pub use middleware::method::*;
 pub use middleware::{Middleware, Next, Result};
 pub use request::Request;
 pub use response::{Pipe, Response};
-pub use server::{start, Server};
+pub use server::{Server, start};
 
 /// A type erased, dynamically dispatched [`Body`](http_body::Body).
 ///
