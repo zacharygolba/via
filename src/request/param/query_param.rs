@@ -17,8 +17,8 @@ pub struct QueryParamIter<'a, 'b, T> {
     _decode: PhantomData<T>,
 }
 
-fn find_next(parser: &mut QueryParser, name: &str) -> Option<Option<(usize, Option<usize>)>> {
-    parser.find_map(|(n, at)| if n == name { Some(at) } else { None })
+fn find_next(parser: &mut QueryParser, name: &str) -> Option<(usize, Option<usize>)> {
+    parser.find_map(|(n, at)| if n == name { at } else { None })
 }
 
 impl<'a, 'b, T: DecodeParam> QueryParam<'a, 'b, T> {
@@ -59,7 +59,7 @@ impl<'a, 'b, T: DecodeParam> QueryParam<'a, 'b, T> {
             name,
             query,
             self.parser
-                .filter_map(|(n, at)| if n == name { Some(at) } else { None })
+                .filter_map(|(n, at)| if n == name { at } else { None })
                 .last(),
         )
     }
@@ -92,7 +92,7 @@ impl<'a, T: DecodeParam> Iterator for QueryParamIter<'a, '_, T> {
     type Item = Cow<'a, str>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let encoded = match find_next(&mut self.parser, self.name)?? {
+        let encoded = match find_next(&mut self.parser, self.name)? {
             (start, Some(end)) => self.parser.input().get(start..end)?,
             (start, None) => self.parser.input().get(start..)?,
         };
