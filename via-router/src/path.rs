@@ -89,9 +89,8 @@ impl<'a> Iterator for Split<'a> {
         let end = path.len();
         let start = *offset;
 
-        // Only yield if there's something left between offset and len.
+        // Only yield if there's something left between offset and path.len().
         // Prevents slicing past the end on trailing slashes like "/via/".
-        // Safe because `end == offset` means the iterator has been exhausted.
         if end > start {
             *offset = end;
             Some((&path[start..end], [start, end]))
