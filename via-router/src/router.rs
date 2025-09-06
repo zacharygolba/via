@@ -271,13 +271,11 @@ impl<'a, 'b, T> Iterator for Traverse<'a, 'b, T> {
         let branches = &mut self.branches;
 
         loop {
-            if let Some(binding) = depth {
-                if let Some(next) = binding.next() {
-                    return Some(next);
-                }
+            if let Some(next) = depth.as_mut().and_then(Iterator::next) {
+                return Some(next);
             }
 
-            *depth = match self.path_segments.next() {
+            *depth = Some(match self.path_segments.next() {
                 None => match_trailing_wildcards(branches),
                 Some((segment, range)) => match_next_segment(
                     self.path_segments.peek().is_none(),
@@ -286,15 +284,10 @@ impl<'a, 'b, T> Iterator for Traverse<'a, 'b, T> {
                     segment,
                     range,
                 ),
-            };
+            }?);
 
-            match depth {
-                None => return None,
-                Some(_) => {
-                    branches.clear();
-                    mem::swap(branches, &mut self.queue);
-                }
-            }
+            branches.clear();
+            mem::swap(branches, &mut self.queue);
         }
     }
 }
