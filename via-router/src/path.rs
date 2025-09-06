@@ -1,13 +1,12 @@
-use std::mem;
-use std::str::MatchIndices;
 use std::sync::Arc;
+use std::{iter, slice};
 
 pub type Param = (usize, Option<usize>);
 
 pub struct Split<'a> {
     path: &'a str,
     offset: usize,
-    indices: MatchIndices<'a, char>,
+    bytes: iter::Enumerate<slice::Iter<'a, u8>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -62,7 +61,7 @@ impl<'a> Split<'a> {
         Self {
             path,
             offset: 0,
-            indices: path.match_indices('/'),
+            bytes: path.as_bytes().iter().enumerate(),
         }
     }
 }
@@ -72,23 +71,29 @@ impl<'a> Iterator for Split<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let indices = &mut self.indices;
+        let path = &self.path;
         let offset = &mut self.offset;
-        let path = self.path;
 
-        for (end, _) in indices {
-            if end == 0 {
-                *offset += 1;
-            } else {
-                let start = mem::replace(offset, end + 1);
-                return Some((&path[start..end], [start, end]));
+        while let Some((end, b)) = self.bytes.next() {
+            if *b == b'/' {
+                if end == 0 {
+                    *offset += 1;
+                } else {
+                    let start = *offset;
+                    *offset = end + 1;
+                    return Some((&path[start..end], [start, end]));
+                }
             }
         }
 
         let end = path.len();
+        let start = *offset;
 
-        if end > *offset {
-            let start = mem::replace(offset, end);
+        // Only yield if there's something left between offset and len.
+        // Prevents slicing past the end on trailing slashes like "/via/".
+        // Safe because `end == offset` means the iterator has been exhausted.
+        if end > start {
+            *offset = end;
             Some((&path[start..end], [start, end]))
         } else {
             None
