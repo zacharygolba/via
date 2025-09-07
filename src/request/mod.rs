@@ -1,8 +1,8 @@
 pub mod param;
 
-mod into_future;
+mod body;
 mod request;
 
-pub use into_future::{IntoFuture, Payload};
+pub use body::{Body, Payload};
 pub use param::{PathParam, QueryParam};
-pub use request::{Head, Request, RequestBody};
+pub use request::{Head, Request};

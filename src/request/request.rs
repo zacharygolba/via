@@ -2,24 +2,27 @@ use cookie::CookieJar;
 use http::header::{AsHeaderName, CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
-use http_body_util::{BodyStream, Either, Limited};
+use http_body_util::{Either, Limited};
 use hyper::body::Incoming;
 use std::collections::HashMap;
-use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 use via_router::Param;
 
-use super::into_future::IntoFuture;
+use super::body::Body;
 use super::param::{PathParam, QueryParam};
+use crate::request::Payload;
 use crate::response::{Pipe, Response, ResponseBuilder};
 use crate::{BoxBody, Error};
 
-pub type RequestBody = Either<Limited<Incoming>, BoxBody>;
-
 /// The component parts of a HTTP request.
 ///
-pub struct Head {
+#[derive(Debug)]
+pub struct Head<T> {
     pub parts: Parts,
+
+    /// The request's path and query parameters.
+    ///
+    params: HashMap<Arc<str>, Param>,
 
     /// The cookies associated with the request. If there is not a
     /// [CookieParser](crate::middleware::CookieParser)
@@ -27,38 +30,50 @@ pub struct Head {
     ///
     cookies: CookieJar,
 
-    /// The request's path and query parameters.
-    ///
-    params: HashMap<Arc<str>, Param>,
-}
-
-pub struct Request<T = ()> {
     /// The shared application state passed to the
     /// [`via::app`](crate::app::app)
     /// function.
     ///
     state: Arc<T>,
-
-    head: Head,
-
-    body: RequestBody,
 }
 
-impl Head {
+#[derive(Debug)]
+pub struct Request<T = ()> {
+    head: Head<T>,
+    body: Body,
+}
+
+impl<T> Head<T> {
     #[inline]
-    pub(crate) fn new(parts: Parts, params: HashMap<Arc<str>, Param>) -> Self {
+    pub(crate) fn new(parts: Parts, state: Arc<T>, params: HashMap<Arc<str>, Param>) -> Self {
         Self {
             parts,
             params,
             cookies: CookieJar::new(),
+            state,
         }
     }
 
-    /// Returns reference to the cookies associated with the request.
+    /// Returns a result that contains an Option<&str> with the header value
+    /// associated with the provided key.
     ///
-    #[inline]
-    pub fn cookies(&self) -> &CookieJar {
-        &self.cookies
+    /// # Errors
+    ///
+    /// *Status Code:* `400`
+    ///
+    /// If the header value associated with key contains a char that is not
+    /// considered to be visible ascii.
+    ///
+    pub fn header<K>(&self, key: K) -> Result<Option<&str>, Error>
+    where
+        K: AsHeaderName,
+    {
+        self.parts
+            .headers
+            .get(key)
+            .map(|value| value.to_str())
+            .transpose()
+            .map_err(Error::bad_request)
     }
 
     /// Returns a convenient wrapper around an optional reference to the path
@@ -76,39 +91,27 @@ impl Head {
     pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
         QueryParam::new(name, self.parts.uri.query().unwrap_or(""))
     }
+
+    /// Returns reference to the cookies associated with the request.
+    ///
+    #[inline]
+    pub fn cookies(&self) -> &CookieJar {
+        &self.cookies
+    }
+
+    #[inline]
+    pub fn state(&self) -> &Arc<T> {
+        &self.state
+    }
 }
 
 impl<T> Request<T> {
-    /// Consumes the request returning a new request with body mapped to the
-    /// return type of the provided closure `map`.
+    /// Returns a reference to a map that contains the headers associated with
+    /// the request.
     ///
     #[inline]
-    pub fn map<F>(self, map: F) -> Self
-    where
-        F: FnOnce(RequestBody) -> BoxBody,
-    {
-        Self {
-            body: Either::Right(map(self.body)),
-            ..self
-        }
-    }
-
-    #[inline]
-    pub fn into_body(self) -> RequestBody {
-        self.body
-    }
-
-    #[inline]
-    pub fn into_parts(self) -> (Head, RequestBody) {
-        (self.head, self.body)
-    }
-
-    pub fn into_future(self) -> IntoFuture {
-        IntoFuture::new(self.body)
-    }
-
-    pub fn into_stream(self) -> BodyStream<RequestBody> {
-        BodyStream::new(self.body)
+    pub fn headers(&self) -> &HeaderMap {
+        &self.head.parts.headers
     }
 
     /// Returns a result that contains an Option<&str> with the header value
@@ -125,19 +128,7 @@ impl<T> Request<T> {
     where
         K: AsHeaderName,
     {
-        self.headers()
-            .get(key)
-            .map(|value| value.to_str())
-            .transpose()
-            .map_err(Error::bad_request)
-    }
-
-    /// Returns a reference to a map that contains the headers associated with
-    /// the request.
-    ///
-    #[inline]
-    pub fn headers(&self) -> &HeaderMap {
-        &self.head.parts.headers
+        self.head.header(key)
     }
 
     /// Returns a reference to the HTTP method associated with the request.
@@ -168,6 +159,7 @@ impl<T> Request<T> {
     /// }
     /// ```
     ///
+    #[inline]
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
         self.head.param(name)
     }
@@ -197,8 +189,23 @@ impl<T> Request<T> {
     /// }
     /// ```
     ///
+    #[inline]
     pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
         self.head.query(name)
+    }
+
+    /// Returns the HTTP version associated with the request.
+    ///
+    #[inline]
+    pub fn version(&self) -> Version {
+        self.head.parts.version
+    }
+
+    /// Returns reference to the cookies associated with the request.
+    ///
+    #[inline]
+    pub fn cookies(&self) -> &CookieJar {
+        self.head.cookies()
     }
 
     /// Returns a thread-safe reference-counting pointer to the application
@@ -208,31 +215,44 @@ impl<T> Request<T> {
     ///
     #[inline]
     pub fn state(&self) -> &Arc<T> {
-        &self.state
+        self.head.state()
     }
 
-    /// Returns reference to the cookies associated with the request.
+    /// Consumes the request returning a new request with body mapped to the
+    /// return type of the provided closure `map`.
     ///
     #[inline]
-    pub fn cookies(&self) -> &CookieJar {
-        &self.head.cookies
+    pub fn map<F>(self, map: F) -> Self
+    where
+        F: FnOnce(Either<Limited<Incoming>, BoxBody>) -> BoxBody,
+    {
+        Self {
+            body: self.body.map(map),
+            ..self
+        }
     }
 
-    /// Returns the HTTP version associated with the request.
+    /// Consumes the request and returns a tuple containing the head and body.
     ///
     #[inline]
-    pub fn version(&self) -> Version {
-        self.head.parts.version
+    pub fn into_parts(self) -> (Head<T>, Body) {
+        (self.head, self.body)
+    }
+
+    /// Consumes the request and returns a future that resolves with the data
+    /// in the body.
+    ///
+    pub async fn into_future(self) -> Result<Payload, Error> {
+        self.body.into_future().await
     }
 }
 
 impl<T> Request<T> {
     #[inline]
-    pub(crate) fn new(state: Arc<T>, head: Head, body: Limited<Incoming>) -> Self {
+    pub(crate) fn new(head: Head<T>, body: Limited<Incoming>) -> Self {
         Self {
-            state,
             head,
-            body: Either::Left(body),
+            body: Body(Either::Left(body)),
         }
     }
 
@@ -252,20 +272,6 @@ impl<T> Request<T> {
     }
 }
 
-impl<T> Debug for Request<T> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("Request")
-            .field("version", &self.version())
-            .field("method", self.method())
-            .field("uri", self.uri())
-            .field("headers", self.headers())
-            .field("params", &self.head.params)
-            .field("cookies", &self.head.cookies)
-            .field("body", &self.body)
-            .finish()
-    }
-}
-
 impl<T> Pipe for Request<T> {
     fn pipe(self, builder: ResponseBuilder) -> Result<Response, Error> {
         let response = match self.headers().get(CONTENT_LENGTH) {
@@ -274,8 +280,8 @@ impl<T> Pipe for Request<T> {
         };
 
         response.boxed(match self.body {
-            Either::Left(inline) => BoxBody::new(inline),
-            Either::Right(boxed) => boxed,
+            Body(Either::Left(inline)) => BoxBody::new(inline),
+            Body(Either::Right(boxed)) => boxed,
         })
     }
 }
