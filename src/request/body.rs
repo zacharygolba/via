@@ -111,17 +111,28 @@ impl Payload {
         }
     }
 
-    pub fn trailers(&self) -> Option<&HeaderMap> {
-        self.trailers.as_ref()
+    pub fn to_string(&self) -> Result<String, Error> {
+        String::from_utf8(self.to_vec()).map_err(Error::bad_request)
     }
 
-    pub fn parse_json<D>(self) -> Result<D, Error>
+    pub fn to_vec(&self) -> Vec<u8> {
+        let remaining = self.frames.iter().map(Bytes::len).sum();
+        let mut buf = Vec::with_capacity(remaining);
+
+        for frame in &self.frames {
+            buf.extend_from_slice(frame);
+        }
+
+        buf
+    }
+
+    pub fn parse_json<D>(&self) -> Result<D, Error>
     where
         D: DeserializeOwned,
     {
         let json = match self.as_str()? {
             Some(utf8) => Cow::Borrowed(utf8),
-            None => Cow::Owned(self.into_string()?),
+            None => Cow::Owned(self.to_string()?),
         };
 
         // Attempt deserialize JSON assuming that type `D` exists in a top
@@ -142,19 +153,8 @@ impl Payload {
             .map_err(Error::bad_request)
     }
 
-    pub fn into_string(self) -> Result<String, Error> {
-        String::from_utf8(self.into_vec()).map_err(Error::bad_request)
-    }
-
-    pub fn into_vec(self) -> Vec<u8> {
-        let remaining = self.frames.iter().map(Bytes::len).sum();
-        let mut buf = Vec::with_capacity(remaining);
-
-        for frame in &self.frames {
-            buf.extend_from_slice(frame);
-        }
-
-        buf
+    pub fn trailers(&self) -> Option<&HeaderMap> {
+        self.trailers.as_ref()
     }
 }
 
