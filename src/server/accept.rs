@@ -13,8 +13,8 @@ use tokio::{signal, time};
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
-use super::error::ServerError;
 use crate::app::{App, AppService};
+use crate::error::ServerError;
 
 macro_rules! log {
     ($($arg:tt)*) => {

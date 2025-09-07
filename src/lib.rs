@@ -17,9 +17,7 @@
 //! ```no_run
 //! use std::process::ExitCode;
 //! use via::middleware::error_boundary;
-//! use via::{Next, Request, Response, Server};
-//!
-//! type Error = Box<dyn std::error::Error + Send + Sync>;
+//! use via::{BoxError, Next, Request, Response, Server};
 //!
 //! async fn hello(request: Request, _: Next) -> via::Result {
 //!     // Get a reference to the path parameter `name` from the request uri.
@@ -34,7 +32,7 @@
 //! // specify a runtime flavor and simpy use #[tokio::main] if your deployment
 //! // target has more than one CPU core.
 //! #[tokio::main]
-//! async fn main() -> Result<ExitCode, Error> {
+//! async fn main() -> Result<ExitCode, BoxError> {
 //!     // Create a new application.
 //!     let mut app = via::app(());
 //!
@@ -54,16 +52,16 @@
 
 #![allow(clippy::module_inception)]
 
-pub mod error;
 pub mod middleware;
 pub mod request;
 pub mod response;
 
 mod app;
+mod error;
 mod server;
 
 pub use app::{App, Route, app};
-pub use error::Error;
+pub use error::{BoxError, Error};
 pub use middleware::method::*;
 pub use middleware::{Middleware, Next, Result};
 pub use request::Request;
@@ -72,4 +70,4 @@ pub use server::{Server, start};
 
 /// A type erased, dynamically dispatched [`Body`](http_body::Body).
 ///
-pub type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, error::DynError>;
+pub type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, error::BoxError>;

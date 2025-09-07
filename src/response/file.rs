@@ -16,7 +16,7 @@ use tokio::{task, time};
 
 use super::buffer_body::MAX_FRAME_LEN;
 use super::{Pipe, Response, ResponseBuilder};
-use crate::error::{DynError, Error};
+use crate::error::{BoxError, Error};
 use crate::middleware;
 
 /// The base amount of time that the server will wait before
@@ -217,7 +217,7 @@ impl FileStream {
 }
 
 impl Stream for FileStream {
-    type Item = Result<Frame<Bytes>, DynError>;
+    type Item = Result<Frame<Bytes>, BoxError>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.remaining == 0 {

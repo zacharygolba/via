@@ -11,7 +11,7 @@ use serde::{Serialize, Serializer};
 use super::BufferBody;
 use super::response::Response;
 use crate::BoxBody;
-use crate::error::{DynError, Error};
+use crate::error::{BoxError, Error};
 
 /// Define how a type can finalize a [`ResponseBuilder`].
 ///
@@ -121,7 +121,7 @@ impl ResponseBuilder {
 
 impl<T> Pipe for T
 where
-    T: Stream<Item = Result<Frame<Bytes>, DynError>> + Send + Sync + 'static,
+    T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static,
 {
     fn pipe(self, builder: ResponseBuilder) -> Result<Response, Error> {
         builder

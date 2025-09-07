@@ -4,9 +4,7 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use via::middleware::error_boundary;
-use via::{Next, Request, Response};
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
+use via::{BoxError, Next, Request, Response};
 
 /// A struct of containing the shared state for the application. This struct
 /// will be made available to all middleware functions and responders by
@@ -72,7 +70,7 @@ async fn totals(request: Request<State>, _: Next<State>) -> via::Result {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, Error> {
+async fn main() -> Result<ExitCode, BoxError> {
     // Create a new application with a `Counter` as state.
     let mut app = via::app(State {
         errors: Arc::new(AtomicU32::new(0)),

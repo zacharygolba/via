@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use super::accept::accept;
 use crate::app::App;
-use crate::error::DynError;
+use crate::error::BoxError;
 
 #[cfg(not(feature = "rustls"))]
 use super::acceptor::HttpAcceptor;
@@ -142,7 +142,7 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// decommissioning logic of the cluster.
     ///
     #[cfg(feature = "rustls")]
-    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, DynError> {
+    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, BoxError> {
         let rustls_config = match self.rustls_config {
             Some(config) => Arc::new(config),
             None => panic!("rustls_config is required when the 'rustls' feature is enabled."),
@@ -161,7 +161,7 @@ impl<T: Send + Sync + 'static> Server<T> {
     }
 
     #[cfg(not(feature = "rustls"))]
-    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, DynError> {
+    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, BoxError> {
         let exit = accept(
             TcpListener::bind(address).await?,
             HttpAcceptor::new(),

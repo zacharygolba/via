@@ -1,9 +1,7 @@
 use cookie::{Cookie, Key};
 use std::process::ExitCode;
 use via::middleware::{cookie_parser, error_boundary};
-use via::{Next, Request, Response};
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
+use via::{BoxError, Next, Request, Response};
 
 /// A struct used to store application state.
 ///
@@ -87,7 +85,7 @@ fn get_secret_from_env() -> Key {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, Error> {
+async fn main() -> Result<ExitCode, BoxError> {
     // Load the environment variables from the ".env" file. This is where we
     // keep the secret key in development. In production, you may want to
     // configure the secret key using a different method. For example, using

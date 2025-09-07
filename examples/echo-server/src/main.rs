@@ -1,15 +1,13 @@
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{Next, Pipe, Request, Response};
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
+use via::{BoxError, Next, Pipe, Request, Response};
 
 async fn echo(request: Request, _: Next) -> via::Result {
     request.pipe(Response::build())
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, Error> {
+async fn main() -> Result<ExitCode, BoxError> {
     let mut app = via::app(());
 
     // Include an error boundary to catch any errors that occur downstream.

@@ -1,4 +1,3 @@
-use http::StatusCode;
 use via::{Next, Request, Response};
 
 use crate::database::models::user::*;
@@ -15,9 +14,7 @@ pub async fn create(request: Request<State>, _: Next<State>) -> via::Result {
     let payload = request.into_future().await?;
     let new_user = payload.parse_json::<NewUser>()?.insert(&state.pool).await?;
 
-    Response::build()
-        .status(StatusCode::CREATED)
-        .json(&new_user)
+    Response::build().status(201).json(&new_user)
 }
 
 pub async fn show(request: Request<State>, _: Next<State>) -> via::Result {
@@ -43,5 +40,5 @@ pub async fn destroy(request: Request<State>, _: Next<State>) -> via::Result {
     let id = request.param("id").parse()?;
 
     User::delete(&request.state().pool, id).await?;
-    Response::build().status(StatusCode::NO_CONTENT).finish()
+    Response::build().status(204).finish()
 }
