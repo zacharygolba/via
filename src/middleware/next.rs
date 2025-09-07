@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use super::middleware::{BoxFuture, Middleware};
-use crate::error::Error;
 use crate::request::Request;
 
 pub struct Next<T = ()> {
@@ -13,10 +12,7 @@ impl<T> Next<T> {
     pub fn call(mut self, request: Request<T>) -> BoxFuture {
         match self.deque.pop_front() {
             Some(middleware) => middleware.call(request, self),
-            None => Box::pin(async {
-                let message = "not found".to_owned();
-                Err(Error::not_found(message.into()))
-            }),
+            None => Box::pin(async { Err(crate::error!(404)) }),
         }
     }
 }

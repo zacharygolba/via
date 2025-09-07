@@ -7,25 +7,24 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use tokio_rustls::rustls;
-
-use crate::Error;
+use via::BoxError;
 
 /// Load the certificate and private key from the file system and use them
 /// to create a rustls::ServerConfig.
 ///
-pub fn server_config() -> Result<rustls::ServerConfig, Error> {
+pub fn server_config() -> Result<rustls::ServerConfig, BoxError> {
     let key = load_key("localhost.key")?;
     let cert = load_certs("localhost.cert")?;
     let mut config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(cert, key)
-        .map_err(Error::from)?;
+        .map_err(Box::new)?;
 
     config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     Ok(config)
 }
 
-fn load_certs(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, Error> {
+fn load_certs(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, BoxError> {
     let mut reader = BufReader::new(File::open(path)?);
 
     rustls_pemfile::certs(&mut reader)
@@ -33,7 +32,7 @@ fn load_certs(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, Er
         .collect()
 }
 
-fn load_key(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>, Error> {
+fn load_key(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>, BoxError> {
     let mut reader = BufReader::new(File::open(path)?);
 
     rustls_pemfile::private_key(&mut reader)

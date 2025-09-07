@@ -71,11 +71,12 @@ impl Redirect {
 
         let status = response.status();
 
-        if status.is_redirection() {
-            let message = format!("Invalid status code for redirect: {}", status);
-            Err(Error::new(message.into()))
-        } else {
-            Ok(response)
-        }
+        status.is_redirection().then_some(response).ok_or_else(|| {
+            crate::error!(
+                400,
+                "Expected redirect status to be within 300-399. Received: : {}",
+                status
+            )
+        })
     }
 }

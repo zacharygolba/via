@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use http::HeaderMap;
+use http::{HeaderMap, StatusCode};
 use http_body::Body;
 use http_body_util::LengthLimitError;
 use serde::de::DeserializeOwned;
@@ -11,7 +11,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
 use super::RequestBody;
-use crate::error::{DynError, Error};
+use crate::error::{BoxError, Error};
 
 /// The entire contents of a request body, in-memory.
 ///
@@ -36,15 +36,14 @@ struct JsonPayloadVisitor<T> {
 }
 
 fn already_read() -> Error {
-    let message = "request body already read".to_owned();
-    Error::internal_server_error(message.into())
+    crate::error!(500, "Request body already read.")
 }
 
-fn map_err(error: DynError) -> Error {
+fn map_err(error: BoxError) -> Error {
     if error.is::<LengthLimitError>() {
-        Error::payload_too_large(error)
+        Error::new(StatusCode::PAYLOAD_TOO_LARGE, error)
     } else {
-        Error::bad_request(error)
+        Error::new(StatusCode::BAD_REQUEST, error)
     }
 }
 

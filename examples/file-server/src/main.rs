@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use via::middleware::error_boundary;
 use via::response::File;
-use via::{Next, Request};
+use via::{BoxError, Next, Request};
 
 /// The maximum amount of memory that will be allocated to serve a single file.
 ///
@@ -16,8 +16,6 @@ const MAX_ALLOC_SIZE: usize = 1024 * 1024;
 /// working directory of the process.
 ///
 const PUBLIC_DIR: &str = "./public";
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Serve the file at the provided path argument.
 ///
@@ -57,7 +55,7 @@ fn resolve_path(path_param: &str) -> PathBuf {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, Error> {
+async fn main() -> Result<ExitCode, BoxError> {
     // Create a new application.
     let mut app = via::app(());
 
