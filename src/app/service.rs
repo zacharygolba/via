@@ -39,17 +39,18 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
             let (parts, body) = request.into_parts();
 
             Request::new(
-                // Request type owns an Arc to the global application state.
-                // This requires an atomic op. Performing it early is likely
-                // beneficial to synchronize "the state of the world" before
-                // routing the request. Subsequent atomic ops are conditional.
-                Arc::clone(&self.app.state),
-                // Allocate early for path parameters to confirm that we are
-                // able to perform an allocation before serving the request.
-                //
-                // It's safer to fail here than later on when application
-                // specific business logic takes over.
-                Head::new(parts, HashMap::with_capacity(8)),
+                Head::new(
+                    parts,
+                    // The request type owns an Arc to the application state.
+                    // This is the only unconditional atomic op of the service.
+                    Arc::clone(&self.app.state),
+                    // Allocate early for path parameters to confirm that we are
+                    // able to perform an allocation before serving the request.
+                    //
+                    // It's safer to fail here than later on when application
+                    // specific business logic takes over.
+                    HashMap::with_capacity(8),
+                ),
                 // Do not allocate for the request body until it's absolutely
                 // necessary.
                 //

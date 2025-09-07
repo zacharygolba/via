@@ -9,41 +9,46 @@ pub async fn auth(request: Request<State>, next: Next<State>) -> via::Result {
 }
 
 pub async fn index(request: Request<State>, _: Next<State>) -> via::Result {
-    let posts = Post::public(&request.state().pool).await?;
+    let state = request.state();
+    let posts = Post::public(&state.pool).await?;
 
     Response::build().json(&posts)
 }
 
 pub async fn create(request: Request<State>, _: Next<State>) -> via::Result {
-    let state = request.state().clone();
-    let payload = request.into_future().await?;
-    let new_post = payload.parse_json::<NewPost>()?.insert(&state.pool).await?;
+    let (head, body) = request.into_parts();
+    let state = head.state();
 
-    Response::build().status(201).json(&new_post)
+    let new_post = body.into_future().await?.parse_json::<NewPost>()?;
+    let post = new_post.insert(&state.pool).await?;
+
+    Response::build().status(201).json(&post)
 }
 
 pub async fn show(request: Request<State>, _: Next<State>) -> via::Result {
+    let state = request.state();
     let id = request.param("id").parse()?;
-    let post = Post::find(&request.state().pool, id).await?;
+
+    let post = Post::find(&state.pool, id).await?;
 
     Response::build().json(&post)
 }
 
 pub async fn update(request: Request<State>, _: Next<State>) -> via::Result {
-    let id = request.param("id").parse()?;
-    let state = request.state().clone();
-    let payload = request.into_future().await?;
-    let updated_post = payload
-        .parse_json::<ChangeSet>()?
-        .apply(&state.pool, id)
-        .await?;
+    let (head, body) = request.into_parts();
+    let state = head.state();
+    let id = head.param("id").parse()?;
 
-    Response::build().json(&updated_post)
+    let change_set = body.into_future().await?.parse_json::<ChangeSet>()?;
+    let post = change_set.apply(&state.pool, id).await?;
+
+    Response::build().json(&post)
 }
 
 pub async fn destroy(request: Request<State>, _: Next<State>) -> via::Result {
+    let state = request.state();
     let id = request.param("id").parse()?;
 
-    Post::delete(&request.state().pool, id).await?;
+    Post::delete(&state.pool, id).await?;
     Response::build().status(204).finish()
 }
