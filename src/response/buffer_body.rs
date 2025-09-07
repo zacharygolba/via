@@ -12,7 +12,7 @@ pub const MAX_FRAME_LEN: usize = 16 * 1024; // 16KB
 
 const ADAPTIVE_THRESHOLD: usize = 64 * 1024; // 64KB
 
-/// A buffered `impl Body` that is read in `8KB` chunks.
+/// A buffered `impl Body` that is written in `8KB..=16KB` chunks.
 ///
 #[derive(Debug, Default)]
 pub struct BufferBody {
