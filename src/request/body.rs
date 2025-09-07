@@ -111,21 +111,6 @@ impl Payload {
         }
     }
 
-    pub fn to_string(&self) -> Result<String, Error> {
-        String::from_utf8(self.to_vec()).map_err(Error::bad_request)
-    }
-
-    pub fn to_vec(&self) -> Vec<u8> {
-        let remaining = self.frames.iter().map(Bytes::len).sum();
-        let mut buf = Vec::with_capacity(remaining);
-
-        for frame in &self.frames {
-            buf.extend_from_slice(frame);
-        }
-
-        buf
-    }
-
     pub fn trailers(&self) -> Option<&HeaderMap> {
         self.trailers.as_ref()
     }
@@ -136,25 +121,40 @@ impl Payload {
     {
         let json = match self.as_str()? {
             Some(utf8) => Cow::Borrowed(utf8),
-            None => Cow::Owned(self.to_string()?),
+            None => Cow::Owned(self.into_string()?),
         };
 
-        // Attempt deserialize JSON assuming that type `D` exists in a top-level
-        // data field. This is a common pattern so we optimize for it to provide
-        // a more convienent API. If you frequently expect `D` to be at the root
-        // of the JSON object contained in `payload` and not in a top-level
-        // `data` field, we recommend writing a utility function that circumvents
-        // the extra call to deserialize. Otherwise, this has no additional
-        // overhead.
+        // Attempt deserialize JSON assuming that type `D` exists in a top
+        // level data field. This is a common pattern so we optimize for it to
+        // provide a more convenient API. If you frequently expect `D` to be at
+        // the root of the JSON object contained in `payload` and not in a top-
+        // level `data` field, we recommend writing a utility function that
+        // circumvents the extra call to deserialize. Otherwise, this has no
+        // additional overhead.
         serde_json::from_str(&json)
             // If `D` was contained in a top-level `data` field, unwrap it.
             .map(|object: JsonPayload<D>| object.data)
-            // Otherwise, attempt to deserialize `D` from the object at the root
-            // of payload. If that also fails, use the original error.
+            // Otherwise, attempt to deserialize `D` from the object at the
+            // root of payload. If that also fails, use the original error.
             .or_else(|error| serde_json::from_str(&json).or(Err(error)))
-            // If an error occured, wrap it with `via::Error` and set the status
+            // If an error occurred, wrap it with `via::Error` and set the status
             // code to 400 Bad Request.
             .map_err(Error::bad_request)
+    }
+
+    pub fn into_string(self) -> Result<String, Error> {
+        String::from_utf8(self.into_vec()).map_err(Error::bad_request)
+    }
+
+    pub fn into_vec(self) -> Vec<u8> {
+        let remaining = self.frames.iter().map(Bytes::len).sum();
+        let mut buf = Vec::with_capacity(remaining);
+
+        for frame in &self.frames {
+            buf.extend_from_slice(frame);
+        }
+
+        buf
     }
 }
 
