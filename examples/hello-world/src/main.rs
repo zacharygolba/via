@@ -1,8 +1,6 @@
 use std::process::ExitCode;
 use via::middleware::error_boundary;
-use via::{Next, Request, Response};
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
+use via::{BoxError, Next, Request, Response};
 
 async fn hello(request: Request, _: Next) -> via::Result {
     // Get a reference to the path parameter `name` from the request uri.
@@ -13,7 +11,7 @@ async fn hello(request: Request, _: Next) -> via::Result {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, Error> {
+async fn main() -> Result<ExitCode, BoxError> {
     // Create a new application.
     let mut app = via::app(());
 

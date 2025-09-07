@@ -48,7 +48,7 @@ fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
                         jar.add_original(cookie);
                     }
                     Err(error) => {
-                        break 'parse Err(Error::bad_request(error.into()));
+                        break 'parse Err(Error::bad_request(error));
                     }
                 }
             }

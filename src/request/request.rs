@@ -125,11 +125,11 @@ impl<T> Request<T> {
     where
         K: AsHeaderName,
     {
-        match self.headers().get(key).map(|value| value.to_str()) {
-            Some(Ok(value_as_str)) => Ok(Some(value_as_str)),
-            Some(Err(error)) => Err(Error::bad_request(error.into())),
-            None => Ok(None),
-        }
+        self.headers()
+            .get(key)
+            .map(|value| value.to_str())
+            .transpose()
+            .map_err(Error::bad_request)
     }
 
     /// Returns a reference to a map that contains the headers associated with

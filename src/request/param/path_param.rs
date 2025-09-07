@@ -68,10 +68,11 @@ impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
         match self.at {
             Some((start, Some(end))) => T::decode(&self.source[start..end]),
             Some((start, None)) => T::decode(&self.source[start..]),
-            None => {
-                let message = format!("missing required parameter '{}'", self.name);
-                Err(Error::bad_request(message.into()))
-            }
+            None => Err(crate::error!(
+                400,
+                "Missing required parameter \"{}\".",
+                self.name
+            )),
         }
     }
 }
