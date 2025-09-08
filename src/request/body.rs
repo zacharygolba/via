@@ -94,18 +94,17 @@ impl Payload {
     /// is valid UTF-8.
     ///
     pub fn as_str(&self) -> Result<Option<&str>, Error> {
-        Ok(if self.frames.len() == 1 {
-            Some(str::from_utf8(&self.frames[0]).map_err(Error::bad_request)?)
-        } else {
-            None
-        })
+        self.as_slice()
+            .map(str::from_utf8)
+            .transpose()
+            .map_err(Error::bad_request)
     }
 
     /// Return the entire body as a slice if it is composed of a single frame.
     ///
     pub fn as_slice(&self) -> Option<&[u8]> {
-        if self.frames.len() == 1 {
-            Some(&self.frames[0])
+        if let [slice] = self.frames.as_slice() {
+            Some(slice)
         } else {
             None
         }
@@ -116,8 +115,7 @@ impl Payload {
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
-        let remaining = self.frames.iter().map(Bytes::len).sum();
-        let mut buf = Vec::with_capacity(remaining);
+        let mut buf = Vec::with_capacity(self.frames.iter().map(Bytes::len).sum());
 
         for frame in &self.frames {
             buf.extend_from_slice(frame);
