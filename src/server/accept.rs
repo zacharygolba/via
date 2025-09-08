@@ -4,7 +4,8 @@ use std::cell::Cell;
 use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
 use tokio::task::{JoinError, JoinSet};
@@ -16,6 +17,10 @@ use hyper_util::rt::TokioExecutor;
 use super::acceptor::Acceptor;
 use crate::app::{App, AppService};
 use crate::error::ServerError;
+
+// We'll join at least 1 connection every 10 minutes or so. We'll also check
+// and see any connections that finished during the sweep.
+const SWEEP_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
 macro_rules! log {
     ($($arg:tt)*) => {
@@ -55,18 +60,43 @@ where
         rx
     };
 
-    // A flag that tracks whether or not there are inflight connections that
-    // can be joined.
+    // The last time a GC sweep was performed.
     //
-    // Using Cell<bool> makes reads and writes explicit and accidental movement
-    // a compiler error. These are all things we want in such a hot path.
-    let try_join = Cell::new(false);
+    // Using Cell makes reads and writes explicit and accidental movement a
+    // compiler error. These are all things we want in such a hot path.
+    let last_sweep = Cell::new(Instant::now());
+
+    // A flag that tracks whether or not we should join a connection. We try to
+    // join a single connection while waiting for the next stream to come from
+    // the TCP listener.
+    let try_join = AtomicBool::new(false);
 
     // Wrap app in an arc so it can be cloned into the connection task.
     let app = Arc::new(app);
 
     // Start accepting incoming connections.
     let exit_code = loop {
+        // Check and see if it's time to join a connection.
+        {
+            let now = Instant::now();
+
+            if let Some(diff) = now.checked_duration_since(last_sweep.get())
+                && diff < SWEEP_INTERVAL
+            {
+                if let Some(Err(error)) = connections.join_next().await {
+                    handle_error(&error);
+                }
+
+                while let Some(result) = connections.try_join_next() {
+                    if let Err(error) = &result {
+                        handle_error(error);
+                    }
+                }
+
+                try_join.store(false, Ordering::Relaxed);
+            }
+        }
+
         // Acquire a permit from the semaphore.
         let permit = match semaphore.clone().acquire_owned().await {
             Ok(acquired) => acquired,
@@ -74,7 +104,7 @@ where
         };
 
         tokio::select! {
-            // Wait for the next stream from the tcp listener.
+            // Wait for the next stream from the TCP listener.
             accepted = listener.accept() => {
                 match accepted {
                     Err(error) => log!("error(accept): {}", error),
@@ -92,21 +122,14 @@ where
                             let _permit = permit; // RAII-guard
                             future.await
                         });
-
-                        // Start joining connections again.
-                        try_join.set(true);
                     }
                 }
             },
-            // Try to join an inflight connection while we wait.
-            joined = connections.join_next(), if try_join.get() => {
-                match &joined {
-                    // Join error.
-                    Some(Err(error)) => handle_error(error),
-                    // Join success.
-                    Some(Ok(_)) => {}
-                    // The JoinSet is empty.
-                    None => try_join.set(false),
+            // Try to join an inflight connection while we wait every other
+            // turn of the accept loop.
+            joined = connections.join_next(), if try_join.fetch_not(Ordering::Relaxed) => {
+                if let Some(Err(error)) = joined {
+                    handle_error(&error);
                 }
             }
             // Wait for a graceful shutdown signal.
