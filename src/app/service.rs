@@ -1,7 +1,7 @@
 use http_body_util::Limited;
 use hyper::body::Incoming;
 use hyper::service::Service;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
@@ -50,7 +50,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
                     //
                     // It's safer to fail here than later on when application
                     // specific business logic takes over.
-                    HashMap::with_capacity(8),
+                    Vec::with_capacity(8),
                 ),
                 // Do not allocate for the request body until it's absolutely
                 // necessary.
@@ -88,7 +88,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
 
             if let Some((name, range)) = param {
                 // Include the resolved dynamic parameter in params.
-                params.insert(Arc::clone(name), range);
+                params.push((Arc::clone(name), range));
             }
         }
 
