@@ -27,10 +27,6 @@
 //!     Response::build().text(format!("Hello, {}!", name))
 //! }
 //!
-//! // For the sake of simplifying doctests, we're specifying that we want to
-//! // use the "current_thread" runtime flavor. You'll most likely not want to
-//! // specify a runtime flavor and simpy use #[tokio::main] if your deployment
-//! // target has more than one CPU core.
 //! #[tokio::main]
 //! async fn main() -> Result<ExitCode, BoxError> {
 //!     // Create a new application.
@@ -68,7 +64,3 @@ pub use next::Next;
 pub use request::Request;
 pub use response::{Pipe, Response};
 pub use server::{Server, start};
-
-/// A type erased, dynamically dispatched [`Body`](http_body::Body).
-///
-pub type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, error::BoxError>;

@@ -2,7 +2,6 @@
 //!
 
 use http::StatusCode;
-use http_body_util::Either;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::borrow::Cow;
@@ -857,7 +856,7 @@ impl From<Error> for Response {
 
         loop {
             if !respond_with_json {
-                let mut response = Self::new(Either::Left(error.to_string().into()));
+                let mut response = Self::new(error.to_string().into());
                 *response.status_mut() = error.status;
                 break response;
             }

@@ -1,5 +1,7 @@
 use bytes::{Buf, Bytes};
 use http_body::{Body, Frame, SizeHint};
+use http_body_util::Either;
+use http_body_util::combinators::BoxBody;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -11,6 +13,9 @@ pub const MIN_FRAME_LEN: usize = 8 * 1024; // 8KB
 pub const MAX_FRAME_LEN: usize = 16 * 1024; // 16KB
 
 const ADAPTIVE_THRESHOLD: usize = 64 * 1024; // 64KB
+
+#[derive(Debug)]
+pub struct ResponseBody(Either<BufferBody, BoxBody<Bytes, BoxError>>);
 
 /// A buffered `impl Body` that is written in `8KB..=16KB` chunks.
 ///
@@ -101,6 +106,67 @@ impl From<&'_ [u8]> for BufferBody {
             max: adapt_frame_size(slice.len()),
             data: Bytes::copy_from_slice(slice),
         }
+    }
+}
+
+impl ResponseBody {
+    /// Consume the response body and return a dynamically-dispatched
+    /// [`BoxBody`] that is allocated on the heap.
+    ///
+    pub fn boxed(self) -> BoxBody<Bytes, BoxError> {
+        match self {
+            Self(Either::Left(inline)) => BoxBody::new(inline),
+            Self(Either::Right(boxed)) => boxed,
+        }
+    }
+}
+
+impl ResponseBody {
+    #[inline]
+    pub(crate) fn map<U, F>(self, map: F) -> Self
+    where
+        F: FnOnce(ResponseBody) -> U,
+        U: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
+    {
+        Self(Either::Right(BoxBody::new(map(self))))
+    }
+}
+
+impl Body for ResponseBody {
+    type Data = Bytes;
+    type Error = BoxError;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        context: &mut Context,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let Self(body) = self.get_mut();
+        Pin::new(body).poll_frame(context)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.0.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.0.size_hint()
+    }
+}
+
+impl From<BoxBody<Bytes, BoxError>> for ResponseBody {
+    #[inline]
+    fn from(body: BoxBody<Bytes, BoxError>) -> Self {
+        ResponseBody(Either::Right(body))
+    }
+}
+
+impl<T> From<T> for ResponseBody
+where
+    BufferBody: From<T>,
+{
+    #[inline]
+    fn from(body: T) -> Self {
+        ResponseBody(Either::Left(body.into()))
     }
 }
 

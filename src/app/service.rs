@@ -11,7 +11,7 @@ use std::task::{Context, Poll};
 use crate::app::App;
 use crate::middleware::BoxFuture;
 use crate::next::Next;
-use crate::request::{Head, Request};
+use crate::request::{Request, RequestBody, RequestHead};
 use crate::response::ResponseBody;
 
 pub struct ServeRequest(BoxFuture);
@@ -40,7 +40,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
             let (parts, body) = request.into_parts();
 
             Request::new(
-                Head::new(
+                RequestHead::new(
                     parts,
                     // The request type owns an Arc to the application state.
                     // This is the only unconditional atomic op of the service.
@@ -61,7 +61,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
                 // This is also a small performance optimization that avoids an
                 // additional allocation if you end up reading the entire body
                 // into memory, a common case for backend JSON APIs.
-                Limited::new(body, self.max_body_size),
+                RequestBody::new(Limited::new(body, self.max_body_size)),
             )
         };
 
@@ -72,9 +72,9 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         // during route resolution to 1 per dynamic param name.
         let mut next = Next::new(VecDeque::with_capacity(8));
 
-        // Get a mutable reference to the path params associated with the
-        // request as well as a str to the uri path.
-        let (params, path) = request.params_mut_with_path();
+        // Get a mutable reference to the component parts of the request as
+        // well as the vec that contains the path parameters.
+        let RequestHead { parts, params, .. } = request.head_mut();
 
         // 1 atomic op per matched middleware fn and an additional op if the
         // path segment matched a dynamic segment.
@@ -82,7 +82,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         // Allocations only occur if a path segment has 2 :dynamic or *wildcard
         // patterns and a static a static pattern that matches the path
         // segment.
-        for (route, param) in self.app.router.traverse(path) {
+        for (route, param) in self.app.router.traverse(parts.uri.path()) {
             // Add the matched route's middleware to the call stack.
             next.extend(route.map(Arc::clone));
 
