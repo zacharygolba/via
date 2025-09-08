@@ -4,7 +4,6 @@ use http::header::{AsHeaderName, CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
 use http_body::Body;
-use std::collections::HashMap;
 use std::sync::Arc;
 use via_router::Param;
 
@@ -22,7 +21,7 @@ pub struct RequestHead<T> {
 
     /// The request's path parameters.
     ///
-    pub(crate) params: HashMap<Arc<str>, Param>,
+    pub(crate) params: Vec<(Arc<str>, Param)>,
 
     /// The cookies associated with the request. If there is not a
     /// [CookieParser](crate::middleware::CookieParser)
@@ -45,7 +44,7 @@ pub struct Request<T = ()> {
 
 impl<T> RequestHead<T> {
     #[inline]
-    pub(crate) fn new(parts: Parts, state: Arc<T>, params: HashMap<Arc<str>, Param>) -> Self {
+    pub(crate) fn new(parts: Parts, state: Arc<T>, params: Vec<(Arc<str>, Param)>) -> Self {
         Self {
             parts,
             params,
@@ -81,7 +80,13 @@ impl<T> RequestHead<T> {
     ///
     #[inline]
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
-        PathParam::new(name, self.parts.uri.path(), self.params.get(name).copied())
+        PathParam::new(
+            name,
+            self.parts.uri.path(),
+            self.params
+                .iter()
+                .find_map(|(n, range)| if &**n == name { Some(*range) } else { None }),
+        )
     }
 
     /// Returns a convenient wrapper around an optional references to the query
