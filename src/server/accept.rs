@@ -55,7 +55,8 @@ where
         rx
     };
 
-    // A flag that determines whether or not we should join a connection.
+    // A flag that tracks whether or not there are inflight connections that
+    // can be joined.
     let try_join = Cell::new(false);
 
     // Wrap app in an arc so it can be cloned into the connection task.
@@ -66,7 +67,7 @@ where
         // Acquire a permit from the semaphore.
         let permit = match semaphore.clone().acquire_owned().await {
             Ok(acquired) => acquired,
-            Err(_) => break 1.into(),
+            Err(_) => break ExitCode::FAILURE,
         };
 
         tokio::select! {
@@ -89,9 +90,8 @@ where
                             future.await
                         });
 
-                        if !try_join.get() {
-                            try_join.set(true);
-                        }
+                        // Start joining connections again.
+                        try_join.set(true);
                     }
                 }
             },
