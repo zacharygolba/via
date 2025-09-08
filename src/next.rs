@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use super::middleware::{BoxFuture, Middleware};
+use crate::middleware::{BoxFuture, Middleware};
 use crate::request::Request;
 
 pub struct Next<T = ()> {

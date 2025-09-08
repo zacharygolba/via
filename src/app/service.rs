@@ -9,7 +9,8 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use crate::app::App;
-use crate::middleware::{BoxFuture, Next};
+use crate::middleware::BoxFuture;
+use crate::next::Next;
 use crate::request::{Head, Request};
 use crate::response::ResponseBody;
 

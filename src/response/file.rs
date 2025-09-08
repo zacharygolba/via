@@ -17,7 +17,6 @@ use tokio::{task, time};
 use super::buffer_body::MAX_FRAME_LEN;
 use super::{Pipe, Response, ResponseBuilder};
 use crate::error::{BoxError, Error};
-use crate::middleware;
 
 /// The base amount of time that the server will wait before
 /// attempting to open a file after an error has occurred.
@@ -158,7 +157,7 @@ impl File {
 
     /// Respond with a stream of the file contents in chunks.
     ///
-    pub async fn stream(self) -> middleware::Result {
+    pub async fn stream(self) -> crate::Result {
         self.serve(0).await
     }
 
@@ -167,7 +166,7 @@ impl File {
     /// If the file is larger than the provided `max_alloc_size` in bytes, it
     /// will be streamed over the socket with chunked transfer encoding.
     ///
-    pub async fn serve(self, max_alloc_size: usize) -> middleware::Result {
+    pub async fn serve(self, max_alloc_size: usize) -> crate::Result {
         match open(&self.path, max_alloc_size).await? {
             Open::Eager(meta, data) => {
                 let response = Response::build().header(CONTENT_LENGTH, data.len());

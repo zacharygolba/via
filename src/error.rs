@@ -33,6 +33,12 @@ pub struct Message<'a> {
     message: Cow<'a, str>,
 }
 
+#[derive(Debug)]
+pub(crate) enum ServerError {
+    Io(io::Error),
+    Hyper(hyper::Error),
+}
+
 #[macro_export]
 macro_rules! error {
     (@reason $ctor:ident, $($arg:tt)*) => {{
@@ -918,5 +924,35 @@ impl StdError for Message<'_> {}
 impl Display for Message<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(&self.message, f)
+    }
+}
+
+impl StdError for ServerError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            Self::Io(error) => error.source(),
+            Self::Hyper(error) => error.source(),
+        }
+    }
+}
+
+impl Display for ServerError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Self::Io(error) => Display::fmt(error, f),
+            Self::Hyper(error) => Display::fmt(error, f),
+        }
+    }
+}
+
+impl From<io::Error> for ServerError {
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+impl From<hyper::Error> for ServerError {
+    fn from(error: hyper::Error) -> Self {
+        Self::Hyper(error)
     }
 }

@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use super::middleware::Middleware;
-use super::next::Next;
-use crate::error::Error;
-use crate::request::Request;
+use crate::{Error, Middleware, Next, Request};
 
 /// A middleware that catches errors that occur downstream and then calls the
 /// provided closure to inspect the error to another error. Think of this as a

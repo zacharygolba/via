@@ -1,10 +1,7 @@
 use cookie::{Cookie, ParseError, SplitCookies};
 use http::header::COOKIE;
 
-use super::middleware::Middleware;
-use super::next::Next;
-use crate::Error;
-use crate::request::Request;
+use crate::{Error, Middleware, Next, Request};
 
 pub fn parse_encoded<T>() -> impl Middleware<T> {
     cookie_parser::<ParseEncoded, _>()
