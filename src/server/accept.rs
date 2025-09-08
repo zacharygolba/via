@@ -57,6 +57,9 @@ where
 
     // A flag that tracks whether or not there are inflight connections that
     // can be joined.
+    //
+    // Using Cell<bool> makes reads and writes explicit and accidental movement
+    // a compiler error. These are all things we want in such a hot path.
     let try_join = Cell::new(false);
 
     // Wrap app in an arc so it can be cloned into the connection task.
