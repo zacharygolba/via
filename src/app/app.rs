@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::router::{Router, Scope};
+use super::router::{Route, Router};
 use crate::middleware::Middleware;
 
 pub struct App<T> {
@@ -18,8 +18,8 @@ pub fn app<T>(state: T) -> App<T> {
 }
 
 impl<T> App<T> {
-    pub fn at(&mut self, path: &'static str) -> Scope<'_, T> {
-        Scope {
+    pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
+        Route {
             inner: self.router.at(path),
         }
     }
