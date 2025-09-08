@@ -4,8 +4,8 @@ use http::{HeaderValue, Method};
 use crate::{BoxFuture, Middleware, Next, Request, Response};
 
 pub struct Resource<T> {
-    allow: String,
-    accept: Vec<(Method, Box<dyn Middleware<T>>)>,
+    allowed: String,
+    methods: Vec<(Method, Box<dyn Middleware<T>>)>,
     or_else: Option<Box<dyn Fn(Request<T>, Next<T>) -> BoxFuture + Send + Sync>>,
 }
 
@@ -74,15 +74,14 @@ where
 
 impl<T> Resource<T> {
     pub fn and(mut self, other: Resource<T>) -> Self {
-        let allow = &mut self.allow;
-        let accept = &mut self.accept;
+        let allowed = &mut self.allowed;
 
-        for (method, _) in &other.accept {
-            allow.push_str(", ");
-            allow.push_str(method.as_str());
+        for (method, _) in &other.methods {
+            allowed.push_str(", ");
+            allowed.push_str(method.as_str());
         }
 
-        accept.extend(other.accept);
+        self.methods.extend(other.methods);
         self
     }
 
@@ -105,8 +104,8 @@ impl<T> Resource<T> {
         M: Middleware<T> + 'static,
     {
         Self {
-            allow: method.as_str().to_owned(),
-            accept: vec![(method, Box::new(middleware))],
+            allowed: method.as_str().to_owned(),
+            methods: vec![(method, Box::new(middleware))],
             or_else: None,
         }
     }
@@ -116,8 +115,8 @@ impl<T> Middleware<T> for Resource<T> {
     fn call(&self, request: Request<T>, next: Next<T>) -> BoxFuture {
         let method = request.method();
 
-        for (accept, middleware) in &self.accept {
-            if accept == method {
+        for (allow, middleware) in &self.methods {
+            if allow == method {
                 return middleware.call(request, next);
             }
         }
@@ -129,7 +128,7 @@ impl<T> Middleware<T> for Resource<T> {
                 crate::error!(405, "Request method \"{}\" is not supported.", method).as_json(),
             );
 
-            if let Ok(header) = HeaderValue::from_str(&self.allow) {
+            if let Ok(header) = HeaderValue::from_str(&self.allowed) {
                 response.headers_mut().insert(ALLOW, header);
             }
 
