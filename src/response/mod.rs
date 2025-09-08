@@ -1,4 +1,4 @@
-mod buffer_body;
+mod body;
 mod builder;
 mod redirect;
 mod response;
@@ -9,7 +9,7 @@ mod file;
 #[cfg(feature = "fs")]
 pub use file::File;
 
-pub use buffer_body::BufferBody;
+pub use body::{BufferBody, ResponseBody};
 pub use builder::{Pipe, ResponseBuilder};
 pub use redirect::Redirect;
-pub use response::{Response, ResponseBody};
+pub use response::Response;

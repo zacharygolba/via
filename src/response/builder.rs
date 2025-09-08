@@ -4,14 +4,14 @@ use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::{HeaderName, HeaderValue, StatusCode, Version};
 use http_body::Frame;
-use http_body_util::{Either, StreamBody};
-use serde::ser::SerializeStruct;
-use serde::{Serialize, Serializer};
+use http_body_util::StreamBody;
+use http_body_util::combinators::BoxBody;
+use serde::Serialize;
 
 use super::BufferBody;
 use super::response::Response;
-use crate::BoxBody;
 use crate::error::{BoxError, Error};
+use crate::response::ResponseBody;
 
 /// Define how a type can finalize a [`ResponseBuilder`].
 ///
@@ -33,6 +33,7 @@ pub struct ResponseBuilder {
     inner: http::response::Builder,
 }
 
+#[derive(Serialize)]
 struct JsonPayload<'a, T> {
     data: &'a T,
 }
@@ -72,11 +73,11 @@ impl ResponseBuilder {
     #[inline]
     pub fn body<T>(self, body: T) -> Result<Response, Error>
     where
-        BufferBody: From<T>,
+        ResponseBody: From<T>,
     {
         Ok(Response {
             cookies: CookieJar::new(),
-            inner: self.inner.body(Either::Left(body.into()))?,
+            inner: self.inner.body(body.into())?,
         })
     }
 
@@ -103,14 +104,6 @@ impl ResponseBuilder {
             .body(data)
     }
 
-    #[inline]
-    pub fn boxed(self, body: BoxBody) -> Result<Response, Error> {
-        Ok(Response {
-            cookies: CookieJar::new(),
-            inner: self.inner.body(Either::Right(body))?,
-        })
-    }
-
     /// Convert self into a [Response] with an empty payload.
     ///
     #[inline]
@@ -126,15 +119,6 @@ where
     fn pipe(self, builder: ResponseBuilder) -> Result<Response, Error> {
         builder
             .header(TRANSFER_ENCODING, "chunked")
-            .boxed(BoxBody::new(StreamBody::new(self)))
-    }
-}
-
-impl<T: Serialize> Serialize for JsonPayload<'_, T> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("JsonPayload", 1)?;
-
-        state.serialize_field("data", self.data)?;
-        state.end()
+            .body(BoxBody::new(StreamBody::new(self)))
     }
 }

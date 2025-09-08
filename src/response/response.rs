@@ -1,13 +1,13 @@
+use bytes::Bytes;
 use cookie::{Cookie, CookieJar};
 use http::{HeaderMap, StatusCode, Version, header::SET_COOKIE};
-use http_body_util::Either;
+use http_body::Body;
 use std::fmt::{self, Debug, Formatter};
 
-use super::buffer_body::BufferBody;
+use super::body::ResponseBody;
 use super::builder::ResponseBuilder;
-use crate::{BoxBody, Error};
-
-pub type ResponseBody = Either<BufferBody, BoxBody>;
+use crate::BoxError;
+use crate::error::Error;
 
 pub struct Response {
     pub(super) cookies: CookieJar,
@@ -29,15 +29,16 @@ impl Response {
     }
 
     /// Consumes the response returning a new response with body mapped to the
-    /// return type of the provided closure `map`.
+    /// return type of the provided closure.
     ///
     #[inline]
-    pub fn map<F>(self, map: F) -> Self
+    pub fn map<U, F>(self, map: F) -> Self
     where
-        F: FnOnce(ResponseBody) -> ResponseBody,
+        F: FnOnce(ResponseBody) -> U,
+        U: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
     {
         Self {
-            inner: self.inner.map(map),
+            inner: self.inner.map(|body| body.map(map)),
             ..self
         }
     }

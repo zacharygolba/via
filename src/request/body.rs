@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use http::{HeaderMap, StatusCode};
-use http_body::{Body as HttpBody, Frame, SizeHint};
+use http_body::{Body, Frame, SizeHint};
+use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyStream, Either, LengthLimitError, Limited};
 use hyper::body::Incoming;
 use serde::Deserialize;
@@ -10,22 +11,21 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::BoxBody;
 use crate::error::{BoxError, Error};
 
 #[derive(Debug)]
-pub struct Body(pub(super) Either<Limited<Incoming>, BoxBody>);
+pub struct RequestBody(Either<Limited<Incoming>, BoxBody<Bytes, BoxError>>);
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct IntoFuture {
-    body: Body,
-    payload: Option<Payload>,
+    body: RequestBody,
+    payload: Option<RequestPayload>,
 }
 
 /// The entire contents of a request body, in-memory.
 ///
 #[derive(Debug)]
-pub struct Payload {
+pub struct RequestPayload {
     frames: Vec<Bytes>,
     trailers: Option<HeaderMap>,
 }
@@ -47,83 +47,7 @@ fn map_err(error: BoxError) -> Error {
     }
 }
 
-impl Body {
-    /// Consumes the request returning a new request with body mapped to the
-    /// return type of the provided closure `map`.
-    ///
-    #[inline]
-    pub fn map<F>(self, map: F) -> Self
-    where
-        F: FnOnce(Either<Limited<Incoming>, BoxBody>) -> BoxBody,
-    {
-        Self(Either::Right(map(self.0)))
-    }
-
-    pub fn into_stream(self) -> BodyStream<Self> {
-        BodyStream::new(self)
-    }
-
-    pub async fn into_future(self) -> Result<Payload, Error> {
-        IntoFuture::new(self, Payload::new()).await
-    }
-}
-
-impl HttpBody for Body {
-    type Data = Bytes;
-    type Error = BoxError;
-
-    fn poll_frame(
-        self: Pin<&mut Self>,
-        context: &mut Context,
-    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let Self(body) = self.get_mut();
-        Pin::new(body).poll_frame(context)
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.0.is_end_stream()
-    }
-
-    fn size_hint(&self) -> SizeHint {
-        self.0.size_hint()
-    }
-}
-
-impl Payload {
-    /// Return the entire body as a str if it is composed of a single frame and
-    /// is valid UTF-8.
-    ///
-    pub fn as_str(&self) -> Result<Option<&str>, Error> {
-        self.as_slice()
-            .map(str::from_utf8)
-            .transpose()
-            .map_err(Error::bad_request)
-    }
-
-    /// Return the entire body as a slice if it is composed of a single frame.
-    ///
-    pub fn as_slice(&self) -> Option<&[u8]> {
-        if let [slice] = self.frames.as_slice() {
-            Some(slice)
-        } else {
-            None
-        }
-    }
-
-    pub fn to_string(&self) -> Result<String, Error> {
-        String::from_utf8(self.to_vec()).map_err(Error::bad_request)
-    }
-
-    pub fn to_vec(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(self.frames.iter().map(Bytes::len).sum());
-
-        for frame in &self.frames {
-            buf.extend_from_slice(frame);
-        }
-
-        buf
-    }
-
+impl RequestPayload {
     pub fn parse_json<D>(&self) -> Result<D, Error>
     where
         D: DeserializeOwned,
@@ -151,12 +75,46 @@ impl Payload {
             .map_err(Error::bad_request)
     }
 
+    pub fn to_string(&self) -> Result<String, Error> {
+        String::from_utf8(self.to_vec()).map_err(Error::bad_request)
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(self.frames.iter().map(Bytes::len).sum());
+
+        for frame in &self.frames {
+            buf.extend_from_slice(frame);
+        }
+
+        buf
+    }
+
     pub fn trailers(&self) -> Option<&HeaderMap> {
         self.trailers.as_ref()
     }
+
+    /// Return the entire body as a slice if it is composed of a single frame.
+    ///
+    pub fn as_slice(&self) -> Option<&[u8]> {
+        if let [slice] = self.frames.as_slice() {
+            Some(slice)
+        } else {
+            None
+        }
+    }
+
+    /// Return the entire body as a str if it is composed of a single frame and
+    /// is valid UTF-8.
+    ///
+    pub fn as_str(&self) -> Result<Option<&str>, Error> {
+        self.as_slice()
+            .map(str::from_utf8)
+            .transpose()
+            .map_err(Error::bad_request)
+    }
 }
 
-impl Payload {
+impl RequestPayload {
     fn new() -> Self {
         Self {
             frames: Vec::new(),
@@ -166,7 +124,7 @@ impl Payload {
 }
 
 impl IntoFuture {
-    fn new(body: Body, payload: Payload) -> Self {
+    fn new(body: RequestBody, payload: RequestPayload) -> Self {
         Self {
             body,
             payload: Some(payload),
@@ -175,7 +133,7 @@ impl IntoFuture {
 }
 
 impl Future for IntoFuture {
-    type Output = Result<Payload, Error>;
+    type Output = Result<RequestPayload, Error>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         let Self { body, payload } = self.get_mut();
@@ -204,5 +162,62 @@ impl Future for IntoFuture {
                 }
             };
         }
+    }
+}
+
+impl RequestBody {
+    /// Consume the request body and return a dynamically-dispatched
+    /// [`BoxBody`].
+    ///
+    pub fn boxed(self) -> BoxBody<Bytes, BoxError> {
+        match self {
+            Self(Either::Left(inline)) => BoxBody::new(inline),
+            Self(Either::Right(boxed)) => boxed,
+        }
+    }
+
+    pub fn into_stream(self) -> BodyStream<Self> {
+        BodyStream::new(self)
+    }
+
+    pub async fn into_future(self) -> Result<RequestPayload, Error> {
+        IntoFuture::new(self, RequestPayload::new()).await
+    }
+}
+
+impl RequestBody {
+    #[inline]
+    pub(crate) fn new(body: Limited<Incoming>) -> Self {
+        Self(Either::Left(body))
+    }
+
+    #[inline]
+    pub(crate) fn map<U, F>(self, map: F) -> Self
+    where
+        F: FnOnce(RequestBody) -> U,
+        U: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
+    {
+        Self(Either::Right(BoxBody::new(map(self))))
+    }
+}
+
+impl Body for RequestBody {
+    type Data = Bytes;
+    type Error = BoxError;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        context: &mut Context,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let Self(body) = self.get_mut();
+        Pin::new(body).poll_frame(context)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.0.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.0.size_hint()
     }
 }

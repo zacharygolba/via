@@ -3,6 +3,6 @@ pub mod param;
 mod body;
 mod request;
 
-pub use body::{Body, Payload};
+pub use body::{RequestBody, RequestPayload};
 pub use param::{PathParam, QueryParam};
-pub use request::{Head, Request};
+pub use request::{Request, RequestHead};
