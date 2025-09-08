@@ -1,12 +1,13 @@
 use hyper::server::conn;
 use hyper_util::rt::{TokioIo, TokioTimer};
+use std::cell::Cell;
 use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
-use tokio::task::JoinSet;
+use tokio::task::{JoinError, JoinSet};
 use tokio::{signal, time};
 
 #[cfg(feature = "http2")]
@@ -42,6 +43,10 @@ where
     // before accepting a new connection.
     let semaphore = Arc::new(Semaphore::new(max_connections));
 
+    // Create a JoinSet to track inflight connections. We'll use this to wait for
+    // all connections to close before the server exits.
+    let mut connections = JoinSet::<Result<(), ServerError>>::new();
+
     // Create a watch channel to notify the connections to initiate a
     // graceful shutdown process when the `ctrl_c` future resolves.
     let mut shutdown_rx = {
@@ -50,9 +55,9 @@ where
         rx
     };
 
-    // Create a JoinSet to track inflight connections. We'll use this to wait for
-    // all connections to close before the server exits.
-    let mut connections = JoinSet::<Result<(), ServerError>>::new();
+    // A flag that tracks whether or not there are inflight connections that
+    // can be joined.
+    let try_join = Cell::new(false);
 
     // Wrap app in an arc so it can be cloned into the connection task.
     let app = Arc::new(app);
@@ -62,39 +67,48 @@ where
         // Acquire a permit from the semaphore.
         let permit = match semaphore.clone().acquire_owned().await {
             Ok(acquired) => acquired,
-            Err(_) => break 1.into(),
+            Err(_) => break ExitCode::FAILURE,
         };
 
-        // Accept the next stream from the tcp listener.
         tokio::select! {
-            accept = listener.accept() => match accept {
-                Err(error) => log!("error(listener): {}", error),
-                Ok((stream, _)) => {
-                    let future = handle_connection(
-                        stream,
-                        acceptor.clone(),
-                        shutdown_rx.clone(),
-                        Arc::clone(&app),
-                        max_body_size,
-                    );
+            // Wait for the next stream from the tcp listener.
+            accepted = listener.accept() => {
+                match accepted {
+                    Err(error) => log!("error(accept): {}", error),
+                    Ok((stream, _)) => {
+                        let future = handle_connection(
+                            stream,
+                            acceptor.clone(),
+                            shutdown_rx.clone(),
+                            Arc::clone(&app),
+                            max_body_size,
+                        );
 
-                    // Spawn a task to serve the connection.
-                    connections.spawn(async {
-                        let _permit = permit; // RAII-guard
-                        future.await
-                    });
+                        // Spawn a task to serve the connection.
+                        connections.spawn(async {
+                            let _permit = permit; // RAII-guard
+                            future.await
+                        });
+
+                        // Start joining connections again.
+                        try_join.set(true);
+                    }
                 }
             },
-            join_next = connections.join_next(), if !connections.is_empty() => {
-                if let Some(Err(error)) = &join_next {
-                    handle_error(error);
+            // Try to join an inflight connection while we wait.
+            joined = connections.join_next(), if try_join.get() => {
+                match &joined {
+                    // Join error.
+                    Some(Err(error)) => handle_error(error),
+                    // Join success.
+                    Some(Ok(_)) => {}
+                    // The JoinSet is empty.
+                    None => try_join.set(false),
                 }
             }
-            _shutdown_signal = shutdown_rx.changed() => {
-                break match *shutdown_rx.borrow_and_update() {
-                    Some(false) => 0.into(),
-                    Some(true) | None => 1.into(),
-                }
+            // Wait for a graceful shutdown signal.
+            _exit = shutdown_rx.changed() => {
+                break shutdown_rx.borrow_and_update().unwrap_or(ExitCode::FAILURE);
             }
         }
     };
@@ -111,33 +125,36 @@ where
     }
 }
 
-fn handle_error(error: &(dyn Error + 'static)) {
-    let hyper_error = match error.downcast_ref::<hyper::Error>() {
-        Some(error) => error,
-        None => {
-            log!("error(other): {}", error);
-            return;
-        }
-    };
+fn handle_error(error: &JoinError) {
+    let hyper_error = error.source().and_then(|source| {
+        let downcast = source.downcast_ref::<hyper::Error>()?;
 
-    if hyper_error.is_canceled()
-        || hyper_error.is_incomplete_message()
-        || hyper_error.source().is_some_and(|source| {
-            source
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
-        })
-    {
-        // Disconnected.
+        if downcast.is_canceled()
+            || downcast.is_incomplete_message()
+            || downcast.source().is_some_and(|source| {
+                source
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
+            })
+        {
+            // Disconnected.
+            None
+        } else {
+            Some(downcast)
+        }
+    });
+
+    if let Some(log_as_http) = hyper_error {
+        log!("error(http): {}", log_as_http);
     } else {
-        log!("error(http): {}", hyper_error);
+        log!("error(other): {}", error);
     }
 }
 
 async fn handle_connection<A, T>(
     tcp_stream: TcpStream,
     mut acceptor: A,
-    mut shutdown_rx: watch::Receiver<Option<bool>>,
+    mut shutdown_rx: watch::Receiver<Option<ExitCode>>,
     app: Arc<App<T>>,
     max_body_size: usize,
 ) -> Result<(), ServerError>
@@ -187,10 +204,10 @@ async fn drain_connections(connections: &mut JoinSet<Result<(), ServerError>>) {
     }
 }
 
-async fn wait_for_ctrl_c(tx: watch::Sender<Option<bool>>) {
+async fn wait_for_ctrl_c(tx: watch::Sender<Option<ExitCode>>) {
     if signal::ctrl_c().await.is_err() {
         eprintln!("unable to register the 'ctrl-c' signal.");
-    } else if tx.send(Some(false)).is_err() {
+    } else if tx.send(Some(ExitCode::SUCCESS)).is_err() {
         eprintln!("unable to notify connections to shutdown.");
     }
 }
