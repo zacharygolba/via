@@ -3,5 +3,5 @@ mod router;
 mod service;
 
 pub use app::{App, app};
-pub use router::Scope;
+pub use router::Route;
 pub(crate) use service::AppService;
