@@ -323,19 +323,16 @@ impl Error {
     /// # Example
     ///
     /// ```
-    /// use via::middleware::error_boundary;
-    /// use via::{Next, Request};
-    ///
-    /// type Error = Box<dyn std::error::Error + Send + Sync>;
+    /// use via::builtin::rescue;
+    /// use via::{BoxError, Next, Request};
     ///
     /// #[tokio::main(flavor = "current_thread")]
-    /// async fn main() -> Result<(), Error> {
+    /// async fn main() -> Result<(), BoxError> {
     ///     let mut app = via::app(());
     ///
-    ///     // Add an `ErrorBoundary` middleware to the route tree that maps
-    ///     // errors that occur in subsequent middleware by calling the `redact`
-    ///     // function.
-    ///     app.include(error_boundary::map(|error| {
+    ///     // Add a rescue middleware to the route tree that maps errors that
+    ///     // occur in subsequent middleware by calling the `redact` function.
+    ///     app.include(rescue::map(|error| {
     ///         error.redact(|message| {
     ///             if message.contains("password") {
     ///                 // If password is even mentioned in the error, return an
@@ -395,22 +392,23 @@ impl Error {
     /// # Example
     ///
     /// ```
-    /// use via::middleware::error_boundary;
-    /// use via::{Next, Request};
-    ///
-    /// type Error = Box<dyn std::error::Error + Send + Sync>;
+    /// use via::builtin::rescue;
+    /// use via::{BoxError, Next, Request};
     ///
     /// #[tokio::main(flavor = "current_thread")]
-    /// async fn main() -> Result<(), Error> {
+    /// async fn main() -> Result<(), BoxError> {
     ///     let mut app = via::app(());
     ///
-    ///     // Add an `ErrorBoundary` middleware to the route tree that maps
-    ///     // errors that occur in subsequent middleware by calling the
+    ///     // Add a rescue middleware to the route tree that maps errors that
+    ///     // occur in subsequent middleware by calling the
     ///     // `use_canonical_reason` function.
-    ///     app.include(error_boundary::map(|error| {
-    ///         // Prevent error messages that occur in downstream middleware from
-    ///         // leaking into the response body by using the reason phrase of
-    ///         // the status code associated with the error.
+    ///     app.include(rescue::map(|error| {
+    ///         // Log the original error so no context is lost.
+    ///         eprintln!("error: {}", error);
+    ///
+    ///         // Prevent error messages that occur in downstream middleware
+    ///         // from leaking into the response body by using the reason
+    ///         // phrase of the status code associated with the error.
     ///         error.use_canonical_reason()
     ///     }));
     ///
