@@ -4,13 +4,13 @@ use crate::middleware::Middleware;
 
 pub type Router<T> = via_router::Router<Arc<dyn Middleware<T>>>;
 
-pub struct Route<'a, T> {
+pub struct Scope<'a, T> {
     pub(super) inner: via_router::RouteMut<'a, Arc<dyn Middleware<T>>>,
 }
 
-impl<T> Route<'_, T> {
-    pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
-        Route {
+impl<T> Scope<'_, T> {
+    pub fn at(&mut self, path: &'static str) -> Scope<'_, T> {
+        Scope {
             inner: self.inner.at(path),
         }
     }

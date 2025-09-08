@@ -56,8 +56,8 @@ mod middleware;
 mod next;
 mod server;
 
-pub use app::{App, Route, app};
-pub use builtin::method::*;
+pub use app::{App, Scope, app};
+pub use builtin::resource::{connect, delete, get, head, options, patch, post, put, trace};
 pub use error::{BoxError, Error};
 pub use middleware::{BoxFuture, Middleware, Result};
 pub use next::Next;
