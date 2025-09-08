@@ -12,17 +12,6 @@ struct State {
     pool: Pool,
 }
 
-async fn log_request(request: Request<State>, next: Next<State>) -> via::Result {
-    let method = request.method().clone();
-    let path = request.uri().path().to_string();
-
-    next.call(request).await.inspect(|response| {
-        let status = response.status();
-        // TODO: Replace println with an actual logger.
-        println!("{} {} => {}", method, path, status);
-    })
-}
-
 #[tokio::main]
 async fn main() -> Result<ExitCode, BoxError> {
     dotenvy::dotenv()?;
@@ -34,7 +23,16 @@ async fn main() -> Result<ExitCode, BoxError> {
 
     // Setup a simple logger middleware that logs the method, path, and response
     // status code of every request.
-    app.include(log_request);
+    app.include(async |request: Request<State>, next: Next<State>| {
+        let method = request.method().to_string();
+        let path = request.uri().path().to_string();
+
+        next.call(request).await.inspect(|response| {
+            let status = response.status();
+            // TODO: Replace println with an actual logger.
+            println!("{} {} => {}", method, path, status);
+        })
+    });
 
     // Define the /api namespace.
     app.at("/api").scope(|api| {
@@ -47,34 +45,32 @@ async fn main() -> Result<ExitCode, BoxError> {
 
         // Add a timeout middleware to the /api routes. This will prevent the
         // server from waiting indefinitely if we lose connection to the
-        // database. For this example, we're using a 30 second timeout.
-        api.include(timeout(Duration::from_secs(30)));
+        // database. For this example, we're using a 10 second timeout.
+        api.include(timeout(Duration::from_secs(10)));
 
         // Define the /api/posts resource.
         api.at("/posts").scope(|posts| {
             // A mock authentication middleware that does nothing.
             posts.include(posts::auth);
 
-            posts.respond(via::get(posts::index));
-            posts.respond(via::post(posts::create));
+            posts.respond(via::get(posts::index).and(via::post(posts::create)));
 
-            posts.at("/:id").scope(|post| {
-                post.respond(via::get(posts::show));
-                post.respond(via::patch(posts::update));
-                post.respond(via::delete(posts::destroy));
-            });
+            posts.at("/:id").respond(
+                via::get(posts::show)
+                    .and(via::patch(posts::update))
+                    .and(via::delete(posts::destroy)),
+            );
         });
 
         // Define the /api/users resource.
         api.at("/users").scope(|users| {
-            users.respond(via::get(users::index));
-            users.respond(via::post(users::create));
+            users.respond(via::get(users::index).and(via::post(users::create)));
 
-            users.at("/:id").scope(|user| {
-                user.respond(via::get(users::show));
-                user.respond(via::patch(users::update));
-                user.respond(via::delete(users::destroy));
-            });
+            users.at("/:id").respond(
+                via::get(users::show)
+                    .and(via::patch(users::update))
+                    .and(via::delete(users::destroy)),
+            );
         });
     });
 
