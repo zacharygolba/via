@@ -6,6 +6,7 @@ use crate::{BoxFuture, Middleware, Next, Request, Response};
 pub struct Resource<T> {
     allowed: String,
     methods: Vec<(Method, Box<dyn Middleware<T>>)>,
+    #[allow(clippy::type_complexity)]
     or_else: Option<Box<dyn Fn(Request<T>, Next<T>) -> BoxFuture + Send + Sync>>,
 }
 
