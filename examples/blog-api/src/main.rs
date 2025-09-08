@@ -3,7 +3,7 @@ mod database;
 
 use std::process::ExitCode;
 use std::time::Duration;
-use via::middleware::{error_boundary, timeout};
+use via::builtin::{rescue, timeout};
 use via::{BoxError, Next, Request};
 
 use database::Pool;
@@ -40,9 +40,10 @@ async fn main() -> Result<ExitCode, BoxError> {
     app.at("/api").scope(|api| {
         use api::{posts, users, util};
 
-        // Catch any errors that occur in the API namespace and generate a
-        // JSON response from a redacted version of the original error.
-        api.include(error_boundary::map(util::map_error));
+        // Capture errors that occur in the api namespace, log them, and then
+        // convert them into json responses. Upstream middleware remains
+        // unaffected and continues execution.
+        api.include(rescue::map(util::map_error));
 
         // Add a timeout middleware to the /api routes. This will prevent the
         // server from waiting indefinitely if we lose connection to the

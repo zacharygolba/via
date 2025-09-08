@@ -1,6 +1,7 @@
 use http::Method;
 
-use super::{Filter, Middleware, Predicate, filter};
+use super::{Filter, Predicate, filter};
+use crate::middleware::Middleware;
 use crate::request::Request;
 
 pub fn connect<M, T>(middleware: M) -> Filter<Method, M>

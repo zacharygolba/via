@@ -1,5 +1,4 @@
-use super::{BoxFuture, Middleware, Next};
-use crate::request::Request;
+use crate::{BoxFuture, Middleware, Next, Request};
 
 pub trait Predicate<T>: Send + Sync {
     fn matches(&self, request: &Request<T>) -> bool;

@@ -16,7 +16,7 @@
 //!
 //! ```no_run
 //! use std::process::ExitCode;
-//! use via::middleware::error_boundary;
+//! use via::builtin::rescue;
 //! use via::{BoxError, Next, Request, Response, Server};
 //!
 //! async fn hello(request: Request, _: Next) -> via::Result {
@@ -36,11 +36,9 @@
 //!     // Create a new application.
 //!     let mut app = via::app(());
 //!
-//!     // Include an error boundary to catch any errors that occur downstream.
-//!     app.include(error_boundary::map(|error| {
-//!         eprintln!("error: {}", error);
-//!         error.use_canonical_reason()
-//!     }));
+//!     // Capture errors from downstream, log them, and map them into responses.
+//!     // Upstream middleware remains unaffected and continues execution.
+//!     app.include(rescue::inspect(|error| eprintln!("error: {}", error)));
 //!
 //!     // Define a route that listens on /hello/:name.
 //!     app.at("/hello/:name").respond(via::get(hello));
@@ -52,18 +50,21 @@
 
 #![allow(clippy::module_inception)]
 
-pub mod middleware;
+pub mod builtin;
 pub mod request;
 pub mod response;
 
 mod app;
 mod error;
+mod middleware;
+mod next;
 mod server;
 
 pub use app::{App, Route, app};
+pub use builtin::method::*;
 pub use error::{BoxError, Error};
-pub use middleware::method::*;
-pub use middleware::{Middleware, Next, Result};
+pub use middleware::{BoxFuture, Middleware, Result};
+pub use next::Next;
 pub use request::Request;
 pub use response::{Pipe, Response};
 pub use server::{Server, start};

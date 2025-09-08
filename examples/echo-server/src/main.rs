@@ -1,5 +1,5 @@
 use std::process::ExitCode;
-use via::middleware::error_boundary;
+use via::builtin::rescue;
 use via::{BoxError, Next, Pipe, Request, Response};
 
 async fn echo(request: Request, _: Next) -> via::Result {
@@ -10,11 +10,9 @@ async fn echo(request: Request, _: Next) -> via::Result {
 async fn main() -> Result<ExitCode, BoxError> {
     let mut app = via::app(());
 
-    // Include an error boundary to catch any errors that occur downstream.
-    app.include(error_boundary::map(|error| {
-        eprintln!("error: {}", error);
-        error.use_canonical_reason()
-    }));
+    // Capture errors from downstream, log them, and map them into responses.
+    // Upstream middleware remains unaffected and continues execution.
+    app.include(rescue::inspect(|error| eprintln!("error: {}", error)));
 
     // Add our echo responder to the endpoint /echo.
     app.at("/echo").respond(via::post(echo));

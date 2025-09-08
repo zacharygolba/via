@@ -1,8 +1,7 @@
 use std::time::Duration;
 use tokio::time;
 
-use super::{BoxFuture, Middleware, Next};
-use crate::request::Request;
+use crate::{BoxFuture, Middleware, Next, Request};
 
 pub struct Timeout {
     duration: Duration,
