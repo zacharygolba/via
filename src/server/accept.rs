@@ -81,7 +81,7 @@ where
             let now = Instant::now();
 
             if let Some(diff) = now.checked_duration_since(last_sweep.get())
-                && diff < SWEEP_INTERVAL
+                && diff > SWEEP_INTERVAL
             {
                 if let Some(Err(error)) = connections.join_next().await {
                     handle_error(&error);
