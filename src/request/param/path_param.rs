@@ -45,13 +45,7 @@ impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
         U: FromStr,
         U::Err: std::error::Error + Send + Sync + 'static,
     {
-        match self.into_result()?.parse() {
-            Ok(value) => Ok(value),
-            Err(error) => {
-                let source = Box::new(error);
-                Err(Error::bad_request(source))
-            }
-        }
+        self.into_result()?.parse().map_err(Error::bad_request)
     }
 
     /// Returns a result with the parameter value if it exists. If the param is
