@@ -15,7 +15,7 @@ use super::acceptor::{RustlsAcceptor, RustlsConfig};
 
 /// The default value of the maximum number of concurrent connections.
 ///
-const DEFAULT_MAX_CONNECTIONS: usize = 1024;
+const DEFAULT_MAX_CONNECTIONS: usize = 1000;
 
 /// The default value of the maximum request body size in bytes (100MB).
 ///
