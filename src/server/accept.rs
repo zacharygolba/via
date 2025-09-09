@@ -17,6 +17,16 @@ use super::acceptor::Acceptor;
 use crate::app::{App, AppService};
 use crate::error::ServerError;
 
+macro_rules! joined {
+    ($result:expr) => {
+        match $result {
+            Ok(Err(error)) => handle_error(&error),
+            Err(error) => handle_error(&ServerError::Join(error)),
+            _ => {}
+        }
+    };
+}
+
 macro_rules! log {
     ($($arg:tt)*) => {
         if cfg!(debug_assertions) {
@@ -103,11 +113,7 @@ where
 
             // Every other turn, try to join a connection while we wait.
             Some(result) = connections.join_next(), if should_try_join => {
-                match result {
-                    Ok(Err(error)) => handle_error(&error),
-                    Err(error) => handle_error(&ServerError::Join(error)),
-                    _ => {}
-                }
+                joined!(result);
             }
 
             // Also check and see if we received a graceful shutdown signal.
@@ -116,14 +122,12 @@ where
             }
         }
 
-        // If we ended up accepting a new connection, clean up any that may
-        // have finished since the last turn.
+        // If we ended up accepting a new connection, try to join up to 2
+        // connections if they can be joined synchronously without blocking.
         if !try_join.replace(!should_try_join) {
-            while let Some(result) = connections.try_join_next() {
-                match result {
-                    Ok(Err(error)) => handle_error(&error),
-                    Err(error) => handle_error(&ServerError::Join(error)),
-                    _ => {}
+            for _ in 0..2 {
+                if let Some(result) = connections.try_join_next() {
+                    joined!(result);
                 }
             }
         }
@@ -213,11 +217,7 @@ async fn drain_connections(connections: &mut JoinSet<Result<(), ServerError>>) {
     }
 
     while let Some(result) = connections.join_next().await {
-        match result {
-            Ok(Err(error)) => handle_error(&error),
-            Err(error) => handle_error(&ServerError::Join(error)),
-            _ => {}
-        }
+        joined!(result);
     }
 }
 
