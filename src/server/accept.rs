@@ -181,15 +181,18 @@ where
     A: Acceptor + 'static,
     T: Send + Sync,
 {
-    let io_stream = TokioIo::new(acceptor.accept(tcp_stream).await?);
-    let app_service = AppService::new(app, max_body_size);
+    // Accept the TCP stream from the acceptor.
+    let maybe_tls_stream = acceptor.accept(tcp_stream).await?;
 
     // Create a new HTTP/2 connection.
     #[cfg(feature = "http2")]
     let mut connection = Box::pin(
         conn::http2::Builder::new(TokioExecutor::new())
             .timer(TokioTimer::new())
-            .serve_connection(io_stream, app_service),
+            .serve_connection(
+                TokioIo::new(maybe_tls_stream),
+                AppService::new(app, max_body_size),
+            ),
     );
 
     // Create a new HTTP/1.1 connection.
@@ -197,16 +200,19 @@ where
     let mut connection = Box::pin(
         conn::http1::Builder::new()
             .timer(TokioTimer::new())
-            .serve_connection(io_stream, app_service)
+            .serve_connection(
+                TokioIo::new(maybe_tls_stream),
+                AppService::new(app, max_body_size),
+            )
             .with_upgrades(),
     );
 
     // Serve the connection.
     tokio::select! {
-        result = connection.as_mut() => result.map_err(|e| e.into()),
+        result = connection.as_mut() => result.map_err(ServerError::from),
         _ = shutdown_rx.changed() => {
             connection.as_mut().graceful_shutdown();
-            connection.await.map_err(|e| e.into())
+            connection.as_mut().await.map_err(ServerError::from)
         }
     }
 }
