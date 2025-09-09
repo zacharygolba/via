@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use std::error::Error as StdError;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io;
+use tokio::task::JoinError;
 
 use crate::response::{Response, ResponseBody};
 
@@ -35,6 +36,7 @@ pub struct Message<'a> {
 #[derive(Debug)]
 pub(crate) enum ServerError {
     Io(io::Error),
+    Join(JoinError),
     Hyper(hyper::Error),
 }
 
@@ -928,6 +930,7 @@ impl StdError for ServerError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
             Self::Io(error) => error.source(),
+            Self::Join(error) => error.source(),
             Self::Hyper(error) => error.source(),
         }
     }
@@ -937,6 +940,7 @@ impl Display for ServerError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             Self::Io(error) => Display::fmt(error, f),
+            Self::Join(error) => Display::fmt(error, f),
             Self::Hyper(error) => Display::fmt(error, f),
         }
     }
