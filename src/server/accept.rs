@@ -6,8 +6,8 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Semaphore, watch};
-use tokio::task::{JoinError, JoinSet};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
+use tokio::task::JoinSet;
 use tokio::{signal, time};
 
 #[cfg(feature = "http2")]
@@ -73,45 +73,58 @@ where
             Err(_) => break ExitCode::FAILURE,
         };
 
+        let should_try_join = try_join.get();
+
         tokio::select! {
-            // Wait for the next stream from the tcp listener.
-            accepted = listener.accept() => {
-                match accepted {
-                    Err(error) => log!("error(accept): {}", error),
-                    Ok((stream, _)) => {
-                        let future = handle_connection(
+            // Check if there is a connection ready to be accepted from the
+            // listener first. This way we don't burn a permit just to join
+            // a connection.
+            biased;
+
+            // Wait for a connection from the listener
+            accepted = listener.accept() => match accepted {
+                // Spawn a task to serve the connection.
+                Ok((stream, _)) => {
+                    connections.spawn(
+                        handle_connection(
+                            permit,
                             stream,
                             acceptor.clone(),
                             shutdown_rx.clone(),
                             Arc::clone(&app),
                             max_body_size,
-                        );
-
-                        // Spawn a task to serve the connection.
-                        connections.spawn(async {
-                            let _permit = permit; // RAII-guard
-                            future.await
-                        });
-
-                        // Start joining connections again.
-                        try_join.set(true);
-                    }
+                        ),
+                    );
+                }
+                Err(error) => {
+                    log!("error(accept): {}", error);
                 }
             },
-            // Try to join an inflight connection while we wait.
-            joined = connections.join_next(), if try_join.get() => {
-                match &joined {
-                    // Join error.
-                    Some(Err(error)) => handle_error(error),
-                    // Join success.
-                    Some(Ok(_)) => {}
-                    // The JoinSet is empty.
-                    None => try_join.set(false),
+
+            // Every other turn, try to join a connection while we wait.
+            Some(result) = connections.join_next(), if should_try_join => {
+                match result {
+                    Ok(Err(error)) => handle_error(&error),
+                    Err(error) => handle_error(&ServerError::Join(error)),
+                    _ => {}
                 }
             }
-            // Wait for a graceful shutdown signal.
-            _exit = shutdown_rx.changed() => {
+
+            // Also check and see if we received a graceful shutdown signal.
+            _shutdown_signal = shutdown_rx.changed() => {
                 break shutdown_rx.borrow_and_update().unwrap_or(ExitCode::FAILURE);
+            }
+        }
+
+        // If we ended up accepting a new connection, clean up any that may
+        // have finished since the last turn.
+        if !try_join.replace(!should_try_join) {
+            while let Some(result) = connections.try_join_next() {
+                match result {
+                    Ok(Err(error)) => handle_error(&error),
+                    Err(error) => handle_error(&ServerError::Join(error)),
+                    _ => {}
+                }
             }
         }
     };
@@ -124,37 +137,36 @@ where
     if drain_all.await.is_ok() {
         exit_code
     } else {
-        1.into()
+        ExitCode::FAILURE
     }
 }
 
-fn handle_error(error: &JoinError) {
-    let hyper_error = error.source().and_then(|source| {
-        let downcast = source.downcast_ref::<hyper::Error>()?;
-
-        if downcast.is_canceled()
-            || downcast.is_incomplete_message()
-            || downcast.source().is_some_and(|source| {
-                source
-                    .downcast_ref::<std::io::Error>()
-                    .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
-            })
-        {
-            // Disconnected.
-            None
-        } else {
-            Some(downcast)
+fn handle_error(error: &ServerError) {
+    match error {
+        ServerError::Io(io_error) => log!("error(task): {}", io_error),
+        ServerError::Join(join_error) => {
+            if join_error.is_panic() {
+                log!("panic(task): {}", join_error);
+            }
         }
-    });
+        ServerError::Hyper(hyper_error) => {
+            let was_disconnect = hyper_error.is_canceled()
+                || hyper_error.is_incomplete_message()
+                || hyper_error.source().is_some_and(|source| {
+                    source
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
+                });
 
-    if let Some(log_as_http) = hyper_error {
-        log!("error(http): {}", log_as_http);
-    } else {
-        log!("error(other): {}", error);
+            if !was_disconnect {
+                log!("error(task): {}", hyper_error);
+            }
+        }
     }
 }
 
 async fn handle_connection<A, T>(
+    _permit: OwnedSemaphorePermit,
     tcp_stream: TcpStream,
     mut acceptor: A,
     mut shutdown_rx: watch::Receiver<Option<ExitCode>>,
@@ -201,8 +213,10 @@ async fn drain_connections(connections: &mut JoinSet<Result<(), ServerError>>) {
     }
 
     while let Some(result) = connections.join_next().await {
-        if let Err(error) = result.as_ref() {
-            handle_error(error);
+        match result {
+            Ok(Err(error)) => handle_error(&error),
+            Err(error) => handle_error(&ServerError::Join(error)),
+            _ => {}
         }
     }
 }
