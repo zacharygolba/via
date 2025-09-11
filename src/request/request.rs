@@ -27,13 +27,13 @@ pub struct RequestHead<T> {
     /// [CookieParser](crate::middleware::CookieParser)
     /// middleware in the middleware stack for the request, this will be empty.
     ///
-    cookies: CookieJar,
+    pub(crate) cookies: CookieJar,
 
     /// The shared application state passed to the
     /// [`via::app`](crate::app::app)
     /// function.
     ///
-    state: Arc<T>,
+    pub(crate) state: Arc<T>,
 }
 
 #[derive(Debug)]
