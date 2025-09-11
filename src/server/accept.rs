@@ -132,7 +132,7 @@ where
             }
         }
 
-        // Try to join a connection task opportuntistically.
+        // Try to join a connection task opportunistically.
         let mut context = Context::from_waker(&noop_waker);
         let opportunistic = connections.poll_join_next(&mut context);
 
