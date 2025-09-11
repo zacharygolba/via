@@ -1,9 +1,9 @@
 use hyper::server::conn;
 use hyper_util::rt::{TokioIo, TokioTimer};
-use std::cell::Cell;
 use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
@@ -65,12 +65,16 @@ where
         rx
     };
 
-    // A flag that tracks whether or not there are inflight connections that
-    // can be joined.
-    //
-    // Using Cell<bool> makes reads and writes explicit and accidental movement
-    // a compiler error. These are all things we want in such a hot path.
-    let try_join = Cell::new(false);
+    // We alternate between accepting new connections and joining finished
+    // ones. This avoids starving connection tasks while keeping accept latency
+    // low. In practice, this means we only call `join_next()` every other turn.
+    let mut should_join_next = false;
+
+    // When opportunistically polling finished connections, we use a no-op waker.
+    // This prevents tasks from needlessly waking the accept loop, which could
+    // create contention and negate the benefits of batching. The runtime will
+    // still poll these tasks normally once `should_join_next` is true.
+    let noop_waker = futures::task::noop_waker();
 
     // Wrap app in an arc so it can be cloned into the connection task.
     let app = Arc::new(app);
@@ -83,53 +87,57 @@ where
             Err(_) => break ExitCode::FAILURE,
         };
 
-        let should_try_join = try_join.get();
-
         tokio::select! {
-            // Check if there is a connection ready to be accepted from the
-            // listener first. This way we don't burn a permit just to join
-            // a connection.
+            // Poll the listener before anything else.
             biased;
 
-            // Wait for a connection from the listener
-            accepted = listener.accept() => match accepted {
-                // Spawn a task to serve the connection.
-                Ok((stream, _)) => {
-                    connections.spawn(
-                        handle_connection(
+            // Accept a connection from the TCP listener.
+            result = time::timeout(Duration::from_secs(1), listener.accept()) => {
+                match result {
+                    // Connection accepted.
+                    Ok(Ok((tcp_stream, _))) => {
+                        // Spawn a task to serve the connection.
+                        connections.spawn(handle_connection(
                             permit,
-                            stream,
+                            tcp_stream,
                             acceptor.clone(),
                             shutdown_rx.clone(),
                             Arc::clone(&app),
                             max_body_size,
-                        ),
-                    );
-                }
-                Err(error) => {
-                    log!("error(accept): {}", error);
-                }
-            },
+                        ));
 
-            // Every other turn, try to join a connection while we wait.
-            Some(result) = connections.join_next(), if should_try_join => {
+                        // Flip the `should_join_next` bit.
+                        should_join_next = !should_join_next;
+                    }
+                    // Error, burn the permit and try again.
+                    Ok(Err(error)) => {
+                        log!("error(accept): {}", error);
+                    }
+                    // Idle, set `should_join_next` and try again.
+                    Err(_) => {
+                        should_join_next = true;
+                    }
+                }
+            }
+
+            // Maybe try to join a connection while we wait.
+            Some(result) = connections.join_next(), if should_join_next => {
+                should_join_next = false;
                 joined!(result);
             }
 
-            // Also check and see if we received a graceful shutdown signal.
+            // Break if we receive a graceful shutdown signal.
             _shutdown_signal = shutdown_rx.changed() => {
                 break shutdown_rx.borrow_and_update().unwrap_or(ExitCode::FAILURE);
             }
         }
 
-        // If we ended up accepting a new connection, try to join up to 2
-        // connections if they can be joined synchronously without blocking.
-        if !try_join.replace(!should_try_join) {
-            for _ in 0..2 {
-                if let Some(result) = connections.try_join_next() {
-                    joined!(result);
-                }
-            }
+        // Try to join a connection task opportunistically.
+        let mut context = Context::from_waker(&noop_waker);
+        let opportunistic = connections.poll_join_next(&mut context);
+
+        if let Poll::Ready(Some(result)) = opportunistic {
+            joined!(result);
         }
     };
 

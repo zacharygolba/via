@@ -21,7 +21,7 @@ rustls = ["dep:tokio-rustls"]
 
 [dependencies]
 bytes = "1"
-futures-core = { version = "0.3", default-features = false }
+futures = { version = "0.3", default-features = false }
 http = "1"
 http-body = "1"
 http-body-util = "0.1"
