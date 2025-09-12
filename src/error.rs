@@ -29,7 +29,7 @@ pub struct Error {
 
 #[doc(hidden)]
 #[derive(Debug, Serialize)]
-pub struct Message<'a> {
+pub struct ErrorMessage<'a> {
     message: Cow<'a, str>,
 }
 
@@ -43,8 +43,8 @@ pub(crate) enum ServerError {
 #[macro_export]
 macro_rules! error {
     (@reason $ctor:ident, $($arg:tt)*) => {{
-        use $crate::error::{Error, Message};
-        Error::$ctor(Message::new(format!($($arg)*)))
+        use $crate::{Error, ErrorMessage};
+        Error::$ctor(ErrorMessage::new(format!($($arg)*)))
     }};
 
     (400) => { $crate::error!(400, "Bad request.") };
@@ -893,14 +893,14 @@ impl Serialize for Error {
         if let Some(message) = &self.fmt {
             state.serialize_field(
                 "errors",
-                &[Message {
+                &[ErrorMessage {
                     message: Cow::Borrowed(message),
                 }],
             )?;
         } else {
             state.serialize_field(
                 "errors",
-                &[Message {
+                &[ErrorMessage {
                     message: Cow::Owned(self.error.to_string()),
                 }],
             )?;
@@ -910,7 +910,7 @@ impl Serialize for Error {
     }
 }
 
-impl Message<'static> {
+impl ErrorMessage<'static> {
     pub fn new(message: String) -> Self {
         Self {
             message: Cow::Owned(message),
@@ -918,9 +918,9 @@ impl Message<'static> {
     }
 }
 
-impl StdError for Message<'_> {}
+impl StdError for ErrorMessage<'_> {}
 
-impl Display for Message<'_> {
+impl Display for ErrorMessage<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(&self.message, f)
     }

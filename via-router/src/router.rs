@@ -184,6 +184,14 @@ impl<T> RouteMut<'_, T> {
         RouteMut(insert(self.0, path::patterns(path)))
     }
 
+    pub fn param(&self) -> Option<&str> {
+        if let Pattern::Dynamic(name) | Pattern::Wildcard(name) = &self.0.pattern {
+            Some(name)
+        } else {
+            None
+        }
+    }
+
     pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) {
         scope(self);
     }

@@ -10,66 +10,39 @@ pub struct Resource<T> {
     or_else: Option<Box<dyn Fn(Request<T>, Next<T>) -> BoxFuture + Send + Sync>>,
 }
 
-pub fn connect<M, T>(middleware: M) -> Resource<T>
-where
-    M: Middleware<T> + 'static,
-{
+pub fn connect<T>(middleware: impl Middleware<T> + 'static) -> Resource<T> {
     Resource::new(Method::CONNECT, middleware)
 }
 
-pub fn delete<M, T>(middleware: M) -> Resource<T>
-where
-    M: Middleware<T> + 'static,
-{
+pub fn delete<T>(middleware: impl Middleware<T> + 'static) -> Resource<T> {
     Resource::new(Method::DELETE, middleware)
 }
 
-pub fn get<M, T>(middleware: M) -> Resource<T>
-where
-    M: Middleware<T> + 'static,
-{
+pub fn get<T>(middleware: impl Middleware<T> + 'static) -> Resource<T> {
     Resource::new(Method::GET, middleware)
 }
 
-pub fn head<M, T>(middleware: M) -> Resource<T>
-where
-    M: Middleware<T> + 'static,
-{
+pub fn head<T>(middleware: impl Middleware<T> + 'static) -> Resource<T> {
     Resource::new(Method::HEAD, middleware)
 }
 
-pub fn options<M, T>(middleware: M) -> Resource<T>
-where
-    M: Middleware<T> + 'static,
-{
+pub fn options<T>(middleware: impl Middleware<T> + 'static) -> Resource<T> {
     Resource::new(Method::OPTIONS, middleware)
 }
 
-pub fn patch<M, T>(middleware: M) -> Resource<T>
-where
-    M: Middleware<T> + 'static,
-{
+pub fn patch<T>(middleware: impl Middleware<T> + 'static) -> Resource<T> {
     Resource::new(Method::PATCH, middleware)
 }
 
-pub fn post<M, T>(middleware: M) -> Resource<T>
-where
-    M: Middleware<T> + 'static,
-{
+pub fn post<T>(middleware: impl Middleware<T> + 'static) -> Resource<T> {
     Resource::new(Method::POST, middleware)
 }
 
-pub fn put<M, T>(middleware: M) -> Resource<T>
-where
-    M: Middleware<T> + 'static,
-{
+pub fn put<T>(middleware: impl Middleware<T> + 'static) -> Resource<T> {
     Resource::new(Method::PUT, middleware)
 }
 
-pub fn trace<M, T>(middleware: M) -> Resource<T>
-where
-    M: Middleware<T> + 'static,
-{
+pub fn trace<T>(middleware: impl Middleware<T> + 'static) -> Resource<T> {
     Resource::new(Method::TRACE, middleware)
 }
 
