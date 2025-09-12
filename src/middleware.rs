@@ -9,7 +9,7 @@ use crate::response::Response;
 /// The output of the `Future` returned from middleware.
 ///
 pub type Result = std::result::Result<Response, Error>;
-pub type BoxFuture = Pin<Box<dyn Future<Output = Result> + Send + 'static>>;
+pub type BoxFuture<T = Result> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
 pub trait Middleware<T>: Send + Sync {
     fn call(&self, request: Request<T>, next: Next<T>) -> BoxFuture;

@@ -1,6 +1,5 @@
 pub mod cookies;
 pub mod rescue;
-pub mod ws;
 
 pub(crate) mod resource;
 
