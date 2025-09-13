@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::{RwLock, broadcast};
 use via::builtin::rescue;
 use via::ws::Message;
-use via::{BoxError, Next, Request, Response, error};
+use via::{BoxError, Request, Response, error};
 
 struct Chat {
     rooms: RwLock<HashMap<String, Room>>,
@@ -61,7 +61,7 @@ async fn main() -> Result<ExitCode, BoxError> {
             let id = state.id.fetch_add(1, Ordering::Relaxed);
             let (tx, mut rx) = {
                 let mut guard = state.rooms.write().await;
-                let room = guard.entry(room.clone()).or_insert_with(Room::new);
+                let room = guard.entry(room.to_owned()).or_insert_with(Room::new);
                 let tx = room.channel.0.clone();
                 let rx = tx.subscribe();
 
@@ -70,38 +70,38 @@ async fn main() -> Result<ExitCode, BoxError> {
 
             loop {
                 tokio::select! {
-                    Some(result) = socket.next() => {
-                        let text = match result {
-                            Ok(message) => match message.as_text() {
+                    next = socket.next() => match next {
+                        Some(Ok(message)) => {
+                            let text = match message.as_text() {
                                 Some(text) => text.to_owned(),
                                 None => continue,
-                            },
-                            Err(e) => {
-                                eprintln!("error(room: {}): {}", room, e);
-                                continue;
-                            }
-                        };
-
-                        'guard: {
-                            let mut guard = rooms.write().await;
-                            let room_mut = match guard.get_mut(&room) {
-                                Some(existing) => existing,
-                                None => break 'guard,
                             };
 
-                            room_mut.messages.push(text.clone());
-                            tx.send((id, text))?;
+                            'guard: {
+                                let mut guard = rooms.write().await;
+                                let room_mut = match guard.get_mut(&room) {
+                                    Some(existing) => existing,
+                                    None => break 'guard,
+                                };
+
+                                room_mut.messages.push(text.clone());
+                                tx.send((id, text))?;
+                            }
                         }
-                    }
+                        Some(Err(error)) => {
+                            eprintln!("error(room: {}): {}", room, error);
+                            continue;
+                        }
+                        None => {
+                            break Ok(());
+                        }
+                    },
                     result = rx.recv() => {
                         if let Ok((sender, update)) = result
                             && sender != id
                         {
                             socket.send(Message::text(update)).await?;
                         }
-                    }
-                    else => {
-                        break Ok(());
                     }
                 }
             }
