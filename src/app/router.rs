@@ -5,7 +5,7 @@ use crate::middleware::Middleware;
 #[cfg(feature = "ws")]
 use crate::error::BoxError;
 #[cfg(feature = "ws")]
-use crate::ws::{Message, WebSocket, WsConfig};
+use crate::ws::{WebSocket, WsConfig};
 
 pub type Router<T> = via_router::Router<Arc<dyn Middleware<T>>>;
 

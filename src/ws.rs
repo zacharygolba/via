@@ -2,16 +2,13 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as base64_engine;
 use futures::{SinkExt, StreamExt};
 use http::{StatusCode, header};
-use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use sha1::{Digest, Sha1};
 use std::error::Error;
 use std::sync::Arc;
-use tokio::net::TcpStream;
-use tokio::sync::Mutex;
-use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_websockets::server::Builder;
-use tokio_websockets::{Config, Limits, WebSocketStream};
+use tokio_websockets::{Config, Error as WsError, Limits};
 
 use crate::Response;
 use crate::error::BoxError;
@@ -28,7 +25,8 @@ pub type OnMessage<T> =
 
 pub struct WebSocket<T = ()> {
     state: Arc<T>,
-    stream: WebSocketStream<TokioIo<TokioIo<TcpStream>>>,
+    sender: Sender<Message>,
+    receiver: Receiver<Result<Message, WsError>>,
 }
 
 pub struct WsConfig<T> {
@@ -112,16 +110,45 @@ impl<T: Send + Sync + 'static> Middleware<T> for WsConfig<T> {
             let f = Arc::clone(&self.on_message);
 
             tokio::spawn(async move {
-                let stream = match hyper::upgrade::on(&mut request)
-                    .await
-                    .and_then(|upgraded| Ok(upgraded.downcast().unwrap().io))
-                {
+                let mut stream = match hyper::upgrade::on(&mut request).await {
                     Ok(io) => builder.serve(TokioIo::new(io)),
                     Err(error) => return handle_error(&error),
                 };
 
-                if let Err(error) = f(WebSocket { state, stream }, param).await {
-                    handle_error(&*error);
+                'session: loop {
+                    let (sender, mut rx) = mpsc::channel(128);
+                    let (tx, receiver) = mpsc::channel(128);
+                    let mut future = f(
+                        WebSocket::new(state.clone(), sender, receiver),
+                        param.clone(),
+                    );
+
+                    loop {
+                        tokio::select! {
+                            Some(next) = stream.next() => drop(match next {
+                                Err(WsError::AlreadyClosed) => break 'session,
+                                result @ Err(_) => tx.send(result).await,
+                                Ok(message) => tx.send(Ok(message)).await,
+                            }),
+                            Some(message) = rx.recv() => match stream.send(message).await {
+                                Err(WsError::AlreadyClosed) => break 'session,
+                                Err(error) => handle_error(&error),
+                                Ok(_) => {},
+                            },
+                            result = future.as_mut() => {
+                                if let Err(error) = result {
+                                    handle_error(&*error);
+                                    continue 'session;
+                                }
+
+                                break 'session;
+                            },
+                        }
+                    }
+                }
+
+                if cfg!(debug_assertions) {
+                    println!("websocket session ended");
                 }
             });
 
@@ -140,16 +167,45 @@ impl<T: Send + Sync + 'static> Middleware<T> for WsConfig<T> {
 }
 
 impl<T> WebSocket<T> {
+    fn new(
+        state: Arc<T>,
+        sender: Sender<Message>,
+        receiver: Receiver<Result<Message, WsError>>,
+    ) -> Self {
+        Self {
+            state,
+            sender,
+            receiver,
+        }
+    }
+}
+
+impl<T> WebSocket<T> {
     #[inline]
     pub fn state(&self) -> &Arc<T> {
         &self.state
     }
 
     pub async fn next(&mut self) -> Option<Result<Message, BoxError>> {
-        Some(self.stream.next().await?.map_err(|e| e.into()))
+        match self.receiver.recv().await? {
+            Err(error) => Some(Err(error.into())),
+            Ok(message) => {
+                if message.is_close() {
+                    println!("should close");
+                    self.receiver.close();
+                    None
+                } else {
+                    Some(Ok(message))
+                }
+            }
+        }
     }
 
     pub async fn send(&mut self, message: Message) -> Result<(), BoxError> {
-        Ok(self.stream.send(message).await?)
+        if let Err(_) = self.sender.send(message).await {
+            Err(WsError::AlreadyClosed.into())
+        } else {
+            Ok(())
+        }
     }
 }
