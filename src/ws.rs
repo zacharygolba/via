@@ -191,7 +191,6 @@ impl<T> WebSocket<T> {
             Err(error) => Some(Err(error.into())),
             Ok(message) => {
                 if message.is_close() {
-                    println!("should close");
                     self.receiver.close();
                     None
                 } else {
