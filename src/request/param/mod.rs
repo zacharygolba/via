@@ -1,8 +1,12 @@
 mod decode;
 mod path_param;
+mod path_params;
 mod query_param;
 mod query_parser;
 
 pub use decode::PercentDecode;
 pub use path_param::PathParam;
+pub use path_params::Params;
 pub use query_param::{QueryParam, QueryParamIter};
+
+pub(crate) use path_params::ParamOffsets;

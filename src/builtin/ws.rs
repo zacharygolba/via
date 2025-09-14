@@ -1,42 +1,62 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as base64_engine;
 use futures::{SinkExt, StreamExt};
+use http::request::Parts;
 use http::{StatusCode, header};
 use hyper_util::rt::TokioIo;
 use sha1::{Digest, Sha1};
-use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_websockets::server::Builder;
 use tokio_websockets::{Config, Error as WsError, Limits};
 
-use crate::Response;
-use crate::error::BoxError;
+use crate::error::Error;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
-use crate::request::Request;
+use crate::request::param::ParamOffsets;
+use crate::request::{Params, PathParam, Request};
+use crate::response::Response;
 
 pub use tokio_websockets::{Message, Payload};
 
 const WEB_SOCKET_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-pub type OnMessage<T> =
-    dyn Fn(WebSocket<T>, Option<String>) -> BoxFuture<Result<(), BoxError>> + Send + Sync;
+pub type OnUpgrade<T> = dyn Fn(WebSocket, Context<T>) -> BoxFuture<Result<(), Error>> + Send + Sync;
 
-pub struct WebSocket<T = ()> {
+pub struct Context<T> {
+    params: Arc<Params>,
     state: Arc<T>,
+}
+
+pub struct WebSocket {
     sender: Sender<Message>,
     receiver: Receiver<Result<Message, WsError>>,
 }
 
-pub struct WsConfig<T> {
-    config: Config,
-    limits: Limits,
-    param_name: Option<String>,
-    on_message: Arc<OnMessage<T>>,
+pub struct WebSocketUpgrade<T> {
+    max_payload_len: Option<usize>,
+    flush_threshold: usize,
+    frame_size: usize,
+    on_upgrade: Arc<OnUpgrade<T>>,
 }
 
-fn handle_error(error: &(dyn Error + 'static)) {
+pub fn ws<T, F, R>(upgraded: F) -> WebSocketUpgrade<T>
+where
+    F: Fn(WebSocket, Context<T>) -> R + Send + Sync + 'static,
+    R: Future<Output = Result<(), Error>> + Send + Sync + 'static,
+{
+    let frame_size = 4 * 1024;
+    let flush_threshold = frame_size * 2;
+
+    WebSocketUpgrade {
+        flush_threshold,
+        frame_size,
+        max_payload_len: None,
+        on_upgrade: Arc::new(move |socket, message| Box::pin(upgraded(socket, message))),
+    }
+}
+
+fn handle_error(error: &(dyn std::error::Error + 'static)) {
     if cfg!(debug_assertions) {
         eprintln!("error(ws): {}", error);
     }
@@ -68,26 +88,10 @@ fn validate_websocket_version<T>(request: &Request<T>) -> Result<(), crate::Erro
     }
 }
 
-impl<T> WsConfig<T> {
-    pub(crate) fn new(param_name: Option<String>, on_message: Arc<OnMessage<T>>) -> Self {
-        Self {
-            config: Default::default(),
-            limits: Default::default(),
-            on_message,
-            param_name,
-        }
-    }
-
-    fn extract_param(&self, request: &Request<T>) -> Option<String> {
-        let name = self.param_name.as_ref()?;
-        let value = request.param(name).into_result().ok()?;
-
-        Some(value.into_owned())
-    }
-}
-
-impl<T: Send + Sync + 'static> Middleware<T> for WsConfig<T> {
+impl<T: Send + Sync + 'static> Middleware<T> for WebSocketUpgrade<T> {
     fn call(&self, request: Request<T>, next: Next<T>) -> crate::BoxFuture {
+        println!("UPGRADE");
+
         if request
             .header(header::UPGRADE)
             .is_ok_and(|upgrade| upgrade.is_some_and(|value| value == "websocket"))
@@ -101,16 +105,21 @@ impl<T: Send + Sync + 'static> Middleware<T> for WsConfig<T> {
                 Ok(key) => key,
             };
 
-            let param = self.extract_param(&request);
             let (head, _) = request.into_parts();
-            let mut request = http::Request::from_parts(head.parts, ());
+            let context = Context::new(&head.parts, head.params, head.state);
 
-            let builder = Builder::new().config(self.config).limits(self.limits);
-            let state = head.state;
-            let f = Arc::clone(&self.on_message);
+            let mut can_upgrade = http::Request::from_parts(head.parts, ());
+            let on_upgrade = Arc::clone(&self.on_upgrade);
+            let builder = Builder::new()
+                .limits(Limits::default().max_payload_len(self.max_payload_len))
+                .config(
+                    Config::default()
+                        .flush_threshold(self.flush_threshold)
+                        .frame_size(self.frame_size),
+                );
 
             tokio::spawn(async move {
-                let mut stream = match hyper::upgrade::on(&mut request).await {
+                let mut stream = match hyper::upgrade::on(&mut can_upgrade).await {
                     Ok(io) => builder.serve(TokioIo::new(io)),
                     Err(error) => return handle_error(&error),
                 };
@@ -118,10 +127,7 @@ impl<T: Send + Sync + 'static> Middleware<T> for WsConfig<T> {
                 'session: loop {
                     let (sender, mut rx) = mpsc::channel(128);
                     let (tx, receiver) = mpsc::channel(128);
-                    let mut future = f(
-                        WebSocket::new(state.clone(), sender, receiver),
-                        param.clone(),
-                    );
+                    let mut future = on_upgrade(WebSocket { sender, receiver }, context.clone());
 
                     loop {
                         tokio::select! {
@@ -137,7 +143,7 @@ impl<T: Send + Sync + 'static> Middleware<T> for WsConfig<T> {
                             },
                             result = future.as_mut() => {
                                 if let Err(error) = result {
-                                    handle_error(&*error);
+                                    handle_error(error.source());
                                     continue 'session;
                                 }
 
@@ -166,27 +172,44 @@ impl<T: Send + Sync + 'static> Middleware<T> for WsConfig<T> {
     }
 }
 
-impl<T> WebSocket<T> {
-    fn new(
-        state: Arc<T>,
-        sender: Sender<Message>,
-        receiver: Receiver<Result<Message, WsError>>,
-    ) -> Self {
+impl<T> Context<T> {
+    fn new(parts: &Parts, params: ParamOffsets, state: Arc<T>) -> Self {
         Self {
+            params: Arc::new(Params::new(parts.uri.path_and_query().cloned(), params)),
             state,
-            sender,
-            receiver,
         }
     }
 }
 
-impl<T> WebSocket<T> {
+impl<T> Context<T> {
+    #[inline]
+    pub fn path(&self) -> &str {
+        self.params.path()
+    }
+
+    #[inline]
+    pub fn param<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
+        self.params.get(name)
+    }
+
     #[inline]
     pub fn state(&self) -> &Arc<T> {
         &self.state
     }
+}
 
-    pub async fn next(&mut self) -> Option<Result<Message, BoxError>> {
+impl<T> Clone for Context<T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            params: Arc::clone(&self.params),
+            state: Arc::clone(&self.state),
+        }
+    }
+}
+
+impl WebSocket {
+    pub async fn next(&mut self) -> Option<Result<Message, Error>> {
         match self.receiver.recv().await? {
             Err(error) => Some(Err(error.into())),
             Ok(message) => {
@@ -200,7 +223,7 @@ impl<T> WebSocket<T> {
         }
     }
 
-    pub async fn send(&mut self, message: Message) -> Result<(), BoxError> {
+    pub async fn send(&mut self, message: Message) -> Result<(), Error> {
         if let Err(_) = self.sender.send(message).await {
             Err(WsError::AlreadyClosed.into())
         } else {

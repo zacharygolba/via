@@ -49,7 +49,6 @@
 pub mod builtin;
 pub mod request;
 pub mod response;
-pub mod ws;
 
 mod app;
 mod error;
@@ -65,3 +64,6 @@ pub use next::Next;
 pub use request::Request;
 pub use response::{Pipe, Response};
 pub use server::{Server, start};
+
+#[cfg(feature = "ws")]
+pub use builtin::ws::ws;

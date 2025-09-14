@@ -5,12 +5,11 @@ use http::request::Parts;
 use http::{HeaderMap, Method, Uri, Version};
 use http_body::Body;
 use std::sync::Arc;
-use via_router::Param;
 
-use super::body::RequestBody;
+use super::body::{RequestBody, RequestPayload};
+use super::param::ParamOffsets;
 use super::param::{PathParam, QueryParam};
 use crate::error::{BoxError, Error};
-use crate::request::RequestPayload;
 use crate::response::{Pipe, Response, ResponseBuilder};
 
 /// The component parts of a HTTP request.
@@ -21,7 +20,7 @@ pub struct RequestHead<T> {
 
     /// The request's path parameters.
     ///
-    pub(crate) params: Vec<(Arc<str>, Param)>,
+    pub(crate) params: ParamOffsets,
 
     /// The cookies associated with the request. If there is not a
     /// [CookieParser](crate::middleware::CookieParser)
@@ -44,7 +43,7 @@ pub struct Request<T = ()> {
 
 impl<T> RequestHead<T> {
     #[inline]
-    pub(crate) fn new(parts: Parts, state: Arc<T>, params: Vec<(Arc<str>, Param)>) -> Self {
+    pub(crate) fn new(parts: Parts, state: Arc<T>, params: ParamOffsets) -> Self {
         Self {
             parts,
             params,
@@ -80,13 +79,7 @@ impl<T> RequestHead<T> {
     ///
     #[inline]
     pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
-        PathParam::new(
-            name,
-            self.parts.uri.path(),
-            self.params
-                .iter()
-                .find_map(|(n, range)| if &**n == name { Some(*range) } else { None }),
-        )
+        self.params.get(self.parts.uri.path(), name)
     }
 
     /// Returns a convenient wrapper around an optional references to the query

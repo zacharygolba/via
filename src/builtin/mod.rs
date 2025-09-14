@@ -1,6 +1,9 @@
 pub mod cookies;
 pub mod rescue;
 
+#[cfg(feature = "ws")]
+pub mod ws;
+
 pub(crate) mod resource;
 
 mod filter;

@@ -2,11 +2,6 @@ use std::sync::Arc;
 
 use crate::middleware::Middleware;
 
-#[cfg(feature = "ws")]
-use crate::error::BoxError;
-#[cfg(feature = "ws")]
-use crate::ws::{WebSocket, WsConfig};
-
 pub type Router<T> = via_router::Router<Arc<dyn Middleware<T>>>;
 
 pub struct Route<'a, T> {
@@ -36,19 +31,5 @@ impl<T> Route<'_, T> {
         M: Middleware<T> + 'static,
     {
         self.inner.respond(Arc::new(middleware));
-    }
-}
-
-#[cfg(feature = "ws")]
-impl<T: Send + Sync + 'static> Route<'_, T> {
-    pub fn ws<R, F>(&mut self, on_message: F)
-    where
-        F: Fn(WebSocket<T>, Option<String>) -> R + Send + Sync + 'static,
-        R: Future<Output = Result<(), BoxError>> + Send + Sync + 'static,
-    {
-        self.respond(WsConfig::new(
-            self.inner.param().map(|param| param.to_owned()),
-            Arc::new(move |socket, message| Box::pin(on_message(socket, message))),
-        ));
     }
 }
