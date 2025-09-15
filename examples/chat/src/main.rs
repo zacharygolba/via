@@ -1,11 +1,26 @@
 mod chat;
 mod room;
 
+use http::header;
 use std::process::ExitCode;
-use via::BoxError;
 use via::builtin::rescue;
+use via::{BoxError, Next, Request, Response};
 
 use chat::Chat;
+
+async fn index(request: Request<Chat>, _: Next<Chat>) -> via::Result {
+    let mut csp = "default-src 'self'; connect-src 'self'".to_owned();
+
+    if let Some(host) = request.header(header::HOST)? {
+        csp.push_str(" ws://");
+        csp.push_str(host);
+    }
+
+    Response::build()
+        .header(header::CONTENT_TYPE, "text/plain")
+        .header(header::CONTENT_SECURITY_POLICY, csp)
+        .body("Chat Example frontend coming soon!")
+}
 
 #[tokio::main]
 async fn main() -> Result<ExitCode, BoxError> {
@@ -18,6 +33,8 @@ async fn main() -> Result<ExitCode, BoxError> {
         eprintln!("error: {}", error);
         error.as_json()
     }));
+
+    app.at("/").respond(via::get(index));
 
     // Define a router namespace for our chat API.
     app.at("/chat/:room").scope(|route| {
