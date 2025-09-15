@@ -82,8 +82,6 @@ where
 
     // Start accepting incoming connections.
     let exit_code = loop {
-        println!("permits = {}", semaphore.available_permits());
-
         // Acquire a permit from the semaphore.
         let permit = match semaphore.clone().acquire_owned().await {
             Ok(acquired) => acquired,
