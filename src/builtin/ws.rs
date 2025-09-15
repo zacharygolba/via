@@ -180,10 +180,6 @@ impl Message {
         self.0.as_text()
     }
 
-    pub fn is_close(&self) -> bool {
-        self.0.is_close()
-    }
-
     pub fn is_ping(&self) -> bool {
         self.0.is_ping()
     }
