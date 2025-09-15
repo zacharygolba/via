@@ -1,5 +1,5 @@
 use hyper::server::conn;
-use hyper_util::rt::{TokioIo, TokioTimer};
+use hyper_util::rt::TokioTimer;
 use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -14,6 +14,7 @@ use tokio::{signal, time};
 use hyper_util::rt::TokioExecutor;
 
 use super::acceptor::Acceptor;
+use super::io::IoWithPermit;
 use crate::app::{App, AppService};
 use crate::error::ServerError;
 
@@ -81,6 +82,8 @@ where
 
     // Start accepting incoming connections.
     let exit_code = loop {
+        println!("permits = {}", semaphore.available_permits());
+
         // Acquire a permit from the semaphore.
         let permit = match semaphore.clone().acquire_owned().await {
             Ok(acquired) => acquired,
@@ -178,7 +181,7 @@ fn handle_error(error: &ServerError) {
 }
 
 async fn handle_connection<A, T>(
-    _permit: OwnedSemaphorePermit,
+    permit: OwnedSemaphorePermit,
     tcp_stream: TcpStream,
     mut acceptor: A,
     mut shutdown_rx: watch::Receiver<Option<ExitCode>>,
@@ -198,7 +201,7 @@ where
         conn::http2::Builder::new(TokioExecutor::new())
             .timer(TokioTimer::new())
             .serve_connection(
-                TokioIo::new(maybe_tls_stream),
+                IoWithPermit::new(permit, maybe_tls_stream),
                 AppService::new(app, max_body_size),
             ),
     );
@@ -209,7 +212,7 @@ where
         conn::http1::Builder::new()
             .timer(TokioTimer::new())
             .serve_connection(
-                TokioIo::new(maybe_tls_stream),
+                IoWithPermit::new(permit, maybe_tls_stream),
                 AppService::new(app, max_body_size),
             )
             .with_upgrades(),
