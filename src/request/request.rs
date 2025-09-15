@@ -7,7 +7,7 @@ use http_body::Body;
 use std::sync::Arc;
 
 use super::body::{RequestBody, RequestPayload};
-use super::param::ParamOffsets;
+use super::param::PathParams;
 use super::param::{PathParam, QueryParam};
 use crate::error::{BoxError, Error};
 use crate::response::{Pipe, Response, ResponseBuilder};
@@ -20,7 +20,7 @@ pub struct RequestHead<T> {
 
     /// The request's path parameters.
     ///
-    pub(crate) params: ParamOffsets,
+    pub(crate) params: PathParams,
 
     /// The cookies associated with the request. If there is not a
     /// [CookieParser](crate::middleware::CookieParser)
@@ -43,7 +43,7 @@ pub struct Request<T = ()> {
 
 impl<T> RequestHead<T> {
     #[inline]
-    pub(crate) fn new(parts: Parts, state: Arc<T>, params: ParamOffsets) -> Self {
+    pub(crate) fn new(parts: Parts, state: Arc<T>, params: PathParams) -> Self {
         Self {
             parts,
             params,

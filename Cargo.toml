@@ -12,14 +12,18 @@ repository = "https://github.com/zacharygolba/via"
 [features]
 default = ["http1"]
 
+aws-lc-rs = ["dep:aws-lc-rs", "tokio-rustls/aws-lc-rs", "tokio-websockets/aws_lc_rs"]
+
 fs = ["dep:httpdate", "tokio/fs"]
 
 http1 = ["hyper/http1"]
 http2 = ["hyper/http2"]
 
+ring = ["dep:ring", "tokio-rustls/ring", "tokio-websockets/ring"]
+
 rustls = ["dep:tokio-rustls"]
 
-ws = ["dep:sha1", "dep:base64", "dep:tokio-websockets"]
+ws = ["dep:base64", "dep:tokio-websockets"]
 
 [dependencies]
 bytes = "1"
@@ -33,8 +37,13 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 percent-encoding = "2"
 serde = { version = "1", features = ["derive"]  }
 serde_json = "1"
+smallvec = "1"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
 via-router = { path = "./via-router" }
+
+[dependencies.aws-lc-rs]
+version = "1"
+optional = true
 
 [dependencies.base64]
 version = "0.22"
@@ -44,8 +53,8 @@ optional = true
 version = "0.18"
 features = ["percent-encode"]
 
-[dependencies.sha1]
-version = "0.10"
+[dependencies.ring]
+version = "0.17"
 optional = true
 
 [dependencies.tokio-rustls]

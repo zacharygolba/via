@@ -22,8 +22,6 @@ fn take_name(input: &str, from: usize) -> (usize, Option<Cow<'_, str>>) {
         }
     });
 
-    println!("{:?}", at);
-
     match at {
         Some((start, end)) => (end, input.get(start..end).map(decode)),
         None => (len, None),

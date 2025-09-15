@@ -11,7 +11,7 @@ use std::task::{Context, Poll};
 use crate::app::App;
 use crate::middleware::BoxFuture;
 use crate::next::Next;
-use crate::request::param::ParamOffsets;
+use crate::request::param::PathParams;
 use crate::request::{Request, RequestBody, RequestHead};
 use crate::response::ResponseBody;
 
@@ -51,7 +51,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
                     //
                     // It's safer to fail here than later on when application
                     // specific business logic takes over.
-                    ParamOffsets::new(Vec::with_capacity(8)),
+                    PathParams::new(Vec::with_capacity(8)),
                 ),
                 // Do not allocate for the request body until it's absolutely
                 // necessary.

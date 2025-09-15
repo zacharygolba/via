@@ -139,9 +139,9 @@ impl File {
     /// Set the value of the `Content-Type` header that will be included in the
     /// response.
     ///
-    pub fn content_type(self, mime_type: String) -> Self {
+    pub fn content_type(self, mime_type: impl AsRef<str>) -> Self {
         Self {
-            content_type: Some(mime_type),
+            content_type: Some(mime_type.as_ref().to_owned()),
             ..self
         }
     }

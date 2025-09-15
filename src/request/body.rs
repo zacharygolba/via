@@ -6,6 +6,7 @@ use http_body_util::{BodyStream, Either, LengthLimitError, Limited};
 use hyper::body::Incoming;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use smallvec::{SmallVec, smallvec};
 use std::borrow::Cow;
 use std::future::Future;
 use std::pin::Pin;
@@ -26,7 +27,7 @@ pub struct IntoFuture {
 ///
 #[derive(Debug)]
 pub struct RequestPayload {
-    frames: Vec<Bytes>,
+    frames: SmallVec<[Bytes; 1]>,
     trailers: Option<HeaderMap>,
 }
 
@@ -115,9 +116,16 @@ impl RequestPayload {
 }
 
 impl RequestPayload {
+    pub(crate) fn from_frame(frame: Bytes) -> Self {
+        Self {
+            frames: smallvec![frame],
+            trailers: None,
+        }
+    }
+
     fn new() -> Self {
         Self {
-            frames: Vec::new(),
+            frames: SmallVec::new(),
             trailers: None,
         }
     }

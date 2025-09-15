@@ -1,5 +1,5 @@
 use serde_json::json;
-use via::builtin::ws::{Context, Message, WebSocket};
+use via::builtin::ws::{WebSocket, WebSocketRequest};
 use via::{Error, Next, Request, Response, error};
 
 use crate::chat::Chat;
@@ -30,40 +30,35 @@ pub async fn show(request: Request<Chat>, _: Next<Chat>) -> via::Result {
     }
 }
 
-pub async fn join(mut socket: WebSocket, context: Context<Chat>) -> Result<(), Error> {
-    let slug = context.param("room").into_result()?;
-    let chat = context.state();
-
-    let (id, channel) = chat.join(&slug).await;
-    let (tx, mut rx) = channel;
+pub async fn join(mut socket: WebSocket, request: WebSocketRequest<Chat>) -> Result<(), Error> {
+    let slug = request.param("room").into_result()?;
+    let (id, (tx, mut rx)) = request.state().join(&slug).await;
 
     loop {
         tokio::select! {
             Ok((from, index)) = rx.recv() => {
-                if id == from {
-                    continue;
-                }
+                let chat = request.state();
 
-                if let Some(message) = chat.get(&slug, index).await {
-                    socket.send(Message::text(message)).await?;
+                if id != from
+                    && let Some(message) = chat.get(&slug, index).await
+                {
+                    socket.send(message).await?;
                 }
             }
             next = socket.next() => match next {
-                Some(Ok(message)) => {
-                    let text = match message.as_text() {
-                        Some(utf8) => utf8.to_owned(),
-                        None => continue,
-                    };
+                Ok(Some(message)) => {
+                    let text = message.validate_utf8()?;
+                    let chat = request.state();
 
                     if let Some(index) = chat.append(&slug, text).await {
                         let _ = tx.send((id, index));
                     }
                 }
-                Some(Err(error)) => {
-                    eprintln!("error(room: {}): {}", slug, error);
-                }
-                None => {
+                Ok(None) => {
                     break Ok(());
+                }
+                Err(e) => {
+                    eprintln!("error(room: {}): {}", slug, e);
                 }
             }
         }
