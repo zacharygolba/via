@@ -1,5 +1,5 @@
 mod handshake;
 mod message;
 
-pub use handshake::{Handshake, WebSocket, WebSocketRequest, ws};
-pub use message::{ByteStr, CloseCode, Message};
+pub use handshake::{Handshake, RequestContext, WebSocket, ws};
+pub use message::{CloseCode, Message};

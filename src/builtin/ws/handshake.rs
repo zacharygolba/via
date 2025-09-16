@@ -24,7 +24,12 @@ use crate::response::Response;
 const GUID: &[u8] = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 type OnUpgrade<T> =
-    dyn Fn(WebSocket, WebSocketRequest<T>) -> BoxFuture<Result<(), Error>> + Send + Sync;
+    dyn Fn(WebSocket, RequestContext<T>) -> BoxFuture<Result<(), Error>> + Send + Sync;
+
+pub struct RequestContext<T> {
+    params: Arc<OwnedPathParams>,
+    state: Arc<T>,
+}
 
 pub struct Handshake<T> {
     max_payload_len: Option<usize>,
@@ -38,14 +43,9 @@ pub struct WebSocket {
     receiver: Receiver<Result<tokio_websockets::Message, tokio_websockets::Error>>,
 }
 
-pub struct WebSocketRequest<T> {
-    params: Arc<OwnedPathParams>,
-    state: Arc<T>,
-}
-
 pub fn ws<T, F, R>(upgraded: F) -> Handshake<T>
 where
-    F: Fn(WebSocket, WebSocketRequest<T>) -> R + Send + Sync + 'static,
+    F: Fn(WebSocket, RequestContext<T>) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Error>> + Send + Sync + 'static,
 {
     let frame_size = 4 * 1024;
@@ -84,7 +84,7 @@ async fn handle_upgrade<T>(
         let (tx, receiver) = mpsc::channel(128);
         let mut future = on_upgrade(
             WebSocket { sender, receiver },
-            WebSocketRequest {
+            RequestContext {
                 params: Arc::clone(&params),
                 state: Arc::clone(&state),
             },
@@ -181,7 +181,7 @@ impl WebSocket {
     }
 }
 
-impl<T> WebSocketRequest<T> {
+impl<T> RequestContext<T> {
     pub fn path(&self) -> &str {
         self.params.path()
     }
