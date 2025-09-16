@@ -1,4 +1,4 @@
-use http::uri::PathAndQuery;
+use http::Uri;
 use std::sync::Arc;
 use via_router::Param;
 
@@ -11,8 +11,8 @@ pub(crate) struct PathParams {
 
 #[derive(Debug)]
 pub struct OwnedPathParams {
-    path_and_query: Option<PathAndQuery>,
     offsets: PathParams,
+    uri: Uri,
 }
 
 impl PathParams {
@@ -45,27 +45,17 @@ impl OwnedPathParams {
 
     #[inline]
     pub fn path(&self) -> &str {
-        self.path_and_query().map_or("/", PathAndQuery::path)
+        self.uri.path()
     }
 
     #[inline]
     pub fn query(&self) -> &str {
-        self.path_and_query()
-            .and_then(PathAndQuery::query)
-            .unwrap_or_default()
+        self.uri.query().unwrap_or_default()
     }
 }
 
 impl OwnedPathParams {
-    pub(crate) fn new(path_and_query: Option<PathAndQuery>, offsets: PathParams) -> Self {
-        Self {
-            path_and_query,
-            offsets,
-        }
-    }
-
-    #[inline]
-    fn path_and_query(&self) -> Option<&PathAndQuery> {
-        self.path_and_query.as_ref()
+    pub(crate) fn new(uri: Uri, offsets: PathParams) -> Self {
+        Self { offsets, uri }
     }
 }

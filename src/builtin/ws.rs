@@ -319,10 +319,7 @@ impl<T: Send + Sync + 'static> Middleware<T> for WebSocketUpgrade<T> {
         };
 
         let (head, _) = request.into_parts();
-        let params = Arc::new(OwnedPathParams::new(
-            head.parts.uri.path_and_query().cloned(),
-            head.params,
-        ));
+        let params = Arc::new(OwnedPathParams::new(head.parts.uri.clone(), head.params));
 
         tokio::spawn(handle_upgrade(
             http::Request::from_parts(head.parts, ()),
