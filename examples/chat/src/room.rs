@@ -32,44 +32,48 @@ pub async fn show(request: Request<Chat>, _: Next<Chat>) -> via::Result {
 
 pub async fn join(mut socket: WebSocket, request: RequestContext<Chat>) -> Result<(), Error> {
     let slug = request.param("room").into_result()?;
-    let (id, (tx, mut rx)) = request.state().join(&slug).await;
+    let chat = request.state();
+
+    let (id, (tx, mut rx)) = chat.join(&slug).await;
 
     loop {
         tokio::select! {
+            // Update received from the room's broadcast channel.
             Ok((from, index)) = rx.recv() => {
-                let chat = request.state();
-                if id != from
-                    && let Some(message) = chat.get(&slug, index).await
-                {
+                if id == from {
+                    continue; // Skip updates if they came from us.
+                }
+
+                if let Some(message) = chat.get(&slug, index).await {
                     socket.send(message).await?;
                 }
             }
-            result = socket.next() => match result {
-                Ok(Message::Binary(_binary)) => {
+
+            // Message received from the websocket.
+            Some(message) = socket.next() => match message {
+                Message::Binary(_binary) => {
                     eprintln!("warn(room: {}): binary messages are ignored.", &slug);
                 }
-                Ok(Message::Close(close)) => {
+
+                Message::Close(close) => {
                     if let Some((code, reason)) = close {
                         eprint!("close(room: {}): {}", &slug, u16::from(code));
-                        if let Some(message) = reason.as_deref() {
+                        if let Some(message) = reason {
                             eprintln!(" {}", message);
                         } else {
                             eprintln!("");
                         }
                     }
-                }
-                Ok(Message::Text(text)) => {
-                    let chat = request.state();
-                    let message = text.into();
 
-                    if let Some(index) = chat.push(&slug, message).await {
+                    break Ok(());
+                }
+
+                Message::Text(text) => {
+                    if let Some(index) = chat.push(&slug, &text).await {
                         let _ = tx.send((id, index));
                     }
                 }
-                Err(error) => {
-                    eprintln!("error(room: {}): {}", slug, error);
-                }
-            }
+            },
         }
     }
 }

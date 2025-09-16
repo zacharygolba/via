@@ -9,3 +9,7 @@ serde = "1"
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 via = { path = "../..", features = ["aws-lc-rs", "fs", "ws"] }
+
+[dependencies.bytestring]
+features = ["serde"]
+version = "1"

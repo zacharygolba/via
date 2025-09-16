@@ -40,17 +40,12 @@ impl PathParams {
 impl OwnedPathParams {
     #[inline]
     pub fn get<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
-        self.offsets.get(self.path(), name)
+        self.offsets.get(self.uri().path(), name)
     }
 
     #[inline]
-    pub fn path(&self) -> &str {
-        self.uri.path()
-    }
-
-    #[inline]
-    pub fn query(&self) -> &str {
-        self.uri.query().unwrap_or_default()
+    pub fn uri(&self) -> &Uri {
+        &self.uri
     }
 }
 

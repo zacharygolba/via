@@ -1,3 +1,4 @@
+use bytestring::ByteString;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::{RwLock, broadcast};
@@ -14,7 +15,7 @@ pub struct Chat {
 
 pub struct Room {
     channel: Channel,
-    messages: Vec<String>,
+    messages: Vec<ByteString>,
 }
 
 impl Chat {
@@ -27,7 +28,7 @@ impl Chat {
 
     pub async fn all<F, R>(&self, slug: &str, with: F) -> Option<R>
     where
-        F: FnOnce(&[String]) -> R,
+        F: FnOnce(&[ByteString]) -> R,
     {
         let guard = self.rooms.read().await;
         let room = guard.get(slug)?;
@@ -35,19 +36,19 @@ impl Chat {
         Some(with(&room.messages))
     }
 
-    pub async fn get(&self, slug: &str, index: usize) -> Option<String> {
+    pub async fn get(&self, slug: &str, index: usize) -> Option<ByteString> {
         let guard = self.rooms.read().await;
         let room = guard.get(slug)?;
 
         room.messages.get(index).cloned()
     }
 
-    pub async fn push(&self, slug: &str, message: String) -> Option<usize> {
+    pub async fn push(&self, slug: &str, message: &str) -> Option<usize> {
         let mut guard = self.rooms.write().await;
         let room_mut = &mut guard.get_mut(slug)?;
         let index = room_mut.messages.len();
 
-        room_mut.messages.push(message);
+        room_mut.messages.push(message.into());
 
         Some(index)
     }
