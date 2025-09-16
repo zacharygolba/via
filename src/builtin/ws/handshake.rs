@@ -1,10 +1,8 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as base64_engine;
-use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use http::{StatusCode, header};
 use hyper_util::rt::TokioIo;
-use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_websockets::server::Builder;
@@ -16,10 +14,11 @@ use aws_lc_rs::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY};
 #[cfg(feature = "ring")]
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY};
 
+use super::message::Message;
 use crate::error::Error;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
-use crate::request::{OwnedPathParams, PathParam, QueryParam, Request, RequestPayload};
+use crate::request::{OwnedPathParams, PathParam, QueryParam, Request};
 use crate::response::Response;
 
 const GUID: &[u8] = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -27,7 +26,12 @@ const GUID: &[u8] = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 type OnUpgrade<T> =
     dyn Fn(WebSocket, WebSocketRequest<T>) -> BoxFuture<Result<(), Error>> + Send + Sync;
 
-pub struct Message(tokio_websockets::Message);
+pub struct Handshake<T> {
+    max_payload_len: Option<usize>,
+    flush_threshold: usize,
+    frame_size: usize,
+    on_upgrade: Arc<OnUpgrade<T>>,
+}
 
 pub struct WebSocket {
     sender: Sender<Message>,
@@ -39,14 +43,7 @@ pub struct WebSocketRequest<T> {
     state: Arc<T>,
 }
 
-pub struct WebSocketUpgrade<T> {
-    max_payload_len: Option<usize>,
-    flush_threshold: usize,
-    frame_size: usize,
-    on_upgrade: Arc<OnUpgrade<T>>,
-}
-
-pub fn ws<T, F, R>(upgraded: F) -> WebSocketUpgrade<T>
+pub fn ws<T, F, R>(upgraded: F) -> Handshake<T>
 where
     F: Fn(WebSocket, WebSocketRequest<T>) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Error>> + Send + Sync + 'static,
@@ -54,7 +51,7 @@ where
     let frame_size = 4 * 1024;
     let flush_threshold = frame_size * 2;
 
-    WebSocketUpgrade {
+    Handshake {
         flush_threshold,
         frame_size,
         max_payload_len: None,
@@ -95,8 +92,8 @@ async fn handle_upgrade<T>(
 
         loop {
             tokio::select! {
-                Some(Message(message)) = rx.recv() => {
-                    match stream.send(message).await {
+                Some(message) = rx.recv() => {
+                    match stream.send(message.into()).await {
                         Err(tokio_websockets::Error::AlreadyClosed) => break 'session,
                         Err(error) => handle_error(&error),
                         Ok(_) => {},
@@ -104,9 +101,11 @@ async fn handle_upgrade<T>(
                 }
                 Some(next) = stream.next() => {
                     let send_result = match next {
+                        Ok(message) if message.is_ping() || message.is_pong() => continue,
+                        Ok(message) => tx.send(Ok(message)).await,
+
                         Err(tokio_websockets::Error::AlreadyClosed) => break 'session,
                         result @ Err(_) => tx.send(result).await,
-                        Ok(message) => tx.send(Ok(message)).await,
                     };
 
                     if send_result.is_err() {
@@ -153,81 +152,6 @@ fn validate_websocket_version<T>(request: &Request<T>) -> Result<(), crate::Erro
     }
 }
 
-impl Message {
-    pub fn parse_json<D>(self) -> Result<D, Error>
-    where
-        D: DeserializeOwned,
-    {
-        let frame = Bytes::from(self.0.into_payload());
-        RequestPayload::from_frame(frame).parse_json()
-    }
-
-    pub fn validate_utf8(self) -> Result<String, Error> {
-        self.as_str()
-            .map(ToOwned::to_owned)
-            .ok_or_else(|| crate::error!(500, "message is not valid utf8"))
-    }
-
-    pub fn to_bytes(&self) -> Bytes {
-        Bytes::copy_from_slice(self.as_slice())
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        self.0.as_payload()
-    }
-
-    pub fn as_str(&self) -> Option<&str> {
-        self.0.as_text()
-    }
-
-    pub fn is_ping(&self) -> bool {
-        self.0.is_ping()
-    }
-
-    pub fn is_pong(&self) -> bool {
-        self.0.is_pong()
-    }
-
-    pub fn is_control_frame(&self) -> bool {
-        !self.is_data_frame()
-    }
-
-    pub fn is_data_frame(&self) -> bool {
-        let Self(inner) = self;
-        inner.is_binary() || inner.is_text()
-    }
-}
-
-impl From<Bytes> for Message {
-    fn from(data: Bytes) -> Self {
-        Self(tokio_websockets::Message::binary(data))
-    }
-}
-
-impl From<String> for Message {
-    fn from(data: String) -> Self {
-        Self(tokio_websockets::Message::text(data))
-    }
-}
-
-impl From<Vec<u8>> for Message {
-    fn from(data: Vec<u8>) -> Self {
-        Self::from(Bytes::from(data))
-    }
-}
-
-impl From<&'_ str> for Message {
-    fn from(data: &'_ str) -> Self {
-        Self::from(data.to_owned())
-    }
-}
-
-impl From<&'_ [u8]> for Message {
-    fn from(data: &'_ [u8]) -> Self {
-        Self::from(Bytes::copy_from_slice(data))
-    }
-}
-
 impl WebSocket {
     pub async fn send<T>(&self, message: T) -> Result<(), Error>
     where
@@ -240,16 +164,19 @@ impl WebSocket {
         }
     }
 
-    pub async fn next(&mut self) -> Result<Option<Message>, Error> {
+    pub async fn next(&mut self) -> Result<Message, Error> {
         match self.receiver.recv().await {
-            Some(Ok(message)) => Ok(if message.is_close() {
-                self.receiver.close();
-                None
-            } else {
-                Some(Message(message))
-            }),
+            Some(Ok(next)) => {
+                let message = next.try_into()?;
+
+                if matches!(&message, Message::Close(_)) {
+                    self.receiver.close();
+                }
+
+                Ok(message)
+            }
             Some(Err(error)) => Err(error.into()),
-            None => Ok(None),
+            None => Err(tokio_websockets::Error::AlreadyClosed.into()),
         }
     }
 }
@@ -272,7 +199,7 @@ impl<T> WebSocketRequest<T> {
     }
 }
 
-impl<T> WebSocketUpgrade<T> {
+impl<T> Handshake<T> {
     pub fn flush_threshold(mut self, flush_threshold: usize) -> Self {
         self.flush_threshold = flush_threshold;
         self
@@ -289,7 +216,7 @@ impl<T> WebSocketUpgrade<T> {
     }
 }
 
-impl<T> WebSocketUpgrade<T> {
+impl<T> Handshake<T> {
     fn stream_builder(&self) -> Builder {
         Builder::new()
             .limits(Limits::default().max_payload_len(self.max_payload_len))
@@ -301,7 +228,7 @@ impl<T> WebSocketUpgrade<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> Middleware<T> for WebSocketUpgrade<T> {
+impl<T: Send + Sync + 'static> Middleware<T> for Handshake<T> {
     fn call(&self, request: Request<T>, next: Next<T>) -> crate::BoxFuture {
         match request.header(header::UPGRADE) {
             Ok(Some("websocket")) => {}

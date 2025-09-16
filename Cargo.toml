@@ -10,7 +10,7 @@ homepage = "https://github.com/zacharygolba/via"
 repository = "https://github.com/zacharygolba/via"
 
 [features]
-default = ["http1"]
+default = ["aws-lc-rs", "http1", "ws"]
 
 aws-lc-rs = ["dep:aws-lc-rs", "tokio-rustls/aws-lc-rs", "tokio-websockets/aws_lc_rs"]
 
@@ -37,7 +37,6 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 percent-encoding = "2"
 serde = { version = "1", features = ["derive"]  }
 serde_json = "1"
-smallvec = "1"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
 via-router = { path = "./via-router" }
 

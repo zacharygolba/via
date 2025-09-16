@@ -25,16 +25,6 @@ impl Chat {
         }
     }
 
-    pub async fn append(&self, slug: &str, message: String) -> Option<usize> {
-        let mut guard = self.rooms.write().await;
-        let room_mut = &mut guard.get_mut(slug)?;
-        let index = room_mut.messages.len();
-
-        room_mut.messages.push(message);
-
-        Some(index)
-    }
-
     pub async fn all<F, R>(&self, slug: &str, with: F) -> Option<R>
     where
         F: FnOnce(&[String]) -> R,
@@ -50,6 +40,16 @@ impl Chat {
         let room = guard.get(slug)?;
 
         room.messages.get(index).cloned()
+    }
+
+    pub async fn push(&self, slug: &str, message: String) -> Option<usize> {
+        let mut guard = self.rooms.write().await;
+        let room_mut = &mut guard.get_mut(slug)?;
+        let index = room_mut.messages.len();
+
+        room_mut.messages.push(message);
+
+        Some(index)
     }
 
     pub async fn join(&self, slug: &str) -> (u64, Channel) {
