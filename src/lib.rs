@@ -58,9 +58,12 @@ mod server;
 
 pub use app::{App, Route, app};
 pub use builtin::resource::{connect, delete, get, head, options, patch, post, put, trace};
-pub use error::{BoxError, Error};
+pub use error::{BoxError, Error, ErrorMessage};
 pub use middleware::{BoxFuture, Middleware, Result};
 pub use next::Next;
 pub use request::Request;
 pub use response::{Pipe, Response};
 pub use server::{Server, start};
+
+#[cfg(feature = "ws")]
+pub use builtin::ws::ws;

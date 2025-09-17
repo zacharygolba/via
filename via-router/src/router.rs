@@ -50,13 +50,13 @@ fn match_next<'a, T>(
     bindings: &mut Vec<Binding<'a, T>>,
     queue: &mut SmallVec<[Branch<'a, '_, T>; 2]>,
 ) {
-    if let Some(mut branch) = queue.pop() {
-        if let Some(binding) = match branch.segment.take() {
+    if let Some(mut branch) = queue.pop()
+        && let Some(binding) = match branch.segment.take() {
             Some(segment) => match_next_segment(queue, branch, segment),
             None => match_trailing_wildcards(branch),
-        } {
-            bindings.push(binding);
         }
+    {
+        bindings.push(binding);
     }
 }
 
@@ -356,6 +356,7 @@ mod tests {
         };
     }
 
+    #[allow(clippy::type_complexity)]
     fn expect_match<'a>(
         resolved: Option<(Route<'a, String>, Option<(&'a Arc<str>, Param)>)>,
     ) -> Match<'a, str> {
@@ -381,7 +382,7 @@ mod tests {
         let mut router = Router::new();
 
         for path in PATHS {
-            let _ = router.at(path).include(path.to_owned());
+            router.at(path).include(path.to_owned());
         }
 
         fn assert_matches_wildcard_at_root<'a, I, F>(results: &mut I, assert_param: F)
@@ -408,7 +409,7 @@ mod tests {
 
             assert_matches_root(expect_match(results.next()));
             assert_matches_wildcard_at_root(&mut results, |param| {
-                assert_param_matches!(param, None);
+                assert!(param.is_none());
             });
 
             assert!(results.next().is_none());
@@ -486,7 +487,7 @@ mod tests {
                 let (mut stack, param) = expect_match(results.next());
 
                 assert!(stack.next().is_none());
-                assert_param_matches!(param, None);
+                assert!(param.is_none());
             }
 
             {
@@ -524,7 +525,7 @@ mod tests {
                 let (mut stack, param) = expect_match(results.next());
 
                 assert!(stack.next().is_none());
-                assert_param_matches!(param, None);
+                assert!(param.is_none());
             }
 
             {
@@ -542,7 +543,7 @@ mod tests {
                 assert!(matches!(stack.next(), Some("/articles/:id/comments")));
                 assert!(stack.next().is_none());
 
-                assert_param_matches!(param, None);
+                assert!(param.is_none());
             }
 
             assert_matches_wildcard_at_root(&mut results, |param| {

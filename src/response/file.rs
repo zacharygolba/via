@@ -139,9 +139,9 @@ impl File {
     /// Set the value of the `Content-Type` header that will be included in the
     /// response.
     ///
-    pub fn content_type(self, mime_type: String) -> Self {
+    pub fn content_type(self, mime_type: impl AsRef<str>) -> Self {
         Self {
-            content_type: Some(mime_type),
+            content_type: Some(mime_type.as_ref().to_owned()),
             ..self
         }
     }
@@ -190,10 +190,10 @@ impl File {
             response = response.header(CONTENT_TYPE, mime_type);
         }
 
-        if let Some(f) = self.etag.as_ref() {
-            if let Some(etag) = f(meta)? {
-                response = response.header(ETAG, etag);
-            }
+        if let Some(f) = self.etag.as_ref()
+            && let Some(etag) = f(meta)?
+        {
+            response = response.header(ETAG, etag);
         }
 
         if self.with_last_modified {

@@ -30,7 +30,7 @@ async fn file_server(request: Request, _: Next) -> via::Result {
     let mime_type = mime_guess::from_path(&file_path).first_or_octet_stream();
 
     File::open(&file_path)
-        .content_type(mime_type.to_string())
+        .content_type(mime_type)
         .with_last_modified()
         .serve(MAX_ALLOC_SIZE)
         .await

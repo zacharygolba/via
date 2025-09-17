@@ -48,6 +48,21 @@ impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
         self.into_result()?.parse().map_err(Error::bad_request)
     }
 
+    pub fn unwrap_or<U>(self, or: U) -> Cow<'a, str>
+    where
+        Cow<'a, str>: From<U>,
+    {
+        self.into_result().unwrap_or(or.into())
+    }
+
+    pub fn unwrap_or_else<U, F>(self, or_else: F) -> Cow<'a, str>
+    where
+        F: FnOnce(Error) -> U,
+        Cow<'a, str>: From<U>,
+    {
+        self.into_result().unwrap_or_else(|e| or_else(e).into())
+    }
+
     /// Returns a result with the parameter value if it exists. If the param is
     /// encoded, it will be decoded before it is returned.
     ///

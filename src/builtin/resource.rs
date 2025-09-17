@@ -10,71 +10,71 @@ pub struct Resource<T> {
     or_else: Option<Box<dyn Fn(Request<T>, Next<T>) -> BoxFuture + Send + Sync>>,
 }
 
-pub fn connect<M, T>(middleware: M) -> Resource<T>
+pub fn connect<State, T>(middleware: T) -> Resource<State>
 where
-    M: Middleware<T> + 'static,
+    T: Middleware<State> + 'static,
 {
     Resource::new(Method::CONNECT, middleware)
 }
 
-pub fn delete<M, T>(middleware: M) -> Resource<T>
+pub fn delete<State, T>(middleware: T) -> Resource<State>
 where
-    M: Middleware<T> + 'static,
+    T: Middleware<State> + 'static,
 {
     Resource::new(Method::DELETE, middleware)
 }
 
-pub fn get<M, T>(middleware: M) -> Resource<T>
+pub fn get<State, T>(middleware: T) -> Resource<State>
 where
-    M: Middleware<T> + 'static,
+    T: Middleware<State> + 'static,
 {
     Resource::new(Method::GET, middleware)
 }
 
-pub fn head<M, T>(middleware: M) -> Resource<T>
+pub fn head<State, T>(middleware: T) -> Resource<State>
 where
-    M: Middleware<T> + 'static,
+    T: Middleware<State> + 'static,
 {
     Resource::new(Method::HEAD, middleware)
 }
 
-pub fn options<M, T>(middleware: M) -> Resource<T>
+pub fn options<State, T>(middleware: T) -> Resource<State>
 where
-    M: Middleware<T> + 'static,
+    T: Middleware<State> + 'static,
 {
     Resource::new(Method::OPTIONS, middleware)
 }
 
-pub fn patch<M, T>(middleware: M) -> Resource<T>
+pub fn patch<State, T>(middleware: T) -> Resource<State>
 where
-    M: Middleware<T> + 'static,
+    T: Middleware<State> + 'static,
 {
     Resource::new(Method::PATCH, middleware)
 }
 
-pub fn post<M, T>(middleware: M) -> Resource<T>
+pub fn post<State, T>(middleware: T) -> Resource<State>
 where
-    M: Middleware<T> + 'static,
+    T: Middleware<State> + 'static,
 {
     Resource::new(Method::POST, middleware)
 }
 
-pub fn put<M, T>(middleware: M) -> Resource<T>
+pub fn put<State, T>(middleware: T) -> Resource<State>
 where
-    M: Middleware<T> + 'static,
+    T: Middleware<State> + 'static,
 {
     Resource::new(Method::PUT, middleware)
 }
 
-pub fn trace<M, T>(middleware: M) -> Resource<T>
+pub fn trace<State, T>(middleware: T) -> Resource<State>
 where
-    M: Middleware<T> + 'static,
+    T: Middleware<State> + 'static,
 {
     Resource::new(Method::TRACE, middleware)
 }
 
-impl<T> Resource<T> {
-    pub fn and(mut self, other: Resource<T>) -> Self {
+impl<State> Resource<State> {
+    pub fn and(mut self, other: Resource<State>) -> Self {
         let allowed = &mut self.allowed;
 
         for (method, _) in &other.methods {
@@ -88,7 +88,7 @@ impl<T> Resource<T> {
 
     pub fn or_else<F>(mut self, respond: F) -> Self
     where
-        F: Fn(Request<T>, Next<T>) -> BoxFuture + Send + Sync + 'static,
+        F: Fn(Request<State>, Next<State>) -> BoxFuture + Send + Sync + 'static,
     {
         self.or_else = Some(Box::new(respond));
         self
@@ -99,10 +99,10 @@ impl<T> Resource<T> {
     }
 }
 
-impl<T> Resource<T> {
-    pub(crate) fn new<M>(method: Method, middleware: M) -> Self
+impl<State> Resource<State> {
+    pub(crate) fn new<T>(method: Method, middleware: T) -> Self
     where
-        M: Middleware<T> + 'static,
+        T: Middleware<State> + 'static,
     {
         Self {
             allowed: method.as_str().to_owned(),
@@ -112,8 +112,8 @@ impl<T> Resource<T> {
     }
 }
 
-impl<T> Middleware<T> for Resource<T> {
-    fn call(&self, request: Request<T>, next: Next<T>) -> BoxFuture {
+impl<State> Middleware<State> for Resource<State> {
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
         let method = request.method();
 
         for (allow, middleware) in &self.methods {
