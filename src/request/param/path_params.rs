@@ -1,4 +1,3 @@
-use http::Uri;
 use std::sync::Arc;
 use via_router::Param;
 
@@ -9,10 +8,11 @@ pub(crate) struct PathParams {
     params: Vec<(Arc<str>, Param)>,
 }
 
+#[cfg(feature = "ws")]
 #[derive(Debug)]
 pub struct OwnedPathParams {
     offsets: PathParams,
-    uri: Uri,
+    uri: http::Uri,
 }
 
 impl PathParams {
@@ -37,20 +37,19 @@ impl PathParams {
     }
 }
 
+#[cfg(feature = "ws")]
 impl OwnedPathParams {
+    pub(crate) fn new(uri: http::Uri, offsets: PathParams) -> Self {
+        Self { offsets, uri }
+    }
+
     #[inline]
     pub fn get<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
         self.offsets.get(self.uri().path(), name)
     }
 
     #[inline]
-    pub fn uri(&self) -> &Uri {
+    pub fn uri(&self) -> &http::Uri {
         &self.uri
-    }
-}
-
-impl OwnedPathParams {
-    pub(crate) fn new(uri: Uri, offsets: PathParams) -> Self {
-        Self { offsets, uri }
     }
 }
