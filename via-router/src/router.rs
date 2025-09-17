@@ -1,4 +1,4 @@
-use smallvec::{IntoIter, SmallVec, smallvec};
+use smallvec::{smallvec, IntoIter, SmallVec};
 use std::slice;
 use std::sync::Arc;
 
@@ -70,8 +70,6 @@ fn match_next_segment<'a, 'b, T>(
                 });
             }
         }
-
-        println!("  MATCH: {:?} ~> {}", &node.pattern, value);
     }
 
     if results.is_empty() {
@@ -460,7 +458,6 @@ mod tests {
             {
                 let (mut stack, param) = expect_match(results.next());
 
-                println!("{:?}", stack.next());
                 assert!(stack.next().is_none());
                 assert!(param.is_none());
             }
