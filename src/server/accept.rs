@@ -99,10 +99,6 @@ where
             Err(_) => break ExitCode::FAILURE,
         };
 
-        if cfg!(debug_assertions) {
-            println!("available permits = {}", semaphore.available_permits());
-        }
-
         tokio::select! {
             // Poll the listener before anything else.
             biased;
