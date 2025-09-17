@@ -10,7 +10,7 @@ homepage = "https://github.com/zacharygolba/via"
 repository = "https://github.com/zacharygolba/via"
 
 [features]
-default = ["aws-lc-rs", "http1", "ws"]
+default = ["http1"]
 
 aws-lc-rs = ["dep:aws-lc-rs", "tokio-rustls/aws-lc-rs", "tokio-websockets/aws_lc_rs"]
 
