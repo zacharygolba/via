@@ -18,6 +18,17 @@ use super::io::IoWithPermit;
 use crate::app::{App, AppService};
 use crate::error::ServerError;
 
+macro_rules! accept_with_timeout {
+    ($future:expr, $immediate:expr) => {
+        time::timeout(
+            // If $immediate timeout after 2 seconds of idle time to join a
+            // connection. Otherwise, timeout after a day.
+            Duration::from_secs(if $immediate { 2 } else { 60 * 60 * 24 }),
+            $future,
+        )
+    };
+}
+
 macro_rules! joined {
     ($result:expr) => {
         match $result {
@@ -93,7 +104,7 @@ where
             biased;
 
             // Accept a connection from the TCP listener.
-            result = time::timeout(Duration::from_secs(1), listener.accept()) => {
+            result = accept_with_timeout!(listener.accept(), !connections.is_empty()) => {
                 match result {
                     // Connection accepted.
                     Ok(Ok((tcp_stream, _))) => {
