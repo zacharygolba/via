@@ -1,6 +1,6 @@
 [package]
 name = "via"
-version = "2.0.0-rc.38"
+version = "2.0.0-rc.39"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -38,7 +38,7 @@ percent-encoding = "2"
 serde = { version = "1", features = ["derive"]  }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
-via-router = { path = "./via-router" }
+via-router = { version = "3.0.0-beta.26" }
 
 [dependencies.aws-lc-rs]
 version = "1"
