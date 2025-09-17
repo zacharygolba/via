@@ -1,4 +1,4 @@
-use smallvec::{smallvec, IntoIter, SmallVec};
+use smallvec::{IntoIter, SmallVec, smallvec};
 use std::slice;
 use std::sync::Arc;
 
@@ -46,6 +46,21 @@ struct Node<T> {
 }
 
 #[inline(always)]
+fn match_next<'a, T>(
+    bindings: &mut Vec<Binding<'a, T>>,
+    queue: &mut SmallVec<[Branch<'a, '_, T>; 2]>,
+) {
+    if let Some(mut branch) = queue.pop() {
+        if let Some(binding) = match branch.segment.take() {
+            Some(segment) => match_next_segment(queue, branch, segment),
+            None => match_trailing_wildcards(branch),
+        } {
+            bindings.push(binding);
+        }
+    }
+}
+
+#[inline(always)]
 fn match_next_segment<'a, 'b, T>(
     queue: &mut SmallVec<[Branch<'a, 'b, T>; 2]>,
     mut branch: Branch<'a, 'b, T>,
@@ -58,9 +73,9 @@ fn match_next_segment<'a, 'b, T>(
 
     for node in branch.children {
         match &node.pattern {
-            Pattern::Static(name) if name != value => {}
+            Pattern::Static(name) if name != value => continue,
             Pattern::Wildcard(_) => results.push(node),
-            Pattern::Root => {}
+            Pattern::Root => continue,
             _ => {
                 results.push(node);
                 queue.push(Branch {
@@ -254,46 +269,24 @@ impl<'a, T> Iterator for Binding<'a, T> {
     }
 }
 
-impl<'a, 'b, T> Traverse<'a, 'b, T> {
-    fn match_next(&mut self) -> bool {
-        let Some(mut branch) = self.queue.pop() else {
-            return false;
-        };
-
-        let next = match branch.segment.take() {
-            Some(segment) => match_next_segment(&mut self.queue, branch, segment),
-            None => match_trailing_wildcards(branch),
-        };
-
-        if let Some(binding) = next {
-            self.bindings.push(binding);
-            true
-        } else {
-            false
-        }
-    }
-}
-
 impl<'a, 'b, T> Iterator for Traverse<'a, 'b, T> {
     type Item = (Route<'a, T>, Option<(&'a Arc<str>, Param)>);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
+        let bindings = &mut self.bindings;
+        let queue = &mut self.queue;
+
         loop {
-            let Some(binding) = self.bindings.last_mut() else {
-                if self.match_next() {
-                    continue;
-                } else {
-                    break None;
-                }
-            };
+            let binding = bindings.last_mut()?;
 
             if let some @ Some(_) = binding.next() {
-                self.match_next();
+                match_next(bindings, queue);
                 break some;
             }
 
-            self.bindings.pop();
+            bindings.pop();
+            match_next(bindings, queue);
         }
     }
 }
@@ -342,9 +335,9 @@ mod tests {
     const PATHS: [&str; 5] = [
         "/",
         "/echo/*path",
-        "/*path",
         "/articles/:id",
         "/articles/:id/comments",
+        "/*path",
     ];
 
     type Match<'a, N = Arc<str>> = (
@@ -450,9 +443,6 @@ mod tests {
             let mut results = router.traverse("/echo/hello/world");
 
             assert_matches_root(expect_match(results.next()));
-            assert_matches_wildcard_at_root(&mut results, |param| {
-                assert_param_matches!(param, Some(("path", (1, None))))
-            });
 
             // Intermediate match to /echo.
             {
@@ -471,6 +461,10 @@ mod tests {
                 assert_param_matches!(param, Some(("path", (6, None))));
             }
 
+            assert_matches_wildcard_at_root(&mut results, |param| {
+                assert_param_matches!(param, Some(("path", (1, None))))
+            });
+
             assert!(results.next().is_none());
         }
 
@@ -486,9 +480,6 @@ mod tests {
             let mut results = router.traverse("/articles/12345");
 
             assert_matches_root(expect_match(results.next()));
-            assert_matches_wildcard_at_root(&mut results, |param| {
-                assert_param_matches!(param, Some(("path", (1, None))))
-            });
 
             // Intermediate match to articles.
             {
@@ -507,6 +498,10 @@ mod tests {
                 assert_param_matches!(param, Some(("id", (10, Some(15)))));
             }
 
+            assert_matches_wildcard_at_root(&mut results, |param| {
+                assert_param_matches!(param, Some(("path", (1, None))))
+            });
+
             assert!(results.next().is_none());
         }
 
@@ -523,9 +518,6 @@ mod tests {
             let mut results = router.traverse("/articles/12345/comments");
 
             assert_matches_root(expect_match(results.next()));
-            assert_matches_wildcard_at_root(&mut results, |param| {
-                assert_param_matches!(param, Some(("path", (1, None))))
-            });
 
             // Intermediate match to articles.
             {
@@ -552,6 +544,10 @@ mod tests {
 
                 assert_param_matches!(param, None);
             }
+
+            assert_matches_wildcard_at_root(&mut results, |param| {
+                assert_param_matches!(param, Some(("path", (1, None))))
+            });
 
             assert!(results.next().is_none());
         }
