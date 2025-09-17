@@ -165,7 +165,7 @@ impl<T> Handshake<T> {
     }
 
     pub fn frame_size(mut self, frame_size: usize) -> Self {
-        self.flush_threshold = frame_size;
+        self.frame_size = frame_size;
         self
     }
 
