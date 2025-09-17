@@ -1,6 +1,6 @@
 [package]
 name = "via"
-version = "2.0.0-rc.39"
+version = "2.0.0-rc.40"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -71,7 +71,7 @@ features = ["aws_lc_rs", "server"]
 optional = true
 
 [package.metadata.docs.rs]
-all-features = true
+features = ["fs", "ws"]
 
 [workspace]
 members = ["via-router", "examples/*"]
