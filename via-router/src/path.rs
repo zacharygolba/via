@@ -3,6 +3,7 @@ use std::{iter, slice};
 
 pub type Param = (usize, Option<usize>);
 
+#[derive(Clone)]
 pub struct Split<'a> {
     path: &'a str,
     offset: usize,
