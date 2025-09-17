@@ -60,8 +60,6 @@ pub async fn join(mut socket: WebSocket, request: RequestContext<Chat>) -> Resul
                         eprint!("close(room: {}): {}", &slug, u16::from(code));
                         if let Some(message) = reason {
                             eprintln!(" {}", message);
-                        } else {
-                            eprintln!("");
                         }
                     }
 

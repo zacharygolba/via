@@ -75,7 +75,7 @@ impl<'a> Iterator for Split<'a> {
         let path = &self.path;
         let offset = &mut self.offset;
 
-        while let Some((end, b)) = self.bytes.next() {
+        for (end, b) in self.bytes.by_ref() {
             if *b == b'/' {
                 if end == 0 {
                     *offset += 1;

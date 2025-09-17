@@ -96,10 +96,7 @@ async fn handle_upgrade<T>(
 
         loop {
             let error_opt = tokio::select! {
-                Some(message) = rx.recv() => match stream.send(message.into()).await {
-                    Err(error) => Some(error),
-                    Ok(_) => None,
-                },
+                Some(message) = rx.recv() => stream.send(message.into()).await.err(),
                 Some(result) = stream.next() => match result {
                     Ok(next) if next.is_ping() || next.is_pong() => continue,
 
@@ -355,7 +352,7 @@ impl<T> Clone for RequestContext<T> {
 
 impl WebSocket {
     pub async fn send(&self, message: impl Into<Message>) -> Result<(), Error> {
-        if let Err(_) = self.sender.send(message.into()).await {
+        if self.sender.send(message.into()).await.is_err() {
             Err(tokio_websockets::Error::AlreadyClosed.into())
         } else {
             Ok(())

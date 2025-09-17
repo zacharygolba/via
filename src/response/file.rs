@@ -190,10 +190,10 @@ impl File {
             response = response.header(CONTENT_TYPE, mime_type);
         }
 
-        if let Some(f) = self.etag.as_ref() {
-            if let Some(etag) = f(meta)? {
-                response = response.header(ETAG, etag);
-            }
+        if let Some(f) = self.etag.as_ref()
+            && let Some(etag) = f(meta)?
+        {
+            response = response.header(ETAG, etag);
         }
 
         if self.with_last_modified {
