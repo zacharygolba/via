@@ -1,13 +1,8 @@
-use smallvec::{smallvec, IntoIter, SmallVec};
-use std::iter::Peekable;
+use smallvec::{IntoIter, SmallVec, smallvec};
+use std::slice;
 use std::sync::Arc;
-use std::{mem, slice};
 
 use crate::path::{self, Param, Pattern, Split};
-
-/// A multi-dimensional set of branches at a given depth in the route tree.
-///
-type Level<'a, T> = SmallVec<[&'a [Node<T>]; 2]>;
 
 /// An iterator over the middleware for a matched route.
 ///
@@ -19,10 +14,8 @@ pub struct RouteMut<'a, T>(&'a mut Node<T>);
 pub struct Router<T>(Node<T>);
 
 pub struct Traverse<'a, 'b, T> {
-    depth: Option<Binding<'a, T>>,
-    queue: Level<'a, T>,
-    branches: Level<'a, T>,
-    path_segments: Peekable<Split<'b>>,
+    bindings: Vec<Binding<'a, T>>,
+    queue: SmallVec<[Branch<'a, 'b, T>; 2]>,
 }
 
 #[derive(Debug)]
@@ -39,6 +32,12 @@ struct Binding<'a, T> {
     range: Option<[usize; 2]>,
 }
 
+struct Branch<'a, 'b, T> {
+    children: &'a [Node<T>],
+    segment: Option<(&'b str, [usize; 2])>,
+    path: Split<'b>,
+}
+
 #[derive(Debug)]
 struct Node<T> {
     children: Vec<Node<T>>,
@@ -47,62 +46,51 @@ struct Node<T> {
 }
 
 #[inline(always)]
-fn match_next_segment<'a, T>(
-    is_final: bool,
-    queue: &mut Level<'a, T>,
-    branches: &Level<'a, T>,
-    segment: &str,
-    range: [usize; 2],
+fn match_next_segment<'a, 'b, T>(
+    queue: &mut SmallVec<[Branch<'a, 'b, T>; 2]>,
+    mut branch: Branch<'a, 'b, T>,
+    segment: (&'b str, [usize; 2]),
 ) -> Option<Binding<'a, T>> {
     let mut results = SmallVec::new();
 
-    for branch in branches {
-        for node in *branch {
-            match &node.pattern {
-                Pattern::Static(name) if name == segment => {
-                    queue.push(&node.children);
-                    results.push(node);
-                }
-                Pattern::Dynamic(_) => {
-                    queue.push(&node.children);
-                    results.push(node);
-                }
-                Pattern::Wildcard(_) => {
-                    results.push(node);
-                }
-                Pattern::Static(_) => {
-                    // The node does not match the path segment.
-                }
-                Pattern::Root => {
-                    // The root node was matched as a descendant of a child node.
-                    // Either an error occurred during the construction of the
-                    // route tree or the memory where the route tree is stored
-                    // became corrupt.
-                }
+    let (value, range) = segment;
+    let next = branch.path.next();
+
+    for node in branch.children {
+        match &node.pattern {
+            Pattern::Static(name) if name != value => {}
+            Pattern::Wildcard(_) => results.push(node),
+            Pattern::Root => {}
+            _ => {
+                results.push(node);
+                queue.push(Branch {
+                    children: &node.children,
+                    segment: next,
+                    path: branch.path.clone(),
+                });
             }
         }
+
+        println!("  MATCH: {:?} ~> {}", &node.pattern, value);
     }
 
     if results.is_empty() {
         None
     } else {
         Some(Binding {
-            is_final,
+            is_final: next.is_none(),
             results: results.into_iter(),
             range: Some(range),
         })
     }
 }
 
-#[inline(always)]
-fn match_trailing_wildcards<'a, T>(branches: &Level<'a, T>) -> Option<Binding<'a, T>> {
+fn match_trailing_wildcards<'a, T>(branch: Branch<'a, '_, T>) -> Option<Binding<'a, T>> {
     let mut results = SmallVec::new();
 
-    for branch in branches {
-        for node in *branch {
-            if let Pattern::Wildcard(_) = &node.pattern {
-                results.push(node);
-            }
+    for node in branch.children {
+        if let Pattern::Wildcard(_) = &node.pattern {
+            results.push(node);
         }
     }
 
@@ -216,20 +204,26 @@ impl<T> Router<T> {
     where
         'a: 'b,
     {
-        let root = &self.0;
+        let Self(root) = self;
 
-        let mut path_segments = Split::new(path).peekable();
+        let mut bindings = Vec::with_capacity(8);
+        let mut queue = SmallVec::new();
+        let mut path = Split::new(path);
+        let segment = path.next();
 
-        Traverse {
-            depth: Some(Binding {
-                is_final: path_segments.peek().is_none(),
-                results: smallvec![root].into_iter(),
-                range: None,
-            }),
-            queue: SmallVec::new(),
-            branches: smallvec![&*root.children],
-            path_segments,
-        }
+        bindings.push(Binding {
+            is_final: segment.is_none(),
+            results: smallvec![root].into_iter(),
+            range: None,
+        });
+
+        queue.push(Branch {
+            children: &root.children,
+            segment,
+            path,
+        });
+
+        Traverse { bindings, queue }
     }
 }
 
@@ -262,32 +256,46 @@ impl<'a, T> Iterator for Binding<'a, T> {
     }
 }
 
+impl<'a, 'b, T> Traverse<'a, 'b, T> {
+    fn match_next(&mut self) -> bool {
+        let Some(mut branch) = self.queue.pop() else {
+            return false;
+        };
+
+        let next = match branch.segment.take() {
+            Some(segment) => match_next_segment(&mut self.queue, branch, segment),
+            None => match_trailing_wildcards(branch),
+        };
+
+        if let Some(binding) = next {
+            self.bindings.push(binding);
+            true
+        } else {
+            false
+        }
+    }
+}
+
 impl<'a, 'b, T> Iterator for Traverse<'a, 'b, T> {
     type Item = (Route<'a, T>, Option<(&'a Arc<str>, Param)>);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let depth = &mut self.depth;
-        let branches = &mut self.branches;
-
         loop {
-            if let Some(next) = depth.as_mut().and_then(Iterator::next) {
-                return Some(next);
+            let Some(binding) = self.bindings.last_mut() else {
+                if self.match_next() {
+                    continue;
+                } else {
+                    break None;
+                }
+            };
+
+            if let some @ Some(_) = binding.next() {
+                self.match_next();
+                break some;
             }
 
-            *depth = Some(match self.path_segments.next() {
-                None => match_trailing_wildcards(branches),
-                Some((segment, range)) => match_next_segment(
-                    self.path_segments.peek().is_none(),
-                    &mut self.queue,
-                    branches,
-                    segment,
-                    range,
-                ),
-            }?);
-
-            branches.clear();
-            mem::swap(branches, &mut self.queue);
+            self.bindings.pop();
         }
     }
 }
@@ -335,8 +343,8 @@ mod tests {
 
     const PATHS: [&str; 5] = [
         "/",
-        "/*path",
         "/echo/*path",
+        "/*path",
         "/articles/:id",
         "/articles/:id/comments",
     ];
@@ -452,6 +460,7 @@ mod tests {
             {
                 let (mut stack, param) = expect_match(results.next());
 
+                println!("{:?}", stack.next());
                 assert!(stack.next().is_none());
                 assert!(param.is_none());
             }
