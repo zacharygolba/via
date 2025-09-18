@@ -62,6 +62,7 @@ pub async fn join(mut socket: WebSocket, request: RequestContext<Chat>) -> Resul
                     if let Some((code, reason)) = close {
                         let code = u16::from(code);
                         let reason = reason.as_deref().unwrap_or("reason not provided");
+
                         eprintln!("close(room: {}, code: {}): {}", &slug, code, reason);
                     }
 
