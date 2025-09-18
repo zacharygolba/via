@@ -23,11 +23,17 @@ ring = ["dep:ring", "tokio-rustls/ring", "tokio-websockets/ring"]
 
 rustls = ["dep:tokio-rustls"]
 
-ws = ["dep:base64", "dep:bytestring", "dep:tokio-websockets"]
+ws = [
+    "dep:base64",
+    "dep:bytestring",
+    "dep:futures-sink",
+    "dep:futures-util",
+    "dep:tokio-websockets",
+]
 
 [dependencies]
 bytes = "1"
-futures = { version = "0.3", default-features = false }
+futures-core = "0.3"
 http = "1"
 http-body = "1"
 http-body-util = "0.1"
@@ -55,6 +61,15 @@ optional = true
 [dependencies.cookie]
 version = "0.18"
 features = ["percent-encode"]
+
+[dependencies.futures-sink]
+version = "0.3"
+optional = true
+
+[dependencies.futures-util]
+version = "0.3"
+features = ["sink"]
+optional = true
 
 [dependencies.ring]
 version = "0.17"

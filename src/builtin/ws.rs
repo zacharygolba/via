@@ -2,7 +2,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as base64_engine;
 use bytes::{Buf, Bytes};
 use bytestring::ByteString;
-use futures::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt};
 use http::{StatusCode, Uri, header};
 use hyper_util::rt::TokioIo;
 use std::sync::Arc;
