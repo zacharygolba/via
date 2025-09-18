@@ -51,21 +51,26 @@ pub async fn join(mut socket: WebSocket, request: RequestContext<Chat>) -> Resul
 
             // Message received from the websocket.
             Some(message) = socket.next() => match message {
+                // We ignore binary messages in this example but still want to
+                // know if we receive one.
                 Message::Binary(_binary) => {
                     eprintln!("warn(room: {}): binary messages are ignored.", &slug);
                 }
 
+                // Break the loop when we receive a close message.
                 Message::Close(close) => {
                     if let Some((code, reason)) = close {
-                        eprint!("close(room: {}): {}", &slug, u16::from(code));
-                        if let Some(message) = reason {
-                            eprintln!(" {}", message);
-                        }
+                        let code = u16::from(code);
+                        let reason = reason.as_deref().unwrap_or("reason not provided");
+
+                        eprintln!("close(room: {}, code: {}): {}", &slug, code, reason);
                     }
 
                     break Ok(());
                 }
 
+                // Append the message content to the room thread and cast an
+                // update.
                 Message::Text(text) => {
                     if let Some(index) = chat.push(&slug, &text).await {
                         let _ = tx.send((id, index));
