@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use cookie::CookieJar;
-use futures::Stream;
+use futures_core::Stream;
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::{HeaderName, HeaderValue, StatusCode, Version};
 use http_body::Frame;

@@ -3,7 +3,6 @@ use hyper_util::rt::TokioTimer;
 use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
@@ -17,17 +16,6 @@ use super::acceptor::Acceptor;
 use super::io::IoWithPermit;
 use crate::app::{App, AppService};
 use crate::error::ServerError;
-
-macro_rules! accept_with_timeout {
-    ($future:expr, $immediate:expr) => {
-        time::timeout(
-            // If $immediate timeout after 2 seconds of idle time to join a
-            // connection. Otherwise, timeout after a day.
-            Duration::from_secs(if $immediate { 2 } else { 60 * 60 * 24 }),
-            $future,
-        )
-    };
-}
 
 macro_rules! joined {
     ($result:expr) => {
@@ -77,17 +65,6 @@ where
         rx
     };
 
-    // We alternate between accepting new connections and joining finished
-    // ones. This avoids starving connection tasks while keeping accept latency
-    // low. In practice, this means we only call `join_next()` every other turn.
-    let mut should_join_next = false;
-
-    // When opportunistically polling finished connections, we use a no-op waker.
-    // This prevents tasks from needlessly waking the accept loop, which could
-    // create contention and negate the benefits of batching. The runtime will
-    // still poll these tasks normally once `should_join_next` is true.
-    let noop_waker = futures::task::noop_waker();
-
     // Wrap app in an arc so it can be cloned into the connection task.
     let app = Arc::new(app);
 
@@ -104,37 +81,27 @@ where
             biased;
 
             // Accept a connection from the TCP listener.
-            result = accept_with_timeout!(listener.accept(), !connections.is_empty()) => {
-                match result {
-                    // Connection accepted.
-                    Ok(Ok((tcp_stream, _))) => {
-                        // Spawn a task to serve the connection.
-                        connections.spawn(handle_connection(
-                            permit,
-                            tcp_stream,
-                            acceptor.clone(),
-                            shutdown_rx.clone(),
-                            Arc::clone(&app),
-                            max_body_size,
-                        ));
-
-                        // Flip the `should_join_next` bit.
-                        should_join_next = !should_join_next;
-                    }
-                    // Error, burn the permit and try again.
-                    Ok(Err(error)) => {
-                        log!("error(accept): {}", error);
-                    }
-                    // Idle, set `should_join_next` and try again.
-                    Err(_) => {
-                        should_join_next = true;
-                    }
+            result = listener.accept() => match result {
+                // Connection accepted.
+                Ok((tcp_stream, _)) => {
+                    // Spawn a task to serve the connection.
+                    connections.spawn(handle_connection(
+                        permit,
+                        tcp_stream,
+                        acceptor.clone(),
+                        shutdown_rx.clone(),
+                        Arc::clone(&app),
+                        max_body_size,
+                    ));
                 }
-            }
+                // Error, burn the permit and try again.
+                Err(error) => {
+                    log!("error(accept): {}", error);
+                }
+            },
 
             // Maybe try to join a connection while we wait.
-            Some(result) = connections.join_next(), if should_join_next => {
-                should_join_next = false;
+            Some(result) = connections.join_next(), if !connections.is_empty() => {
                 joined!(result);
             }
 
@@ -144,12 +111,11 @@ where
             }
         }
 
-        // Try to join a connection task opportunistically.
-        let mut context = Context::from_waker(&noop_waker);
-        let opportunistic = connections.poll_join_next(&mut context);
-
-        if let Poll::Ready(Some(result)) = opportunistic {
-            joined!(result);
+        for _ in 0..32 {
+            match connections.try_join_next() {
+                Some(result) => joined!(result),
+                None => break,
+            }
         }
     };
 
