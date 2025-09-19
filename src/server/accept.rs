@@ -116,6 +116,7 @@ where
                     // Error, burn the permit and try again.
                     Ok(Err(error)) => {
                         log!("error(accept): {}", error);
+                        should_join_next = true;
                     }
                     // Idle, set `should_join_next` and try again.
                     Err(_) => {
