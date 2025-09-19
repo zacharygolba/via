@@ -17,12 +17,23 @@ use super::io::IoWithPermit;
 use crate::app::{App, AppService};
 use crate::error::ServerError;
 
+const SECONDS_IN_A_DAY: u64 = 60 * 60 * 24;
+
+macro_rules! accept_with_timeout {
+    ($future:expr, $immediate:expr) => {
+        time::timeout(
+            Duration::from_secs(if $immediate { 1 } else { SECONDS_IN_A_DAY }),
+            $future,
+        )
+    };
+}
+
 macro_rules! joined {
     ($result:expr) => {
         match $result {
+            Ok(Ok(_)) => {}
             Ok(Err(error)) => handle_error(&error),
             Err(error) => handle_error(&ServerError::Join(error)),
-            _ => {}
         }
     };
 }
@@ -65,6 +76,11 @@ where
         rx
     };
 
+    // We alternate between accepting new connections and joining finished
+    // ones. This avoids starving connection tasks while keeping accept latency
+    // low. In practice, this means we only call `join_next()` every other turn.
+    let mut should_join_next = false;
+
     // Wrap app in an arc so it can be cloned into the connection task.
     let app = Arc::new(app);
 
@@ -81,27 +97,38 @@ where
             biased;
 
             // Accept a connection from the TCP listener.
-            result = listener.accept() => match result {
-                // Connection accepted.
-                Ok((tcp_stream, _)) => {
-                    // Spawn a task to serve the connection.
-                    connections.spawn(handle_connection(
-                        permit,
-                        tcp_stream,
-                        acceptor.clone(),
-                        shutdown_rx.clone(),
-                        Arc::clone(&app),
-                        max_body_size,
-                    ));
+            result = accept_with_timeout!(listener.accept(), !connections.is_empty()) => {
+                match result {
+                    // Connection accepted.
+                    Ok(Ok((tcp_stream, _))) => {
+                        // Spawn a task to serve the connection.
+                        connections.spawn(handle_connection(
+                            permit,
+                            tcp_stream,
+                            acceptor.clone(),
+                            shutdown_rx.clone(),
+                            Arc::clone(&app),
+                            max_body_size,
+                        ));
+
+                        // Flip the `should_join_next` bit.
+                        should_join_next = !should_join_next;
+                    }
+                    // Error, burn the permit and try again.
+                    Ok(Err(error)) => {
+                        log!("error(accept): {}", error);
+                        should_join_next = true;
+                    }
+                    // Idle, set `should_join_next` and try again.
+                    Err(_) => {
+                        should_join_next = true;
+                    }
                 }
-                // Error, burn the permit and try again.
-                Err(error) => {
-                    log!("error(accept): {}", error);
-                }
-            },
+            }
 
             // Maybe try to join a connection while we wait.
-            Some(result) = connections.join_next(), if !connections.is_empty() => {
+            Some(result) = connections.join_next(), if should_join_next => {
+                should_join_next = false;
                 joined!(result);
             }
 
@@ -111,11 +138,9 @@ where
             }
         }
 
-        for _ in 0..32 {
-            match connections.try_join_next() {
-                Some(result) => joined!(result),
-                None => break,
-            }
+        // Try to join a connection task opportunistically.
+        if let Some(result) = connections.try_join_next() {
+            joined!(result);
         }
     };
 
