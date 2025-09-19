@@ -17,11 +17,12 @@ use super::io::IoWithPermit;
 use crate::app::{App, AppService};
 use crate::error::ServerError;
 
+const SECONDS_IN_A_DAY: u64 = 60 * 60 * 24;
+
 macro_rules! accept_with_timeout {
     ($future:expr, $immediate:expr) => {
         time::timeout(
-            // Timeout after 1 second or 1 day.
-            Duration::from_secs(if $immediate { 1 } else { 60 * 60 * 24 }),
+            Duration::from_secs(if $immediate { 1 } else { SECONDS_IN_A_DAY }),
             $future,
         )
     };
@@ -30,9 +31,9 @@ macro_rules! accept_with_timeout {
 macro_rules! joined {
     ($result:expr) => {
         match $result {
+            Ok(Ok(_)) => {}
             Ok(Err(error)) => handle_error(&error),
             Err(error) => handle_error(&ServerError::Join(error)),
-            _ => {}
         }
     };
 }
