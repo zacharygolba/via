@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio::net::{TcpListener, ToSocketAddrs};
 
 use super::accept::accept;
-#[allow(unused_imports)]
 use crate::app::{App, AppService};
 use crate::error::BoxError;
 
@@ -155,8 +154,6 @@ impl<T: Send + Sync + 'static> Server<T> {
     ///
     #[cfg(feature = "rustls")]
     pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, BoxError> {
-        use crate::app::AppService;
-
         let rustls_config = match self.rustls_config {
             Some(config) => Arc::new(config),
             None => panic!("rustls_config is required when the 'rustls' feature is enabled."),
