@@ -26,6 +26,7 @@ macro_rules! log {
     };
 }
 
+#[inline(never)]
 pub async fn accept<A, T>(
     listener: TcpListener,
     acceptor: A,
