@@ -34,10 +34,10 @@ pub struct ErrorMessage<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) enum ServerError {
-    Io(io::Error),
-    Join(JoinError),
-    Hyper(hyper::Error),
+pub(crate) enum ServerError<'a> {
+    Io(&'a io::Error),
+    Join(&'a JoinError),
+    Hyper(&'a hyper::Error),
 }
 
 #[macro_export]
@@ -926,7 +926,7 @@ impl Display for ErrorMessage<'_> {
     }
 }
 
-impl StdError for ServerError {
+impl StdError for ServerError<'_> {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
             Self::Io(error) => error.source(),
@@ -936,24 +936,12 @@ impl StdError for ServerError {
     }
 }
 
-impl Display for ServerError {
+impl Display for ServerError<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             Self::Io(error) => Display::fmt(error, f),
             Self::Join(error) => Display::fmt(error, f),
             Self::Hyper(error) => Display::fmt(error, f),
         }
-    }
-}
-
-impl From<io::Error> for ServerError {
-    fn from(error: io::Error) -> Self {
-        Self::Io(error)
-    }
-}
-
-impl From<hyper::Error> for ServerError {
-    fn from(error: hyper::Error) -> Self {
-        Self::Hyper(error)
     }
 }

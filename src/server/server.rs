@@ -1,11 +1,9 @@
 use std::process::ExitCode;
+use std::sync::Arc;
 use tokio::net::{TcpListener, ToSocketAddrs};
 
-#[cfg(feature = "rustls")]
-use std::sync::Arc;
-
 use super::accept::accept;
-use crate::app::App;
+use crate::app::{App, AppService};
 use crate::error::BoxError;
 
 #[cfg(not(feature = "rustls"))]
@@ -29,12 +27,17 @@ const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
 ///
 pub struct Server<T> {
     app: App<T>,
+    server_config: ServerConfig,
     max_body_size: Option<usize>,
-    max_connections: Option<usize>,
-    shutdown_timeout: Option<u64>,
 
     #[cfg(feature = "rustls")]
     rustls_config: Option<RustlsConfig>,
+}
+
+#[derive(Debug)]
+pub(super) struct ServerConfig {
+    pub(super) max_connections: usize,
+    pub(super) shutdown_timeout: u64,
 }
 
 /// Creates a new server for the provided app.
@@ -42,9 +45,11 @@ pub struct Server<T> {
 pub fn start<T>(app: App<T>) -> Server<T> {
     Server {
         app,
+        server_config: ServerConfig {
+            max_connections: DEFAULT_MAX_CONNECTIONS,
+            shutdown_timeout: DEFAULT_SHUTDOWN_TIMEOUT,
+        },
         max_body_size: None,
-        max_connections: None,
-        shutdown_timeout: None,
 
         #[cfg(feature = "rustls")]
         rustls_config: None,
@@ -83,9 +88,12 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// setting this value higher than the number of available file descriptors
     /// (or `ulimit -n`) on POSIX systems.
     ///
-    pub fn max_connections(self, limit: usize) -> Self {
+    pub fn max_connections(self, max_connections: usize) -> Self {
         Self {
-            max_connections: Some(limit),
+            server_config: ServerConfig {
+                max_connections,
+                ..self.server_config
+            },
             ..self
         }
     }
@@ -94,9 +102,12 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// connections to complete before shutting down. The default value is 30
     /// seconds.
     ///
-    pub fn shutdown_timeout(self, timeout: u64) -> Self {
+    pub fn shutdown_timeout(self, shutdown_timeout: u64) -> Self {
         Self {
-            shutdown_timeout: Some(timeout),
+            server_config: ServerConfig {
+                shutdown_timeout,
+                ..self.server_config
+            },
             ..self
         }
     }
@@ -151,10 +162,11 @@ impl<T: Send + Sync + 'static> Server<T> {
         let exit = accept(
             TcpListener::bind(address).await?,
             RustlsAcceptor::new(rustls_config),
-            self.app,
-            self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
-            self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
-            self.shutdown_timeout.unwrap_or(DEFAULT_SHUTDOWN_TIMEOUT),
+            AppService::new(
+                Arc::new(self.app),
+                self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
+            ),
+            self.server_config,
         );
 
         Ok(exit.await)
@@ -165,10 +177,11 @@ impl<T: Send + Sync + 'static> Server<T> {
         let exit = accept(
             TcpListener::bind(address).await?,
             HttpAcceptor::new(),
-            self.app,
-            self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
-            self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
-            self.shutdown_timeout.unwrap_or(DEFAULT_SHUTDOWN_TIMEOUT),
+            AppService::new(
+                Arc::new(self.app),
+                self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
+            ),
+            self.server_config,
         );
 
         Ok(exit.await)

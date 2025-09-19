@@ -29,6 +29,16 @@ impl<T> AppService<T> {
     }
 }
 
+impl<State> Clone for AppService<State> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            app: Arc::clone(&self.app),
+            max_body_size: self.max_body_size,
+        }
+    }
+}
+
 impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
     type Error = Infallible;
     type Future = ServeRequest;
