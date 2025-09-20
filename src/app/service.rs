@@ -95,7 +95,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         // segment.
         for (route, param) in self.app.router.traverse(parts.uri.path()) {
             // Add the matched route's middleware to the call stack.
-            next.extend(route.map(Arc::clone));
+            next.extend(route.cloned());
 
             if let Some((name, range)) = param {
                 // Include the resolved dynamic parameter in params.
@@ -111,11 +111,14 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
 impl Future for ServeRequest {
     type Output = Result<http::Response<ResponseBody>, Infallible>;
 
-    fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        match self.0.as_mut().poll(context) {
-            Poll::Ready(Ok(response)) => Poll::Ready(Ok(response.into())),
-            Poll::Ready(Err(error)) => Poll::Ready(Ok(error.into())),
-            Poll::Pending => Poll::Pending,
+    fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
+        let Self(future) = self.get_mut();
+
+        if let Poll::Ready(result) = future.as_mut().poll(context) {
+            let response = result.unwrap_or_else(|e| e.into());
+            Poll::Ready(Ok(response.into()))
+        } else {
+            Poll::Pending
         }
     }
 }
