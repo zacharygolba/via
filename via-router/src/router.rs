@@ -45,47 +45,38 @@ struct Node<T> {
     route: Vec<MatchCond<T>>,
 }
 
-fn match_next_segment<'a, 'b, T>(
+fn match_next<'a, 'b, T>(
     queue: &mut SmallVec<[Branch<'a, 'b, T>; 1]>,
     branch: &mut Branch<'a, 'b, T>,
-    (value, range): (&'b str, [usize; 2]),
 ) -> Option<Binding<'a, T>> {
     let next = branch.path.next();
     let mut binding = Binding {
         is_final: next.is_none(),
         results: SmallVec::new(),
-        range: Some(range),
+        range: branch.segment.map(|(_, range)| range),
     };
 
-    for node in branch.children.iter().rev() {
-        match &node.pattern {
-            Pattern::Static(name) if name != value => {}
-            Pattern::Wildcard(_) => binding.push(node),
-            Pattern::Root => {}
-            _ => {
-                binding.push(node);
-                queue.push(Branch {
-                    children: &node.children,
-                    segment: next,
-                    path: branch.path.clone(),
-                });
+    if let Some(&(value, ref _range)) = branch.segment.as_ref() {
+        for node in branch.children.iter().rev() {
+            match &node.pattern {
+                Pattern::Static(name) if name != value => {}
+                Pattern::Wildcard(_) => binding.push(node),
+                Pattern::Root => {}
+                _ => {
+                    binding.push(node);
+                    queue.push(Branch {
+                        children: &node.children,
+                        segment: next,
+                        path: branch.path.clone(),
+                    });
+                }
             }
         }
-    }
-
-    (!binding.is_empty()).then_some(binding)
-}
-
-fn match_trailing_wildcards<'a, T>(branch: &mut Branch<'a, '_, T>) -> Option<Binding<'a, T>> {
-    let mut binding = Binding {
-        is_final: true,
-        results: SmallVec::new(),
-        range: None,
-    };
-
-    for node in branch.children {
-        if let Pattern::Wildcard(_) = &node.pattern {
-            binding.push(node);
+    } else {
+        for node in branch.children.iter().rev() {
+            if let Pattern::Wildcard(_) = &node.pattern {
+                binding.push(node);
+            }
         }
     }
 
@@ -99,6 +90,7 @@ where
 {
     type Item = &'a U;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             break match self {
@@ -219,7 +211,6 @@ impl<'a, T> Binding<'a, T> {
 impl<'a, T> Iterator for Binding<'a, T> {
     type Item = (Route<'a, T>, Option<(&'a Arc<str>, Param)>);
 
-    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.results.pop()?;
 
@@ -270,16 +261,13 @@ impl<'a, 'b, T> Iterator for Traverse<'a, 'b, T> {
             }
 
             if let Some(mut branch) = queue.pop()
-                && let Some(binding) = match branch.segment.take() {
-                    Some(segment) => match_next_segment(queue, &mut branch, segment),
-                    None => match_trailing_wildcards(&mut branch),
-                }
+                && let Some(binding) = match_next(queue, &mut branch)
             {
                 bindings.push(binding);
             }
 
-            if let some @ Some(_) = next {
-                break some;
+            if next.is_some() {
+                break next;
             }
         }
     }
