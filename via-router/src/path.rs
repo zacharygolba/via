@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::{iter, slice};
 
 pub type Param = (usize, Option<usize>);
 
@@ -7,7 +6,6 @@ pub type Param = (usize, Option<usize>);
 pub struct Split<'a> {
     path: &'a str,
     offset: usize,
-    bytes: iter::Enumerate<slice::Iter<'a, u8>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -51,8 +49,7 @@ impl<'a> Split<'a> {
     pub fn new(path: &'a str) -> Self {
         Self {
             path,
-            offset: 0,
-            bytes: path.as_bytes().iter().enumerate(),
+            offset: if path.starts_with('/') { 1 } else { 0 },
         }
     }
 }
@@ -62,31 +59,32 @@ impl<'a> Iterator for Split<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let path = &self.path;
         let offset = &mut self.offset;
+        let start = *offset;
+        let path = self.path;
 
-        for (end, b) in self.bytes.by_ref() {
-            if *b == b'/' {
-                if end == 0 {
-                    *offset += 1;
+        match path.get(start..).and_then(|rest| {
+            rest.bytes()
+                .enumerate()
+                .find_map(|(index, byte)| (byte == b'/').then_some(index))
+        }) {
+            Some(len) => {
+                let end = start + len;
+                *offset = end + 1;
+                Some((&path[start..end], [start, end]))
+            }
+            None => {
+                let end = path.len();
+                *offset = end;
+
+                // Only yield if there's something left between offset and path.len().
+                // Prevents slicing past the end on trailing slashes like "/via/".
+                if end > start {
+                    Some((&path[start..end], [start, end]))
                 } else {
-                    let start = *offset;
-                    *offset = end + 1;
-                    return Some((&path[start..end], [start, end]));
+                    None
                 }
             }
-        }
-
-        let end = path.len();
-        let start = *offset;
-
-        // Only yield if there's something left between offset and path.len().
-        // Prevents slicing past the end on trailing slashes like "/via/".
-        if end > start {
-            *offset = end;
-            Some((&path[start..end], [start, end]))
-        } else {
-            None
         }
     }
 }
