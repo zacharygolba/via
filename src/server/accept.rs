@@ -1,12 +1,13 @@
 use hyper::server::conn;
 use hyper_util::rt::TokioTimer;
 use std::error::Error;
+use std::mem;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
-use tokio::task::JoinSet;
+use tokio::task::{JoinSet, coop};
 use tokio::{signal, time};
 
 #[cfg(feature = "http2")]
@@ -58,9 +59,8 @@ where
     // Start accepting incoming connections.
     let exit_code = loop {
         // Acquire a permit from the semaphore.
-        let permit = match semaphore.clone().acquire_owned().await {
-            Ok(acquired) => acquired,
-            Err(_) => break ExitCode::FAILURE,
+        let Ok(permit) = semaphore.clone().acquire_owned().await else {
+            break ExitCode::FAILURE;
         };
 
         let (tcp_stream, _) = tokio::select! {
@@ -87,10 +87,7 @@ where
             // Accept the TCP stream from the acceptor.
             let io = match acceptor.accept(tcp_stream).await {
                 Ok(accepted) => IoWithPermit::new(permit, accepted),
-                Err(error) => {
-                    handle_error(ServerError::Io(&error));
-                    return;
-                }
+                Err(error) => return Err(ServerError::Io(error)),
             };
 
             // Create a new HTTP/2 connection.
@@ -111,34 +108,24 @@ where
             );
 
             // Serve the connection.
-            let result = tokio::select! {
-                result = connection.as_mut() => result,
+            tokio::select! {
+                result = connection.as_mut() => result.map_err(ServerError::Hyper),
                 _ = shutdown_rx.changed() => {
                     connection.as_mut().graceful_shutdown();
-                    connection.as_mut().await
+                    connection.as_mut().await.map_err(ServerError::Hyper)
                 }
-            };
-
-            if let Err(error) = &result {
-                handle_error(ServerError::Hyper(error));
             }
         });
 
-        // Reap up to 2 finished connection tasks. This keeps the length of
-        // connections roughly around `server_config.max_connections` in the
-        // worst case scenario.
-        'try_join: for _ in 0..2 {
-            match connections.try_join_next() {
-                Some(Err(error)) => handle_error(ServerError::Join(&error)),
-                Some(Ok(_)) => {}
-                None => break 'try_join,
-            }
+        if connections.len() >= 1024 {
+            let batch = mem::take(&mut connections);
+            tokio::spawn(drain_connections(false, batch));
         }
     };
 
     let drain_all = time::timeout(
         Duration::from_secs(server_config.shutdown_timeout),
-        drain_connections(&mut connections),
+        drain_connections(true, connections),
     );
 
     if drain_all.await.is_ok() {
@@ -172,14 +159,20 @@ fn handle_error(error: ServerError) {
     }
 }
 
-async fn drain_connections(connections: &mut JoinSet<()>) {
+async fn drain_connections(immediate: bool, mut connections: JoinSet<Result<(), ServerError>>) {
     if cfg!(debug_assertions) {
-        println!("draining {} inflight connections...", connections.len());
+        println!("joining {} inflight connections...", connections.len());
     }
 
     while let Some(result) = connections.join_next().await {
-        if let Err(error) = &result {
-            handle_error(ServerError::Join(error));
+        match result {
+            Ok(Err(error)) => handle_error(error),
+            Err(error) => handle_error(ServerError::Join(error)),
+            _ => {}
+        }
+
+        if !immediate {
+            coop::consume_budget().await;
         }
     }
 }
