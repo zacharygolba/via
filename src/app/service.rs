@@ -95,7 +95,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         // segment.
         for (route, param) in self.app.router.traverse(parts.uri.path()) {
             // Add the matched route's middleware to the call stack.
-            next.extend(route.cloned());
+            next.extend(route.map(Arc::clone));
 
             if let Some((name, range)) = param {
                 // Include the resolved dynamic parameter in params.
