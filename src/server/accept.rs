@@ -58,11 +58,6 @@ where
 
     // Start accepting incoming connections.
     let exit_code = loop {
-        // Acquire a permit from the semaphore.
-        let Ok(permit) = semaphore.clone().acquire_owned().await else {
-            break ExitCode::FAILURE;
-        };
-
         let (tcp_stream, _) = tokio::select! {
             // A new TCP stream was accepted from the listener.
             result = listener.accept() => match result {
@@ -76,6 +71,11 @@ where
             _ = shutdown_rx.changed() => {
                 break shutdown_rx.borrow_and_update().unwrap_or(ExitCode::FAILURE);
             }
+        };
+
+        // Acquire a permit from the semaphore.
+        let Ok(permit) = semaphore.clone().try_acquire_owned() else {
+            continue;
         };
 
         let mut acceptor = acceptor.clone();
