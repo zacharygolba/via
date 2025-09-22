@@ -1,34 +1,40 @@
-use cookie::{Cookie, ParseError, SplitCookies};
+use cookie::{Cookie, SplitCookies};
 use http::header::COOKIE;
 
-use crate::{Error, Middleware, Next, Request};
+use crate::{BoxFuture, Error, Middleware, Next, Request};
 
-pub fn parse_encoded<T>() -> impl Middleware<T> {
-    cookie_parser::<ParseEncoded, _>()
+#[derive(Debug)]
+pub struct CookieParser(Codec);
+
+#[derive(Clone, Copy, Debug)]
+enum Codec {
+    PercentEncoded,
+    Unencoded,
 }
 
-pub fn parse_unencoded<T>() -> impl Middleware<T> {
-    cookie_parser::<ParseUnencoded, _>()
+pub fn percent_decode() -> CookieParser {
+    CookieParser(Codec::PercentEncoded)
 }
 
-/// Defines how to parse cookies from a cookie string.
-///
-trait ParseCookies {
-    type Iter: Iterator<Item = Result<Cookie<'static>, ParseError>> + Send + 'static;
-    fn parse_cookies(input: String) -> Self::Iter;
+pub fn unencoded() -> CookieParser {
+    CookieParser(Codec::Unencoded)
 }
 
-/// Decodes percent-encoded cookie strings with the `percent-encoded` crate
-/// before they are parsed.
-///
-struct ParseEncoded;
+impl CookieParser {
+    fn parse(&self, input: String) -> SplitCookies<'static> {
+        match self.0 {
+            Codec::PercentEncoded => Cookie::split_parse_encoded(input),
+            Codec::Unencoded => Cookie::split_parse(input),
+        }
+    }
+}
 
-/// Parses cookie strings without decoding them.
-///
-struct ParseUnencoded;
-
-fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
-    move |mut request: Request<T>, next: Next<T>| {
+impl<State> Middleware<State> for CookieParser
+where
+    State: Send + Sync + 'static,
+{
+    fn call(&self, mut request: Request<State>, next: Next<State>) -> BoxFuture {
+        let Self(codec) = *self;
         let parse_result = 'parse: {
             let mut existing = Vec::new();
             let input = match request.header(COOKIE) {
@@ -38,14 +44,13 @@ fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
             };
 
             let jar = request.cookies_mut();
-            for result in P::parse_cookies(input) {
+
+            for result in self.parse(input) {
                 match result {
+                    Err(error) => break 'parse Err(Error::bad_request(error)),
                     Ok(cookie) => {
                         existing.push(cookie.clone());
                         jar.add_original(cookie);
-                    }
-                    Err(error) => {
-                        break 'parse Err(Error::bad_request(error));
                     }
                 }
             }
@@ -53,36 +58,21 @@ fn cookie_parser<P: ParseCookies, T>() -> impl Middleware<T> {
             Ok(existing)
         };
 
-        let future = next.call(request);
-
-        async {
+        Box::pin(async move {
             let existing = parse_result?;
-            let mut response = future.await?;
+            let mut response = next.call(request).await?;
 
             let jar = response.cookies_mut();
             for cookie in existing {
                 jar.add_original(cookie);
             }
 
-            response.set_cookies(|cookie| cookie.encoded().to_string())?;
+            response.set_cookies(|cookie| match codec {
+                Codec::PercentEncoded => cookie.encoded().to_string(),
+                Codec::Unencoded => cookie.to_string(),
+            })?;
 
             Ok(response)
-        }
-    }
-}
-
-impl ParseCookies for ParseEncoded {
-    type Iter = SplitCookies<'static>;
-
-    fn parse_cookies(input: String) -> Self::Iter {
-        Cookie::split_parse_encoded(input)
-    }
-}
-
-impl ParseCookies for ParseUnencoded {
-    type Iter = SplitCookies<'static>;
-
-    fn parse_cookies(input: String) -> Self::Iter {
-        Cookie::split_parse(input)
+        })
     }
 }

@@ -4,11 +4,9 @@ pub mod rescue;
 #[cfg(feature = "ws")]
 pub mod ws;
 
-pub(crate) mod resource;
+pub(crate) mod allow;
 
-mod filter;
 mod timeout;
 
-pub use filter::{Filter, Predicate, filter};
-pub use resource::Resource;
+pub use allow::Allow;
 pub use timeout::{Timeout, timeout};
