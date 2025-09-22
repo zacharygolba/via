@@ -1,7 +1,8 @@
 use cookie::{Cookie, SplitCookies};
 use http::header::COOKIE;
 
-use crate::{BoxFuture, Error, Middleware, Next, Request, request::RequestHead};
+use crate::request::{Request, RequestHead};
+use crate::{BoxFuture, Error, Middleware, Next};
 
 #[derive(Debug)]
 pub struct CookieParser(Codec);
