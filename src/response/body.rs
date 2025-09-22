@@ -7,29 +7,23 @@ use std::task::{Context, Poll};
 
 use crate::error::BoxError;
 
-/// The maximum amount of data that can be read from a buffered body per frame.
-///
-pub const MIN_FRAME_LEN: usize = 8 * 1024; // 8KB
-pub const MAX_FRAME_LEN: usize = 16 * 1024; // 16KB
-
+const DEFAULT_FRAME_LEN: usize = 8 * 1024; // 8KB
 const ADAPTIVE_THRESHOLD: usize = 64 * 1024; // 64KB
-
-#[derive(Debug)]
-pub struct ResponseBody(Either<BufferBody, BoxBody<Bytes, BoxError>>);
 
 /// A buffered `impl Body` that is written in `8KB..=16KB` chunks.
 ///
 #[derive(Debug, Default)]
-pub struct BufferBody {
-    max: usize,
-    data: Bytes,
-}
+pub struct BufferBody(Bytes);
 
-fn adapt_frame_size(len: usize) -> usize {
+#[derive(Debug)]
+pub struct ResponseBody(Either<BufferBody, BoxBody<Bytes, BoxError>>);
+
+#[inline]
+pub(super) fn adapt_frame_size(len: usize) -> usize {
     if len >= ADAPTIVE_THRESHOLD {
-        MAX_FRAME_LEN
+        DEFAULT_FRAME_LEN * 2
     } else {
-        MIN_FRAME_LEN
+        len.min(DEFAULT_FRAME_LEN)
     }
 }
 
@@ -38,27 +32,30 @@ impl Body for BufferBody {
     type Error = BoxError;
 
     fn poll_frame(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         _: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let remaining = self.data.remaining();
+        let Self(buf) = self.get_mut();
+        let remaining = buf.remaining();
 
         if remaining == 0 {
             Poll::Ready(None)
         } else {
-            let len = remaining.min(self.max);
-            let frame = self.data.split_to(len);
+            let len = adapt_frame_size(remaining);
+            let data = buf.slice(..len);
 
-            Poll::Ready(Some(Ok(Frame::data(frame))))
+            buf.advance(len);
+
+            Poll::Ready(Some(Ok(Frame::data(data))))
         }
     }
 
     fn is_end_stream(&self) -> bool {
-        self.data.is_empty()
+        self.0.is_empty()
     }
 
     fn size_hint(&self) -> SizeHint {
-        match self.data.len().try_into() {
+        match self.0.len().try_into() {
             Ok(exact) => SizeHint::with_exact(exact),
             Err(_) => panic!("BufferBody::size_hint would overflow u64"),
         }
@@ -67,11 +64,8 @@ impl Body for BufferBody {
 
 impl From<Bytes> for BufferBody {
     #[inline]
-    fn from(data: Bytes) -> Self {
-        Self {
-            max: adapt_frame_size(data.len()),
-            data,
-        }
+    fn from(buf: Bytes) -> Self {
+        Self(buf)
     }
 }
 
@@ -92,20 +86,14 @@ impl From<&'_ str> for BufferBody {
 impl From<Vec<u8>> for BufferBody {
     #[inline]
     fn from(data: Vec<u8>) -> Self {
-        Self {
-            max: adapt_frame_size(data.len()),
-            data: Bytes::from(data),
-        }
+        Self::from(Bytes::from(data))
     }
 }
 
 impl From<&'_ [u8]> for BufferBody {
     #[inline]
     fn from(slice: &'_ [u8]) -> Self {
-        Self {
-            max: adapt_frame_size(slice.len()),
-            data: Bytes::copy_from_slice(slice),
-        }
+        Self::from(Bytes::copy_from_slice(slice))
     }
 }
 
@@ -176,7 +164,7 @@ mod tests {
     use http_body::Body;
     use http_body_util::BodyExt;
 
-    use super::{BufferBody, MIN_FRAME_LEN};
+    use super::{BufferBody, DEFAULT_FRAME_LEN};
 
     #[tokio::test]
     async fn test_is_end_stream() {
@@ -185,7 +173,8 @@ mod tests {
             "is_end_stream should be true for an empty response"
         );
 
-        let mut body = BufferBody::from(format!("Hello,{}world", " ".repeat(MIN_FRAME_LEN - 6)));
+        let mut body =
+            BufferBody::from(format!("Hello,{}world", " ".repeat(DEFAULT_FRAME_LEN - 6)));
 
         assert!(
             !body.is_end_stream(),
@@ -223,7 +212,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_frame() {
         let frames = [
-            format!("hello{}", " ".repeat(MIN_FRAME_LEN - 5)),
+            format!("hello{}", " ".repeat(DEFAULT_FRAME_LEN - 5)),
             "world".to_owned(),
         ];
 
