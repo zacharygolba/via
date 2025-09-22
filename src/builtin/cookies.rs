@@ -1,7 +1,7 @@
 use cookie::{Cookie, SplitCookies};
 use http::header::COOKIE;
 
-use crate::{BoxFuture, Error, Middleware, Next, Request};
+use crate::{BoxFuture, Error, Middleware, Next, Request, request::RequestHead};
 
 #[derive(Debug)]
 pub struct CookieParser(Codec);
@@ -43,14 +43,14 @@ where
                 Ok(None) => break 'parse Ok(existing),
             };
 
-            let jar = request.cookies_mut();
+            let RequestHead { cookies, .. } = request.head_mut();
 
             for result in self.parse(input) {
                 match result {
                     Err(error) => break 'parse Err(Error::bad_request(error)),
                     Ok(cookie) => {
                         existing.push(cookie.clone());
-                        jar.add_original(cookie);
+                        cookies.add_original(cookie);
                     }
                 }
             }
