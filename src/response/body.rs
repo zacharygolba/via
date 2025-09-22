@@ -7,11 +7,7 @@ use std::task::{Context, Poll};
 
 use crate::error::BoxError;
 
-/// The maximum amount of data that can be read from a buffered body per frame.
-///
-pub const MIN_FRAME_LEN: usize = 8 * 1024; // 8KB
-pub const MAX_FRAME_LEN: usize = 16 * 1024; // 16KB
-
+const DEFAULT_FRAME_LEN: usize = 8 * 1024; // 8KB
 const ADAPTIVE_THRESHOLD: usize = 64 * 1024; // 64KB
 
 /// A buffered `impl Body` that is written in `8KB..=16KB` chunks.
@@ -23,13 +19,11 @@ pub struct BufferBody(Bytes);
 pub struct ResponseBody(Either<BufferBody, BoxBody<Bytes, BoxError>>);
 
 #[inline]
-fn adapt_frame_size(len: usize) -> usize {
+pub(super) fn adapt_frame_size(len: usize) -> usize {
     if len >= ADAPTIVE_THRESHOLD {
-        MAX_FRAME_LEN
-    } else if len > MIN_FRAME_LEN {
-        MIN_FRAME_LEN
+        DEFAULT_FRAME_LEN * 2
     } else {
-        len
+        len.min(DEFAULT_FRAME_LEN)
     }
 }
 
@@ -170,7 +164,7 @@ mod tests {
     use http_body::Body;
     use http_body_util::BodyExt;
 
-    use super::{BufferBody, MIN_FRAME_LEN};
+    use super::{BufferBody, DEFAULT_FRAME_LEN};
 
     #[tokio::test]
     async fn test_is_end_stream() {
@@ -179,7 +173,8 @@ mod tests {
             "is_end_stream should be true for an empty response"
         );
 
-        let mut body = BufferBody::from(format!("Hello,{}world", " ".repeat(MIN_FRAME_LEN - 6)));
+        let mut body =
+            BufferBody::from(format!("Hello,{}world", " ".repeat(DEFAULT_FRAME_LEN - 6)));
 
         assert!(
             !body.is_end_stream(),
@@ -217,7 +212,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_frame() {
         let frames = [
-            format!("hello{}", " ".repeat(MIN_FRAME_LEN - 5)),
+            format!("hello{}", " ".repeat(DEFAULT_FRAME_LEN - 5)),
             "world".to_owned(),
         ];
 
