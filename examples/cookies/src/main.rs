@@ -1,11 +1,11 @@
 use cookie::{Cookie, Key};
 use std::process::ExitCode;
 use via::builtin::{cookies, rescue};
-use via::{BoxError, Next, Request, Response};
+use via::{App, BoxError, Next, Request, Response};
 
 /// A struct used to store application state.
 ///
-struct State {
+struct Cookies {
     /// The secret key used to sign, verify, and optionally encrypt cookies. The
     /// value of this key should be kept secret and changed periodically.
     ///
@@ -15,7 +15,7 @@ struct State {
 /// Responds with a greeting message with the name provided in the request uri
 /// path.
 ///
-async fn hello(request: Request<State>, _: Next<State>) -> via::Result {
+async fn hello(request: Request<Cookies>, _: Next<Cookies>) -> via::Result {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").percent_decode().into_result()?;
 
@@ -26,7 +26,7 @@ async fn hello(request: Request<State>, _: Next<State>) -> via::Result {
 /// Increments the value of the "n_visits" counter to the console. Returns a
 /// response with a message confirming the operation was successful.
 ///
-async fn count_visits(request: Request<State>, next: Next<State>) -> via::Result {
+async fn count_visits(request: Request<Cookies>, next: Next<Cookies>) -> via::Result {
     // Clone the state from the request so we can access the secret key after
     // passing ownership of the request to the next middleware.
     //
@@ -94,8 +94,8 @@ async fn main() -> Result<ExitCode, BoxError> {
     //
     dotenvy::dotenv().ok();
 
-    // Create a new app by calling the `via::app` function.
-    let mut app = via::app(State {
+    // Create a new application.
+    let mut app = App::new(Cookies {
         secret: get_secret_from_env(),
     });
 
@@ -114,5 +114,5 @@ async fn main() -> Result<ExitCode, BoxError> {
     // Add a route that responds with a greeting message.
     app.at("/hello/:name").respond(via::get(hello));
 
-    via::start(app).listen(("127.0.0.1", 8080)).await
+    via::serve(app).listen(("127.0.0.1", 8080)).await
 }

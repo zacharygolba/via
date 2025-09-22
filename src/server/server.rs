@@ -13,8 +13,8 @@ use super::acceptor::{RustlsAcceptor, RustlsConfig};
 
 /// Serve an app over HTTP.
 ///
-pub struct Server<T> {
-    app: App<T>,
+pub struct Server<State> {
+    app: App<State>,
     config: ServerConfig,
 
     #[cfg(feature = "rustls")]
@@ -31,7 +31,10 @@ pub(super) struct ServerConfig {
 
 /// Creates a new server for the provided app.
 ///
-pub fn start<T>(app: App<T>) -> Server<T> {
+pub fn serve<State>(app: App<State>) -> Server<State>
+where
+    State: Send + Sync + 'static,
+{
     Server {
         app,
         config: Default::default(),
@@ -40,7 +43,10 @@ pub fn start<T>(app: App<T>) -> Server<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> Server<T> {
+impl<State> Server<State>
+where
+    State: Send + Sync + 'static,
+{
     /// The amount of time in seconds that the server will wait before the
     /// connection is reset if the server is at capacity.
     ///
@@ -60,21 +66,6 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// accept.
     ///
     /// **Default:** `1000`
-    ///
-    /// We suggest not setting this value unless you know what you are doing and
-    /// have a good reason to do so. If you are unsure, it is best to leave this
-    /// value at the default and scale horizontally.
-    ///
-    /// If you do set this value, we suggest doing so by profiling the stack size
-    /// of your application when it's under load and incrementally increasing
-    /// this value until you find a balance between performance and worry-free
-    /// programming. In other words, the closer this value is to the limit based
-    /// on your application's stack consumption and the stack size of your server,
-    /// the more careful you will need to be when allocating values on the stack
-    /// (i.e dereferencing a heap pointer). Otherwise, you may encounter a stack
-    /// overflow. In addition to the stack size, you should also consider not
-    /// setting this value higher than the number of available file descriptors
-    /// (or `ulimit -n`) on POSIX systems.
     ///
     pub fn max_connections(self, max_connections: usize) -> Self {
         Self {
@@ -156,7 +147,10 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// decommissioning logic of the cluster.
     ///
     #[cfg(feature = "rustls")]
-    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, BoxError> {
+    pub async fn listen<A>(self, address: A) -> Result<ExitCode, BoxError>
+    where
+        A: ToSocketAddrs,
+    {
         let rustls_config = match self.rustls_config {
             Some(config) => Arc::new(config),
             None => panic!("rustls_config is required when the 'rustls' feature is enabled."),
@@ -173,7 +167,10 @@ impl<T: Send + Sync + 'static> Server<T> {
     }
 
     #[cfg(not(feature = "rustls"))]
-    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<ExitCode, BoxError> {
+    pub async fn listen<A>(self, address: A) -> Result<ExitCode, BoxError>
+    where
+        A: ToSocketAddrs,
+    {
         let exit = accept(
             TcpListener::bind(address).await?,
             HttpAcceptor::new(),
@@ -186,7 +183,7 @@ impl<T: Send + Sync + 'static> Server<T> {
 }
 
 #[cfg(feature = "rustls")]
-impl<T: Send + Sync + 'static> Server<T> {
+impl<State: Send + Sync + 'static> Server<State> {
     /// Sets the TLS configuration for the server.
     ///
     pub fn rustls_config(self, rustls_config: RustlsConfig) -> Self {

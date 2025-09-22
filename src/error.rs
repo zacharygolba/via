@@ -325,11 +325,11 @@ impl Error {
     ///
     /// ```
     /// use via::builtin::rescue;
-    /// use via::{BoxError, Next, Request};
+    /// use via::{App, BoxError, Next, Request};
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), BoxError> {
-    ///     let mut app = via::app(());
+    ///     let mut app = App::new(());
     ///
     ///     // Add a rescue middleware to the route tree that maps errors that
     ///     // occur in subsequent middleware by calling the `redact` function.
@@ -394,11 +394,11 @@ impl Error {
     ///
     /// ```
     /// use via::builtin::rescue;
-    /// use via::{BoxError, Next, Request};
+    /// use via::{App, BoxError, Next, Request};
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), BoxError> {
-    ///     let mut app = via::app(());
+    ///     let mut app = App::new(());
     ///
     ///     // Add a rescue middleware to the route tree that maps errors that
     ///     // occur in subsequent middleware by calling the
