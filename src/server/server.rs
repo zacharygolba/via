@@ -11,24 +11,11 @@ use super::acceptor::HttpAcceptor;
 #[cfg(feature = "rustls")]
 use super::acceptor::{RustlsAcceptor, RustlsConfig};
 
-/// The default value of the maximum number of concurrent connections.
-///
-const DEFAULT_MAX_CONNECTIONS: usize = 1000;
-
-/// The default value of the maximum request body size in bytes (100MB).
-///
-const DEFAULT_MAX_BODY_SIZE: usize = 104_857_600;
-
-/// The default value of the shutdown timeout in seconds.
-///
-const DEFAULT_SHUTDOWN_TIMEOUT: u64 = 30;
-
 /// Serve an app over HTTP.
 ///
 pub struct Server<T> {
     app: App<T>,
-    server_config: ServerConfig,
-    max_body_size: Option<usize>,
+    config: ServerConfig,
 
     #[cfg(feature = "rustls")]
     rustls_config: Option<RustlsConfig>,
@@ -36,7 +23,9 @@ pub struct Server<T> {
 
 #[derive(Debug)]
 pub(super) struct ServerConfig {
+    pub(super) accept_timeout: u64,
     pub(super) max_connections: usize,
+    pub(super) max_request_size: usize,
     pub(super) shutdown_timeout: u64,
 }
 
@@ -45,25 +34,24 @@ pub(super) struct ServerConfig {
 pub fn start<T>(app: App<T>) -> Server<T> {
     Server {
         app,
-        server_config: ServerConfig {
-            max_connections: DEFAULT_MAX_CONNECTIONS,
-            shutdown_timeout: DEFAULT_SHUTDOWN_TIMEOUT,
-        },
-        max_body_size: None,
-
+        config: Default::default(),
         #[cfg(feature = "rustls")]
         rustls_config: None,
     }
 }
 
 impl<T: Send + Sync + 'static> Server<T> {
-    /// Set the maximum request body size in bytes.
+    /// The amount of time in seconds that the server will wait before the
+    /// connection is reset if the server is at capacity.
     ///
-    /// Default: `100 MiB`
+    /// **Default:** `2s`
     ///
-    pub fn max_body_size(self, limit: usize) -> Self {
+    pub fn accept_timeout(self, accept_timeout: u64) -> Self {
         Self {
-            max_body_size: Some(limit),
+            config: ServerConfig {
+                accept_timeout,
+                ..self.config
+            },
             ..self
         }
     }
@@ -71,7 +59,7 @@ impl<T: Send + Sync + 'static> Server<T> {
     /// Sets the maximum number of concurrent connections that the server can
     /// accept.
     ///
-    /// Default: `1024`
+    /// **Default:** `1000`
     ///
     /// We suggest not setting this value unless you know what you are doing and
     /// have a good reason to do so. If you are unsure, it is best to leave this
@@ -90,23 +78,38 @@ impl<T: Send + Sync + 'static> Server<T> {
     ///
     pub fn max_connections(self, max_connections: usize) -> Self {
         Self {
-            server_config: ServerConfig {
+            config: ServerConfig {
                 max_connections,
-                ..self.server_config
+                ..self.config
+            },
+            ..self
+        }
+    }
+
+    /// Set the maximum request body size in bytes.
+    ///
+    /// **Default:** `100 MB`
+    ///
+    pub fn max_request_size(self, max_request_size: usize) -> Self {
+        Self {
+            config: ServerConfig {
+                max_request_size,
+                ..self.config
             },
             ..self
         }
     }
 
     /// Set the amount of time in seconds that the server will wait for inflight
-    /// connections to complete before shutting down. The default value is 30
-    /// seconds.
+    /// connections to complete before shutting down.
+    ///
+    /// **Default:** `30s`
     ///
     pub fn shutdown_timeout(self, shutdown_timeout: u64) -> Self {
         Self {
-            server_config: ServerConfig {
+            config: ServerConfig {
                 shutdown_timeout,
-                ..self.server_config
+                ..self.config
             },
             ..self
         }
@@ -162,11 +165,8 @@ impl<T: Send + Sync + 'static> Server<T> {
         let exit = accept(
             TcpListener::bind(address).await?,
             RustlsAcceptor::new(rustls_config),
-            AppService::new(
-                Arc::new(self.app),
-                self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
-            ),
-            self.server_config,
+            AppService::new(Arc::new(self.app), self.config.max_request_size),
+            self.config,
         );
 
         Ok(exit.await)
@@ -177,11 +177,8 @@ impl<T: Send + Sync + 'static> Server<T> {
         let exit = accept(
             TcpListener::bind(address).await?,
             HttpAcceptor::new(),
-            AppService::new(
-                Arc::new(self.app),
-                self.max_body_size.unwrap_or(DEFAULT_MAX_BODY_SIZE),
-            ),
-            self.server_config,
+            AppService::new(Arc::new(self.app), self.config.max_request_size),
+            self.config,
         );
 
         Ok(exit.await)
@@ -196,6 +193,17 @@ impl<T: Send + Sync + 'static> Server<T> {
         Self {
             rustls_config: Some(rustls_config),
             ..self
+        }
+    }
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            accept_timeout: 2,             // 2 seconds
+            max_connections: 1000,         // 1000 concurrent connections
+            max_request_size: 104_857_600, // 100 MB
+            shutdown_timeout: 30,          // 30 seconds
         }
     }
 }
