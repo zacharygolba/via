@@ -2,7 +2,7 @@ use bytes::Bytes;
 use cookie::CookieJar;
 use http::header::{AsHeaderName, CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::request::Parts;
-use http::{HeaderMap, Method, Uri, Version};
+use http::{Extensions, HeaderMap, Method, Uri, Version};
 use http_body::Body;
 use std::sync::Arc;
 
@@ -12,10 +12,16 @@ use super::param::{PathParam, QueryParam};
 use crate::error::{BoxError, Error};
 use crate::response::{Pipe, Response, ResponseBuilder};
 
+#[derive(Debug)]
+pub struct Request<State = ()> {
+    head: RequestHead<State>,
+    body: RequestBody,
+}
+
 /// The component parts of a HTTP request.
 ///
 #[derive(Debug)]
-pub struct RequestHead<T> {
+pub struct RequestHead<State> {
     pub parts: Parts,
 
     /// The request's path parameters.
@@ -32,115 +38,50 @@ pub struct RequestHead<T> {
     /// [`App`](crate::App)
     /// constructor.
     ///
-    pub(crate) state: Arc<T>,
+    pub(crate) state: Arc<State>,
 }
 
-#[derive(Debug)]
-pub struct Request<T = ()> {
-    head: RequestHead<T>,
-    body: RequestBody,
-}
-
-impl<T> RequestHead<T> {
-    #[inline]
-    pub(crate) fn new(parts: Parts, state: Arc<T>, params: PathParams) -> Self {
-        Self {
-            parts,
-            params,
-            cookies: CookieJar::new(),
-            state,
-        }
-    }
-
-    /// Returns a result that contains an Option<&str> with the header value
-    /// associated with the provided key.
-    ///
-    /// # Errors
-    ///
-    /// *Status Code:* `400`
-    ///
-    /// If the header value associated with key contains a char that is not
-    /// considered to be visible ascii.
-    ///
-    pub fn header<K>(&self, key: K) -> Result<Option<&str>, Error>
-    where
-        K: AsHeaderName,
-    {
-        self.parts
-            .headers
-            .get(key)
-            .map(|value| value.to_str())
-            .transpose()
-            .map_err(Error::bad_request)
-    }
-
-    /// Returns a convenient wrapper around an optional reference to the path
-    /// parameter in the request's uri with the provided `name`.
-    ///
-    #[inline]
-    pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
-        self.params.get(self.parts.uri.path(), name)
-    }
-
-    /// Returns a convenient wrapper around an optional references to the query
-    /// parameters in the request's uri with the provided `name`.
-    ///
-    #[inline]
-    pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
-        QueryParam::new(name, self.parts.uri.query().unwrap_or(""))
-    }
-
-    /// Returns reference to the cookies associated with the request.
-    ///
-    #[inline]
-    pub fn cookies(&self) -> &CookieJar {
-        &self.cookies
-    }
-
-    #[inline]
-    pub fn state(&self) -> &Arc<T> {
-        &self.state
-    }
-}
-
-impl<T> Request<T> {
-    /// Returns a reference to a map that contains the headers associated with
-    /// the request.
-    ///
-    #[inline]
-    pub fn headers(&self) -> &HeaderMap {
-        &self.head.parts.headers
-    }
-
-    /// Returns a result that contains an Option<&str> with the header value
-    /// associated with the provided key.
-    ///
-    /// # Errors
-    ///
-    /// *Status Code:* `400`
-    ///
-    /// If the header value associated with key contains a char that is not
-    /// considered to be visible ascii.
-    ///
-    pub fn header<K>(&self, key: K) -> Result<Option<&str>, Error>
-    where
-        K: AsHeaderName,
-    {
-        self.head.header(key)
-    }
-
-    /// Returns a reference to the HTTP method associated with the request.
+impl<State> Request<State> {
+    /// Returns a reference to the request's method.
     ///
     #[inline]
     pub fn method(&self) -> &Method {
-        &self.head.parts.method
+        self.head.method()
     }
 
-    /// Returns a reference to the uri associated with the request.
+    /// Returns a reference to the request's URI.
     ///
     #[inline]
     pub fn uri(&self) -> &Uri {
-        &self.head.parts.uri
+        self.head.uri()
+    }
+
+    /// Returns the HTTP version that was used to make the request.
+    ///
+    #[inline]
+    pub fn version(&self) -> Version {
+        self.head.version()
+    }
+
+    /// Returns a reference to the request's headers.
+    ///
+    #[inline]
+    pub fn headers(&self) -> &HeaderMap {
+        self.head.headers()
+    }
+
+    /// Returns a reference to the associated extensions.
+    ///
+    #[inline]
+    pub fn extensions(&self) -> &Extensions {
+        self.head.extensions()
+    }
+
+    /// Returns a mutable reference to the associated extensions.
+    ///
+    #[inline]
+    pub fn extensions_mut(&mut self) -> &mut Extensions {
+        self.head.extensions_mut()
     }
 
     /// Returns a convenient wrapper around an optional reference to the path
@@ -158,7 +99,7 @@ impl<T> Request<T> {
     /// ```
     ///
     #[inline]
-    pub fn param<'a>(&self, name: &'a str) -> PathParam<'_, 'a> {
+    pub fn param<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
         self.head.param(name)
     }
 
@@ -188,15 +129,26 @@ impl<T> Request<T> {
     /// ```
     ///
     #[inline]
-    pub fn query<'a>(&self, name: &'a str) -> QueryParam<'_, 'a> {
+    pub fn query<'b>(&self, name: &'b str) -> QueryParam<'_, 'b> {
         self.head.query(name)
     }
 
-    /// Returns the HTTP version associated with the request.
+    /// Returns a result that contains an Option<&str> with the header value
+    /// associated with the provided key.
+    ///
+    /// # Errors
+    ///
+    /// *Status Code:* `400`
+    ///
+    /// If the header value associated with key contains a char that is not
+    /// considered to be visible ascii.
     ///
     #[inline]
-    pub fn version(&self) -> Version {
-        self.head.parts.version
+    pub fn header<K>(&self, key: K) -> Result<Option<&str>, Error>
+    where
+        K: AsHeaderName,
+    {
+        self.head.header(key)
     }
 
     /// Returns reference to the cookies associated with the request.
@@ -206,13 +158,11 @@ impl<T> Request<T> {
         self.head.cookies()
     }
 
-    /// Returns a thread-safe reference-counting pointer to the application
-    /// state that was passed as an argument to the
-    /// [`App`](crate::App)
-    /// constructor.
+    /// Returns a reference to an [`Arc`] that contains the state argument that
+    /// was passed as an argument to the [`App`](crate::App) constructor.
     ///
     #[inline]
-    pub fn state(&self) -> &Arc<T> {
+    pub fn state(&self) -> &Arc<State> {
         self.head.state()
     }
 
@@ -234,7 +184,7 @@ impl<T> Request<T> {
     /// Consumes the request and returns a tuple containing the head and body.
     ///
     #[inline]
-    pub fn into_parts(self) -> (RequestHead<T>, RequestBody) {
+    pub fn into_parts(self) -> (RequestHead<State>, RequestBody) {
         (self.head, self.body)
     }
 
@@ -246,28 +196,21 @@ impl<T> Request<T> {
     }
 }
 
-impl<T> Request<T> {
+impl<State> Request<State> {
     #[inline]
-    pub(crate) fn new(head: RequestHead<T>, body: RequestBody) -> Self {
+    pub(crate) fn new(head: RequestHead<State>, body: RequestBody) -> Self {
         Self { head, body }
     }
 
     /// Returns a mutable reference to the associated path params.
     ///
     #[inline]
-    pub(crate) fn head_mut(&mut self) -> &mut RequestHead<T> {
+    pub(crate) fn head_mut(&mut self) -> &mut RequestHead<State> {
         &mut self.head
-    }
-
-    /// Returns a mutable reference to the cookies associated with the request.
-    ///
-    #[inline]
-    pub(crate) fn cookies_mut(&mut self) -> &mut CookieJar {
-        &mut self.head.cookies
     }
 }
 
-impl<T> Pipe for Request<T> {
+impl<State> Pipe for Request<State> {
     fn pipe(self, builder: ResponseBuilder) -> Result<Response, Error> {
         let response = match self.headers().get(CONTENT_LENGTH) {
             Some(len) => builder.header(CONTENT_LENGTH, len),
@@ -275,5 +218,111 @@ impl<T> Pipe for Request<T> {
         };
 
         response.body(self.body.boxed())
+    }
+}
+
+impl<State> RequestHead<State> {
+    #[inline]
+    pub(crate) fn new(parts: Parts, state: Arc<State>, params: PathParams) -> Self {
+        Self {
+            parts,
+            params,
+            cookies: CookieJar::new(),
+            state,
+        }
+    }
+
+    /// Returns a reference to the request's method.
+    ///
+    #[inline]
+    pub fn method(&self) -> &Method {
+        &self.parts.method
+    }
+
+    /// Returns a reference to the request's URI.
+    ///
+    #[inline]
+    pub fn uri(&self) -> &Uri {
+        &self.parts.uri
+    }
+
+    /// Returns the HTTP version that was used to make the request.
+    ///
+    #[inline]
+    pub fn version(&self) -> Version {
+        self.parts.version
+    }
+
+    /// Returns a reference to the request's headers.
+    ///
+    #[inline]
+    pub fn headers(&self) -> &HeaderMap {
+        &self.parts.headers
+    }
+
+    /// Returns a reference to the associated extensions.
+    ///
+    #[inline]
+    pub fn extensions(&self) -> &Extensions {
+        &self.parts.extensions
+    }
+
+    /// Returns a mutable reference to the associated extensions.
+    ///
+    #[inline]
+    pub fn extensions_mut(&mut self) -> &mut Extensions {
+        &mut self.parts.extensions
+    }
+
+    /// Returns a convenient wrapper around an optional reference to the path
+    /// parameter in the request's uri with the provided `name`.
+    ///
+    #[inline]
+    pub fn param<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
+        self.params.get(self.uri().path(), name)
+    }
+
+    /// Returns a convenient wrapper around an optional references to the query
+    /// parameters in the request's uri with the provided `name`.
+    ///
+    #[inline]
+    pub fn query<'b>(&self, name: &'b str) -> QueryParam<'_, 'b> {
+        QueryParam::new(name, self.uri().query().unwrap_or(""))
+    }
+
+    /// Returns a result that contains an Option<&str> with the header value
+    /// associated with the provided key.
+    ///
+    /// # Errors
+    ///
+    /// *Status Code:* `400`
+    ///
+    /// If the header value associated with key contains a char that is not
+    /// considered to be visible ascii.
+    ///
+    pub fn header<K>(&self, key: K) -> Result<Option<&str>, Error>
+    where
+        K: AsHeaderName,
+    {
+        self.headers()
+            .get(key)
+            .map(|value| value.to_str())
+            .transpose()
+            .map_err(Error::bad_request)
+    }
+
+    /// Returns reference to the cookies associated with the request.
+    ///
+    #[inline]
+    pub fn cookies(&self) -> &CookieJar {
+        &self.cookies
+    }
+
+    /// Returns a reference to an [`Arc`] that contains the state argument that
+    /// was passed as an argument to the [`App`](crate::App) constructor.
+    ///
+    #[inline]
+    pub fn state(&self) -> &Arc<State> {
+        &self.state
     }
 }

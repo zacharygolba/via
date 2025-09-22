@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use cookie::{Cookie, CookieJar};
-use http::{HeaderMap, StatusCode, Version, header::SET_COOKIE};
+use http::header::SET_COOKIE;
+use http::{Extensions, HeaderMap, StatusCode, Version};
 use http_body::Body;
 use std::fmt::{self, Debug, Formatter};
 
@@ -44,6 +45,21 @@ impl Response {
     }
 
     #[inline]
+    pub fn status(&self) -> StatusCode {
+        self.inner.status()
+    }
+
+    #[inline]
+    pub fn status_mut(&mut self) -> &mut StatusCode {
+        self.inner.status_mut()
+    }
+
+    #[inline]
+    pub fn version(&self) -> Version {
+        self.inner.version()
+    }
+
+    #[inline]
     pub fn headers(&self) -> &HeaderMap {
         self.inner.headers()
     }
@@ -51,6 +67,16 @@ impl Response {
     #[inline]
     pub fn headers_mut(&mut self) -> &mut HeaderMap {
         self.inner.headers_mut()
+    }
+
+    #[inline]
+    pub fn extensions(&self) -> &Extensions {
+        self.inner.extensions()
+    }
+
+    #[inline]
+    pub fn extensions_mut(&mut self) -> &mut Extensions {
+        self.inner.extensions_mut()
     }
 
     /// Returns a reference to the response cookies.
@@ -65,21 +91,6 @@ impl Response {
     #[inline]
     pub fn cookies_mut(&mut self) -> &mut CookieJar {
         &mut self.cookies
-    }
-
-    #[inline]
-    pub fn status(&self) -> StatusCode {
-        self.inner.status()
-    }
-
-    #[inline]
-    pub fn status_mut(&mut self) -> &mut StatusCode {
-        self.inner.status_mut()
-    }
-
-    #[inline]
-    pub fn version(&self) -> Version {
-        self.inner.version()
     }
 }
 

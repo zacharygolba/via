@@ -206,12 +206,9 @@ impl<T: Send + Sync + 'static> Middleware<T> for Handshake<T> {
         };
 
         let (head, _) = request.into_parts();
-        let context = {
-            let uri = &head.parts.uri;
-            RequestContext {
-                state: head.state,
-                params: OwnedPathParams::new(uri.path_and_query().cloned(), head.params),
-            }
+        let context = RequestContext {
+            params: OwnedPathParams::new(head.uri().path_and_query().cloned(), head.params),
+            state: head.state,
         };
 
         tokio::spawn(handle_upgrade(
