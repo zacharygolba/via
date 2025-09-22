@@ -29,8 +29,8 @@ pub struct RequestHead<T> {
     pub(crate) cookies: CookieJar,
 
     /// The shared application state passed to the
-    /// [`via::app`](crate::app::app)
-    /// function.
+    /// [`App`](crate::App)
+    /// constructor.
     ///
     pub(crate) state: Arc<T>,
 }
@@ -208,8 +208,8 @@ impl<T> Request<T> {
 
     /// Returns a thread-safe reference-counting pointer to the application
     /// state that was passed as an argument to the
-    /// [`via::app`](crate::app::app)
-    /// function.
+    /// [`App`](crate::App)
+    /// constructor.
     ///
     #[inline]
     pub fn state(&self) -> &Arc<T> {

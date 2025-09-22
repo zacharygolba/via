@@ -4,7 +4,7 @@ mod room;
 use http::header;
 use std::process::ExitCode;
 use via::builtin::rescue;
-use via::{BoxError, Response};
+use via::{App, BoxError, Response};
 
 use crate::chat::Chat;
 
@@ -12,8 +12,7 @@ const CSP: &str = "default-src 'self'; connect-src 'self'";
 
 #[tokio::main]
 async fn main() -> Result<ExitCode, BoxError> {
-    // Create a new application.
-    let mut app = via::app(Chat::new());
+    let mut app = App::new(Chat::new());
 
     // Capture errors from downstream, log them, and map them into responses.
     // Upstream middleware remains unaffected and continues execution.
@@ -40,5 +39,5 @@ async fn main() -> Result<ExitCode, BoxError> {
         route.at("/:index").respond(via::get(room::show));
     });
 
-    via::start(app).listen(("127.0.0.1", 8080)).await
+    via::serve(app).listen(("127.0.0.1", 8080)).await
 }

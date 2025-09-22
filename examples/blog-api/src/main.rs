@@ -4,11 +4,11 @@ mod database;
 use std::process::ExitCode;
 use std::time::Duration;
 use via::builtin::{rescue, timeout};
-use via::{BoxError, Next, Request};
+use via::{App, BoxError, Next, Request};
 
 use database::Pool;
 
-struct State {
+struct BlogApi {
     pool: Pool,
 }
 
@@ -16,14 +16,13 @@ struct State {
 async fn main() -> Result<ExitCode, BoxError> {
     dotenvy::dotenv()?;
 
-    // Create a new app with our shared state that contains a database pool.
-    let mut app = via::app(State {
+    let mut app = App::new(BlogApi {
         pool: database::pool().await?,
     });
 
     // Setup a simple logger middleware that logs the method, path, and response
     // status code of every request.
-    app.include(async |request: Request<State>, next: Next<State>| {
+    app.include(async |request: Request<BlogApi>, next: Next<BlogApi>| {
         let method = request.method().to_string();
         let path = request.uri().path().to_string();
 
@@ -74,5 +73,5 @@ async fn main() -> Result<ExitCode, BoxError> {
         });
     });
 
-    via::start(app).listen(("127.0.0.1", 8080)).await
+    via::serve(app).listen(("127.0.0.1", 8080)).await
 }

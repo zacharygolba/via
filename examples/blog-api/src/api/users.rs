@@ -1,16 +1,16 @@
 use via::{Next, Request, Response};
 
 use crate::database::models::user::*;
-use crate::State;
+use crate::BlogApi;
 
-pub async fn index(request: Request<State>, _: Next<State>) -> via::Result {
+pub async fn index(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result {
     let state = request.state();
     let users = User::all(&state.pool).await?;
 
     Response::build().json(&users)
 }
 
-pub async fn create(request: Request<State>, _: Next<State>) -> via::Result {
+pub async fn create(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result {
     let (head, body) = request.into_parts();
     let state = head.state();
 
@@ -20,7 +20,7 @@ pub async fn create(request: Request<State>, _: Next<State>) -> via::Result {
     Response::build().status(201).json(&user)
 }
 
-pub async fn show(request: Request<State>, _: Next<State>) -> via::Result {
+pub async fn show(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result {
     let state = request.state();
     let id = request.param("id").parse()?;
 
@@ -29,7 +29,7 @@ pub async fn show(request: Request<State>, _: Next<State>) -> via::Result {
     Response::build().json(&user)
 }
 
-pub async fn update(request: Request<State>, _: Next<State>) -> via::Result {
+pub async fn update(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result {
     let (head, body) = request.into_parts();
     let state = head.state();
     let id = head.param("id").parse()?;
@@ -40,7 +40,7 @@ pub async fn update(request: Request<State>, _: Next<State>) -> via::Result {
     Response::build().json(&user)
 }
 
-pub async fn destroy(request: Request<State>, _: Next<State>) -> via::Result {
+pub async fn destroy(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result {
     let state = request.state();
     let id = request.param("id").parse()?;
 
