@@ -29,7 +29,7 @@ enum MatchCond<T> {
 struct Binding<'a, T> {
     is_final: bool,
     results: SmallVec<[&'a Node<T>; 2]>,
-    range: Option<[usize; 2]>,
+    range: Option<Param>,
 }
 
 struct Branch<'a, 'b, T> {
@@ -53,10 +53,11 @@ fn match_next<'a, 'b, T>(
     let mut binding = Binding {
         is_final: next.is_none(),
         results: SmallVec::new(),
-        range: branch.segment.map(|(_, range)| range),
+        range: None,
     };
 
-    if let Some(&(value, ref _range)) = branch.segment.as_ref() {
+    if let Some((value, [start, end])) = branch.segment {
+        binding.range = Some((start, Some(end)));
         for node in branch.children.iter().rev() {
             match &node.pattern {
                 Pattern::Static(name) if name != value => {}
@@ -137,8 +138,8 @@ impl<T> RouteMut<'_, T> {
         RouteMut(insert(self.0, path::patterns(path)))
     }
 
-    pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) {
-        scope(self);
+    pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
+        scope(&mut self);
     }
 
     pub fn include(&mut self, middleware: T) {
@@ -176,12 +177,12 @@ impl<T> Router<T> {
                 is_final: segment.is_none(),
                 results: smallvec![root],
                 range: None,
-            },],
+            }],
             queue: smallvec![Branch {
                 children: &root.children,
                 segment,
                 path,
-            },],
+            }],
         }
     }
 }
@@ -216,29 +217,27 @@ impl<'a, T> Iterator for Binding<'a, T> {
 
         Some(match &node.pattern {
             Pattern::Static(_) | Pattern::Root => {
-                let route = Route(if self.is_final {
-                    MatchCond::Final(node.route.iter())
-                } else {
-                    MatchCond::Partial(node.route.iter())
-                });
+                let route = node.route.iter();
 
-                (route, None)
+                if self.is_final {
+                    (Route(MatchCond::Final(route)), None)
+                } else {
+                    (Route(MatchCond::Partial(route)), None)
+                }
             }
             Pattern::Dynamic(name) => {
-                let param = self.range.map(|[start, end]| (name, (start, Some(end))));
-                let route = Route(if self.is_final {
-                    MatchCond::Final(node.route.iter())
-                } else {
-                    MatchCond::Partial(node.route.iter())
-                });
+                let param = self.range.map(|range| (name, range));
+                let route = node.route.iter();
 
-                (route, param)
+                if self.is_final {
+                    (Route(MatchCond::Final(route)), param)
+                } else {
+                    (Route(MatchCond::Partial(route)), param)
+                }
             }
             Pattern::Wildcard(name) => {
-                let param = self.range.as_ref().map(|[start, _]| (name, (*start, None)));
-                let route = Route(MatchCond::Final(node.route.iter()));
-
-                (route, param)
+                let param = self.range.as_ref().map(|(start, _)| (name, (*start, None)));
+                (Route(MatchCond::Final(node.route.iter())), param)
             }
         })
     }
