@@ -2,34 +2,28 @@ use std::sync::Arc;
 
 use crate::middleware::Middleware;
 
-pub type Router<T> = via_router::Router<Arc<dyn Middleware<T>>>;
+pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 
-pub struct Route<'a, T> {
-    pub(super) inner: via_router::RouteMut<'a, Arc<dyn Middleware<T>>>,
+pub struct Route<'a, State> {
+    pub(super) inner: via_router::RouteMut<'a, Arc<dyn Middleware<State>>>,
 }
 
-impl<T> Route<'_, T> {
-    pub fn at(&mut self, path: &'static str) -> Route<'_, T> {
+impl<State> Route<'_, State> {
+    pub fn at(&mut self, path: &'static str) -> Route<'_, State> {
         Route {
             inner: self.inner.at(path),
         }
     }
 
-    pub fn scope(&mut self, scope: impl FnOnce(&mut Self)) {
-        scope(self);
+    pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
+        scope(&mut self);
     }
 
-    pub fn include<M>(&mut self, middleware: M)
-    where
-        M: Middleware<T> + 'static,
-    {
+    pub fn include(&mut self, middleware: impl Middleware<State> + 'static) {
         self.inner.include(Arc::new(middleware));
     }
 
-    pub fn respond<M>(&mut self, middleware: M)
-    where
-        M: Middleware<T> + 'static,
-    {
+    pub fn respond(&mut self, middleware: impl Middleware<State> + 'static) {
         self.inner.respond(Arc::new(middleware));
     }
 }
