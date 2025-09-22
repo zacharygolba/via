@@ -12,10 +12,10 @@ use tokio_websockets::server::Builder;
 use tokio_websockets::{Config, Limits};
 
 #[cfg(feature = "aws-lc-rs")]
-use aws_lc_rs::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY};
+use aws_lc_rs::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 
 #[cfg(feature = "ring")]
-use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY};
+use ring::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 
 use crate::error::Error;
 use crate::middleware::{BoxFuture, Middleware};
@@ -27,8 +27,8 @@ pub use tokio_websockets::CloseCode;
 
 const GUID: &[u8] = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-type OnUpgrade<T> =
-    dyn Fn(WebSocket, RequestContext<T>) -> BoxFuture<Result<(), Error>> + Send + Sync;
+type OnUpgrade<State> =
+    dyn Fn(WebSocket, Context<State>) -> BoxFuture<Result<(), Error>> + Send + Sync;
 
 #[derive(Debug)]
 #[non_exhaustive]
@@ -38,9 +38,9 @@ pub enum Message {
     Text(ByteString),
 }
 
-pub struct RequestContext<T> {
+pub struct Context<State> {
     params: OwnedPathParams,
-    state: Arc<T>,
+    state: Arc<State>,
 }
 
 pub struct Handshake<T> {
@@ -55,9 +55,9 @@ pub struct WebSocket {
     receiver: Receiver<Message>,
 }
 
-pub fn ws<T, F, R>(upgraded: F) -> Handshake<T>
+pub fn ws<State, F, R>(upgraded: F) -> Handshake<State>
 where
-    F: Fn(WebSocket, RequestContext<T>) -> R + Send + Sync + 'static,
+    F: Fn(WebSocket, Context<State>) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Error>> + Send + Sync + 'static,
 {
     let frame_size = 4 * 1024;
@@ -81,7 +81,7 @@ async fn handle_upgrade<T>(
     mut can_upgrade: http::Request<()>,
     stream_builder: Builder,
     on_upgrade: Arc<OnUpgrade<T>>,
-    context: RequestContext<T>,
+    context: Context<T>,
 ) {
     let stream = match hyper::upgrade::on(&mut can_upgrade).await {
         Ok(io) => stream_builder.serve(TokioIo::new(io)),
@@ -136,7 +136,7 @@ async fn handle_upgrade<T>(
 }
 
 fn validate_accept_key<T>(request: &Request<T>) -> Result<String, crate::Error> {
-    let mut hasher = Context::new(&SHA1_FOR_LEGACY_USE_ONLY);
+    let mut hasher = Hasher::new(&SHA1_FOR_LEGACY_USE_ONLY);
     let accept_key = request
         .header(&header::SEC_WEBSOCKET_KEY)?
         .ok_or_else(|| crate::error!(400, "missing required header: \"Sec-Websocket-Key\""))?;
@@ -206,7 +206,7 @@ impl<T: Send + Sync + 'static> Middleware<T> for Handshake<T> {
         };
 
         let (head, _) = request.into_parts();
-        let context = RequestContext {
+        let context = Context {
             params: OwnedPathParams::new(head.uri().path_and_query().cloned(), head.params),
             state: head.state,
         };
@@ -321,25 +321,29 @@ impl From<Message> for tokio_websockets::Message {
     }
 }
 
-impl<T> RequestContext<T> {
+impl<State> Context<State> {
+    #[inline]
     pub fn path(&self) -> &str {
         self.params.path()
     }
 
+    #[inline]
+    pub fn state(&self) -> &State {
+        &self.state
+    }
+
+    #[inline]
     pub fn param<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
         self.params.get(name)
     }
 
+    #[inline]
     pub fn query<'b>(&self, name: &'b str) -> QueryParam<'_, 'b> {
         QueryParam::new(name, self.params.query())
     }
-
-    pub fn state(&self) -> &T {
-        &self.state
-    }
 }
 
-impl<T> Clone for RequestContext<T> {
+impl<State> Clone for Context<State> {
     #[inline]
     fn clone(&self) -> Self {
         Self {

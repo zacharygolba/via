@@ -1,5 +1,5 @@
 use serde_json::json;
-use via::builtin::ws::{Message, RequestContext, WebSocket};
+use via::builtin::ws::{Context, Message, WebSocket};
 use via::{Next, Request, Response};
 
 use crate::chat::Chat;
@@ -26,7 +26,7 @@ pub async fn show(request: Request<Chat>, _: Next<Chat>) -> via::Result {
     }
 }
 
-pub async fn join(mut socket: WebSocket, request: RequestContext<Chat>) -> via::Result<()> {
+pub async fn join(mut socket: WebSocket, request: Context<Chat>) -> via::Result<()> {
     let slug = request.param("room").into_result()?;
     let chat = request.state();
 
