@@ -106,7 +106,7 @@ async fn main() -> Result<ExitCode, BoxError> {
     // The CookieParser middleware can be added at any depth of the route tree.
     // In this example, we add it to the root of the app. This means that every
     // request will pass through the CookieParser middleware.
-    app.include(cookies::parse_encoded());
+    app.include(cookies::percent_decode());
 
     // Add the count_visits middleware to the app at "/".
     app.include(count_visits);

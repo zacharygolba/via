@@ -12,9 +12,18 @@ pub fn timeout(duration: Duration) -> Timeout {
     Timeout { duration }
 }
 
-impl<T> Middleware<T> for Timeout {
-    fn call(&self, request: Request<T>, next: Next<T>) -> BoxFuture {
-        let future = time::timeout(self.duration, next.call(request));
-        Box::pin(async { future.await.unwrap_or_else(|_| Err(crate::error!(504))) })
+impl<State> Middleware<State> for Timeout
+where
+    State: Send + Sync + 'static,
+{
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
+        let Self { duration } = *self;
+
+        Box::pin(async move {
+            match time::timeout(duration, next.call(request)).await {
+                Ok(result) => result,
+                Err(_) => Err(crate::error!(504)),
+            }
+        })
     }
 }
