@@ -31,29 +31,29 @@ macro_rules! log {
 pub async fn accept<A, T>(
     listener: TcpListener,
     acceptor: A,
-    app_service: AppService<T>,
-    server_config: ServerConfig,
+    service: AppService<T>,
+    config: ServerConfig,
 ) -> ExitCode
 where
     A: Acceptor + Send + Sync + 'static,
     T: Send + Sync + 'static,
 {
     // Create a semaphore with a number of permits equal to the maximum number
-    // of connections that the server can handle concurrently. If the maximum
-    // number of connections is reached, we'll wait until a permit is available
-    // before accepting a new connection.
-    let semaphore = Arc::new(Semaphore::new(server_config.max_connections));
+    // of connections that the server can handle concurrently.
+    //
+    // If the maximum number of connections is reached, we'll wait until
+    // `config.accept_timeout` before resetting the connection.
+    let semaphore = Arc::new(Semaphore::new(config.max_connections));
 
-    // Create a watch channel to notify the connections to initiate a
-    // graceful shutdown process when the `ctrl_c` future resolves.
+    // Notify the accept loop and connection tasks to initiate a graceful
+    // shutdown when a "ctrl-c" notification is sent to the process.
     let mut shutdown_rx = {
         let (tx, rx) = watch::channel(None);
         tokio::spawn(wait_for_ctrl_c(tx));
         rx
     };
 
-    // A JoinSet to track inflight connections. We use this to drain connection
-    // tasks before returning the exit code.
+    // A JoinSet to track and join active connections.
     let mut connections = JoinSet::new();
 
     // Start accepting incoming connections.
@@ -67,6 +67,7 @@ where
                     continue;
                 }
             },
+
             // The process received a graceful shutdown signal.
             _ = shutdown_rx.changed() => {
                 break shutdown_rx.borrow_and_update().unwrap_or(ExitCode::FAILURE);
@@ -74,12 +75,31 @@ where
         };
 
         // Acquire a permit from the semaphore.
-        let Ok(permit) = semaphore.clone().try_acquire_owned() else {
-            continue;
+        let permit = match semaphore.clone().try_acquire_owned() {
+            // We were able to acquire a permit without blocking accept.
+            Ok(acquired) => acquired,
+
+            // The server is at capacity. Try to acquire a permit with the
+            // configured timeout.
+            Err(_) => match time::timeout(
+                Duration::from_secs(config.accept_timeout),
+                semaphore.clone().acquire_owned(),
+            )
+            .await
+            {
+                // Permit acquired!
+                Ok(Ok(acquired)) => acquired,
+
+                // The semaphore was dropped. Likely unreachable.
+                Ok(Err(_)) => break ExitCode::FAILURE,
+
+                // The server is still at capacity. Reset the connection.
+                Err(_) => continue,
+            },
         };
 
         let mut acceptor = acceptor.clone();
-        let app_service = app_service.clone();
+        let service = service.clone();
         let mut shutdown_rx = shutdown_rx.clone();
 
         // Spawn a task to serve the connection.
@@ -95,7 +115,7 @@ where
             let mut connection = Box::pin(
                 conn::http2::Builder::new(TokioExecutor::new())
                     .timer(TokioTimer::new())
-                    .serve_connection(io, app_service),
+                    .serve_connection(io, service),
             );
 
             // Create a new HTTP/1.1 connection.
@@ -103,7 +123,7 @@ where
             let mut connection = Box::pin(
                 conn::http1::Builder::new()
                     .timer(TokioTimer::new())
-                    .serve_connection(io, app_service)
+                    .serve_connection(io, service)
                     .with_upgrades(),
             );
 
@@ -123,15 +143,15 @@ where
         }
     };
 
-    let drain_all = time::timeout(
-        Duration::from_secs(server_config.shutdown_timeout),
+    // Try to drain each inflight connection before `config.shutdown_timeout`.
+    match time::timeout(
+        Duration::from_secs(config.shutdown_timeout),
         drain_connections(true, connections),
-    );
-
-    if drain_all.await.is_ok() {
-        exit_code
-    } else {
-        ExitCode::FAILURE
+    )
+    .await
+    {
+        Ok(()) => exit_code,
+        Err(_) => ExitCode::FAILURE,
     }
 }
 

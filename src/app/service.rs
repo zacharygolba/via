@@ -19,13 +19,16 @@ pub struct ServeRequest(BoxFuture);
 
 pub struct AppService<T> {
     app: Arc<App<T>>,
-    max_body_size: usize,
+    max_request_size: usize,
 }
 
 impl<T> AppService<T> {
     #[inline]
-    pub(crate) fn new(app: Arc<App<T>>, max_body_size: usize) -> Self {
-        Self { app, max_body_size }
+    pub(crate) fn new(app: Arc<App<T>>, max_request_size: usize) -> Self {
+        Self {
+            app,
+            max_request_size,
+        }
     }
 }
 
@@ -34,7 +37,7 @@ impl<State> Clone for AppService<State> {
     fn clone(&self) -> Self {
         Self {
             app: Arc::clone(&self.app),
-            max_body_size: self.max_body_size,
+            max_request_size: self.max_request_size,
         }
     }
 }
@@ -72,7 +75,7 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
                 // This is also a small performance optimization that avoids an
                 // additional allocation if you end up reading the entire body
                 // into memory, a common case for backend JSON APIs.
-                RequestBody::new(Limited::new(body, self.max_body_size)),
+                RequestBody::new(Limited::new(body, self.max_request_size)),
             )
         };
 
