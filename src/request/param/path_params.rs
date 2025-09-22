@@ -1,3 +1,5 @@
+#[cfg(feature = "ws")]
+use http::uri::PathAndQuery;
 use std::sync::Arc;
 use via_router::Param;
 
@@ -9,10 +11,20 @@ pub(crate) struct PathParams {
 }
 
 #[cfg(feature = "ws")]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct OwnedPathParams {
-    offsets: PathParams,
-    uri: http::Uri,
+    path_and_query: Option<PathAndQuery>,
+    offsets: Arc<[(Arc<str>, Param)]>,
+}
+
+fn range_for(predicate: &str, slice: &[(Arc<str>, Param)]) -> Option<(usize, Option<usize>)> {
+    slice.iter().find_map(|(name, range)| {
+        if predicate == name.as_ref() {
+            Some(*range)
+        } else {
+            None
+        }
+    })
 }
 
 impl PathParams {
@@ -23,12 +35,7 @@ impl PathParams {
 
     #[inline]
     pub(crate) fn get<'a, 'b>(&self, source: &'a str, name: &'b str) -> PathParam<'a, 'b> {
-        let range = self
-            .params
-            .iter()
-            .find_map(|(k, v)| if &**k == name { Some(*v) } else { None });
-
-        PathParam::new(name, source, range)
+        PathParam::new(name, source, range_for(name, &self.params))
     }
 
     #[inline]
@@ -39,17 +46,28 @@ impl PathParams {
 
 #[cfg(feature = "ws")]
 impl OwnedPathParams {
-    pub(crate) fn new(uri: http::Uri, offsets: PathParams) -> Self {
-        Self { offsets, uri }
+    pub(crate) fn new(path_and_query: Option<PathAndQuery>, offsets: PathParams) -> Self {
+        Self {
+            path_and_query,
+            offsets: offsets.params.into(),
+        }
     }
 
     #[inline]
     pub fn get<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
-        self.offsets.get(self.uri().path(), name)
+        PathParam::new(name, self.path(), range_for(name, &self.offsets))
     }
 
     #[inline]
-    pub fn uri(&self) -> &http::Uri {
-        &self.uri
+    pub fn path(&self) -> &str {
+        self.path_and_query.as_ref().map_or("/", PathAndQuery::path)
+    }
+
+    #[inline]
+    pub fn query(&self) -> &str {
+        self.path_and_query
+            .as_ref()
+            .and_then(PathAndQuery::query)
+            .unwrap_or_default()
     }
 }

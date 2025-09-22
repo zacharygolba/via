@@ -3,7 +3,7 @@ use base64::engine::general_purpose::STANDARD as base64_engine;
 use bytes::{Buf, Bytes};
 use bytestring::ByteString;
 use futures_util::{SinkExt, StreamExt};
-use http::{StatusCode, Uri, header};
+use http::{StatusCode, header};
 use hyper_util::rt::TokioIo;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -38,7 +38,7 @@ pub enum Message {
 }
 
 pub struct RequestContext<T> {
-    params: Arc<OwnedPathParams>,
+    params: OwnedPathParams,
     state: Arc<T>,
 }
 
@@ -205,9 +205,12 @@ impl<T: Send + Sync + 'static> Middleware<T> for Handshake<T> {
         };
 
         let (head, _) = request.into_parts();
-        let context = RequestContext {
-            state: head.state,
-            params: Arc::new(OwnedPathParams::new(head.parts.uri.clone(), head.params)),
+        let context = {
+            let uri = &head.parts.uri;
+            RequestContext {
+                state: head.state,
+                params: OwnedPathParams::new(uri.path_and_query().cloned(), head.params),
+            }
         };
 
         tokio::spawn(handle_upgrade(
@@ -321,9 +324,8 @@ impl From<Message> for tokio_websockets::Message {
 }
 
 impl<T> RequestContext<T> {
-    #[inline]
-    pub fn uri(&self) -> &Uri {
-        self.params.uri()
+    pub fn path(&self) -> &str {
+        self.params.path()
     }
 
     pub fn param<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
@@ -331,10 +333,9 @@ impl<T> RequestContext<T> {
     }
 
     pub fn query<'b>(&self, name: &'b str) -> QueryParam<'_, 'b> {
-        QueryParam::new(name, self.uri().query().unwrap_or_default())
+        QueryParam::new(name, self.params.query())
     }
 
-    #[inline]
     pub fn state(&self) -> &T {
         &self.state
     }
@@ -345,7 +346,7 @@ impl<T> Clone for RequestContext<T> {
     fn clone(&self) -> Self {
         Self {
             state: Arc::clone(&self.state),
-            params: Arc::clone(&self.params),
+            params: self.params.clone(),
         }
     }
 }
