@@ -86,7 +86,7 @@ features = ["aws_lc_rs", "server"]
 optional = true
 
 [package.metadata.docs.rs]
-features = ["fs", "ws"]
+features = ["file", "ws"]
 
 [workspace]
 members = ["via-router", "examples/*"]
