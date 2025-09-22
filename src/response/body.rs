@@ -42,11 +42,7 @@ impl Body for BufferBody {
             Poll::Ready(None)
         } else {
             let len = adapt_frame_size(remaining);
-            let data = buf.slice(..len);
-
-            buf.advance(len);
-
-            Poll::Ready(Some(Ok(Frame::data(data))))
+            Poll::Ready(Some(Ok(Frame::data(buf.split_to(len)))))
         }
     }
 
