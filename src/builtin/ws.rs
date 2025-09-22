@@ -31,6 +31,7 @@ type OnUpgrade<T> =
     dyn Fn(WebSocket, RequestContext<T>) -> BoxFuture<Result<(), Error>> + Send + Sync;
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Message {
     Binary(Bytes),
     Close(Option<(CloseCode, Option<ByteString>)>),

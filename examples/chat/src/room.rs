@@ -1,6 +1,6 @@
 use serde_json::json;
 use via::builtin::ws::{Message, RequestContext, WebSocket};
-use via::{Error, Next, Request, Response, error};
+use via::{Next, Request, Response};
 
 use crate::chat::Chat;
 
@@ -11,11 +11,7 @@ pub async fn index(request: Request<Chat>, _: Next<Chat>) -> via::Result {
         Response::build().json(&body)
     });
 
-    if let Some(result) = all.await {
-        result
-    } else {
-        Err(error!(404))
-    }
+    all.await.unwrap_or_else(|| Err(via::error!(404)))
 }
 
 pub async fn show(request: Request<Chat>, _: Next<Chat>) -> via::Result {
@@ -26,11 +22,11 @@ pub async fn show(request: Request<Chat>, _: Next<Chat>) -> via::Result {
         let body = json!({ "data": { "message": &message } });
         Response::build().json(&body)
     } else {
-        Err(error!(404))
+        Err(via::error!(404))
     }
 }
 
-pub async fn join(mut socket: WebSocket, request: RequestContext<Chat>) -> Result<(), Error> {
+pub async fn join(mut socket: WebSocket, request: RequestContext<Chat>) -> via::Result<()> {
     let slug = request.param("room").into_result()?;
     let chat = request.state();
 
@@ -51,12 +47,6 @@ pub async fn join(mut socket: WebSocket, request: RequestContext<Chat>) -> Resul
 
             // Message received from the websocket.
             Some(message) = socket.next() => match message {
-                // We ignore binary messages in this example but still want to
-                // know if we receive one.
-                Message::Binary(_binary) => {
-                    eprintln!("warn(room: {}): binary messages are ignored.", &slug);
-                }
-
                 // Break the loop when we receive a close message.
                 Message::Close(close) => {
                     if let Some((code, reason)) = close {
@@ -74,6 +64,12 @@ pub async fn join(mut socket: WebSocket, request: RequestContext<Chat>) -> Resul
                 Message::Text(text) => {
                     if let Some(index) = chat.push(&slug, &text).await {
                         let _ = tx.send((id, index));
+                    }
+                }
+
+                ignored => {
+                    if cfg!(debug_assertions) {
+                        eprintln!("warn(room: {}): ignoring message {:?}", &slug, ignored);
                     }
                 }
             },
