@@ -3,10 +3,10 @@ mod builder;
 mod redirect;
 mod response;
 
-#[cfg(feature = "fs")]
+#[cfg(feature = "file")]
 mod file;
 
-#[cfg(feature = "fs")]
+#[cfg(feature = "file")]
 pub use file::File;
 
 pub use body::ResponseBody;

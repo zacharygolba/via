@@ -10,4 +10,4 @@ edition = "2021"
 http = "1"
 mime_guess = "2"
 tokio = "1"
-via = { path = "../..", features = ["fs"] }
+via = { path = "../..", features = ["file"] }
