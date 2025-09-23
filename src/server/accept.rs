@@ -36,7 +36,7 @@ macro_rules! log {
     };
 }
 
-macro_rules! receive_ctr_c {
+macro_rules! receive_ctrl_c {
     ($shutdown_rx:ident) => {
         Option::unwrap_or(*$shutdown_rx.borrow_and_update(), ExitCode::FAILURE)
     };
@@ -85,7 +85,7 @@ where
 
             // The process received a graceful shutdown signal.
             _ = shutdown_rx.changed() => {
-                break receive_ctr_c!(shutdown_rx);
+                break receive_ctrl_c!(shutdown_rx);
             }
         };
 
@@ -114,7 +114,7 @@ where
                     }
 
                     _ = shutdown_rx.changed() => {
-                        break receive_ctr_c!(shutdown_rx);
+                        break receive_ctrl_c!(shutdown_rx);
                     }
                 }
             }
