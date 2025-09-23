@@ -30,7 +30,7 @@ macro_rules! log {
 #[inline(never)]
 pub async fn accept<A, T>(
     listener: TcpListener,
-    acceptor: A,
+    acceptor: Arc<A>,
     service: AppService<T>,
     config: ServerConfig,
 ) -> ExitCode
@@ -98,7 +98,7 @@ where
             },
         };
 
-        let mut acceptor = acceptor.clone();
+        let acceptor = acceptor.clone();
         let service = service.clone();
         let mut shutdown_rx = shutdown_rx.clone();
 

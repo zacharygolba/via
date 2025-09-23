@@ -6,15 +6,11 @@ use super::Acceptor;
 
 /// Accepts a TCP stream and returns it as-is.
 ///
-#[derive(Clone)]
-pub struct HttpAcceptor(
-    // Pad HttpAcceptor with usize to avoid passing a ZST to accept.
-    #[allow(dead_code)] usize,
-);
+pub struct HttpAcceptor;
 
 impl HttpAcceptor {
     pub fn new() -> Self {
-        Self(0)
+        Self
     }
 }
 
@@ -22,7 +18,8 @@ impl Acceptor for HttpAcceptor {
     type Future = Ready<Result<Self::Stream, io::Error>>;
     type Stream = TcpStream;
 
-    fn accept(&mut self, stream: TcpStream) -> Self::Future {
+    #[inline]
+    fn accept(&self, stream: TcpStream) -> Self::Future {
         future::ready(Ok(stream))
     }
 }

@@ -8,7 +8,6 @@ pub use rustls::ServerConfig as RustlsConfig;
 
 use super::Acceptor;
 
-#[derive(Clone)]
 pub struct RustlsAcceptor {
     acceptor: TlsAcceptor,
 }
@@ -25,7 +24,8 @@ impl Acceptor for RustlsAcceptor {
     type Future = Accept<TcpStream>;
     type Stream = TlsStream<TcpStream>;
 
-    fn accept(&mut self, stream: TcpStream) -> Self::Future {
+    #[inline]
+    fn accept(&self, stream: TcpStream) -> Self::Future {
         self.acceptor.accept(stream)
     }
 }
