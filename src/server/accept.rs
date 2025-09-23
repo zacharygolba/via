@@ -152,7 +152,7 @@ where
 
     match time::timeout(shutdown_timeout, drain).await {
         Ok(_) => exit_code,
-        Err(_) => ExitCode::from(1),
+        Err(_) => ExitCode::FAILURE,
     }
 }
 
