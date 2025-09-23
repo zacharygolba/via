@@ -8,7 +8,7 @@ use http_body_util::StreamBody;
 use http_body_util::combinators::BoxBody;
 use serde::Serialize;
 
-use super::body::{BufferBody, ResponseBody};
+use super::body::ResponseBody;
 use super::response::Response;
 use crate::error::{BoxError, Error};
 
@@ -90,24 +90,28 @@ impl ResponseBuilder {
     }
 
     #[inline]
-    pub fn html(self, data: String) -> Result<Response, Error> {
+    pub fn html(self, data: impl Into<String>) -> Result<Response, Error> {
+        let string = data.into();
+
         self.header(CONTENT_TYPE, "text/html; charset=utf-8")
-            .header(CONTENT_LENGTH, data.len())
-            .body(data)
+            .header(CONTENT_LENGTH, string.len())
+            .body(string)
     }
 
     #[inline]
-    pub fn text(self, data: String) -> Result<Response, Error> {
+    pub fn text(self, data: impl Into<String>) -> Result<Response, Error> {
+        let string = data.into();
+
         self.header(CONTENT_TYPE, "text/plain; charset=utf-8")
-            .header(CONTENT_LENGTH, data.len())
-            .body(data)
+            .header(CONTENT_LENGTH, string.len())
+            .body(string)
     }
 
     /// Convert self into a [Response] with an empty payload.
     ///
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
-        self.body(BufferBody::default())
+        self.body(ResponseBody::default())
     }
 }
 
