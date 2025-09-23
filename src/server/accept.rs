@@ -4,7 +4,6 @@ use std::error::Error;
 use std::mem;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
 use tokio::task::{JoinSet, coop};
@@ -56,6 +55,12 @@ where
     // A JoinSet to track and join active connections.
     let mut connections = JoinSet::new();
 
+    let ServerConfig {
+        accept_timeout,
+        shutdown_timeout,
+        ..
+    } = config;
+
     // Start accepting incoming connections.
     let exit_code = loop {
         let (tcp_stream, _) = tokio::select! {
@@ -81,21 +86,20 @@ where
 
             // The server is at capacity. Try to acquire a permit with the
             // configured timeout.
-            Err(_) => match time::timeout(
-                Duration::from_secs(config.accept_timeout),
-                semaphore.clone().acquire_owned(),
-            )
-            .await
-            {
-                // Permit acquired!
-                Ok(Ok(acquired)) => acquired,
+            Err(_) => {
+                let acquire = semaphore.clone().acquire_owned();
 
-                // The semaphore was dropped. Likely unreachable.
-                Ok(Err(_)) => break ExitCode::FAILURE,
+                match time::timeout(accept_timeout, acquire).await {
+                    // Permit acquired!
+                    Ok(Ok(acquired)) => acquired,
 
-                // The server is still at capacity. Reset the connection.
-                Err(_) => continue,
-            },
+                    // The semaphore was dropped. Likely unreachable.
+                    Ok(Err(_)) => break ExitCode::FAILURE,
+
+                    // The server is still at capacity. Reset the connection.
+                    Err(_) => continue,
+                }
+            }
         };
 
         let acceptor = acceptor.clone();
@@ -144,13 +148,10 @@ where
     };
 
     // Try to drain each inflight connection before `config.shutdown_timeout`.
-    match time::timeout(
-        Duration::from_secs(config.shutdown_timeout),
-        drain_connections(true, connections),
-    )
-    .await
-    {
-        Ok(()) => exit_code,
+    let drain = drain_connections(true, connections);
+
+    match time::timeout(shutdown_timeout, drain).await {
+        Ok(_) => exit_code,
         Err(_) => ExitCode::FAILURE,
     }
 }
