@@ -36,6 +36,12 @@ macro_rules! log {
     };
 }
 
+macro_rules! receive_ctrl_c {
+    ($shutdown_rx:ident) => {
+        Option::unwrap_or(*$shutdown_rx.borrow_and_update(), ExitCode::FAILURE)
+    };
+}
+
 #[inline(never)]
 pub async fn accept<A, T>(
     listener: TcpListener,
@@ -65,12 +71,6 @@ where
     // A JoinSet to track and join active connections.
     let mut connections = JoinSet::new();
 
-    let ServerConfig {
-        accept_timeout,
-        shutdown_timeout,
-        ..
-    } = config;
-
     // Start accepting incoming connections.
     let exit_code = loop {
         let (tcp_stream, _) = tokio::select! {
@@ -85,7 +85,7 @@ where
 
             // The process received a graceful shutdown signal.
             _ = shutdown_rx.changed() => {
-                break shutdown_rx.borrow_and_update().unwrap_or(ExitCode::FAILURE);
+                break receive_ctrl_c!(shutdown_rx);
             }
         };
 
@@ -99,15 +99,23 @@ where
             Err(_) => {
                 let acquire = semaphore.clone().acquire_owned();
 
-                match time::timeout(accept_timeout, acquire).await {
-                    // Permit acquired!
-                    Ok(Ok(acquired)) => acquired,
+                tokio::select! {
+                    result = time::timeout(config.accept_timeout, acquire) => {
+                        match result {
+                            // Permit acquired!
+                            Ok(Ok(acquired)) => acquired,
 
-                    // The semaphore was dropped. Likely unreachable.
-                    Ok(Err(_)) => break ExitCode::FAILURE,
+                            // The semaphore was dropped. Likely unreachable.
+                            Ok(Err(_)) => break ExitCode::FAILURE,
 
-                    // The server is still at capacity. Reset the connection.
-                    Err(_) => continue,
+                            // The server is still at capacity. Reset the connection.
+                            Err(_) => continue,
+                        }
+                    }
+
+                    _ = shutdown_rx.changed() => {
+                        break receive_ctrl_c!(shutdown_rx);
+                    }
                 }
             }
         };
@@ -162,7 +170,7 @@ where
     // Try to drain each inflight connection before `config.shutdown_timeout`.
     let drain = drain_connections(true, connections);
 
-    match time::timeout(shutdown_timeout, drain).await {
+    match time::timeout(config.shutdown_timeout, drain).await {
         Ok(_) => exit_code,
         Err(_) => ExitCode::FAILURE,
     }
