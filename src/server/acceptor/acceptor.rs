@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::future::{self, Future, Ready};
 use std::io;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
@@ -13,4 +13,16 @@ pub trait Acceptor: Send + Sync {
     /// this is where the TLS handshake would be performed.
     ///
     fn accept(&self, stream: TcpStream) -> Self::Future;
+}
+
+impl<T> Acceptor for T
+where
+    T: Fn(TcpStream) -> TcpStream + Send + Sync,
+{
+    type Future = Ready<Result<Self::Stream, io::Error>>;
+    type Stream = TcpStream;
+
+    fn accept(&self, stream: TcpStream) -> Self::Future {
+        future::ready(Ok(self(stream)))
+    }
 }

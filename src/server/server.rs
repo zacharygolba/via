@@ -1,13 +1,12 @@
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::{TcpListener, ToSocketAddrs};
 
 use super::accept::accept;
 use crate::app::{App, AppService};
 use crate::error::BoxError;
 
-#[cfg(not(feature = "rustls"))]
-use super::acceptor::HttpAcceptor;
 #[cfg(feature = "rustls")]
 use super::acceptor::{RustlsAcceptor, RustlsConfig};
 
@@ -23,10 +22,10 @@ pub struct Server<State> {
 
 #[derive(Debug)]
 pub(super) struct ServerConfig {
-    pub(super) accept_timeout: u64,
+    pub(super) accept_timeout: Duration,
     pub(super) max_connections: usize,
     pub(super) max_request_size: usize,
-    pub(super) shutdown_timeout: u64,
+    pub(super) shutdown_timeout: Duration,
 }
 
 /// Creates a new server for the provided app.
@@ -50,9 +49,9 @@ where
     /// The amount of time in seconds that the server will wait before the
     /// connection is reset if the server is at capacity.
     ///
-    /// **Default:** `2s`
+    /// **Default:** `1s`
     ///
-    pub fn accept_timeout(self, accept_timeout: u64) -> Self {
+    pub fn accept_timeout(self, accept_timeout: Duration) -> Self {
         Self {
             config: ServerConfig {
                 accept_timeout,
@@ -96,7 +95,7 @@ where
     ///
     /// **Default:** `30s`
     ///
-    pub fn shutdown_timeout(self, shutdown_timeout: u64) -> Self {
+    pub fn shutdown_timeout(self, shutdown_timeout: Duration) -> Self {
         Self {
             config: ServerConfig {
                 shutdown_timeout,
@@ -173,7 +172,7 @@ where
     {
         let exit = accept(
             TcpListener::bind(address).await?,
-            Arc::new(HttpAcceptor::new()),
+            Arc::new(|stream| stream),
             AppService::new(Arc::new(self.app), self.config.max_request_size),
             self.config,
         );
@@ -197,10 +196,10 @@ impl<State: Send + Sync + 'static> Server<State> {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            accept_timeout: 2,             // 2 seconds
-            max_connections: 1000,         // 1000 concurrent connections
+            accept_timeout: Duration::from_secs(1),
+            max_connections: 1000,
             max_request_size: 104_857_600, // 100 MB
-            shutdown_timeout: 30,          // 30 seconds
+            shutdown_timeout: Duration::from_secs(30),
         }
     }
 }
