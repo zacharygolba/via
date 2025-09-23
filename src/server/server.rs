@@ -158,7 +158,7 @@ where
 
         let exit = accept(
             TcpListener::bind(address).await?,
-            RustlsAcceptor::new(rustls_config),
+            Arc::new(RustlsAcceptor::new(rustls_config)),
             AppService::new(Arc::new(self.app), self.config.max_request_size),
             self.config,
         );
@@ -173,7 +173,7 @@ where
     {
         let exit = accept(
             TcpListener::bind(address).await?,
-            HttpAcceptor::new(),
+            Arc::new(HttpAcceptor::new()),
             AppService::new(Arc::new(self.app), self.config.max_request_size),
             self.config,
         );
