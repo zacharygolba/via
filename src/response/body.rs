@@ -16,7 +16,7 @@ const ADAPTIVE_THRESHOLD: usize = 64 * 1024; // 64KB
 ///
 #[derive(Default)]
 pub struct BufferBody {
-    buf: Option<Bytes>,
+    buf: Bytes,
 }
 
 #[derive(Debug)]
@@ -42,24 +42,23 @@ impl Body for BufferBody {
         _: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let Self { buf } = self.get_mut();
-        let remaining = buf.as_ref().map_or(0, Bytes::len);
-        let len = adapt_frame_size(remaining);
+        let remaining = buf.len();
 
-        Poll::Ready(if remaining == len {
-            buf.take().map(|rest| Ok(Frame::data(rest)))
+        if remaining == 0 {
+            Poll::Ready(None)
         } else {
-            buf.as_mut().map(|b| Ok(Frame::data(b.split_to(len))))
-        })
+            let len = adapt_frame_size(remaining);
+            Poll::Ready(Some(Ok(Frame::data(buf.split_to(len)))))
+        }
     }
 
     fn is_end_stream(&self) -> bool {
-        self.buf.is_none()
+        self.buf.is_empty()
     }
 
     fn size_hint(&self) -> SizeHint {
         self.buf
-            .as_ref()
-            .map_or(0, Bytes::len)
+            .len()
             .try_into()
             .map(SizeHint::with_exact)
             .expect("BufferBody::size_hint would overflow u64")
@@ -75,7 +74,7 @@ impl Debug for BufferBody {
 impl From<Bytes> for BufferBody {
     #[inline]
     fn from(buf: Bytes) -> Self {
-        Self { buf: Some(buf) }
+        Self { buf }
     }
 }
 
