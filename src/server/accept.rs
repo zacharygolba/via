@@ -18,6 +18,16 @@ use super::server::ServerConfig;
 use crate::app::AppService;
 use crate::error::ServerError;
 
+macro_rules! joined {
+    ($result:expr) => {
+        match $result {
+            Ok(Err(error)) => handle_error(error),
+            Err(error) => handle_error(ServerError::Join(error)),
+            _ => {}
+        }
+    };
+}
+
 macro_rules! log {
     ($($arg:tt)*) => {
         if cfg!(debug_assertions) {
@@ -144,6 +154,8 @@ where
         if connections.len() >= 1024 {
             let batch = mem::take(&mut connections);
             tokio::spawn(drain_connections(false, batch));
+        } else if let Some(result) = connections.try_join_next() {
+            joined!(result);
         }
     };
 
@@ -186,11 +198,7 @@ async fn drain_connections(immediate: bool, mut connections: JoinSet<Result<(), 
     }
 
     while let Some(result) = connections.join_next().await {
-        match result {
-            Ok(Err(error)) => handle_error(error),
-            Err(error) => handle_error(ServerError::Join(error)),
-            _ => {}
-        }
+        joined!(result);
 
         if !immediate {
             coop::consume_budget().await;
