@@ -56,7 +56,7 @@ mod next;
 mod server;
 
 pub use app::{App, Route};
-pub use builtin::allow::{delete, get, head, options, patch, post, put, trace};
+pub use builtin::allow::{connect, delete, get, head, options, patch, post, put, trace};
 pub use error::{BoxError, Error, ErrorMessage};
 pub use middleware::{BoxFuture, Middleware, Result};
 pub use next::Next;
