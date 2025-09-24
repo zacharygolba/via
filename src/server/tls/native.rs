@@ -19,7 +19,6 @@ impl TlsAcceptor {
     pub fn new(config: TlsConfig) -> Result<Self, BoxError> {
         let acceptor = native_tls::TlsAcceptor::builder(config)
             .min_protocol_version(Some(MIN_PROTOCOL_VERSION))
-            .max_protocol_version(Some(Protocol::Tlsv12))
             .build()?;
 
         Ok(Self(acceptor.into()))
