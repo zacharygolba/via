@@ -112,16 +112,15 @@ impl<State> Allow<State> {
     /// # use via::{App, Request, Response, Next};
     /// #
     /// # macro_rules! define {
-    /// #     $($($ident:ident),*) => { $(let $ident = responder;)* }
+    /// #     ( $($ident:ident),* ) => { $(let $ident = responder;)* }
     /// # }
     /// #
     /// # async fn responder(_: Request, _: Next) -> via::Result {
     /// #     Response::build().finish()
     /// # }
     /// #
-    /// # define!(index, create, show, update, destroy);
-    /// #
     /// # let mut app = App::new(());
+    /// # define!(index, create, show, update, destroy);
     /// #
     /// // A typical REST endpoint.
     /// app.at("/users").scope(|users| {
