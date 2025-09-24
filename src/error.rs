@@ -37,7 +37,11 @@ pub struct ErrorMessage<'a> {
 pub(crate) enum ServerError {
     Io(io::Error),
     Join(JoinError),
-    Hyper(hyper::Error),
+    Http(hyper::Error),
+
+    // This variant is only used when a tls backend is enabled.
+    #[allow(dead_code)]
+    Handshake(BoxError),
 }
 
 #[macro_export]
@@ -931,7 +935,8 @@ impl Display for ServerError {
         match self {
             Self::Io(error) => Display::fmt(error, f),
             Self::Join(error) => Display::fmt(error, f),
-            Self::Hyper(error) => Display::fmt(error, f),
+            Self::Http(error) => Display::fmt(error, f),
+            Self::Handshake(error) => Display::fmt(error, f),
         }
     }
 }
@@ -941,7 +946,20 @@ impl StdError for ServerError {
         match self {
             Self::Io(error) => error.source(),
             Self::Join(error) => error.source(),
-            Self::Hyper(error) => error.source(),
+            Self::Http(error) => error.source(),
+            Self::Handshake(error) => error.source(),
         }
+    }
+}
+
+impl From<io::Error> for ServerError {
+    fn from(error: io::Error) -> Self {
+        ServerError::Io(error)
+    }
+}
+
+impl From<hyper::Error> for ServerError {
+    fn from(error: hyper::Error) -> Self {
+        ServerError::Http(error)
     }
 }

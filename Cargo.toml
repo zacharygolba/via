@@ -19,6 +19,8 @@ file = ["dep:httpdate", "tokio/fs"]
 http1 = ["hyper/http1"]
 http2 = ["hyper/http2"]
 
+native-tls = ["dep:native-tls", "dep:tokio-native-tls"]
+
 ring = ["dep:ring", "tokio-rustls/ring", "tokio-websockets/ring"]
 
 rustls = ["dep:tokio-rustls"]
@@ -69,6 +71,15 @@ optional = true
 [dependencies.futures-util]
 version = "0.3"
 features = ["sink"]
+optional = true
+
+[dependencies.native-tls]
+version = "0.2"
+features = ["alpn"]
+optional = true
+
+[dependencies.tokio-native-tls]
+version = "0.3"
 optional = true
 
 [dependencies.ring]

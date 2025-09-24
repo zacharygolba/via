@@ -7,17 +7,13 @@ use super::accept::accept;
 use crate::app::{App, AppService};
 use crate::error::BoxError;
 
-#[cfg(feature = "rustls")]
-use super::acceptor::{RustlsAcceptor, RustlsConfig};
-
 /// Serve an app over HTTP.
 ///
 pub struct Server<State> {
     app: App<State>,
     config: ServerConfig,
-
-    #[cfg(feature = "rustls")]
-    rustls_config: Option<RustlsConfig>,
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
+    tls_config: Option<super::tls::TlsConfig>,
 }
 
 #[derive(Debug)]
@@ -37,8 +33,8 @@ where
     Server {
         app,
         config: Default::default(),
-        #[cfg(feature = "rustls")]
-        rustls_config: None,
+        #[cfg(any(feature = "native-tls", feature = "rustls"))]
+        tls_config: None,
     }
 }
 
@@ -145,50 +141,71 @@ where
     /// process supervisor of an individual node and the replacement and
     /// decommissioning logic of the cluster.
     ///
-    #[cfg(feature = "rustls")]
-    pub async fn listen<A>(self, address: A) -> Result<ExitCode, BoxError>
+    #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, BoxError>>
     where
         A: ToSocketAddrs,
     {
-        let rustls_config = match self.rustls_config {
-            Some(config) => Arc::new(config),
-            None => panic!("rustls_config is required when the 'rustls' feature is enabled."),
-        };
+        let Self { app, config, .. } = self;
+        let service = AppService::new(Arc::new(app), config.max_request_size);
 
-        let exit = accept(
-            TcpListener::bind(address).await?,
-            Arc::new(RustlsAcceptor::new(rustls_config)),
-            AppService::new(Arc::new(self.app), self.config.max_request_size),
-            self.config,
-        );
+        async {
+            let exit = accept(
+                TcpListener::bind(address).await?,
+                Arc::new(|stream| async { Ok(stream) }),
+                service,
+                config,
+            );
 
-        Ok(exit.await)
-    }
-
-    #[cfg(not(feature = "rustls"))]
-    pub async fn listen<A>(self, address: A) -> Result<ExitCode, BoxError>
-    where
-        A: ToSocketAddrs,
-    {
-        let exit = accept(
-            TcpListener::bind(address).await?,
-            Arc::new(|stream| stream),
-            AppService::new(Arc::new(self.app), self.config.max_request_size),
-            self.config,
-        );
-
-        Ok(exit.await)
+            Ok(exit.await)
+        }
     }
 }
 
-#[cfg(feature = "rustls")]
-impl<State: Send + Sync + 'static> Server<State> {
+#[cfg(any(feature = "native-tls", feature = "rustls"))]
+impl<State> Server<State>
+where
+    State: Send + Sync + 'static,
+{
     /// Sets the TLS configuration for the server.
     ///
-    pub fn rustls_config(self, rustls_config: RustlsConfig) -> Self {
+    pub fn tls_config(self, tls_config: super::tls::TlsConfig) -> Self {
         Self {
-            rustls_config: Some(rustls_config),
+            tls_config: Some(tls_config),
             ..self
+        }
+    }
+
+    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, BoxError>>
+    where
+        A: ToSocketAddrs,
+    {
+        use super::tls::TlsAcceptor;
+
+        let Self { app, config, .. } = self;
+        let service = AppService::new(Arc::new(app), config.max_request_size);
+
+        let tls_config = self
+            .tls_config
+            .expect("tls_config is required when a tls backend is enabled");
+
+        async {
+            let handshake = {
+                let acceptor = TlsAcceptor::new(tls_config)?;
+                Arc::new(move |stream| {
+                    let acceptor = acceptor.clone();
+                    async move { acceptor.accept(stream).await }
+                })
+            };
+
+            let exit = accept(
+                TcpListener::bind(address).await?,
+                handshake,
+                service,
+                config,
+            );
+
+            Ok(exit.await)
         }
     }
 }

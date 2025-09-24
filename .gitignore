@@ -1,6 +1,8 @@
 /target
 **/*.rs.bk
 Cargo.lock
-docs/examples/*/*.cert
-docs/examples/*/*.key
-docs/examples/cookies/.env
+examples/*/*.cert
+examples/*/*.key
+examples/*/*.p12
+examples/*/.env
+!examples/*/example.env

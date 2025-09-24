@@ -2,8 +2,8 @@
 //!
 
 mod accept;
-mod acceptor;
 mod io;
 mod server;
+mod tls;
 
 pub use server::{Server, serve};
