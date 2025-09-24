@@ -21,7 +21,7 @@ pub struct Allow<State> {
     or_next: bool,
 }
 
-/// Forward `CONNECT` requests to the provided middleware.
+/// Allow `CONNECT` requests to call the provided middleware.
 ///
 pub fn connect<State, T>(middleware: T) -> Allow<State>
 where
@@ -30,7 +30,7 @@ where
     Allow::new(Method::CONNECT, middleware)
 }
 
-/// Forward `DELETE` requests to the provided middleware.
+/// Allow `DELETE` requests to call the provided middleware.
 ///
 pub fn delete<State, T>(middleware: T) -> Allow<State>
 where
@@ -39,7 +39,7 @@ where
     Allow::new(Method::DELETE, middleware)
 }
 
-/// Forward `GET` requests to the provided middleware.
+/// Allow `GET` requests to call the provided middleware.
 ///
 pub fn get<State, T>(middleware: T) -> Allow<State>
 where
@@ -48,7 +48,7 @@ where
     Allow::new(Method::GET, middleware)
 }
 
-/// Forward `HEAD` requests to the provided middleware.
+/// Allow `HEAD` requests to call the provided middleware.
 ///
 pub fn head<State, T>(middleware: T) -> Allow<State>
 where
@@ -57,7 +57,7 @@ where
     Allow::new(Method::HEAD, middleware)
 }
 
-/// Forward `OPTIONS` requests to the provided middleware.
+/// Allow `OPTIONS` requests to call the provided middleware.
 ///
 pub fn options<State, T>(middleware: T) -> Allow<State>
 where
@@ -66,7 +66,7 @@ where
     Allow::new(Method::OPTIONS, middleware)
 }
 
-/// Forward `PATCH` requests to the provided middleware.
+/// Allow `PATCH` requests to call the provided middleware.
 ///
 pub fn patch<State, T>(middleware: T) -> Allow<State>
 where
@@ -75,7 +75,7 @@ where
     Allow::new(Method::PATCH, middleware)
 }
 
-/// Forward `POST` requests to the provided middleware.
+/// Allow `POST` requests to call the provided middleware.
 ///
 pub fn post<State, T>(middleware: T) -> Allow<State>
 where
@@ -84,7 +84,7 @@ where
     Allow::new(Method::POST, middleware)
 }
 
-/// Forward `PUT` requests to the provided middleware.
+/// Allow `PUT` requests to call the provided middleware.
 ///
 pub fn put<State, T>(middleware: T) -> Allow<State>
 where
@@ -93,7 +93,7 @@ where
     Allow::new(Method::PUT, middleware)
 }
 
-/// Forward `TRACE` requests to the provided middleware.
+/// Allow `TRACE` requests to call the provided middleware.
 ///
 pub fn trace<State, T>(middleware: T) -> Allow<State>
 where
