@@ -1,11 +1,11 @@
 #[cfg(feature = "native-tls")]
-mod native;
+pub mod native;
 
 #[cfg(feature = "rustls")]
-mod rustls;
+pub mod rustls;
 
 #[cfg(feature = "native-tls")]
-pub use native::listen;
+pub use native::listen_native_tls;
 
 #[cfg(feature = "rustls")]
-pub use rustls::listen;
+pub use rustls::listen_rustls;

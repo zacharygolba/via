@@ -13,13 +13,15 @@ async fn hello(request: Request, _: Next) -> via::Result {
 
 #[tokio::main]
 async fn main() -> Result<ExitCode, BoxError> {
+    // Make sure that our TLS config is present and valid before we proceed.
+    let tls_config = tls::server_config().expect("tls config is invalid or missing");
+
     let mut app = App::new(());
 
     // Add our hello responder to the endpoint /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
     via::serve(app)
-        .tls_config(tls::server_config().expect("tls config is invalid or missing"))
-        .listen(("127.0.0.1", 8080))
+        .listen_rustls(("127.0.0.1", 8080), tls_config)
         .await
 }

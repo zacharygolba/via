@@ -6,17 +6,14 @@ use tokio::net::ToSocketAddrs;
 use crate::app::{App, AppService};
 use crate::error::BoxError;
 
+#[cfg(any(feature = "native-tls", feature = "rustls"))]
+use super::tls;
+
 /// Serve an app over HTTP.
 ///
 pub struct Server<State> {
     app: App<State>,
     config: ServerConfig,
-
-    #[cfg(feature = "native-tls")]
-    tls_config: Option<native_tls::Identity>,
-
-    #[cfg(feature = "rustls")]
-    tls_config: Option<rustls::ServerConfig>,
 }
 
 #[derive(Debug)]
@@ -36,8 +33,6 @@ where
     Server {
         app,
         config: Default::default(),
-        #[cfg(any(feature = "native-tls", feature = "rustls"))]
-        tls_config: None,
     }
 }
 
@@ -104,45 +99,6 @@ where
         }
     }
 
-    /// Sets the TLS configuration for the server.
-    ///
-    #[cfg(feature = "native-tls")]
-    pub fn tls_config(self, tls_config: native_tls::Identity) -> Self {
-        Self {
-            tls_config: Some(tls_config),
-            ..self
-        }
-    }
-
-    /// Sets the TLS configuration for the server.
-    ///
-    #[cfg(feature = "rustls")]
-    pub fn tls_config(self, tls_config: rustls::ServerConfig) -> Self {
-        Self {
-            tls_config: Some(tls_config),
-            ..self
-        }
-    }
-
-    #[cfg(any(feature = "native-tls", feature = "rustls"))]
-    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, BoxError>>
-    where
-        A: ToSocketAddrs,
-    {
-        let Self { app, config, .. } = self;
-        let max_request_size = config.max_request_size;
-        let tls_config = self
-            .tls_config
-            .expect("tls_config is required when a tls backend is enabled");
-
-        super::tls::listen(
-            config,
-            address,
-            tls_config,
-            AppService::new(Arc::new(app), max_request_size),
-        )
-    }
-
     /// Listens for incoming connections at the provided address.
     ///
     /// Returns a future that resolves with a result containing an [`ExitCode`]
@@ -183,7 +139,6 @@ where
     /// process supervisor of an individual node and the replacement and
     /// decommissioning logic of the cluster.
     ///
-    #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
     pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, BoxError>>
     where
         A: ToSocketAddrs,
@@ -203,6 +158,36 @@ where
 
             Ok(exit.await)
         }
+    }
+
+    #[cfg(feature = "native-tls")]
+    pub fn listen_native_tls<A>(
+        self,
+        address: A,
+        tls_config: native_tls::Identity,
+    ) -> impl Future<Output = Result<ExitCode, BoxError>>
+    where
+        A: ToSocketAddrs,
+    {
+        let Self { app, config, .. } = self;
+        let service = AppService::new(Arc::new(app), config.max_request_size);
+
+        tls::listen_native_tls(config, address, tls_config, service)
+    }
+
+    #[cfg(feature = "rustls")]
+    pub fn listen_rustls<A>(
+        self,
+        address: A,
+        tls_config: rustls::ServerConfig,
+    ) -> impl Future<Output = Result<ExitCode, BoxError>>
+    where
+        A: ToSocketAddrs,
+    {
+        let Self { app, config, .. } = self;
+        let service = AppService::new(Arc::new(app), config.max_request_size);
+
+        tls::listen_rustls(config, address, tls_config, service)
     }
 }
 

@@ -8,7 +8,7 @@ use super::super::server::ServerConfig;
 use crate::app::AppService;
 use crate::error::BoxError;
 
-pub fn listen<State, A>(
+pub fn listen_rustls<State, A>(
     config: ServerConfig,
     address: A,
     tls_config: rustls::ServerConfig,

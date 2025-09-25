@@ -22,13 +22,15 @@ async fn hello(request: Request, _: Next) -> via::Result {
 async fn main() -> Result<ExitCode, BoxError> {
     dotenvy::dotenv()?;
 
+    // Make sure that our TLS config is present and valid before we proceed.
+    let tls_config = load_pkcs12()?;
+
     let mut app = App::new(());
 
     // Add our hello responder to the endpoint /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
     via::serve(app)
-        .tls_config(load_pkcs12()?)
-        .listen(("127.0.0.1", 8080))
+        .listen_native_tls(("127.0.0.1", 8080), tls_config)
         .await
 }

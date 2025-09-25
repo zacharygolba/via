@@ -15,7 +15,7 @@ const MIN_PROTOCOL_VERSION: Protocol = Protocol::Tlsv12;
 #[cfg(not(feature = "http2"))]
 const MIN_PROTOCOL_VERSION: Protocol = Protocol::Tlsv10;
 
-pub fn listen<State, A>(
+pub fn listen_native_tls<State, A>(
     config: ServerConfig,
     address: A,
     identity: Identity,
