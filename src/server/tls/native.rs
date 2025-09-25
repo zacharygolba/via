@@ -1,7 +1,6 @@
 use native_tls::{Identity, Protocol};
 use std::future::Future;
 use std::process::ExitCode;
-use std::sync::Arc;
 use tokio::net::{TcpListener, ToSocketAddrs};
 use tokio_native_tls::TlsAcceptor;
 
@@ -34,7 +33,7 @@ where
                 .expect("failed to build native_tls::TlsAcceptor"),
         );
 
-        Arc::new(move |stream| {
+        Box::new(move |stream| {
             let acceptor = acceptor.clone();
             async move { Ok(acceptor.accept(stream).await?) }
         })
