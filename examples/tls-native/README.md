@@ -18,6 +18,6 @@ week by running the following command.
 cargo run
 # => Server listening at https://127.0.0.1:8080
 
-curl -k --http-prior-knowledge https://127.0.0.1:8080/hello/<Your Name Here>
+curl -k --http2-prior-knowledge https://127.0.0.1:8080/hello/<Your Name Here>
 # => Hello, <Your Name Here> (via TLS)
 ```
