@@ -31,7 +31,7 @@ where
             native_tls::TlsAcceptor::builder(identity)
                 .min_protocol_version(Some(MIN_PROTOCOL_VERSION))
                 .build()
-                .unwrap(),
+                .expect("failed to build native_tls::TlsAcceptor"),
         );
 
         Arc::new(move |stream| {
