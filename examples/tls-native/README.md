@@ -1,11 +1,10 @@
-# tls-rustls
+# tls-native
 
-A version of the hello-world example that uses HTTP/2 and [rustls](https://github.com/rustls/rustls).
+A version of the hello-world example that uses HTTP/2 and [native-tls](https://github.com/sfackler/rust-native-tls).
 
 #### Generating Self-Signed Certificates
 
-In order to run this example, there must be a valid certificate and private key
-at `./localhost.cert` and `./localhost.key`. If you have `sh` and `openssl` on
+In order to run this example, there must be a valid identity at `./localhost.p12`. If you have `sh` and `openssl` on
 your machine, you can generate a self-signed certificate that is good for 1
 week by running the following command.
 
@@ -19,6 +18,6 @@ week by running the following command.
 cargo run
 # => Server listening at https://127.0.0.1:8080
 
-curl -k https://127.0.0.1:8080/hello/<Your Name Here>
+curl -k --http2-prior-knowledge https://127.0.0.1:8080/hello/<Your Name Here>
 # => Hello, <Your Name Here> (via TLS)
 ```

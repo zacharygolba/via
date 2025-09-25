@@ -4,7 +4,8 @@ use std::error::Error;
 use std::mem;
 use std::process::ExitCode;
 use std::sync::Arc;
-use tokio::net::TcpListener;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
 use tokio::task::{JoinSet, coop};
 use tokio::{signal, time};
@@ -12,7 +13,6 @@ use tokio::{signal, time};
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
 
-use super::acceptor::Acceptor;
 use super::io::IoWithPermit;
 use super::server::ServerConfig;
 use crate::app::AppService;
@@ -43,15 +43,16 @@ macro_rules! receive_ctrl_c {
 }
 
 #[inline(never)]
-pub async fn accept<A, T>(
-    listener: TcpListener,
-    acceptor: Arc<A>,
-    service: AppService<T>,
+pub async fn accept<State, Io, F>(
     config: ServerConfig,
+    listener: TcpListener,
+    handshake: Arc<dyn Fn(TcpStream) -> F + Send + Sync>,
+    service: AppService<State>,
 ) -> ExitCode
 where
-    A: Acceptor + Send + Sync + 'static,
-    T: Send + Sync + 'static,
+    State: Send + Sync + 'static,
+    Io: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    F: Future<Output = Result<Io, ServerError>> + Send + 'static,
 {
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently.
@@ -120,24 +121,20 @@ where
             }
         };
 
-        let acceptor = acceptor.clone();
+        let handshake = handshake.clone();
         let service = service.clone();
         let mut shutdown_rx = shutdown_rx.clone();
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            // Accept the TCP stream from the acceptor.
-            let io = match acceptor.accept(tcp_stream).await {
-                Ok(accepted) => IoWithPermit::new(permit, accepted),
-                Err(error) => return Err(ServerError::Io(error)),
-            };
+            let io = handshake(tcp_stream).await?;
 
             // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
             let mut connection = Box::pin(
                 conn::http2::Builder::new(TokioExecutor::new())
                     .timer(TokioTimer::new())
-                    .serve_connection(io, service),
+                    .serve_connection(IoWithPermit::new(permit, io), service),
             );
 
             // Create a new HTTP/1.1 connection.
@@ -145,16 +142,16 @@ where
             let mut connection = Box::pin(
                 conn::http1::Builder::new()
                     .timer(TokioTimer::new())
-                    .serve_connection(io, service)
+                    .serve_connection(IoWithPermit::new(permit, io), service)
                     .with_upgrades(),
             );
 
             // Serve the connection.
             tokio::select! {
-                result = connection.as_mut() => result.map_err(ServerError::Hyper),
+                result = connection.as_mut() => Ok(result?),
                 _ = shutdown_rx.changed() => {
                     connection.as_mut().graceful_shutdown();
-                    connection.as_mut().await.map_err(ServerError::Hyper)
+                    Ok(connection.as_mut().await?)
                 }
             }
         });
@@ -184,18 +181,21 @@ fn handle_error(error: ServerError) {
                 log!("panic(task): {}", join_error);
             }
         }
-        ServerError::Hyper(hyper_error) => {
-            let was_disconnect = hyper_error.is_canceled()
-                || hyper_error.is_incomplete_message()
-                || hyper_error.source().is_some_and(|source| {
+        ServerError::Http(http_error) => {
+            let was_disconnect = http_error.is_canceled()
+                || http_error.is_incomplete_message()
+                || http_error.source().is_some_and(|source| {
                     source
                         .downcast_ref::<std::io::Error>()
                         .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
                 });
 
             if !was_disconnect {
-                log!("error(task): {}", hyper_error);
+                log!("error(task): {}", http_error);
             }
+        }
+        ServerError::Tls(tls_error) => {
+            log!("error(task): {}", tls_error);
         }
     }
 }
