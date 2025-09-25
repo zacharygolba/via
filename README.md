@@ -25,7 +25,6 @@ Below is a basic example to demonstrate how to use Via to create a simple web se
 
 ```rust
 use std::process::ExitCode;
-use via::builtin::rescue;
 use via::{App, BoxError, Next, Request, Response};
 
 async fn hello(request: Request, _: Next) -> via::Result {
@@ -40,28 +39,12 @@ async fn hello(request: Request, _: Next) -> via::Result {
 async fn main() -> Result<ExitCode, BoxError> {
     let mut app = App::new(());
 
-    // Capture errors from downstream, log them, and map them into responses.
-    // Upstream middleware remains unaffected and continues execution.
-    app.include(rescue::inspect(|error| eprintln!("error: {}", error)));
-
     // Define a route that listens on /hello/:name.
     app.at("/hello/:name").respond(via::get(hello));
 
     via::serve(app).listen(("127.0.0.1", 8080)).await
 }
 ```
-
-### How It Works
-
-1. **Define a Handler**: The `hello` function is an asynchronous handler that receives a `Request` and a `Next` middleware chain. It extracts the `name` parameter from the URL and returns a `Response` with a personalized greeting.
-
-2. **Create the Application**: Using `via::app(())`, you can create a new instance of the application. This function can also accept shared state.
-
-3. **Define an ErrorBoundary**: Define an `ErrorBoundary` middleware to catch errors that occur downstream and convert them to a response. Middleware can be added at any depth of the route tree with the `.include(middleware)` method.
-
-4. **Define Routes**: The `app.at("/hello/:name").respond(via::get(hello))` line adds a route that listens for GET requests on `/hello/:name`. The colon (`:`) indicates a dynamic segment in the path, which will match any value and make it available as a parameter.
-
-5. **Start the Server**: Calling `via::start(app).listen(("127.0.0.1", 8080)).await` starts the server and listens for connections on the specified address.
 
 ### Running the Example
 
