@@ -43,7 +43,7 @@ pub struct Context<State> {
     state: Arc<State>,
 }
 
-pub struct Handshake<T> {
+pub struct Upgrade<T> {
     max_payload_len: Option<usize>,
     flush_threshold: usize,
     frame_size: usize,
@@ -55,7 +55,37 @@ pub struct WebSocket {
     receiver: Receiver<Message>,
 }
 
-pub fn ws<State, F, R>(upgraded: F) -> Handshake<State>
+/// Upgrade the connection to a web socket.
+///
+/// # Example
+///
+/// ```
+/// # use via::{App, Request, Response, Next};
+/// # let mut app = App::new(());
+/// #
+/// use via::builtin::ws::Message;
+///
+/// app.at("/echo").respond(via::ws(async |mut socket, context| {
+///     while let Some(message) = socket.next().await {
+///         match message {
+///             Message::Text(text) => {
+///                 socket.send(text).await?;
+///             }
+///             Message::Binary(binary) => {
+///                 socket.send(binary).await?;
+///             }
+///             Message::Close(_) => {
+///                 break;
+///             }
+///             _ => {}
+///         }
+///     }
+///
+///     Ok(())
+/// }));
+///```
+///
+pub fn ws<State, F, R>(upgraded: F) -> Upgrade<State>
 where
     F: Fn(WebSocket, Context<State>) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Error>> + Send + Sync + 'static,
@@ -63,7 +93,7 @@ where
     let frame_size = 4 * 1024;
     let flush_threshold = frame_size * 2;
 
-    Handshake {
+    Upgrade {
         flush_threshold,
         frame_size,
         max_payload_len: None,
@@ -159,7 +189,7 @@ fn validate_websocket_version<T>(request: &Request<T>) -> Result<(), crate::Erro
     }
 }
 
-impl<T> Handshake<T> {
+impl<T> Upgrade<T> {
     pub fn flush_threshold(mut self, flush_threshold: usize) -> Self {
         self.flush_threshold = flush_threshold;
         self
@@ -176,7 +206,7 @@ impl<T> Handshake<T> {
     }
 }
 
-impl<T> Handshake<T> {
+impl<T> Upgrade<T> {
     fn stream_builder(&self) -> Builder {
         Builder::new()
             .limits(Limits::default().max_payload_len(self.max_payload_len))
@@ -188,7 +218,7 @@ impl<T> Handshake<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> Middleware<T> for Handshake<T> {
+impl<T: Send + Sync + 'static> Middleware<T> for Upgrade<T> {
     fn call(&self, request: Request<T>, next: Next<T>) -> crate::BoxFuture {
         match request.header(header::UPGRADE) {
             Ok(Some("websocket")) => {}
