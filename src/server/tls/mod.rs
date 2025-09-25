@@ -5,7 +5,7 @@ mod native;
 mod rustls;
 
 #[cfg(feature = "native-tls")]
-pub use native::{TlsAcceptor, TlsConfig};
+pub use native::listen;
 
 #[cfg(feature = "rustls")]
-pub use rustls::{TlsAcceptor, TlsConfig};
+pub use rustls::listen;

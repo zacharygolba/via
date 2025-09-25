@@ -6,4 +6,5 @@ mod io;
 mod server;
 mod tls;
 
+use accept::accept;
 pub use server::{Server, serve};

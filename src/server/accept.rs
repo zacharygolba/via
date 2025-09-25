@@ -43,17 +43,16 @@ macro_rules! receive_ctrl_c {
 }
 
 #[inline(never)]
-pub async fn accept<State, Tls, Io, F>(
-    listener: TcpListener,
-    handshake: Arc<Tls>,
-    service: AppService<State>,
+pub async fn accept<State, Io, F>(
     config: ServerConfig,
+    listener: TcpListener,
+    handshake: Arc<dyn Fn(TcpStream) -> F + Send + Sync>,
+    service: AppService<State>,
 ) -> ExitCode
 where
     State: Send + Sync + 'static,
-    Tls: Fn(TcpStream) -> F + Send + Sync + 'static,
     Io: AsyncRead + AsyncWrite + Send + Unpin + 'static,
-    F: Future<Output = Result<Io, ServerError>> + Send,
+    F: Future<Output = Result<Io, ServerError>> + Send + 'static,
 {
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently.
@@ -195,8 +194,8 @@ fn handle_error(error: ServerError) {
                 log!("error(task): {}", http_error);
             }
         }
-        ServerError::Handshake(handshake_error) => {
-            log!("error(task): {}", handshake_error);
+        ServerError::Tls(tls_error) => {
+            log!("error(task): {}", tls_error);
         }
     }
 }

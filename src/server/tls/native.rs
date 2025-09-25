@@ -1,31 +1,52 @@
-use tokio::net::TcpStream;
-use tokio_native_tls::TlsStream;
-use tokio_native_tls::native_tls::Protocol;
+use native_tls::{Identity, Protocol};
+use std::process::ExitCode;
+use std::sync::Arc;
+use tokio::net::{TcpListener, ToSocketAddrs};
+use tokio_native_tls::TlsAcceptor;
 
-use crate::error::{BoxError, ServerError};
-
-pub use native_tls::Identity as TlsConfig;
-
-#[cfg(all(feature = "http1", not(feature = "http2")))]
-const MIN_PROTOCOL_VERSION: Protocol = Protocol::Tlsv10;
+use super::super::accept;
+use super::super::server::ServerConfig;
+use crate::app::AppService;
+use crate::error::BoxError;
 
 #[cfg(feature = "http2")]
 const MIN_PROTOCOL_VERSION: Protocol = Protocol::Tlsv12;
 
-#[derive(Clone)]
-pub struct TlsAcceptor(tokio_native_tls::TlsAcceptor);
+#[cfg(not(feature = "http2"))]
+const MIN_PROTOCOL_VERSION: Protocol = Protocol::Tlsv10;
 
-impl TlsAcceptor {
-    pub fn new(config: TlsConfig) -> Result<Self, BoxError> {
-        let acceptor = native_tls::TlsAcceptor::builder(config)
-            .min_protocol_version(Some(MIN_PROTOCOL_VERSION))
-            .build()?;
+pub fn listen<State, A>(
+    config: ServerConfig,
+    address: A,
+    identity: Identity,
+    service: AppService<State>,
+) -> impl Future<Output = Result<ExitCode, BoxError>>
+where
+    A: ToSocketAddrs,
+    State: Send + Sync + 'static,
+{
+    let handshake = {
+        let acceptor = TlsAcceptor::from(
+            native_tls::TlsAcceptor::builder(identity)
+                .min_protocol_version(Some(MIN_PROTOCOL_VERSION))
+                .build()
+                .unwrap(),
+        );
 
-        Ok(Self(acceptor.into()))
-    }
+        Arc::new(move |stream| {
+            let acceptor = acceptor.clone();
+            async move { Ok(acceptor.accept(stream).await?) }
+        })
+    };
 
-    pub async fn accept(&self, stream: TcpStream) -> Result<TlsStream<TcpStream>, ServerError> {
-        let result = self.0.accept(stream).await;
-        result.map_err(|error| ServerError::Handshake(error.into()))
+    async {
+        let exit = accept(
+            config,
+            TcpListener::bind(address).await?,
+            handshake,
+            service,
+        );
+
+        Ok(exit.await)
     }
 }

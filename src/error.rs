@@ -41,7 +41,7 @@ pub(crate) enum ServerError {
 
     // This variant is only used when a tls backend is enabled.
     #[allow(dead_code)]
-    Handshake(BoxError),
+    Tls(BoxError),
 }
 
 #[macro_export]
@@ -936,7 +936,7 @@ impl Display for ServerError {
             Self::Io(error) => Display::fmt(error, f),
             Self::Join(error) => Display::fmt(error, f),
             Self::Http(error) => Display::fmt(error, f),
-            Self::Handshake(error) => Display::fmt(error, f),
+            Self::Tls(error) => Display::fmt(error, f),
         }
     }
 }
@@ -947,19 +947,26 @@ impl StdError for ServerError {
             Self::Io(error) => error.source(),
             Self::Join(error) => error.source(),
             Self::Http(error) => error.source(),
-            Self::Handshake(error) => error.source(),
+            Self::Tls(error) => error.source(),
         }
     }
 }
 
 impl From<io::Error> for ServerError {
     fn from(error: io::Error) -> Self {
-        ServerError::Io(error)
+        Self::Io(error)
     }
 }
 
 impl From<hyper::Error> for ServerError {
     fn from(error: hyper::Error) -> Self {
-        ServerError::Http(error)
+        Self::Http(error)
+    }
+}
+
+#[cfg(feature = "native-tls")]
+impl From<native_tls::Error> for ServerError {
+    fn from(error: native_tls::Error) -> Self {
+        Self::Tls(error.into())
     }
 }

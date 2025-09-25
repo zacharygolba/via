@@ -1,21 +1,39 @@
+use std::process::ExitCode;
 use std::sync::Arc;
-use tokio::net::TcpStream;
-use tokio_rustls::rustls;
-use tokio_rustls::server::TlsStream;
+use tokio::net::{TcpListener, ToSocketAddrs};
+use tokio_rustls::server::TlsAcceptor;
 
-use crate::error::{BoxError, ServerError};
+use super::super::accept;
+use super::super::server::ServerConfig;
+use crate::app::AppService;
+use crate::error::BoxError;
 
-pub use rustls::ServerConfig as TlsConfig;
+pub fn listen<State, A>(
+    config: ServerConfig,
+    address: A,
+    tls_config: rustls::ServerConfig,
+    service: AppService<State>,
+) -> impl Future<Output = Result<ExitCode, BoxError>>
+where
+    A: ToSocketAddrs,
+    State: Send + Sync + 'static,
+{
+    let handshake = {
+        let acceptor = TlsAcceptor::from(Arc::new(tls_config));
+        Arc::new(move |stream| {
+            let acceptor = acceptor.clone();
+            async move { Ok(acceptor.accept(stream).await?) }
+        })
+    };
 
-#[derive(Clone)]
-pub struct TlsAcceptor(tokio_rustls::TlsAcceptor);
+    async {
+        let exit = accept(
+            config,
+            TcpListener::bind(address).await?,
+            handshake,
+            service,
+        );
 
-impl TlsAcceptor {
-    pub fn new(config: TlsConfig) -> Result<Self, BoxError> {
-        Ok(Self(Arc::new(config).into()))
-    }
-
-    pub async fn accept(&self, stream: TcpStream) -> Result<TlsStream<TcpStream>, ServerError> {
-        self.0.accept(stream).await.map_err(ServerError::Io)
+        Ok(exit.await)
     }
 }

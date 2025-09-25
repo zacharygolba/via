@@ -1,9 +1,8 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::{TcpListener, ToSocketAddrs};
+use tokio::net::ToSocketAddrs;
 
-use super::accept::accept;
 use crate::app::{App, AppService};
 use crate::error::BoxError;
 
@@ -12,8 +11,12 @@ use crate::error::BoxError;
 pub struct Server<State> {
     app: App<State>,
     config: ServerConfig,
-    #[cfg(any(feature = "native-tls", feature = "rustls"))]
-    tls_config: Option<super::tls::TlsConfig>,
+
+    #[cfg(feature = "native-tls")]
+    tls_config: Option<native_tls::Identity>,
+
+    #[cfg(feature = "rustls")]
+    tls_config: Option<rustls::ServerConfig>,
 }
 
 #[derive(Debug)]
@@ -101,6 +104,45 @@ where
         }
     }
 
+    /// Sets the TLS configuration for the server.
+    ///
+    #[cfg(feature = "native-tls")]
+    pub fn tls_config(self, tls_config: native_tls::Identity) -> Self {
+        Self {
+            tls_config: Some(tls_config),
+            ..self
+        }
+    }
+
+    /// Sets the TLS configuration for the server.
+    ///
+    #[cfg(feature = "rustls")]
+    pub fn tls_config(self, tls_config: rustls::ServerConfig) -> Self {
+        Self {
+            tls_config: Some(tls_config),
+            ..self
+        }
+    }
+
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
+    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, BoxError>>
+    where
+        A: ToSocketAddrs,
+    {
+        let Self { app, config, .. } = self;
+        let max_request_size = config.max_request_size;
+        let tls_config = self
+            .tls_config
+            .expect("tls_config is required when a tls backend is enabled");
+
+        super::tls::listen(
+            config,
+            address,
+            tls_config,
+            AppService::new(Arc::new(app), max_request_size),
+        )
+    }
+
     /// Listens for incoming connections at the provided address.
     ///
     /// Returns a future that resolves with a result containing an [`ExitCode`]
@@ -146,63 +188,17 @@ where
     where
         A: ToSocketAddrs,
     {
-        let Self { app, config, .. } = self;
+        use tokio::net::TcpListener;
+
+        let Self { app, config } = self;
         let service = AppService::new(Arc::new(app), config.max_request_size);
 
         async {
-            let exit = accept(
-                TcpListener::bind(address).await?,
-                Arc::new(|stream| async { Ok(stream) }),
-                service,
+            let exit = super::accept(
                 config,
-            );
-
-            Ok(exit.await)
-        }
-    }
-}
-
-#[cfg(any(feature = "native-tls", feature = "rustls"))]
-impl<State> Server<State>
-where
-    State: Send + Sync + 'static,
-{
-    /// Sets the TLS configuration for the server.
-    ///
-    pub fn tls_config(self, tls_config: super::tls::TlsConfig) -> Self {
-        Self {
-            tls_config: Some(tls_config),
-            ..self
-        }
-    }
-
-    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, BoxError>>
-    where
-        A: ToSocketAddrs,
-    {
-        use super::tls::TlsAcceptor;
-
-        let Self { app, config, .. } = self;
-        let service = AppService::new(Arc::new(app), config.max_request_size);
-
-        let tls_config = self
-            .tls_config
-            .expect("tls_config is required when a tls backend is enabled");
-
-        async {
-            let handshake = {
-                let acceptor = TlsAcceptor::new(tls_config)?;
-                Arc::new(move |stream| {
-                    let acceptor = acceptor.clone();
-                    async move { acceptor.accept(stream).await }
-                })
-            };
-
-            let exit = accept(
                 TcpListener::bind(address).await?,
-                handshake,
+                Arc::new(async |stream| Ok(stream)),
                 service,
-                config,
             );
 
             Ok(exit.await)

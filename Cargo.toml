@@ -23,7 +23,7 @@ native-tls = ["dep:native-tls", "dep:tokio-native-tls"]
 
 ring = ["dep:ring", "tokio-rustls/ring", "tokio-websockets/ring"]
 
-rustls = ["dep:tokio-rustls"]
+rustls = ["dep:rustls", "dep:tokio-rustls"]
 
 ws = [
     "dep:base64",
@@ -85,6 +85,12 @@ optional = true
 [dependencies.ring]
 version = "0.17"
 optional = true
+
+[dependencies.rustls]
+version = "0.23"
+features = ["std"]
+optional = true
+default-features = false
 
 [dependencies.tokio-rustls]
 version = "0.26"
