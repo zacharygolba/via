@@ -9,7 +9,9 @@ Requires:
 
 #### Database Setup
 
-Make sure that your postgres server is running and available at the endpoint specified in the `.env` file located in this example app's directory. Once the database is running, execute the following commands to initialize the database that we'll be using for our simple blog API.
+First, copy the `./example.env` file to `./.env`.
+
+Make sure that your postgres server is running and available at the endpoint specified in the `.env` file that you created. Once the database is running, execute the following commands to initialize the database that we'll be using for our simple blog API.
 
 ```
 # Create an empty database to use for our blog.
