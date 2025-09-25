@@ -16,7 +16,6 @@
 //!
 //! ```no_run
 //! use std::process::ExitCode;
-//! use via::builtin::rescue;
 //! use via::{App, BoxError, Next, Request, Response};
 //!
 //! async fn hello(request: Request, _: Next) -> via::Result {
@@ -30,10 +29,6 @@
 //! #[tokio::main]
 //! async fn main() -> Result<ExitCode, BoxError> {
 //!     let mut app = App::new(());
-//!
-//!     // Capture errors from downstream, log them, and map them into responses.
-//!     // Upstream middleware remains unaffected and continues execution.
-//!     app.include(rescue::inspect(|error| eprintln!("error: {}", error)));
 //!
 //!     // Define a route that listens on /hello/:name.
 //!     app.at("/hello/:name").respond(via::get(hello));
