@@ -2,7 +2,7 @@ use diesel::dsl::IsNotNull;
 use serde::{Deserialize, Serialize};
 use via::Error;
 
-use crate::database::models::user::{users, User};
+use crate::database::models::user::{User, users};
 use crate::database::prelude::*;
 
 pub use schema::posts;

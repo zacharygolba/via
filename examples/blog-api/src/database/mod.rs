@@ -2,13 +2,13 @@ pub mod models;
 pub mod schema;
 
 pub mod prelude {
-    pub use super::{schema, Pool};
+    pub use super::{Pool, schema};
     pub use chrono::NaiveDateTime;
     pub use diesel::prelude::*;
     pub use diesel_async::RunQueryDsl;
 }
 
-use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
+use diesel_async::{AsyncPgConnection, pooled_connection::AsyncDieselConnectionManager};
 use std::env;
 use via::BoxError;
 
