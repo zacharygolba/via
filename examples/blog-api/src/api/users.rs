@@ -1,7 +1,7 @@
 use via::{Next, Request, Response};
 
-use crate::database::models::user::*;
 use crate::BlogApi;
+use crate::database::models::user::*;
 
 pub async fn index(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result {
     let state = request.state();

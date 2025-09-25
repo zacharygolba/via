@@ -1,7 +1,7 @@
 use via::{Next, Request, Response};
 
-use crate::database::models::post::*;
 use crate::BlogApi;
+use crate::database::models::post::*;
 
 pub async fn auth(request: Request<BlogApi>, next: Next<BlogApi>) -> via::Result {
     println!("authenticate");
