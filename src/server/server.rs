@@ -152,7 +152,7 @@ where
             let exit = super::accept(
                 config,
                 TcpListener::bind(address).await?,
-                Arc::new(async |stream| Ok(stream)),
+                Box::new(|stream| async { Ok(stream) }),
                 service,
             );
 

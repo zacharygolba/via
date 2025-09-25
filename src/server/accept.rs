@@ -1,5 +1,5 @@
 use hyper::server::conn;
-use hyper_util::rt::TokioTimer;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use std::error::Error;
 use std::mem;
 use std::process::ExitCode;
@@ -46,7 +46,7 @@ macro_rules! receive_ctrl_c {
 pub async fn accept<State, Io, F>(
     config: ServerConfig,
     listener: TcpListener,
-    handshake: Arc<dyn Fn(TcpStream) -> F + Send + Sync>,
+    acceptor: Box<dyn Fn(TcpStream) -> F + Send>,
     service: AppService<State>,
 ) -> ExitCode
 where
@@ -121,20 +121,20 @@ where
             }
         };
 
-        let handshake = handshake.clone();
         let service = service.clone();
+        let handshake = acceptor(tcp_stream);
         let mut shutdown_rx = shutdown_rx.clone();
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            let io = handshake(tcp_stream).await?;
+            let io = IoWithPermit::new(TokioIo::new(handshake.await?), permit);
 
             // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
             let mut connection = Box::pin(
                 conn::http2::Builder::new(TokioExecutor::new())
                     .timer(TokioTimer::new())
-                    .serve_connection(IoWithPermit::new(permit, io), service),
+                    .serve_connection(io, service),
             );
 
             // Create a new HTTP/1.1 connection.
@@ -142,7 +142,7 @@ where
             let mut connection = Box::pin(
                 conn::http1::Builder::new()
                     .timer(TokioTimer::new())
-                    .serve_connection(IoWithPermit::new(permit, io), service)
+                    .serve_connection(io, service)
                     .with_upgrades(),
             );
 
