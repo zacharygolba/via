@@ -17,6 +17,7 @@ use aws_lc_rs::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 #[cfg(feature = "ring")]
 use ring::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 
+use crate::Payload;
 use crate::error::Error;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
@@ -40,7 +41,7 @@ pub enum Message {
     Text(ByteString),
 }
 
-pub struct Context<State> {
+pub struct Context<State = ()> {
     params: OwnedPathParams,
     state: Arc<State>,
 }
@@ -62,29 +63,29 @@ pub struct WebSocket {
 /// # Example
 ///
 /// ```
-/// # use via::{App, Request, Response, Next};
-/// # let mut app = App::new(());
-/// #
-/// use via::builtin::ws::Message;
+/// use via::{App, BoxError, Payload};
+/// use via::builtin::ws::{self, Message, WebSocket};
 ///
-/// app.at("/echo").respond(via::ws(async |mut socket, context| {
+/// #[tokio::main]
+/// async fn main() -> Result<(), BoxError> {
+///     let mut app = App::new(());
+///
+///     // GET /echo ~> web socket upgrade.
+///     app.at("/echo").respond(via::ws(echo));
+/// }
+///
+/// async fn echo(mut socket: WebSocket, _: ws::Context) -> via::Result<()> {
 ///     while let Some(message) = socket.next().await {
-///         match message {
-///             Message::Text(text) => {
-///                 socket.send(text).await?;
-///             }
-///             Message::Binary(binary) => {
-///                 socket.send(binary).await?;
-///             }
-///             Message::Close(_) => {
-///                 break;
-///             }
-///             _ => {}
+///         if matches!(&message, Message::Close(_)) {
+///             message.as_str().inspect(|reason| eprintln!("close: {}", reason));
+///             break;
 ///         }
+///
+///         socket.send(message.into_vec()).await?;
 ///     }
 ///
 ///     Ok(())
-/// }));
+/// }
 ///```
 ///
 pub fn ws<State, F, R>(upgraded: F) -> Upgrade<State>
@@ -188,6 +189,208 @@ fn validate_websocket_version<T>(request: &Request<T>) -> Result<(), crate::Erro
     }
 }
 
+impl<State> Context<State> {
+    #[inline]
+    pub fn path(&self) -> &str {
+        self.params.path()
+    }
+
+    #[inline]
+    pub fn state(&self) -> &State {
+        &self.state
+    }
+
+    #[inline]
+    pub fn param<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
+        self.params.get(name)
+    }
+
+    #[inline]
+    pub fn query<'b>(&self, name: &'b str) -> QueryParam<'_, 'b> {
+        QueryParam::new(name, self.params.query())
+    }
+}
+
+impl<State> Clone for Context<State> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            state: Arc::clone(&self.state),
+            params: self.params.clone(),
+        }
+    }
+}
+
+impl From<Bytes> for Message {
+    #[inline]
+    fn from(data: Bytes) -> Self {
+        Self::Binary(data)
+    }
+}
+
+impl From<Vec<u8>> for Message {
+    #[inline]
+    fn from(data: Vec<u8>) -> Self {
+        Self::from(Bytes::from(data))
+    }
+}
+
+impl From<&'_ [u8]> for Message {
+    #[inline]
+    fn from(data: &'_ [u8]) -> Self {
+        Self::from(Bytes::copy_from_slice(data))
+    }
+}
+
+impl From<ByteString> for Message {
+    #[inline]
+    fn from(data: ByteString) -> Self {
+        Self::Text(data)
+    }
+}
+
+impl From<String> for Message {
+    #[inline]
+    fn from(data: String) -> Self {
+        Self::from(ByteString::from(data))
+    }
+}
+
+impl From<&'_ str> for Message {
+    #[inline]
+    fn from(data: &'_ str) -> Self {
+        Self::from(ByteString::from(data))
+    }
+}
+
+impl Payload for Message {
+    #[inline]
+    fn as_slice(&self) -> Option<&[u8]> {
+        match self {
+            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
+                Payload::as_slice(bytestring)
+            }
+            Self::Binary(bytes) => Payload::as_slice(bytes),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn as_str(&self) -> Result<Option<&str>, Error> {
+        match self {
+            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
+                Payload::as_str(bytestring)
+            }
+            Self::Binary(bytes) => Payload::as_str(bytes),
+            _ => Ok(None),
+        }
+    }
+
+    #[inline]
+    fn into_utf8(self) -> Result<String, Error> {
+        match self {
+            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
+                Payload::into_utf8(bytestring)
+            }
+            Self::Binary(bytes) => Payload::into_utf8(bytes),
+            _ => Ok(Default::default()),
+        }
+    }
+
+    #[inline]
+    fn into_vec(self) -> Vec<u8> {
+        match self {
+            Self::Close(Some((_, Some(text)))) | Self::Text(text) => {
+                Payload::into_vec(text.into_bytes())
+            }
+            Self::Binary(bytes) => Payload::into_vec(bytes),
+            _ => Default::default(),
+        }
+    }
+}
+
+impl Payload for ByteString {
+    #[inline]
+    fn as_slice(&self) -> Option<&[u8]> {
+        Some(self.as_ref())
+    }
+
+    #[inline]
+    fn as_str(&self) -> Result<Option<&str>, Error> {
+        Ok(self.as_slice().map(|slice| {
+            // Safety: self is guaranteed to be valid UTF-8.
+            unsafe { str::from_utf8_unchecked(slice) }
+        }))
+    }
+
+    #[inline]
+    fn into_utf8(self) -> Result<String, Error> {
+        // Safety: self is guaranteed to be valid UTF-8.
+        Ok(unsafe { String::from_utf8_unchecked(self.into_vec()) })
+    }
+
+    #[inline]
+    fn into_vec(self) -> Vec<u8> {
+        self.into_bytes().into_vec()
+    }
+}
+
+impl TryFrom<tokio_websockets::Message> for Message {
+    type Error = tokio_websockets::Error;
+
+    fn try_from(message: tokio_websockets::Message) -> Result<Self, Self::Error> {
+        if message.is_binary() {
+            Ok(Self::Binary(message.into_payload().into()))
+        } else {
+            let is_text = message.is_text();
+            let mut bytes = Bytes::from(message.into_payload());
+
+            if is_text {
+                Ok(Self::Text(validate_utf8(bytes)?))
+            } else {
+                // Continuation, Ping, and Pong messages are handled by
+                // tokio_websockets. The message opcode must be close.
+                match bytes.try_get_u16() {
+                    // The payload is empty and therefore, valid.
+                    Err(TryGetError { available: 0, .. }) => Ok(Self::Close(None)),
+
+                    // The payload starts with an invalid close code.
+                    Ok(0..=999) | Ok(4999..) | Err(_) => {
+                        Err(ProtocolError::InvalidCloseCode.into())
+                    }
+
+                    // The payload contains a valid close code and reason.
+                    Ok(u16) => {
+                        let code = u16.try_into()?;
+
+                        Ok(if bytes.remaining() == 0 {
+                            Self::Close(Some((code, None)))
+                        } else {
+                            let reason = validate_utf8(bytes)?;
+                            Self::Close(Some((code, Some(reason))))
+                        })
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl From<Message> for tokio_websockets::Message {
+    #[inline]
+    fn from(message: Message) -> Self {
+        match message {
+            Message::Binary(binary) => Self::binary(binary),
+            Message::Text(text) => Self::text(text.into_bytes()),
+
+            Message::Close(None) => Self::close(None, ""),
+            Message::Close(Some((code, reason))) => {
+                Self::close(Some(code), reason.as_deref().unwrap_or_default())
+            }
+        }
+    }
+}
+
 impl<State> Upgrade<State> {
     /// The threshold at which the bytes queued at socket are flushed.
     ///
@@ -270,136 +473,6 @@ where
                 .header(header::SEC_WEBSOCKET_ACCEPT, accept_key)
                 .finish()
         })
-    }
-}
-
-impl From<Bytes> for Message {
-    #[inline]
-    fn from(data: Bytes) -> Self {
-        Self::Binary(data)
-    }
-}
-
-impl From<Vec<u8>> for Message {
-    #[inline]
-    fn from(data: Vec<u8>) -> Self {
-        Self::from(Bytes::from(data))
-    }
-}
-
-impl From<&'_ [u8]> for Message {
-    #[inline]
-    fn from(data: &'_ [u8]) -> Self {
-        Self::from(Bytes::copy_from_slice(data))
-    }
-}
-
-impl From<ByteString> for Message {
-    #[inline]
-    fn from(data: ByteString) -> Self {
-        Self::Text(data)
-    }
-}
-
-impl From<String> for Message {
-    #[inline]
-    fn from(data: String) -> Self {
-        Self::from(ByteString::from(data))
-    }
-}
-
-impl From<&'_ str> for Message {
-    #[inline]
-    fn from(data: &'_ str) -> Self {
-        Self::from(ByteString::from(data))
-    }
-}
-
-impl TryFrom<tokio_websockets::Message> for Message {
-    type Error = tokio_websockets::Error;
-
-    fn try_from(message: tokio_websockets::Message) -> Result<Self, Self::Error> {
-        if message.is_binary() {
-            Ok(Self::Binary(message.into_payload().into()))
-        } else {
-            let is_text = message.is_text();
-            let mut bytes = Bytes::from(message.into_payload());
-
-            if is_text {
-                Ok(Self::Text(validate_utf8(bytes)?))
-            } else {
-                // Continuation, Ping, and Pong messages are handled by
-                // tokio_websockets. The message opcode must be close.
-                match bytes.try_get_u16() {
-                    // The payload is empty and therefore, valid.
-                    Err(TryGetError { available: 0, .. }) => Ok(Self::Close(None)),
-
-                    // The payload starts with an invalid close code.
-                    Ok(0..=999) | Ok(4999..) | Err(_) => {
-                        Err(ProtocolError::InvalidCloseCode.into())
-                    }
-
-                    // The payload contains a valid close code and reason.
-                    Ok(u16) => {
-                        let code = u16.try_into()?;
-
-                        Ok(if bytes.remaining() == 0 {
-                            Self::Close(Some((code, None)))
-                        } else {
-                            let reason = validate_utf8(bytes)?;
-                            Self::Close(Some((code, Some(reason))))
-                        })
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl From<Message> for tokio_websockets::Message {
-    #[inline]
-    fn from(message: Message) -> Self {
-        match message {
-            Message::Binary(binary) => Self::binary(binary),
-            Message::Text(text) => Self::text(text.into_bytes()),
-
-            Message::Close(None) => Self::close(None, ""),
-            Message::Close(Some((code, reason))) => {
-                Self::close(Some(code), reason.as_deref().unwrap_or_default())
-            }
-        }
-    }
-}
-
-impl<State> Context<State> {
-    #[inline]
-    pub fn path(&self) -> &str {
-        self.params.path()
-    }
-
-    #[inline]
-    pub fn state(&self) -> &State {
-        &self.state
-    }
-
-    #[inline]
-    pub fn param<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
-        self.params.get(name)
-    }
-
-    #[inline]
-    pub fn query<'b>(&self, name: &'b str) -> QueryParam<'_, 'b> {
-        QueryParam::new(name, self.params.query())
-    }
-}
-
-impl<State> Clone for Context<State> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            state: Arc::clone(&self.state),
-            params: self.params.clone(),
-        }
     }
 }
 

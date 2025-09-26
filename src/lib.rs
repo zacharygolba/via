@@ -48,6 +48,7 @@ mod app;
 mod error;
 mod middleware;
 mod next;
+mod payload;
 mod server;
 
 pub use app::{App, Route};
@@ -55,6 +56,7 @@ pub use builtin::allow::{connect, delete, get, head, options, patch, post, put, 
 pub use error::{BoxError, Error, ErrorMessage};
 pub use middleware::{BoxFuture, Middleware, Result};
 pub use next::Next;
+pub use payload::Payload;
 pub use request::Request;
 pub use response::{Pipe, Response};
 pub use server::{Server, serve};
