@@ -9,11 +9,7 @@ use super::super::server::ServerConfig;
 use crate::app::AppService;
 use crate::error::BoxError;
 
-#[cfg(feature = "http2")]
 const MIN_PROTOCOL_VERSION: Protocol = Protocol::Tlsv12;
-
-#[cfg(not(feature = "http2"))]
-const MIN_PROTOCOL_VERSION: Protocol = Protocol::Tlsv10;
 
 pub fn listen_native_tls<State, A>(
     config: ServerConfig,
