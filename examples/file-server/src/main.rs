@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
-use via::builtin::rescue;
 use via::response::File;
-use via::{App, BoxError, Next, Request};
+use via::{App, BoxError, Next, Request, rescue};
 
 /// The maximum amount of memory that will be allocated to serve a single file.
 ///

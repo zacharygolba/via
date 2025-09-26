@@ -45,205 +45,205 @@ pub(crate) enum ServerError {
 }
 
 #[macro_export]
-macro_rules! error {
+macro_rules! raise {
     (@reason $ctor:ident, $($arg:tt)*) => {{
         use $crate::{Error, ErrorMessage};
         Error::$ctor(ErrorMessage::new(format!($($arg)*)))
     }};
 
-    (400) => { $crate::error!(400, "Bad request.") };
+    (400) => { $crate::raise!(400, "Bad request.") };
     (400, $($arg:tt)*) => {
-        $crate::error!(@reason bad_request, $($arg)*)
+        $crate::raise!(@reason bad_request, $($arg)*)
     };
 
-    (401) => { $crate::error!(401, "Unauthorized.") };
+    (401) => { $crate::raise!(401, "Unauthorized.") };
     (401, $($arg:tt)*) => {
-        $crate::error!(@reason unauthorized, $($arg)*)
+        $crate::raise!(@reason unauthorized, $($arg)*)
     };
 
-    (402) => { $crate::error!(402, "Payment required.") };
+    (402) => { $crate::raise!(402, "Payment required.") };
     (402, $($arg:tt)*) => {
-        $crate::error!(@reason payment_required, $($arg)*)
+        $crate::raise!(@reason payment_required, $($arg)*)
     };
 
-    (403) => { $crate::error!(403, "Forbidden.") };
+    (403) => { $crate::raise!(403, "Forbidden.") };
     (403, $($arg:tt)*) => {
-        $crate::error!(@reason forbidden, $($arg)*)
+        $crate::raise!(@reason forbidden, $($arg)*)
     };
 
-    (404) => { $crate::error!(404, "Not found.") };
+    (404) => { $crate::raise!(404, "Not found.") };
     (404, $($arg:tt)*) => {
-        $crate::error!(@reason not_found, $($arg)*)
+        $crate::raise!(@reason not_found, $($arg)*)
     };
 
-    (405) => { $crate::error!(405, "Method not allowed.") };
+    (405) => { $crate::raise!(405, "Method not allowed.") };
     (405, $($arg:tt)*) => {
-        $crate::error!(@reason method_not_allowed, $($arg)*)
+        $crate::raise!(@reason method_not_allowed, $($arg)*)
     };
 
-    (406) => { $crate::error!(406, "Not acceptable.") };
+    (406) => { $crate::raise!(406, "Not acceptable.") };
     (406, $($arg:tt)*) => {
-        $crate::error!(@reason not_acceptable, $($arg)*)
+        $crate::raise!(@reason not_acceptable, $($arg)*)
     };
 
-    (407) => { $crate::error!(407, "Proxy authentication required.") };
+    (407) => { $crate::raise!(407, "Proxy authentication required.") };
     (407, $($arg:tt)*) => {
-        $crate::error!(@reason proxy_authentication_required, $($arg)*)
+        $crate::raise!(@reason proxy_authentication_required, $($arg)*)
     };
 
-    (408) => { $crate::error!(408, "Request timeout.") };
+    (408) => { $crate::raise!(408, "Request timeout.") };
     (408, $($arg:tt)*) => {
-        $crate::error!(@reason request_timeout, $($arg)*)
+        $crate::raise!(@reason request_timeout, $($arg)*)
     };
 
-    (409) => { $crate::error!(409, "Conflict.") };
+    (409) => { $crate::raise!(409, "Conflict.") };
     (409, $($arg:tt)*) => {
-        $crate::error!(@reason conflict, $($arg)*)
+        $crate::raise!(@reason conflict, $($arg)*)
     };
 
-    (410) => { $crate::error!(410, "Gone.") };
+    (410) => { $crate::raise!(410, "Gone.") };
     (410, $($arg:tt)*) => {
-        $crate::error!(@reason gone, $($arg)*)
+        $crate::raise!(@reason gone, $($arg)*)
     };
 
-    (411) => { $crate::error!(411, "Length required.") };
+    (411) => { $crate::raise!(411, "Length required.") };
     (411, $($arg:tt)*) => {
-        $crate::error!(@reason length_required, $($arg)*)
+        $crate::raise!(@reason length_required, $($arg)*)
     };
 
-    (412) => { $crate::error!(412, "Precondition failed.") };
+    (412) => { $crate::raise!(412, "Precondition failed.") };
     (412, $($arg:tt)*) => {
-        $crate::error!(@reason precondition_failed, $($arg)*)
+        $crate::raise!(@reason precondition_failed, $($arg)*)
     };
 
-    (413) => { $crate::error!(413, "Payload too large.") };
+    (413) => { $crate::raise!(413, "Payload too large.") };
     (413, $($arg:tt)*) => {
-        $crate::error!(@reason payload_too_large, $($arg)*)
+        $crate::raise!(@reason payload_too_large, $($arg)*)
     };
 
-    (414) => { $crate::error!(414, "URI too long.") };
+    (414) => { $crate::raise!(414, "URI too long.") };
     (414, $($arg:tt)*) => {
-        $crate::error!(@reason uri_too_long, $($arg)*)
+        $crate::raise!(@reason uri_too_long, $($arg)*)
     };
 
-    (415) => { $crate::error!(415, "Unsupported media type.") };
+    (415) => { $crate::raise!(415, "Unsupported media type.") };
     (415, $($arg:tt)*) => {
-        $crate::error!(@reason unsupported_media_type, $($arg)*)
+        $crate::raise!(@reason unsupported_media_type, $($arg)*)
     };
 
-    (416) => { $crate::error!(416, "Range not satisfiable.") };
+    (416) => { $crate::raise!(416, "Range not satisfiable.") };
     (416, $($arg:tt)*) => {
-        $crate::error!(@reason range_not_satisfiable, $($arg)*)
+        $crate::raise!(@reason range_not_satisfiable, $($arg)*)
     };
 
-    (417) => { $crate::error!(417, "Expectation failed.") };
+    (417) => { $crate::raise!(417, "Expectation failed.") };
     (417, $($arg:tt)*) => {
-        $crate::error!(@reason expectation_failed, $($arg)*)
+        $crate::raise!(@reason expectation_failed, $($arg)*)
     };
 
-    (418) => { $crate::error!(418, "I'm a teapot.") };
+    (418) => { $crate::raise!(418, "I'm a teapot.") };
     (418, $($arg:tt)*) => {
-        $crate::error!(@reason im_a_teapot, $($arg)*)
+        $crate::raise!(@reason im_a_teapot, $($arg)*)
     };
 
-    (421) => { $crate::error!(421, "Misdirected request.") };
+    (421) => { $crate::raise!(421, "Misdirected request.") };
     (421, $($arg:tt)*) => {
-        $crate::error!(@reason misdirected_request, $($arg)*)
+        $crate::raise!(@reason misdirected_request, $($arg)*)
     };
 
-    (422) => { $crate::error!(422, "Unprocessable entity.") };
+    (422) => { $crate::raise!(422, "Unprocessable entity.") };
     (422, $($arg:tt)*) => {
-        $crate::error!(@reason unprocessable_entity, $($arg)*)
+        $crate::raise!(@reason unprocessable_entity, $($arg)*)
     };
 
-    (423) => { $crate::error!(423, "Locked.") };
+    (423) => { $crate::raise!(423, "Locked.") };
     (423, $($arg:tt)*) => {
-        $crate::error!(@reason locked, $($arg)*)
+        $crate::raise!(@reason locked, $($arg)*)
     };
 
-    (424) => { $crate::error!(424, "Failed dependency.") };
+    (424) => { $crate::raise!(424, "Failed dependency.") };
     (424, $($arg:tt)*) => {
-        $crate::error!(@reason failed_dependency, $($arg)*)
+        $crate::raise!(@reason failed_dependency, $($arg)*)
     };
 
-    (426) => { $crate::error!(426, "Upgrade required.") };
+    (426) => { $crate::raise!(426, "Upgrade required.") };
     (426, $($arg:tt)*) => {
-        $crate::error!(@reason upgrade_required, $($arg)*)
+        $crate::raise!(@reason upgrade_required, $($arg)*)
     };
 
-    (428) => { $crate::error!(428, "Precondition required.") };
+    (428) => { $crate::raise!(428, "Precondition required.") };
     (428, $($arg:tt)*) => {
-        $crate::error!(@reason precondition_required, $($arg)*)
+        $crate::raise!(@reason precondition_required, $($arg)*)
     };
 
-    (429) => { $crate::error!(429, "Too many requests.") };
+    (429) => { $crate::raise!(429, "Too many requests.") };
     (429, $($arg:tt)*) => {
-        $crate::error!(@reason too_many_requests, $($arg)*)
+        $crate::raise!(@reason too_many_requests, $($arg)*)
     };
 
-    (431) => { $crate::error!(431, "Request header fields too large.") };
+    (431) => { $crate::raise!(431, "Request header fields too large.") };
     (431, $($arg:tt)*) => {
-        $crate::error!(@reason request_header_fields_too_large, $($arg)*)
+        $crate::raise!(@reason request_header_fields_too_large, $($arg)*)
     };
 
-    (451) => { $crate::error!(451, "Unavailable for legal reasons.") };
+    (451) => { $crate::raise!(451, "Unavailable for legal reasons.") };
     (451, $($arg:tt)*) => {
-        $crate::error!(@reason unavailable_for_legal_reasons, $($arg)*)
+        $crate::raise!(@reason unavailable_for_legal_reasons, $($arg)*)
     };
 
-    (500) => { $crate::error!(500, "Internal server error.") };
+    (500) => { $crate::raise!(500, "Internal server error.") };
     (500, $($arg:tt)*) => {
-        $crate::error!(@reason internal_server_error, $($arg)*)
+        $crate::raise!(@reason internal_server_error, $($arg)*)
     };
 
-    (501) => { $crate::error!(501, "Not implemented.") };
+    (501) => { $crate::raise!(501, "Not implemented.") };
     (501, $($arg:tt)*) => {
-        $crate::error!(@reason not_implemented, $($arg)*)
+        $crate::raise!(@reason not_implemented, $($arg)*)
     };
 
-    (502) => { $crate::error!(502, "Bad gateway.") };
+    (502) => { $crate::raise!(502, "Bad gateway.") };
     (502, $($arg:tt)*) => {
-        $crate::error!(@reason bad_gateway, $($arg)*)
+        $crate::raise!(@reason bad_gateway, $($arg)*)
     };
 
-    (503) => { $crate::error!(503, "Service unavailable.") };
+    (503) => { $crate::raise!(503, "Service unavailable.") };
     (503, $($arg:tt)*) => {
-        $crate::error!(@reason service_unavailable, $($arg)*)
+        $crate::raise!(@reason service_unavailable, $($arg)*)
     };
 
-    (504) => { $crate::error!(504, "Gateway timeout.") };
+    (504) => { $crate::raise!(504, "Gateway timeout.") };
     (504, $($arg:tt)*) => {
-        $crate::error!(@reason gateway_timeout, $($arg)*)
+        $crate::raise!(@reason gateway_timeout, $($arg)*)
     };
 
-    (505) => { $crate::error!(505, "HTTP version not supported.") };
+    (505) => { $crate::raise!(505, "HTTP version not supported.") };
     (505, $($arg:tt)*) => {
-        $crate::error!(@reason http_version_not_supported, $($arg)*)
+        $crate::raise!(@reason http_version_not_supported, $($arg)*)
     };
 
-    (506) => { $crate::error!(506, "Variant also negotiates.") };
+    (506) => { $crate::raise!(506, "Variant also negotiates.") };
     (506, $($arg:tt)*) => {
-        $crate::error!(@reason variant_also_negotiates, $($arg)*)
+        $crate::raise!(@reason variant_also_negotiates, $($arg)*)
     };
 
-    (507) => { $crate::error!(507, "Insufficient storage.") };
+    (507) => { $crate::raise!(507, "Insufficient storage.") };
     (507, $($arg:tt)*) => {
-        $crate::error!(@reason insufficient_storage, $($arg)*)
+        $crate::raise!(@reason insufficient_storage, $($arg)*)
     };
 
-    (508) => { $crate::error!(508, "Loop detected.") };
+    (508) => { $crate::raise!(508, "Loop detected.") };
     (508, $($arg:tt)*) => {
-        $crate::error!(@reason loop_detected, $($arg)*)
+        $crate::raise!(@reason loop_detected, $($arg)*)
     };
 
-    (510) => { $crate::error!(510, "Not extended.") };
+    (510) => { $crate::raise!(510, "Not extended.") };
     (510, $($arg:tt)*) => {
-        $crate::error!(@reason not_extended, $($arg)*)
+        $crate::raise!(@reason not_extended, $($arg)*)
     };
 
-    (511) => { $crate::error!(511, "Network authentication required.") };
+    (511) => { $crate::raise!(511, "Network authentication required.") };
     (511, $($arg:tt)*) => {
-        $crate::error!(@reason network_authentication_required, $($arg)*)
+        $crate::raise!(@reason network_authentication_required, $($arg)*)
     };
 }
 
@@ -328,8 +328,7 @@ impl Error {
     /// # Example
     ///
     /// ```
-    /// use via::builtin::rescue;
-    /// use via::{App, BoxError, Next, Request};
+    /// use via::{App, BoxError, Next, Request, rescue};
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), BoxError> {
@@ -397,8 +396,7 @@ impl Error {
     /// # Example
     ///
     /// ```
-    /// use via::builtin::rescue;
-    /// use via::{App, BoxError, Next, Request};
+    /// use via::{App, BoxError, Next, Request, rescue};
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), BoxError> {

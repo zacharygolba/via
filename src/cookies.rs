@@ -1,31 +1,27 @@
 use cookie::{Cookie, SplitCookies};
 use http::header::COOKIE;
 
+use crate::middleware::{BoxFuture, Middleware};
 use crate::request::{Request, RequestHead};
-use crate::{BoxFuture, Error, Middleware, Next};
+use crate::util::UriEncoding;
+use crate::{Error, Next};
 
 #[derive(Debug)]
-pub struct CookieParser(Codec);
-
-#[derive(Clone, Copy, Debug)]
-enum Codec {
-    PercentEncoded,
-    Unencoded,
-}
+pub struct CookieParser(UriEncoding);
 
 pub fn percent_decode() -> CookieParser {
-    CookieParser(Codec::PercentEncoded)
+    CookieParser(UriEncoding::Percent)
 }
 
 pub fn unencoded() -> CookieParser {
-    CookieParser(Codec::Unencoded)
+    CookieParser(UriEncoding::Unencoded)
 }
 
 impl CookieParser {
     fn parse(&self, input: String) -> SplitCookies<'static> {
         match self.0 {
-            Codec::PercentEncoded => Cookie::split_parse_encoded(input),
-            Codec::Unencoded => Cookie::split_parse(input),
+            UriEncoding::Percent => Cookie::split_parse_encoded(input),
+            UriEncoding::Unencoded => Cookie::split_parse(input),
         }
     }
 }
@@ -69,8 +65,8 @@ where
             }
 
             response.set_cookies(|cookie| match codec {
-                Codec::PercentEncoded => cookie.encoded().to_string(),
-                Codec::Unencoded => cookie.to_string(),
+                UriEncoding::Percent => cookie.encoded().to_string(),
+                UriEncoding::Unencoded => cookie.to_string(),
             })?;
 
             Ok(response)

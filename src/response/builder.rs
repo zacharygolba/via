@@ -1,31 +1,11 @@
-use bytes::Bytes;
 use cookie::CookieJar;
-use futures_core::Stream;
-use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use http::{HeaderName, HeaderValue, StatusCode, Version};
-use http_body::Frame;
-use http_body_util::StreamBody;
-use http_body_util::combinators::BoxBody;
 use serde::Serialize;
 
 use super::body::ResponseBody;
 use super::response::Response;
-use crate::error::{BoxError, Error};
-
-/// Define how a type can finalize a [`ResponseBuilder`].
-///
-/// ```
-/// use via::{Next, Request, Response, Pipe};
-///
-/// async fn echo(request: Request, _: Next) -> via::Result {
-///     let mut response = Response::build();
-///     request.pipe(response.header("X-Powered-By", "Via"))
-/// }
-/// ```
-///
-pub trait Pipe {
-    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error>;
-}
+use crate::error::Error;
 
 #[derive(Debug, Default)]
 pub struct ResponseBuilder {
@@ -112,16 +92,5 @@ impl ResponseBuilder {
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
         self.body(ResponseBody::default())
-    }
-}
-
-impl<T> Pipe for T
-where
-    T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static,
-{
-    fn pipe(self, builder: ResponseBuilder) -> Result<Response, Error> {
-        builder
-            .header(TRANSFER_ENCODING, "chunked")
-            .body(BoxBody::new(StreamBody::new(self)))
     }
 }

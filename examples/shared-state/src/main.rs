@@ -3,8 +3,7 @@ use std::fmt::Write;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use via::builtin::rescue;
-use via::{App, BoxError, Next, Request, Response};
+use via::{App, BoxError, Next, Request, Response, rescue};
 
 /// A struct of containing the shared state for the application. This struct
 /// will be made available to all middleware functions and responders by

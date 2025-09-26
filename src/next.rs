@@ -12,7 +12,7 @@ impl<T> Next<T> {
     pub fn call(mut self, request: Request<T>) -> BoxFuture {
         match self.deque.pop_front() {
             Some(middleware) => middleware.call(request, self),
-            None => Box::pin(async { Err(crate::error!(404)) }),
+            None => Box::pin(async { Err(crate::raise!(404)) }),
         }
     }
 }

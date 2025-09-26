@@ -3,8 +3,7 @@ mod database;
 
 use std::process::ExitCode;
 use std::time::Duration;
-use via::builtin::{rescue, timeout};
-use via::{App, BoxError, Next, Request};
+use via::{App, BoxError, Next, Request, rescue, timeout};
 
 use database::Pool;
 

@@ -3,8 +3,7 @@ mod room;
 
 use http::header;
 use std::process::ExitCode;
-use via::builtin::rescue;
-use via::{App, BoxError, Response};
+use via::{App, BoxError, Response, rescue};
 
 use crate::chat::Chat;
 

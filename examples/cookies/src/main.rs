@@ -1,7 +1,6 @@
 use cookie::{Cookie, Key};
 use std::process::ExitCode;
-use via::builtin::{cookies, rescue};
-use via::{App, BoxError, Next, Request, Response};
+use via::{App, BoxError, Next, Request, Response, cookies, rescue};
 
 /// A struct used to store application state.
 ///
