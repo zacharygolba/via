@@ -15,7 +15,7 @@ Add the following to dependencies section of your `Cargo.toml`:
 
 ```toml
 [dependencies]
-via = "2.0.0-rc.50"
+via = "2.0.0-rc.51"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 ```
 
@@ -54,7 +54,7 @@ To run this example, `cd` in to `./examples/hello-world`, and then use `cargo ru
 cargo run
 ```
 
-Visit `http://127.0.0.1:8080/hello/world` in your browser, and you should see the message "Hello, world!".
+Visit `http://localhost:8080/hello/world` in your browser, and you should see the message "Hello, world!".
 
 ## Documentation
 
