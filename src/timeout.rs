@@ -1,7 +1,8 @@
 use std::time::Duration;
 use tokio::time;
 
-use crate::{BoxFuture, Middleware, Next, Request};
+use crate::middleware::{BoxFuture, Middleware};
+use crate::{Next, Request};
 
 pub struct Timeout {
     duration: Duration,
@@ -22,7 +23,7 @@ where
         Box::pin(async move {
             match time::timeout(duration, next.call(request)).await {
                 Ok(result) => result,
-                Err(_) => Err(crate::error!(504)),
+                Err(_) => Err(crate::raise!(504)),
             }
         })
     }

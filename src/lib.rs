@@ -40,27 +40,35 @@
 
 #![allow(clippy::module_inception)]
 
-pub mod builtin;
+pub mod cookies;
 pub mod request;
+pub mod rescue;
 pub mod response;
+pub mod ws;
 
+mod allow;
 mod app;
 mod error;
 mod middleware;
 mod next;
 mod payload;
+mod pipe;
 mod server;
+mod timeout;
+mod util;
 
+pub use allow::{Allow, connect, delete, get, head, options, patch, post, put, trace};
 pub use app::{App, Route};
-pub use builtin::allow::{connect, delete, get, head, options, patch, post, put, trace};
 pub use error::{BoxError, Error, ErrorMessage};
-pub use middleware::{BoxFuture, Middleware, Result};
+pub use middleware::{Middleware, Result};
 pub use next::Next;
 pub use payload::Payload;
+pub use pipe::Pipe;
 pub use request::Request;
-pub use response::{Pipe, Response};
+pub use response::Response;
 pub use server::{Server, serve};
+pub use timeout::{Timeout, timeout};
 
 #[cfg(feature = "ws")]
 #[doc(inline)]
-pub use builtin::ws::ws;
+pub use ws::ws;

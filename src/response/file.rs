@@ -15,8 +15,9 @@ use tokio::io::{AsyncRead, ReadBuf};
 use tokio::{task, time};
 
 use super::body::adapt_frame_size;
-use super::{Pipe, Response, ResponseBuilder};
+use super::{Response, ResponseBuilder};
 use crate::error::{BoxError, Error};
+use crate::pipe::Pipe;
 
 /// The base amount of time that the server will wait before
 /// attempting to open a file after an error has occurred.

@@ -72,7 +72,7 @@ impl Redirect {
         let status = response.status();
 
         status.is_redirection().then_some(response).ok_or_else(|| {
-            crate::error!(
+            crate::raise!(
                 400,
                 "Expected redirect status to be within 300-399. Received: {}",
                 status

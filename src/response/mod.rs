@@ -11,6 +11,6 @@ pub(crate) mod body;
 pub use file::File;
 
 pub use body::ResponseBody;
-pub use builder::{Pipe, ResponseBuilder};
+pub use builder::ResponseBuilder;
 pub use redirect::Redirect;
 pub use response::Response;

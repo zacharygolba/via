@@ -17,19 +17,19 @@ pub struct RequestBody(Either<Limited<Incoming>, BoxBody<Bytes, BoxError>>);
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct IntoFuture {
     body: RequestBody,
-    payload: Option<RequestPayload>,
+    payload: Option<DataAndTrailers>,
 }
 
-/// The entire contents of a request body, in-memory.
+/// The data and trailers of a request body.
 ///
 #[derive(Debug)]
-pub struct RequestPayload {
+pub struct DataAndTrailers {
     frames: Vec<Bytes>,
     trailers: Option<HeaderMap>,
 }
 
 fn already_read() -> Error {
-    crate::error!(500, "The request body has already been read.")
+    crate::raise!(500, "The request body has already been read.")
 }
 
 fn map_err(error: BoxError) -> Error {
@@ -41,7 +41,7 @@ fn map_err(error: BoxError) -> Error {
 }
 
 impl IntoFuture {
-    fn new(body: RequestBody, payload: RequestPayload) -> Self {
+    fn new(body: RequestBody, payload: DataAndTrailers) -> Self {
         Self {
             body,
             payload: Some(payload),
@@ -50,7 +50,7 @@ impl IntoFuture {
 }
 
 impl Future for IntoFuture {
-    type Output = Result<RequestPayload, Error>;
+    type Output = Result<DataAndTrailers, Error>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         let Self { body, payload } = self.get_mut();
@@ -98,8 +98,8 @@ impl RequestBody {
         BodyStream::new(self)
     }
 
-    pub async fn into_future(self) -> Result<RequestPayload, Error> {
-        IntoFuture::new(self, RequestPayload::new()).await
+    pub async fn into_future(self) -> Result<DataAndTrailers, Error> {
+        IntoFuture::new(self, DataAndTrailers::new()).await
     }
 }
 
@@ -140,7 +140,7 @@ impl Body for RequestBody {
     }
 }
 
-impl RequestPayload {
+impl DataAndTrailers {
     pub fn len(&self) -> usize {
         self.frames.iter().map(Bytes::len).sum()
     }
@@ -154,7 +154,7 @@ impl RequestPayload {
     }
 }
 
-impl RequestPayload {
+impl DataAndTrailers {
     fn new() -> Self {
         Self {
             frames: Default::default(),
@@ -163,7 +163,7 @@ impl RequestPayload {
     }
 }
 
-impl Payload for RequestPayload {
+impl Payload for DataAndTrailers {
     #[inline]
     fn as_slice(&self) -> Option<&[u8]> {
         if let [frame] = &*self.frames {

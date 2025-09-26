@@ -1,25 +1,24 @@
 use std::borrow::Cow;
-use std::marker::PhantomData;
 use std::str::FromStr;
 
-use super::decode::{DecodeParam, NoopDecode, PercentDecode};
 use crate::error::Error;
+use crate::util::UriEncoding;
 
-pub struct PathParam<'a, 'b, T = NoopDecode> {
-    at: Option<(usize, Option<usize>)>,
-    name: &'b str,
+pub struct PathParam<'a, 'b> {
+    encoding: UriEncoding,
     source: &'a str,
-    _decode: PhantomData<T>,
+    name: &'b str,
+    at: Option<(usize, Option<usize>)>,
 }
 
-impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
+impl<'a, 'b> PathParam<'a, 'b> {
     #[inline]
     pub(crate) fn new(name: &'b str, source: &'a str, at: Option<(usize, Option<usize>)>) -> Self {
         Self {
-            at,
-            name,
+            encoding: UriEncoding::Unencoded,
             source,
-            _decode: PhantomData,
+            name,
+            at,
         }
     }
 
@@ -27,12 +26,10 @@ impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
     /// when the parameter is converted to a result.
     ///
     #[inline]
-    pub fn percent_decode(self) -> PathParam<'a, 'b, PercentDecode> {
-        PathParam {
-            at: self.at,
-            name: self.name,
-            source: self.source,
-            _decode: PhantomData,
+    pub fn percent_decode(self) -> Self {
+        Self {
+            encoding: UriEncoding::Percent,
+            ..self
         }
     }
 
@@ -75,9 +72,9 @@ impl<'a, 'b, T: DecodeParam> PathParam<'a, 'b, T> {
     #[inline]
     pub fn into_result(self) -> Result<Cow<'a, str>, Error> {
         match self.at {
-            Some((start, Some(end))) => T::decode(&self.source[start..end]),
-            Some((start, None)) => T::decode(&self.source[start..]),
-            None => Err(crate::error!(
+            Some((start, Some(end))) => self.encoding.decode(&self.source[start..end]),
+            Some((start, None)) => self.encoding.decode(&self.source[start..]),
+            None => Err(crate::raise!(
                 400,
                 "Missing required parameter \"{}\".",
                 self.name

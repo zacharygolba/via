@@ -11,8 +11,7 @@ use std::task::{Context, Poll};
 use crate::app::App;
 use crate::middleware::BoxFuture;
 use crate::next::Next;
-use crate::request::param::PathParams;
-use crate::request::{Request, RequestBody, RequestHead};
+use crate::request::{PathParams, Request, RequestBody, RequestHead};
 use crate::response::ResponseBody;
 
 pub struct ServeRequest(BoxFuture);

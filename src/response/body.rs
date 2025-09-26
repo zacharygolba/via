@@ -123,7 +123,7 @@ impl ResponseBody {
     pub(crate) fn map<U, F>(self, map: F) -> Self
     where
         F: FnOnce(ResponseBody) -> U,
-        U: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
+        U: http_body::Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
     {
         Self {
             kind: Either::Right(BoxBody::new(map(self))),
@@ -131,7 +131,7 @@ impl ResponseBody {
     }
 }
 
-impl Body for ResponseBody {
+impl http_body::Body for ResponseBody {
     type Data = Bytes;
     type Error = BoxError;
 

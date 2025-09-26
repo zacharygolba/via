@@ -1,6 +1,5 @@
 use std::process::ExitCode;
-use via::builtin::rescue;
-use via::{App, BoxError, Next, Pipe, Request, Response};
+use via::{App, BoxError, Next, Pipe, Request, Response, rescue};
 
 async fn echo(request: Request, _: Next) -> via::Result {
     request.pipe(Response::build())
