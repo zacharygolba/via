@@ -38,18 +38,17 @@ impl Body for BufferBody {
     type Error = BoxError;
 
     fn poll_frame(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         _: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let Self { buf } = self.get_mut();
-        let remaining = buf.len();
+        let remaining = self.buf.len();
 
-        if remaining == 0 {
-            Poll::Ready(None)
-        } else {
+        Poll::Ready(if remaining > 0 {
             let len = adapt_frame_size(remaining);
-            Poll::Ready(Some(Ok(Frame::data(buf.split_to(len)))))
-        }
+            Some(Ok(Frame::data(self.buf.split_to(len))))
+        } else {
+            None
+        })
     }
 
     fn is_end_stream(&self) -> bool {
@@ -61,7 +60,7 @@ impl Body for BufferBody {
             .len()
             .try_into()
             .map(SizeHint::with_exact)
-            .expect("BufferBody::size_hint would overflow u64")
+            .unwrap_or_default()
     }
 }
 
