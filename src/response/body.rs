@@ -38,14 +38,15 @@ impl Body for BufferBody {
     type Error = BoxError;
 
     fn poll_frame(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         _: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let remaining = self.buf.len();
+        let Self { buf } = self.get_mut();
+        let remaining = buf.len();
 
         Poll::Ready(if remaining > 0 {
             let len = adapt_frame_size(remaining);
-            Some(Ok(Frame::data(self.buf.split_to(len))))
+            Some(Ok(Frame::data(buf.split_to(len))))
         } else {
             None
         })
