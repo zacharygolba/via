@@ -1,16 +1,14 @@
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use http::{HeaderMap, StatusCode};
 use http_body::{Body, Frame, SizeHint};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyStream, Either, LengthLimitError, Limited};
 use hyper::body::Incoming;
-use serde::Deserialize;
-use serde::de::DeserializeOwned;
-use std::borrow::Cow;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
+use crate::Payload;
 use crate::error::{BoxError, Error};
 
 #[derive(Debug)]
@@ -30,11 +28,6 @@ pub struct RequestPayload {
     trailers: Option<HeaderMap>,
 }
 
-#[derive(Deserialize)]
-struct JsonPayload<T> {
-    data: T,
-}
-
 fn already_read() -> Error {
     crate::error!(500, "The request body has already been read.")
 }
@@ -44,82 +37,6 @@ fn map_err(error: BoxError) -> Error {
         Error::new(StatusCode::PAYLOAD_TOO_LARGE, error)
     } else {
         Error::new(StatusCode::BAD_REQUEST, error)
-    }
-}
-
-impl RequestPayload {
-    pub fn parse_json<D>(&self) -> Result<D, Error>
-    where
-        D: DeserializeOwned,
-    {
-        let json = match self.as_str()? {
-            Some(utf8) => Cow::Borrowed(utf8),
-            None => Cow::Owned(self.to_string()?),
-        };
-
-        // Attempt deserialize JSON assuming that type `D` exists in a top
-        // level data field. This is a common pattern so we optimize for it to
-        // provide a more convenient API. If you frequently expect `D` to be at
-        // the root of the JSON object contained in `payload` and not in a top-
-        // level `data` field, we recommend writing a utility function that
-        // circumvents the extra call to deserialize. Otherwise, this has no
-        // additional overhead.
-        serde_json::from_str(&json)
-            // If `D` was contained in a top-level `data` field, unwrap it.
-            .map(|object: JsonPayload<D>| object.data)
-            // Otherwise, attempt to deserialize `D` from the object at the
-            // root of payload. If that also fails, use the original error.
-            .or_else(|error| serde_json::from_str(&json).or(Err(error)))
-            // If an error occurred, wrap it with `via::Error` and set the status
-            // code to 400 Bad Request.
-            .map_err(Error::bad_request)
-    }
-
-    pub fn to_string(&self) -> Result<String, Error> {
-        String::from_utf8(self.to_vec()).map_err(Error::bad_request)
-    }
-
-    pub fn to_vec(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(self.frames.iter().map(Bytes::len).sum());
-
-        for frame in &self.frames {
-            buf.extend_from_slice(frame);
-        }
-
-        buf
-    }
-
-    pub fn trailers(&self) -> Option<&HeaderMap> {
-        self.trailers.as_ref()
-    }
-
-    /// Return the entire body as a slice if it is composed of a single frame.
-    ///
-    pub fn as_slice(&self) -> Option<&[u8]> {
-        if let [slice] = self.frames.as_slice() {
-            Some(slice)
-        } else {
-            None
-        }
-    }
-
-    /// Return the entire body as a str if it is composed of a single frame and
-    /// is valid UTF-8.
-    ///
-    pub fn as_str(&self) -> Result<Option<&str>, Error> {
-        self.as_slice()
-            .map(str::from_utf8)
-            .transpose()
-            .map_err(Error::bad_request)
-    }
-}
-
-impl RequestPayload {
-    fn new() -> Self {
-        Self {
-            frames: Vec::new(),
-            trailers: None,
-        }
     }
 }
 
@@ -220,5 +137,47 @@ impl Body for RequestBody {
 
     fn size_hint(&self) -> SizeHint {
         self.0.size_hint()
+    }
+}
+
+impl RequestPayload {
+    pub fn len(&self) -> usize {
+        self.frames.iter().map(Buf::remaining).sum()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn trailers(&self) -> Option<&HeaderMap> {
+        self.trailers.as_ref()
+    }
+}
+
+impl RequestPayload {
+    fn new() -> Self {
+        Self {
+            frames: Default::default(),
+            trailers: None,
+        }
+    }
+}
+
+impl Payload for RequestPayload {
+    #[inline]
+    fn as_slice(&self) -> Option<&[u8]> {
+        Some(self.frames.first()?)
+    }
+
+    #[inline]
+    fn to_vec(mut self) -> Vec<u8> {
+        let mut dest = Vec::with_capacity(self.len());
+
+        for frame in &mut self.frames {
+            dest.extend_from_slice(frame);
+            frame.advance(frame.remaining());
+        }
+
+        dest
     }
 }

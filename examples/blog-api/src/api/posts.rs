@@ -1,4 +1,4 @@
-use via::{Next, Request, Response};
+use via::{Next, Payload, Request, Response};
 
 use crate::BlogApi;
 use crate::database::models::post::*;
@@ -19,7 +19,7 @@ pub async fn create(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result 
     let (head, body) = request.into_parts();
     let state = head.state();
 
-    let new_post = body.into_future().await?.parse_json::<NewPost>()?;
+    let new_post = body.into_future().await?.json::<NewPost>()?;
     let post = new_post.insert(&state.pool).await?;
 
     Response::build().status(201).json(&post)
@@ -39,7 +39,7 @@ pub async fn update(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result 
     let state = head.state();
     let id = head.param("id").parse()?;
 
-    let change_set = body.into_future().await?.parse_json::<ChangeSet>()?;
+    let change_set = body.into_future().await?.json::<ChangeSet>()?;
     let post = change_set.apply(&state.pool, id).await?;
 
     Response::build().json(&post)
