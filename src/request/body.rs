@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use std::borrow::Cow;
 use std::future::Future;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, ready};
 
 use crate::error::{BoxError, Error};
 
@@ -140,25 +140,26 @@ impl Future for IntoFuture {
         let mut body = Pin::new(body);
 
         loop {
-            break match body.as_mut().poll_frame(context).map_err(map_err)? {
-                Poll::Pending => Poll::Pending,
-                Poll::Ready(None) => Poll::Ready(payload.take().ok_or_else(already_read)),
-                Poll::Ready(Some(frame)) => {
-                    let payload = payload.as_mut().ok_or_else(already_read)?;
+            let Some(result) = ready!(body.as_mut().poll_frame(context)) else {
+                return Poll::Ready(payload.take().ok_or_else(already_read));
+            };
 
-                    match frame.into_data() {
-                        Ok(data) => payload.frames.push(data),
-                        Err(frame) => {
-                            let trailers = frame.into_trailers().unwrap();
-                            if let Some(existing) = payload.trailers.as_mut() {
-                                existing.extend(trailers);
-                            } else {
-                                payload.trailers = Some(trailers);
-                            }
-                        }
+            let frame = result.map_err(map_err)?;
+            let payload = payload.as_mut().ok_or_else(already_read)?;
+
+            match frame.into_data() {
+                Ok(data) => payload.frames.push(data),
+                Err(frame) => {
+                    // If the frame isn't a data frame, it must be trailers.
+                    let Ok(trailers) = frame.into_trailers() else {
+                        unreachable!()
+                    };
+
+                    if let Some(existing) = payload.trailers.as_mut() {
+                        existing.extend(trailers);
+                    } else {
+                        payload.trailers = Some(trailers);
                     }
-
-                    continue;
                 }
             };
         }
