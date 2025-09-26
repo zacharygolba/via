@@ -1,10 +1,11 @@
-mod body;
 mod builder;
 mod redirect;
 mod response;
 
 #[cfg(feature = "file")]
 mod file;
+
+pub(crate) mod body;
 
 #[cfg(feature = "file")]
 pub use file::File;

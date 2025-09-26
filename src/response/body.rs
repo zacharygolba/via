@@ -8,9 +8,10 @@ use std::task::{Context, Poll};
 
 use crate::error::BoxError;
 
-const STANDARD_FRAME_LEN: usize = 8 * 1024; // 8KB
-const EXTENDED_FRAME_LEN: usize = STANDARD_FRAME_LEN * 2; // 16KB
 const ADAPTIVE_THRESHOLD: usize = 64 * 1024; // 64KB
+
+pub(crate) const STANDARD_FRAME_LEN: usize = 8 * 1024; // 8KB
+pub(crate) const EXTENDED_FRAME_LEN: usize = STANDARD_FRAME_LEN * 2; // 16KB
 
 /// A buffered `impl Body` that is written in `8KB..=16KB` chunks.
 ///
