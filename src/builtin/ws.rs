@@ -1,6 +1,6 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as base64_engine;
-use bytes::{Buf, Bytes};
+use bytes::{Buf, Bytes, TryGetError};
 use bytestring::ByteString;
 use futures_util::{SinkExt, StreamExt};
 use http::{StatusCode, header};
@@ -43,11 +43,11 @@ pub struct Context<State> {
     state: Arc<State>,
 }
 
-pub struct Upgrade<T> {
+pub struct Upgrade<State> {
     max_payload_len: Option<usize>,
     flush_threshold: usize,
     frame_size: usize,
-    on_upgrade: Arc<OnUpgrade<T>>,
+    on_upgrade: Arc<OnUpgrade<State>>,
 }
 
 pub struct WebSocket {
@@ -189,7 +189,7 @@ fn validate_websocket_version<T>(request: &Request<T>) -> Result<(), crate::Erro
     }
 }
 
-impl<T> Upgrade<T> {
+impl<State> Upgrade<State> {
     pub fn flush_threshold(mut self, flush_threshold: usize) -> Self {
         self.flush_threshold = flush_threshold;
         self
@@ -206,7 +206,7 @@ impl<T> Upgrade<T> {
     }
 }
 
-impl<T> Upgrade<T> {
+impl<State> Upgrade<State> {
     fn stream_builder(&self) -> Builder {
         Builder::new()
             .limits(Limits::default().max_payload_len(self.max_payload_len))
@@ -218,8 +218,11 @@ impl<T> Upgrade<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> Middleware<T> for Upgrade<T> {
-    fn call(&self, request: Request<T>, next: Next<T>) -> crate::BoxFuture {
+impl<State> Middleware<State> for Upgrade<State>
+where
+    State: Send + Sync + 'static,
+{
+    fn call(&self, request: Request<State>, next: Next<State>) -> crate::BoxFuture {
         match request.header(header::UPGRADE) {
             Ok(Some("websocket")) => {}
             Err(error) => return Box::pin(async { Err(error) }),
@@ -313,13 +316,19 @@ impl TryFrom<tokio_websockets::Message> for Message {
 
             if is_text {
                 Ok(Self::Text(validate_utf8(bytes)?))
-            } else if bytes.is_empty() {
-                Ok(Self::Close(None))
             } else {
+                // Continuation, Ping, and Pong messages are handled by
+                // tokio_websockets. The message opcode must be close.
                 match bytes.try_get_u16() {
+                    // The payload is empty and therefore, valid.
+                    Err(TryGetError { available: 0, .. }) => Ok(Self::Close(None)),
+
+                    // The payload starts with an invalid close code.
                     Ok(0..=999) | Ok(4999..) | Err(_) => {
                         Err(ProtocolError::InvalidCloseCode.into())
                     }
+
+                    // The payload contains a valid close code and reason.
                     Ok(u16) => {
                         let code = u16.try_into()?;
 
