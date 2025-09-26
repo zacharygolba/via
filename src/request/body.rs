@@ -142,7 +142,7 @@ impl Body for RequestBody {
 
 impl RequestPayload {
     pub fn len(&self) -> usize {
-        self.frames.iter().map(Buf::remaining).sum()
+        self.frames.iter().map(Bytes::len).sum()
     }
 
     pub fn is_empty(&self) -> bool {
