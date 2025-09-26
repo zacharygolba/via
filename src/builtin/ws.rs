@@ -22,9 +22,11 @@ use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
 use crate::request::{OwnedPathParams, PathParam, QueryParam, Request};
 use crate::response::Response;
+use crate::response::body::STANDARD_FRAME_LEN;
 
 pub use tokio_websockets::CloseCode;
 
+const DEFAULT_FRAME_SIZE: usize = 1024 * 4; // 4 KB
 const GUID: &[u8] = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 type OnUpgrade<State> =
@@ -44,7 +46,7 @@ pub struct Context<State> {
 }
 
 pub struct Upgrade<State> {
-    max_payload_len: Option<usize>,
+    max_payload_size: Option<usize>,
     flush_threshold: usize,
     frame_size: usize,
     on_upgrade: Arc<OnUpgrade<State>>,
@@ -90,13 +92,10 @@ where
     F: Fn(WebSocket, Context<State>) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Error>> + Send + Sync + 'static,
 {
-    let frame_size = 4 * 1024;
-    let flush_threshold = frame_size * 2;
-
     Upgrade {
-        flush_threshold,
-        frame_size,
-        max_payload_len: None,
+        flush_threshold: STANDARD_FRAME_LEN,
+        frame_size: DEFAULT_FRAME_SIZE,
+        max_payload_size: Some(STANDARD_FRAME_LEN),
         on_upgrade: Arc::new(move |socket, request| Box::pin(upgraded(socket, request))),
     }
 }
@@ -190,18 +189,30 @@ fn validate_websocket_version<T>(request: &Request<T>) -> Result<(), crate::Erro
 }
 
 impl<State> Upgrade<State> {
+    /// The threshold at which the bytes queued at socket are flushed.
+    ///
+    /// **Default:** `8 KB`
+    ///
     pub fn flush_threshold(mut self, flush_threshold: usize) -> Self {
         self.flush_threshold = flush_threshold;
         self
     }
 
+    /// The frame size used for messages in bytes.
+    ///
+    /// **Default:** `4 KB`
+    ///
     pub fn frame_size(mut self, frame_size: usize) -> Self {
         self.frame_size = frame_size;
         self
     }
 
-    pub fn max_payload_len(mut self, max_payload_len: Option<usize>) -> Self {
-        self.max_payload_len = max_payload_len;
+    /// The maximum payload size in bytes.
+    ///
+    /// **Default:** `8 KB`
+    ///
+    pub fn max_payload_size(mut self, max_payload_size: Option<usize>) -> Self {
+        self.max_payload_size = max_payload_size;
         self
     }
 }
@@ -209,7 +220,7 @@ impl<State> Upgrade<State> {
 impl<State> Upgrade<State> {
     fn stream_builder(&self) -> Builder {
         Builder::new()
-            .limits(Limits::default().max_payload_len(self.max_payload_len))
+            .limits(Limits::default().max_payload_len(self.max_payload_size))
             .config(
                 Config::default()
                     .flush_threshold(self.flush_threshold)
