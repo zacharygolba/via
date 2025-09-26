@@ -328,8 +328,7 @@ impl Error {
     /// # Example
     ///
     /// ```
-    /// use via::builtin::rescue;
-    /// use via::{App, BoxError, Next, Request};
+    /// use via::{App, BoxError, Next, Request, rescue};
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), BoxError> {
@@ -397,8 +396,7 @@ impl Error {
     /// # Example
     ///
     /// ```
-    /// use via::builtin::rescue;
-    /// use via::{App, BoxError, Next, Request};
+    /// use via::{App, BoxError, Next, Request, rescue};
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), BoxError> {
