@@ -166,7 +166,11 @@ impl RequestPayload {
 impl Payload for RequestPayload {
     #[inline]
     fn as_slice(&self) -> Option<&[u8]> {
-        Some(self.frames.first()?)
+        if let [frame] = &*self.frames {
+            Some(frame)
+        } else {
+            None
+        }
     }
 
     #[inline]
