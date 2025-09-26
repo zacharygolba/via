@@ -174,7 +174,7 @@ impl Payload for RequestPayload {
     }
 
     #[inline]
-    fn to_vec(mut self) -> Vec<u8> {
+    fn into_vec(mut self) -> Vec<u8> {
         let mut dest = Vec::with_capacity(self.len());
 
         for frame in &mut self.frames {

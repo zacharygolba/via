@@ -34,7 +34,7 @@ pub trait Payload: Sized {
     ///
     /// Any buffers contained in self are advanced to the end and consumed.
     ///
-    fn to_vec(self) -> Vec<u8>;
+    fn into_vec(self) -> Vec<u8>;
 
     /// Borrows the payload and converts it to a `UTF-8` string slice if it is
     /// contiguous.
@@ -63,6 +63,18 @@ pub trait Payload: Sized {
             .map(str::from_utf8)
             .transpose()
             .map_err(Error::bad_request)
+    }
+
+    /// Copy the bytes in self into an owned, contiguous `String`.
+    ///
+    /// Any buffers contained in self are advanced to the end and consumed.
+    ///
+    /// # Errors
+    ///
+    /// If the payload is not valid `UTF-8`.
+    ///
+    fn into_utf8(self) -> Result<String, Error> {
+        String::from_utf8(self.into_vec()).map_err(Error::bad_request)
     }
 
     /// Deserialize the payload as an instance of type `T`.
@@ -95,7 +107,7 @@ pub trait Payload: Sized {
     {
         let input = match self.as_str()? {
             Some(str) => Cow::Borrowed(str),
-            None => Cow::Owned(self.to_utf8()?),
+            None => Cow::Owned(self.into_utf8()?),
         };
 
         // Attempt deserialize JSON assuming that type `D` exists in a top
@@ -115,18 +127,6 @@ pub trait Payload: Sized {
             // code to 400 Bad Request.
             .map_err(Error::bad_request)
     }
-
-    /// Copy the bytes in self into an owned, contiguous `String`.
-    ///
-    /// Any buffers contained in self are advanced to the end and consumed.
-    ///
-    /// # Errors
-    ///
-    /// If the payload is not valid `UTF-8`.
-    ///
-    fn to_utf8(self) -> Result<String, Error> {
-        String::from_utf8(self.to_vec()).map_err(Error::bad_request)
-    }
 }
 
 impl Payload for Bytes {
@@ -136,7 +136,7 @@ impl Payload for Bytes {
     }
 
     #[inline]
-    fn to_vec(mut self) -> Vec<u8> {
+    fn into_vec(mut self) -> Vec<u8> {
         let remaining = self.remaining();
         let mut vec = Vec::with_capacity(remaining);
 
