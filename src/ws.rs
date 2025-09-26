@@ -31,7 +31,7 @@ const DEFAULT_FRAME_SIZE: usize = 1024 * 4; // 4 KB
 const GUID: &[u8] = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 type OnUpgrade<State> =
-    dyn Fn(WebSocket, Context<State>) -> BoxFuture<Result<(), Error>> + Send + Sync;
+    dyn Fn(Channel, Context<State>) -> BoxFuture<Result<(), Error>> + Send + Sync;
 
 #[derive(Debug)]
 #[non_exhaustive]
@@ -39,6 +39,11 @@ pub enum Message {
     Binary(Bytes),
     Close(Option<(CloseCode, Option<ByteString>)>),
     Text(ByteString),
+}
+
+pub struct Channel {
+    sender: Sender<Message>,
+    receiver: Receiver<Message>,
 }
 
 pub struct Context<State = ()> {
@@ -53,18 +58,13 @@ pub struct Upgrade<State> {
     on_upgrade: Arc<OnUpgrade<State>>,
 }
 
-pub struct WebSocket {
-    sender: Sender<Message>,
-    receiver: Receiver<Message>,
-}
-
 /// Upgrade the connection to a web socket.
 ///
 /// # Example
 ///
 /// ```
+/// use via::ws::{self, Message};
 /// use via::{App, BoxError, Payload};
-/// use via::builtin::ws::{self, Message, WebSocket};
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), BoxError> {
@@ -74,14 +74,14 @@ pub struct WebSocket {
 ///     app.at("/echo").respond(via::ws(echo));
 /// }
 ///
-/// async fn echo(mut socket: WebSocket, _: ws::Context) -> via::Result<()> {
-///     while let Some(message) = socket.next().await {
+/// async fn echo(mut channel: ws::Channel, _: ws::Context) -> via::Result<()> {
+///     while let Some(message) = channel.next().await {
 ///         if matches!(&message, Message::Close(_)) {
 ///             message.as_str().inspect(|reason| eprintln!("close: {}", reason));
 ///             break;
 ///         }
 ///
-///         socket.send(message.into_vec()).await?;
+///         channel.send(message.into_vec()).await?;
 ///     }
 ///
 ///     Ok(())
@@ -90,7 +90,7 @@ pub struct WebSocket {
 ///
 pub fn ws<State, F, R>(upgraded: F) -> Upgrade<State>
 where
-    F: Fn(WebSocket, Context<State>) -> R + Send + Sync + 'static,
+    F: Fn(Channel, Context<State>) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Error>> + Send + Sync + 'static,
 {
     Upgrade {
@@ -123,7 +123,7 @@ async fn handle_upgrade<T>(
     let result = 'session: loop {
         let (sender, mut rx) = mpsc::channel(128);
         let (tx, receiver) = mpsc::channel(128);
-        let mut future = on_upgrade(WebSocket { sender, receiver }, context.clone());
+        let mut future = on_upgrade(Channel { sender, receiver }, context.clone());
 
         loop {
             let error_opt = tokio::select! {
@@ -476,7 +476,7 @@ where
     }
 }
 
-impl WebSocket {
+impl Channel {
     pub async fn send(&self, message: impl Into<Message>) -> Result<(), Error> {
         if self.sender.send(message.into()).await.is_err() {
             Err(tokio_websockets::Error::AlreadyClosed.into())

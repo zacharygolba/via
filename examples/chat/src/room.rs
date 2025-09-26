@@ -1,5 +1,5 @@
 use serde_json::json;
-use via::ws::{self, Message, WebSocket};
+use via::ws::{self, Message};
 use via::{Next, Request, Response};
 
 use crate::chat::Chat;
@@ -26,7 +26,7 @@ pub async fn show(request: Request<Chat>, _: Next<Chat>) -> via::Result {
     }
 }
 
-pub async fn join(mut socket: WebSocket, request: ws::Context<Chat>) -> via::Result<()> {
+pub async fn join(mut channel: ws::Channel, request: ws::Context<Chat>) -> via::Result<()> {
     let slug = request.param("room").into_result()?;
     let chat = request.state();
 
@@ -41,12 +41,12 @@ pub async fn join(mut socket: WebSocket, request: ws::Context<Chat>) -> via::Res
                 }
 
                 if let Some(message) = chat.get(&slug, index).await {
-                    socket.send(message).await?;
+                    channel.send(message).await?;
                 }
             }
 
             // Message received from the websocket.
-            Some(message) = socket.next() => match message {
+            Some(message) = channel.next() => match message {
                 // Break the loop when we receive a close message.
                 Message::Close(close) => {
                     if let Some((code, reason)) = close {
