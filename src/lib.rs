@@ -44,6 +44,8 @@ pub mod cookies;
 pub mod request;
 pub mod rescue;
 pub mod response;
+
+#[cfg(feature = "ws")]
 pub mod ws;
 
 mod allow;
