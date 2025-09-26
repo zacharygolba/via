@@ -267,7 +267,7 @@ impl Payload for Message {
     #[inline]
     fn as_slice(&self) -> Option<&[u8]> {
         match self {
-            Self::Close(Some((_, Some(text)))) | Self::Text(text) => Payload::as_slice(text),
+            Self::Close(Some((_, Some(text)))) | Self::Text(text) => Some(text.as_ref()),
             Self::Binary(binary) => Payload::as_slice(binary),
             _ => None,
         }
@@ -276,7 +276,11 @@ impl Payload for Message {
     #[inline]
     fn as_str(&self) -> Result<Option<&str>, Error> {
         match self {
-            Self::Close(Some((_, Some(text)))) | Self::Text(text) => Payload::as_str(text),
+            Self::Close(Some((_, Some(text)))) | Self::Text(text) => {
+                let data = text.as_bytes();
+                // Safety: `text` is guaranteed to be valid UTF-8.
+                unsafe { Ok(Some(str::from_utf8_unchecked(data))) }
+            }
             Self::Binary(binary) => Payload::as_str(binary),
             _ => Ok(None),
         }
@@ -285,7 +289,11 @@ impl Payload for Message {
     #[inline]
     fn to_utf8(self) -> Result<String, Error> {
         match self {
-            Self::Close(Some((_, Some(text)))) | Self::Text(text) => Payload::to_utf8(text),
+            Self::Close(Some((_, Some(text)))) | Self::Text(text) => {
+                let data = Payload::to_vec(text.into_bytes());
+                // Safety: `text` is guaranteed to be valid UTF-8.
+                unsafe { Ok(String::from_utf8_unchecked(data)) }
+            }
             Self::Binary(binary) => Payload::to_utf8(binary),
             _ => Ok(Default::default()),
         }
@@ -294,7 +302,9 @@ impl Payload for Message {
     #[inline]
     fn to_vec(self) -> Vec<u8> {
         match self {
-            Self::Close(Some((_, Some(text)))) | Self::Text(text) => Payload::to_vec(text),
+            Self::Close(Some((_, Some(text)))) | Self::Text(text) => {
+                Payload::to_vec(text.into_bytes())
+            }
             Self::Binary(binary) => Payload::to_vec(binary),
             _ => Default::default(),
         }

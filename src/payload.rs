@@ -146,21 +146,3 @@ impl Payload for Bytes {
         vec
     }
 }
-
-#[cfg(feature = "ws")]
-impl Payload for bytestring::ByteString {
-    #[inline]
-    fn as_slice(&self) -> Option<&[u8]> {
-        Some(self.as_ref())
-    }
-
-    #[inline]
-    fn as_str(&self) -> Result<Option<&str>, Error> {
-        Ok(Some(self.as_ref()))
-    }
-
-    #[inline]
-    fn to_vec(self) -> Vec<u8> {
-        Payload::to_vec(self.into_bytes())
-    }
-}
