@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::str::FromStr;
 
 use crate::error::Error;
+use crate::raise;
 use crate::util::UriEncoding;
 
 pub struct PathParam<'a, 'b> {
@@ -42,7 +43,9 @@ impl<'a, 'b> PathParam<'a, 'b> {
         U: FromStr,
         U::Err: std::error::Error + Send + Sync + 'static,
     {
-        self.into_result()?.parse().map_err(Error::bad_request)
+        self.into_result()?
+            .parse()
+            .map_err(|error| raise!(400, error))
     }
 
     pub fn unwrap_or<U>(self, or: U) -> Cow<'a, str>
@@ -74,10 +77,9 @@ impl<'a, 'b> PathParam<'a, 'b> {
         match self.at {
             Some((start, Some(end))) => self.encoding.decode(&self.source[start..end]),
             Some((start, None)) => self.encoding.decode(&self.source[start..]),
-            None => Err(crate::raise!(
+            None => Err(raise!(
                 400,
-                "Missing required parameter \"{}\".",
-                self.name
+                message = format!("Missing required parameter \"{}\".", self.name),
             )),
         }
     }

@@ -99,11 +99,11 @@ async fn open(path: &Path, max_alloc_size: usize) -> Result<Open, Error> {
             Ok(open) => Ok(open),
             Err(error) => match error.kind() {
                 ErrorKind::IsADirectory | ErrorKind::NotFound | ErrorKind::PermissionDenied => {
-                    Err(Error::from_io(error))
+                    Err(Error::from_io_error(error))
                 }
                 _ => {
                     if attempts > MAX_ATTEMPTS {
-                        Err(Error::from_io(error))
+                        Err(Error::from_io_error(error))
                     } else {
                         time::sleep(Duration::from_millis(delay)).await;
                         attempts += 1;

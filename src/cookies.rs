@@ -1,10 +1,10 @@
 use cookie::{Cookie, SplitCookies};
 use http::header::COOKIE;
 
+use crate::Next;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::request::{Request, RequestHead};
 use crate::util::UriEncoding;
-use crate::{Error, Next};
 
 #[derive(Debug)]
 pub struct CookieParser(UriEncoding);
@@ -44,7 +44,7 @@ where
 
             for result in self.parse(input) {
                 match result {
-                    Err(error) => break 'parse Err(Error::bad_request(error)),
+                    Err(error) => break 'parse Err(crate::raise!(400, error)),
                     Ok(cookie) => {
                         existing.push(cookie.clone());
                         cookies.add_original(cookie);

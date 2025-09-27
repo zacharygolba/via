@@ -7,8 +7,7 @@ use std::fmt::{self, Debug, Formatter};
 
 use super::body::ResponseBody;
 use super::builder::ResponseBuilder;
-use crate::BoxError;
-use crate::error::Error;
+use crate::error::{BoxError, Error};
 
 pub struct Response {
     pub(super) cookies: CookieJar,

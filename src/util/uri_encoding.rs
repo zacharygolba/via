@@ -18,6 +18,6 @@ impl UriEncoding {
 
         percent_decode_str(input)
             .decode_utf8()
-            .map_err(Error::bad_request)
+            .map_err(|error| crate::raise!(400, error))
     }
 }

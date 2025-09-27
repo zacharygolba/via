@@ -190,7 +190,7 @@ impl<State> Middleware<State> for Allow<State> {
         } else if self.or_next {
             next.call(request)
         } else {
-            let mut response = Response::from(crate::raise!(405).as_json());
+            let mut response = Response::from(crate::raise!(405));
 
             if let Some(value) = self.allow_header() {
                 response.headers_mut().insert(ALLOW, value);

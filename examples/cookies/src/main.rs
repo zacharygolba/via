@@ -1,6 +1,6 @@
 use cookie::{Cookie, Key};
 use std::process::ExitCode;
-use via::{App, BoxError, Next, Request, Response, cookies, rescue};
+use via::{App, BoxError, Next, Request, Response, cookies};
 
 /// A struct used to store application state.
 ///
@@ -97,10 +97,6 @@ async fn main() -> Result<ExitCode, BoxError> {
     let mut app = App::new(Cookies {
         secret: get_secret_from_env(),
     });
-
-    // Capture errors from downstream, log them, and map them into responses.
-    // Upstream middleware remains unaffected and continues execution.
-    app.include(rescue::inspect(|error| eprintln!("error: {}", error)));
 
     // The CookieParser middleware can be added at any depth of the route tree.
     // In this example, we add it to the root of the app. This means that every

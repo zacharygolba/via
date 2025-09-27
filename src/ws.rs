@@ -142,7 +142,9 @@ async fn handle_upgrade<T>(
                 },
                 result = future.as_mut() => {
                     if let Err(error) = result {
-                        handle_error(error.source());
+                        if cfg!(debug_assertions) {
+                            eprintln!("error(ws): {}", error);
+                        }
                         continue 'session;
                     }
 
@@ -167,9 +169,12 @@ async fn handle_upgrade<T>(
 
 fn validate_accept_key<T>(request: &Request<T>) -> Result<String, crate::Error> {
     let mut hasher = Hasher::new(&SHA1_FOR_LEGACY_USE_ONLY);
-    let accept_key = request
-        .header(&header::SEC_WEBSOCKET_KEY)?
-        .ok_or_else(|| crate::raise!(400, "missing required header: \"Sec-Websocket-Key\""))?;
+    let accept_key = request.header(&header::SEC_WEBSOCKET_KEY)?.ok_or_else(|| {
+        crate::raise!(
+            400,
+            message = "Missing required header: \"Sec-Websocket-Key\"."
+        )
+    })?;
 
     hasher.update(accept_key.as_bytes());
     hasher.update(GUID);
@@ -185,7 +190,10 @@ fn validate_utf8(bytes: Bytes) -> Result<ByteString, ProtocolError> {
 fn validate_websocket_version<T>(request: &Request<T>) -> Result<(), crate::Error> {
     match request.header(header::SEC_WEBSOCKET_VERSION)? {
         Some("13") => Ok(()),
-        Some(_) | None => Err(crate::raise!(400, "unsupported websocket version")),
+        Some(_) | None => Err(crate::raise!(
+            400,
+            message = "Unsupported websocket version."
+        )),
     }
 }
 
