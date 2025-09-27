@@ -295,24 +295,24 @@ impl Payload for Message {
     }
 
     #[inline]
-    fn into_utf8(self) -> Result<String, Error> {
+    fn copy_to_vec(self) -> Vec<u8> {
         match self {
-            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
-                Payload::into_utf8(bytestring)
+            Self::Close(Some((_, Some(text)))) | Self::Text(text) => {
+                Payload::copy_to_vec(text.into_bytes())
             }
-            Self::Binary(bytes) => Payload::into_utf8(bytes),
-            _ => Ok(Default::default()),
+            Self::Binary(bytes) => Payload::copy_to_vec(bytes),
+            _ => Default::default(),
         }
     }
 
     #[inline]
-    fn into_vec(self) -> Vec<u8> {
+    fn validate_utf8(self) -> Result<String, Error> {
         match self {
-            Self::Close(Some((_, Some(text)))) | Self::Text(text) => {
-                Payload::into_vec(text.into_bytes())
+            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
+                Payload::validate_utf8(bytestring)
             }
-            Self::Binary(bytes) => Payload::into_vec(bytes),
-            _ => Default::default(),
+            Self::Binary(bytes) => Payload::validate_utf8(bytes),
+            _ => Ok(Default::default()),
         }
     }
 }
@@ -332,14 +332,14 @@ impl Payload for ByteString {
     }
 
     #[inline]
-    fn into_utf8(self) -> Result<String, Error> {
-        // Safety: self is guaranteed to be valid UTF-8.
-        Ok(unsafe { String::from_utf8_unchecked(self.into_vec()) })
+    fn copy_to_vec(self) -> Vec<u8> {
+        self.into_bytes().copy_to_vec()
     }
 
     #[inline]
-    fn into_vec(self) -> Vec<u8> {
-        self.into_bytes().into_vec()
+    fn validate_utf8(self) -> Result<String, Error> {
+        // Safety: self is guaranteed to be valid UTF-8.
+        Ok(unsafe { String::from_utf8_unchecked(self.copy_to_vec()) })
     }
 }
 
