@@ -10,6 +10,7 @@ use http::header::CONTENT_TYPE;
 use http::{HeaderValue, StatusCode};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
+use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::{self, Error as IoError};
@@ -34,7 +35,7 @@ pub struct Error {
 
 struct Errors<'a> {
     status: StatusCode,
-    errors: Vec<ErrorMessage<'a>>,
+    errors: SmallVec<[ErrorMessage<'a>; 1]>,
 }
 
 #[derive(Serialize)]
@@ -171,7 +172,7 @@ impl<'a> Errors<'a> {
     pub(crate) fn new(status: StatusCode) -> Self {
         Self {
             status,
-            errors: Vec::new(),
+            errors: SmallVec::new(),
         }
     }
 
@@ -190,7 +191,7 @@ impl Serialize for Errors<'_> {
         let mut state = serializer.serialize_struct("Errors", 2)?;
 
         state.serialize_field("status", &self.status.as_u16())?;
-        state.serialize_field("errors", &self.errors)?;
+        state.serialize_field("errors", &*self.errors)?;
 
         state.end()
     }
