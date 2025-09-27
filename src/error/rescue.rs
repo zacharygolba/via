@@ -75,9 +75,12 @@ impl<'a> Sanitize<'a> {
         }
     }
 
-    pub fn with_message(self, message: Cow<'a, str>) -> Self {
+    pub fn with_message<T>(self, message: T) -> Self
+    where
+        Cow<'a, str>: From<T>,
+    {
         Self {
-            message: Some(message),
+            message: Some(message.into()),
             ..self
         }
     }
