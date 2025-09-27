@@ -15,13 +15,14 @@
 /// // You can allocate if you want.
 /// raise!(404, message = format!("User with id: {} does not exist.", 1234));
 ///
-/// let result = Err(io::Error::from(io::ErrorKind::InvalidInput));
 ///
 /// // Implicitly box the error source.
-/// result.clone().map_err(|error| raise!(400, error));
+/// let io_error = io::Error::from(io::ErrorKind::InvalidInput);
+/// let error = raise!(400, io_error);
 ///
 /// // Or specify when the error source is already boxed.
-/// result.clone().map_err(|error| raise!(400, boxed = Box::new(error)));
+/// let io_error = io::Error::from(io::ErrorKind::InvalidInput);
+/// let error = raise!(400, boxed = Box::new(io_error));
 /// ```
 ///
 #[macro_export]
