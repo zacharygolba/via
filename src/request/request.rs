@@ -23,7 +23,7 @@ pub struct Request<State = ()> {
 ///
 #[derive(Debug)]
 pub struct RequestHead<State> {
-    pub parts: Parts,
+    pub(crate) parts: Parts,
 
     /// The request's path parameters.
     ///
