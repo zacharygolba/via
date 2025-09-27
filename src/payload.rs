@@ -95,7 +95,7 @@ pub trait Payload: Sized {
     /// }
     ///
     /// let payload = Bytes::copy_from_slice(b"{\"data\":{\"name\":\"Ciro\"}}");
-    /// let cat = payload.json::<Cat>().expect("invalid payload");
+    /// let cat = payload.parse_json::<Cat>().expect("invalid payload");
     ///
     /// println!("Meow, {}!", cat.name);
     /// // => Meow, Ciro!
