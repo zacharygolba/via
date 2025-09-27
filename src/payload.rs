@@ -34,7 +34,7 @@ pub trait Payload: Sized {
     ///
     /// Any buffers contained in self are advanced to the end and consumed.
     ///
-    fn into_vec(self) -> Vec<u8>;
+    fn copy_to_vec(self) -> Vec<u8>;
 
     /// Borrows the payload and converts it to a `UTF-8` string slice if it is
     /// contiguous.
@@ -73,8 +73,8 @@ pub trait Payload: Sized {
     ///
     /// If the payload is not valid `UTF-8`.
     ///
-    fn into_utf8(self) -> Result<String, Error> {
-        String::from_utf8(self.into_vec()).map_err(|error| crate::raise!(400, error))
+    fn validate_utf8(self) -> Result<String, Error> {
+        String::from_utf8(self.copy_to_vec()).map_err(|error| crate::raise!(400, error))
     }
 
     /// Deserialize the payload as an instance of type `T`.
@@ -95,19 +95,19 @@ pub trait Payload: Sized {
     /// }
     ///
     /// let payload = Bytes::copy_from_slice(b"{\"data\":{\"name\":\"Ciro\"}}");
-    /// let cat = payload.json::<Cat>().expect("invalid payload");
+    /// let cat = payload.parse_json::<Cat>().expect("invalid payload");
     ///
     /// println!("Meow, {}!", cat.name);
     /// // => Meow, Ciro!
     /// ```
     ///
-    fn json<T>(self) -> Result<T, Error>
+    fn parse_json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
         let input = match self.as_str()? {
             Some(str) => Cow::Borrowed(str),
-            None => Cow::Owned(self.into_utf8()?),
+            None => Cow::Owned(self.validate_utf8()?),
         };
 
         // Attempt deserialize JSON assuming that type `D` exists in a top
@@ -136,7 +136,7 @@ impl Payload for Bytes {
     }
 
     #[inline]
-    fn into_vec(mut self) -> Vec<u8> {
+    fn copy_to_vec(mut self) -> Vec<u8> {
         let remaining = self.remaining();
         let mut vec = Vec::with_capacity(remaining);
 
