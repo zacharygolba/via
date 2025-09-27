@@ -1,4 +1,5 @@
-use http::{StatusCode, header};
+use http::StatusCode;
+use http::header::LOCATION;
 
 use crate::error::Error;
 use crate::response::Response;
@@ -59,24 +60,18 @@ impl Redirect {
     /// This function may return an error if the provided `location` cannot be
     /// parsed into an HTTP header value or if provided `status` would not
     /// result in a redirect.
-    pub fn with_status<T>(location: &str, status: T) -> Result<Response, Error>
-    where
-        StatusCode: TryFrom<T>,
-        <StatusCode as TryFrom<T>>::Error: Into<http::Error>,
-    {
-        let response = Response::build()
-            .header(header::LOCATION, location)
+    pub fn with_status(location: &str, status: StatusCode) -> Result<Response, Error> {
+        if status.is_redirection() {
+            if cfg!(debug_assertions) {
+                eprintln!("error: redirect status out of range {}", status);
+            }
+
+            return Err(crate::raise!(500));
+        }
+
+        Response::build()
             .status(status)
-            .finish()?;
-
-        let status = response.status();
-
-        status.is_redirection().then_some(response).ok_or_else(|| {
-            crate::raise!(
-                400,
-                "Expected redirect status to be within 300-399. Received: {}",
-                status
-            )
-        })
+            .header(LOCATION, location)
+            .finish()
     }
 }

@@ -3,7 +3,7 @@ use std::fmt::Write;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use via::{App, BoxError, Next, Request, Response, rescue};
+use via::{App, BoxError, Next, Request, Response};
 
 /// A struct of containing the shared state for the application. This struct
 /// will be made available to all middleware functions and responders by
@@ -74,10 +74,6 @@ async fn main() -> Result<ExitCode, BoxError> {
         errors: Arc::new(AtomicU32::new(0)),
         sucesses: Arc::new(AtomicU32::new(0)),
     });
-
-    // Capture errors from downstream, log them, and map them into responses.
-    // Upstream middleware remains unaffected and continues execution.
-    app.include(rescue::inspect(|error| eprintln!("error: {}", error)));
 
     // Add the `counter` middleware to the application. Since we are not
     // specifying an endpoint with the `at` method, this middleware will

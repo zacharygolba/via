@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 use via::response::File;
-use via::{App, BoxError, Next, Request, rescue};
+use via::{App, BoxError, Next, Request};
 
 /// The maximum amount of memory that will be allocated to serve a single file.
 ///
@@ -56,10 +56,6 @@ fn resolve_path(path_param: &str) -> PathBuf {
 #[tokio::main]
 async fn main() -> Result<ExitCode, BoxError> {
     let mut app = App::new(());
-
-    // Capture errors from downstream, log them, and map them into responses.
-    // Upstream middleware remains unaffected and continues execution.
-    app.include(rescue::inspect(|error| eprintln!("error: {}", error)));
 
     // Serve any file located in the public dir.
     app.at("/*path").respond(via::get(file_server).or_next());

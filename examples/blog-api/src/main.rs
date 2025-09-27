@@ -34,12 +34,13 @@ async fn main() -> Result<ExitCode, BoxError> {
 
     // Define the /api namespace.
     app.at("/api").scope(|api| {
-        use api::{posts, users, util};
+        use api::util::with_error_sanitizer;
+        use api::{posts, users};
 
         // Capture errors that occur in the api namespace, log them, and then
         // convert them into json responses. Upstream middleware remains
         // unaffected and continues execution.
-        api.include(rescue::map(util::map_error));
+        api.include(rescue(with_error_sanitizer));
 
         // Add a timeout middleware to the /api routes. This will prevent the
         // server from waiting indefinitely if we lose connection to the

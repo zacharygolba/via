@@ -3,7 +3,7 @@ mod room;
 
 use http::header;
 use std::process::ExitCode;
-use via::{App, BoxError, Response, rescue};
+use via::{App, BoxError, Response};
 
 use crate::chat::Chat;
 
@@ -13,17 +13,10 @@ const CSP: &str = "default-src 'self'; connect-src 'self'";
 async fn main() -> Result<ExitCode, BoxError> {
     let mut app = App::new(Chat::new());
 
-    // Capture errors from downstream, log them, and map them into responses.
-    // Upstream middleware remains unaffected and continues execution.
-    app.include(rescue::map(|error| {
-        eprintln!("error: {}", error);
-        error.as_json()
-    }));
-
     app.at("/").respond(via::get(async |_, _| {
         Response::build()
             .header(header::CONTENT_SECURITY_POLICY, CSP)
-            .text("Chat Example frontend coming soon!".to_owned())
+            .text("Chat Example frontend coming soon!")
     }));
 
     // Define a router namespace for our chat API.

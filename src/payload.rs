@@ -62,7 +62,7 @@ pub trait Payload: Sized {
         self.as_slice()
             .map(str::from_utf8)
             .transpose()
-            .map_err(Error::bad_request)
+            .map_err(|error| crate::raise!(400, error))
     }
 
     /// Copy the bytes in self into an owned, contiguous `String`.
@@ -74,7 +74,7 @@ pub trait Payload: Sized {
     /// If the payload is not valid `UTF-8`.
     ///
     fn into_utf8(self) -> Result<String, Error> {
-        String::from_utf8(self.into_vec()).map_err(Error::bad_request)
+        String::from_utf8(self.into_vec()).map_err(|error| crate::raise!(400, error))
     }
 
     /// Deserialize the payload as an instance of type `T`.
@@ -125,7 +125,7 @@ pub trait Payload: Sized {
             .or_else(|error| serde_json::from_str(input.as_ref()).or(Err(error)))
             // If an error occurred, wrap it with `via::Error` and set the status
             // code to 400 Bad Request.
-            .map_err(Error::bad_request)
+            .map_err(|error| crate::raise!(400, error))
     }
 }
 

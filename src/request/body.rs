@@ -1,5 +1,5 @@
 use bytes::{Buf, Bytes};
-use http::{HeaderMap, StatusCode};
+use http::HeaderMap;
 use http_body::{Body, Frame, SizeHint};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyStream, Either, LengthLimitError, Limited};
@@ -8,8 +8,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
-use crate::Payload;
 use crate::error::{BoxError, Error};
+use crate::{Payload, raise};
 
 #[derive(Debug)]
 pub struct RequestBody(Either<Limited<Incoming>, BoxBody<Bytes, BoxError>>);
@@ -29,14 +29,14 @@ pub struct DataAndTrailers {
 }
 
 fn already_read() -> Error {
-    crate::raise!(500, "The request body has already been read.")
+    raise!(500, message = "The request body has already been read.")
 }
 
 fn map_err(error: BoxError) -> Error {
     if error.is::<LengthLimitError>() {
-        Error::new(StatusCode::PAYLOAD_TOO_LARGE, error)
+        raise!(413, source = error) // Payload Too Large
     } else {
-        Error::new(StatusCode::BAD_REQUEST, error)
+        raise!(400, source = error) // Bad Request
     }
 }
 
