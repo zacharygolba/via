@@ -27,17 +27,17 @@
 ///
 #[macro_export]
 macro_rules! raise {
-    (@reason $status:ident, message = $message:expr $(,)*) => {{
-        $crate::Error::new(http::StatusCode::$status, $message)
-    }};
+    (@reason $status:ident, message = $message:expr $(,)*) => {
+        $crate::Error::new($crate::error::StatusCode::$status, $message)
+    };
 
-    (@reason $status:ident, boxed = $source:expr) => {{
-        $crate::Error::from_source(http::StatusCode::$status, $source)
-    }};
+    (@reason $status:ident, boxed = $source:expr) => {
+        $crate::Error::from_source($crate::error::StatusCode::$status, $source)
+    };
 
-    (@reason $status:ident, $source:expr) => {{
-        $crate::Error::from_source(http::StatusCode::$status, Box::new($source))
-    }};
+    (@reason $status:ident, $source:expr) => {
+        $crate::Error::from_source($crate::error::StatusCode::$status, Box::new($source))
+    };
 
     (400) => { $crate::raise!(400, message = "Bad request.") };
     (400, $($arg:tt)*) => {

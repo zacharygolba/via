@@ -6,14 +6,17 @@ mod rescue;
 mod server;
 
 use either::Either;
+use http::HeaderValue;
 use http::header::CONTENT_TYPE;
-use http::{HeaderValue, StatusCode};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::{self, Error as IoError};
+
+#[doc(hidden)]
+pub use http::StatusCode; // Required for the raise macro.
 
 use crate::response::{Response, ResponseBody};
 
