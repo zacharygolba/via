@@ -14,7 +14,7 @@ pub struct Rescue<F> {
     recover: F,
 }
 
-/// Customize how the contained error is converted to a response.
+/// Customize how an [`Error`] is converted to a response.
 ///
 pub struct Sanitize<'a> {
     json: bool,
