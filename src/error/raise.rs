@@ -1,4 +1,4 @@
-/// Wrap existing errors or construct new ones by supplying a status code.
+/// Wrap an existing error or construct a new one by providing a status code.
 ///
 /// # Example
 ///
