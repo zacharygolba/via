@@ -1,10 +1,36 @@
+/// Wrap existing errors or construct new ones by supplying a status code.
+///
+/// # Example
+///
+/// ```
+/// use via::raise;
+/// use std::io;
+///
+/// // Use the canonical reason phrase of the status code as the message.
+/// raise!(404);
+///
+/// // Or provide a custom error message.
+/// raise!(404, message = "Could not find a user with the provided id.");
+///
+/// // You can allocate if you want.
+/// raise!(404, message = format!("User with id: {} does not exist.", 1234));
+///
+/// let result = Err(io::Error::from(io::ErrorKind::InvalidInput));
+///
+/// // Implicitly box the error source.
+/// result.clone().map_err(|error| raise!(400, error));
+///
+/// // Or specify when the error source is already boxed.
+/// result.clone().map_err(|error| raise!(400, boxed = Box::new(error)));
+/// ```
+///
 #[macro_export]
 macro_rules! raise {
     (@reason $status:ident, message = $message:expr $(,)*) => {{
         $crate::Error::new(http::StatusCode::$status, $message)
     }};
 
-    (@reason $status:ident, source = $source:expr) => {{
+    (@reason $status:ident, boxed = $source:expr) => {{
         $crate::Error::from_source(http::StatusCode::$status, $source)
     }};
 

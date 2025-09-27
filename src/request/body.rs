@@ -34,9 +34,9 @@ fn already_read() -> Error {
 
 fn map_err(error: BoxError) -> Error {
     if error.is::<LengthLimitError>() {
-        raise!(413, source = error) // Payload Too Large
+        raise!(413, boxed = error) // Payload Too Large
     } else {
-        raise!(400, source = error) // Bad Request
+        raise!(400, boxed = error) // Bad Request
     }
 }
 

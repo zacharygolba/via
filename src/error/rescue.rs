@@ -8,10 +8,14 @@ use crate::middleware::{BoxFuture, Middleware};
 use crate::response::{Response, ResponseBuilder};
 use crate::{Next, Pipe, Request};
 
+/// Recover from errors that occur in downstream middleware.
+///
 pub struct Rescue<F> {
     recover: F,
 }
 
+/// Customize how the contained error is converted to a response.
+///
 pub struct Sanitize<'a> {
     json: bool,
     error: &'a Error,
@@ -19,6 +23,8 @@ pub struct Sanitize<'a> {
     message: Option<Cow<'a, str>>,
 }
 
+/// Recover from errors that occur in downstream middleware.
+///
 pub fn rescue<F>(recover: F) -> Rescue<F>
 where
     F: Fn(Sanitize) -> Sanitize + Copy + Send + Sync + 'static,
@@ -53,10 +59,14 @@ where
 }
 
 impl<'a> Sanitize<'a> {
+    /// Generate a json response for the error.
+    ///
     pub fn as_json(self) -> Self {
         Self { json: true, ..self }
     }
 
+    /// Sanitize the contained error based on the error source.
+    ///
     pub fn map<F>(self, f: F) -> Self
     where
         F: FnOnce(Self, &(dyn std::error::Error + 'static)) -> Self,
@@ -68,6 +78,8 @@ impl<'a> Sanitize<'a> {
         }
     }
 
+    /// Use the canonical reason of the status code as the error message.
+    ///
     pub fn with_canonical_reason(self) -> Self {
         Self {
             message: self.status_code().canonical_reason().map(Cow::Borrowed),
@@ -75,6 +87,9 @@ impl<'a> Sanitize<'a> {
         }
     }
 
+    /// Provide a custom message to use for the response generated from this
+    /// error.
+    ///
     pub fn with_message<T>(self, message: T) -> Self
     where
         Cow<'a, str>: From<T>,
@@ -85,6 +100,8 @@ impl<'a> Sanitize<'a> {
         }
     }
 
+    /// Overrides the HTTP status code of the error.
+    ///
     pub fn with_status_code(self, status: StatusCode) -> Self {
         Self {
             status: Some(status),

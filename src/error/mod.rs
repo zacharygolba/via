@@ -1,4 +1,4 @@
-//! Conviently work with errors that may occur in an application.
+//! Error handling.
 //!
 
 mod raise;
@@ -28,11 +28,11 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 ///
 #[derive(Debug)]
 pub struct Error {
-    pub(crate) status: StatusCode,
+    status: StatusCode,
     reason: Either<BoxError, String>,
 }
 
-pub(crate) struct Errors<'a> {
+struct Errors<'a> {
     status: StatusCode,
     errors: Vec<ErrorMessage<'a>>,
 }
@@ -110,7 +110,7 @@ impl Error {
 }
 
 impl Error {
-    pub(crate) fn repr_json(&self, status_code: StatusCode) -> Errors<'_> {
+    fn repr_json(&self, status_code: StatusCode) -> Errors<'_> {
         let mut errors = Errors::new(status_code);
 
         if let Either::Right(message) = self.reason.as_ref() {
