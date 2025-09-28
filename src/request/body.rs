@@ -4,6 +4,7 @@ use http_body::{Body, Frame, SizeHint};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyStream, Either, LengthLimitError, Limited};
 use hyper::body::Incoming;
+use smallvec::SmallVec;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
@@ -24,7 +25,7 @@ pub struct IntoFuture {
 ///
 #[derive(Debug)]
 pub struct DataAndTrailers {
-    frames: Vec<Bytes>,
+    frames: SmallVec<[Bytes; 1]>,
     trailers: Option<HeaderMap>,
 }
 
