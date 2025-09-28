@@ -10,7 +10,7 @@ use crate::error::BoxError;
 
 pub(super) const MAX_FRAME_SIZE: usize = 16 * 1024; // 16KB
 
-/// A buffered `impl Body` that is written in `16KB..=32KB` chunks.
+/// A buffered `impl Body` that is written in `16 KB` chunks.
 ///
 #[derive(Default)]
 pub struct BufferBody {
