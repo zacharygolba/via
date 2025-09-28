@@ -23,7 +23,6 @@ use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
 use crate::request::{OwnedPathParams, PathParam, QueryParam, Request};
 use crate::response::Response;
-use crate::response::body::MAX_FRAME_SIZE;
 
 pub use tokio_websockets::CloseCode;
 
