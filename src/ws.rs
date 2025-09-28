@@ -23,7 +23,6 @@ use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
 use crate::request::{OwnedPathParams, PathParam, QueryParam, Request};
 use crate::response::Response;
-use crate::response::body::STANDARD_FRAME_LEN;
 
 pub use tokio_websockets::CloseCode;
 
@@ -93,10 +92,13 @@ where
     F: Fn(Channel, Context<State>) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Error>> + Send + Sync + 'static,
 {
+    // 16 KB the max size of an HTTP/2 data frame.
+    let frame_size = DEFAULT_FRAME_SIZE * 4;
+
     Upgrade {
-        flush_threshold: STANDARD_FRAME_LEN,
-        frame_size: DEFAULT_FRAME_SIZE,
-        max_payload_size: Some(STANDARD_FRAME_LEN),
+        frame_size,
+        flush_threshold: frame_size,
+        max_payload_size: None,
         on_upgrade: Arc::new(move |socket, request| Box::pin(upgraded(socket, request))),
     }
 }
