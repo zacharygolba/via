@@ -92,9 +92,12 @@ where
     F: Fn(Channel, Context<State>) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Error>> + Send + Sync + 'static,
 {
+    // 16 KB the max size of an HTTP/2 data frame.
+    let frame_size = DEFAULT_FRAME_SIZE * 4;
+
     Upgrade {
-        flush_threshold: DEFAULT_FRAME_SIZE * 2, // 8 KB same as tokio_websockets.
-        frame_size: DEFAULT_FRAME_SIZE * 4,      // 16 KB the max size of an HTTP/2 data frame.
+        frame_size,
+        flush_threshold: frame_size,
         max_payload_size: None,
         on_upgrade: Arc::new(move |socket, request| Box::pin(upgraded(socket, request))),
     }
