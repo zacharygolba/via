@@ -8,12 +8,9 @@ use std::task::{Context, Poll};
 
 use crate::error::BoxError;
 
-const ADAPTIVE_THRESHOLD: usize = 64 * 1024; // 64KB
+pub(super) const MAX_FRAME_SIZE: usize = 16 * 1024; // 16KB
 
-pub(crate) const STANDARD_FRAME_LEN: usize = 8 * 1024; // 8KB
-pub(crate) const EXTENDED_FRAME_LEN: usize = STANDARD_FRAME_LEN * 2; // 16KB
-
-/// A buffered `impl Body` that is written in `8KB..=16KB` chunks.
+/// A buffered `impl Body` that is written in `16KB..=32KB` chunks.
 ///
 #[derive(Default)]
 pub struct BufferBody {
@@ -25,15 +22,6 @@ pub struct ResponseBody {
     kind: Either<BufferBody, BoxBody<Bytes, BoxError>>,
 }
 
-#[inline]
-pub(super) fn adapt_frame_size(len: usize) -> usize {
-    len.min(if len >= ADAPTIVE_THRESHOLD {
-        EXTENDED_FRAME_LEN
-    } else {
-        STANDARD_FRAME_LEN
-    })
-}
-
 impl Body for BufferBody {
     type Data = Bytes;
     type Error = BoxError;
@@ -43,14 +31,9 @@ impl Body for BufferBody {
         _: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let Self { buf } = self.get_mut();
-        let remaining = buf.len();
+        let len = buf.len().min(MAX_FRAME_SIZE);
 
-        Poll::Ready(if remaining > 0 {
-            let len = adapt_frame_size(remaining);
-            Some(Ok(Frame::data(buf.split_to(len))))
-        } else {
-            None
-        })
+        Poll::Ready((len > 0).then(|| Ok(Frame::data(buf.split_to(len)))))
     }
 
     fn is_end_stream(&self) -> bool {
@@ -191,7 +174,7 @@ mod tests {
     use http_body::Body;
     use http_body_util::BodyExt;
 
-    use super::{BufferBody, STANDARD_FRAME_LEN};
+    use super::{BufferBody, MAX_FRAME_SIZE};
 
     #[tokio::test]
     async fn test_is_end_stream() {
@@ -200,8 +183,7 @@ mod tests {
             "is_end_stream should be true for an empty response"
         );
 
-        let mut body =
-            BufferBody::from(format!("Hello,{}world", " ".repeat(STANDARD_FRAME_LEN - 6)));
+        let mut body = BufferBody::from(format!("Hello,{}world", " ".repeat(MAX_FRAME_SIZE - 6)));
 
         assert!(
             !body.is_end_stream(),
@@ -239,7 +221,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_frame() {
         let frames = [
-            format!("hello{}", " ".repeat(STANDARD_FRAME_LEN - 5)),
+            format!("hello{}", " ".repeat(MAX_FRAME_SIZE - 5)),
             "world".to_owned(),
         ];
 

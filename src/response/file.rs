@@ -14,10 +14,10 @@ use tokio::fs::File as TokioFile;
 use tokio::io::{AsyncRead, ReadBuf};
 use tokio::{task, time};
 
-use super::body::adapt_frame_size;
 use super::{Response, ResponseBuilder};
 use crate::error::{BoxError, Error};
 use crate::pipe::Pipe;
+use crate::response::body::MAX_FRAME_SIZE;
 
 /// The base amount of time that the server will wait before
 /// attempting to open a file after an error has occurred.
@@ -85,7 +85,7 @@ async fn open(path: &Path, max_alloc_size: usize) -> Result<Open, Error> {
             if required_cap > max_alloc_size {
                 let mut file = TokioFile::from_std(std);
 
-                file.set_max_buf_size(adapt_frame_size(required_cap));
+                file.set_max_buf_size(MAX_FRAME_SIZE);
                 Ok(Open::Stream(required_cap, metadata, file))
             } else {
                 let mut data = Vec::with_capacity(required_cap);
@@ -210,7 +210,7 @@ impl FileStream {
     fn new(remaining: usize, file: TokioFile) -> Self {
         Self {
             remaining,
-            buffer: vec![MaybeUninit::uninit(); adapt_frame_size(remaining)],
+            buffer: vec![MaybeUninit::uninit(); MAX_FRAME_SIZE],
             file,
         }
     }
