@@ -299,7 +299,7 @@ impl Payload for Message {
     #[inline]
     fn as_str(&self) -> Result<Option<&str>, Error> {
         match self {
-            Self::Binary(bytes) => Payload::as_str(bytes),
+            Self::Binary(bytes) => bytes.as_str(),
             Self::Close(None) | Self::Close(Some((_, None))) => Ok(None),
             Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
                 let slice = bytestring.as_ref();
