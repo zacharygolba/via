@@ -78,8 +78,11 @@ pub struct Upgrade<State> {
 /// async fn echo(mut channel: ws::Channel, _: ws::Context) -> via::Result<()> {
 ///     while let Some(message) = channel.next().await {
 ///         match message {
-///             echo @ (Message::Binary(_) | Message::Text(_)) => {
-///                 channel.send(echo).await?;
+///             binary @ Message::Binary(_) => {
+///                 channel.send(binary.copy_to_bytes()).await?;
+///             }
+///             text @ Message::Text(_) => {
+///                 channel.send(text.validate_utf8()?).await?;
 ///             }
 ///             Message::Close(close) => {
 ///                 if let Some((code, reason)) = close {
@@ -285,71 +288,49 @@ impl Payload for Message {
     #[inline]
     fn as_slice(&self) -> Option<&[u8]> {
         match self {
+            Self::Binary(bytes) => Some(bytes.as_ref()),
+            Self::Close(None) | Self::Close(Some((_, None))) => None,
             Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
-                Payload::as_slice(bytestring)
+                Some(bytestring.as_ref())
             }
-            Self::Binary(bytes) => Payload::as_slice(bytes),
-            _ => None,
         }
     }
 
     #[inline]
     fn as_str(&self) -> Result<Option<&str>, Error> {
         match self {
-            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
-                Payload::as_str(bytestring)
-            }
             Self::Binary(bytes) => Payload::as_str(bytes),
-            _ => Ok(None),
-        }
-    }
-
-    #[inline]
-    fn copy_to_vec(self) -> Vec<u8> {
-        match self {
-            Self::Close(Some((_, Some(text)))) | Self::Text(text) => {
-                Payload::copy_to_vec(text.into_bytes())
-            }
-            Self::Binary(bytes) => Payload::copy_to_vec(bytes),
-            _ => Default::default(),
-        }
-    }
-
-    #[inline]
-    fn validate_utf8(self) -> Result<String, Error> {
-        match self {
+            Self::Close(None) | Self::Close(Some((_, None))) => Ok(None),
             Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
-                Payload::validate_utf8(bytestring)
+                let slice = bytestring.as_ref();
+                // Safety: self is guaranteed to be valid UTF-8.
+                unsafe { Ok(Some(str::from_utf8_unchecked(slice))) }
             }
-            Self::Binary(bytes) => Payload::validate_utf8(bytes),
-            _ => Ok(Default::default()),
         }
     }
-}
-
-impl Payload for ByteString {
-    #[inline]
-    fn as_slice(&self) -> Option<&[u8]> {
-        Some(self.as_ref())
-    }
 
     #[inline]
-    fn as_str(&self) -> Result<Option<&str>, Error> {
-        Ok(self.as_slice().map(|slice| {
-            // Safety: self is guaranteed to be valid UTF-8.
-            unsafe { str::from_utf8_unchecked(slice) }
-        }))
-    }
-
-    #[inline]
-    fn copy_to_vec(self) -> Vec<u8> {
-        self.into_bytes().copy_to_vec()
+    fn copy_to_bytes(self) -> Bytes {
+        match self {
+            Self::Binary(bytes) => bytes.copy_to_bytes(),
+            Self::Close(None) | Self::Close(Some((_, None))) => Default::default(),
+            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
+                bytestring.into_bytes().copy_to_bytes()
+            }
+        }
     }
 
     #[inline]
     fn validate_utf8(self) -> Result<String, Error> {
-        // Safety: self is guaranteed to be valid UTF-8.
-        Ok(unsafe { String::from_utf8_unchecked(self.copy_to_vec()) })
+        match self {
+            Self::Binary(bytes) => bytes.validate_utf8(),
+            Self::Close(None) | Self::Close(Some((_, None))) => Ok(Default::default()),
+            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
+                let vec = bytestring.into_bytes().copy_to_vec();
+                // Safety: self is guaranteed to be valid UTF-8.
+                unsafe { Ok(String::from_utf8_unchecked(vec)) }
+            }
+        }
     }
 }
 
