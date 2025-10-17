@@ -1,6 +1,6 @@
 use cookie::{Cookie, Key};
 use std::process::ExitCode;
-use via::{App, BoxError, Next, Request, Response, cookies};
+use via::{App, BoxError, Next, Request, Response, Server, cookies};
 
 /// A struct used to store application state.
 ///
@@ -101,13 +101,13 @@ async fn main() -> Result<ExitCode, BoxError> {
     // The CookieParser middleware can be added at any depth of the route tree.
     // In this example, we add it to the root of the app. This means that every
     // request will pass through the CookieParser middleware.
-    app.include(cookies::percent_decode());
+    app.middleware(cookies::percent_decode());
 
     // Add the count_visits middleware to the app at "/".
-    app.include(count_visits);
+    app.middleware(count_visits);
 
     // Add a route that responds with a greeting message.
-    app.at("/hello/:name").respond(via::get(hello));
+    app.route("/hello/:name").respond(via::get(hello));
 
-    via::serve(app).listen(("127.0.0.1", 8080)).await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

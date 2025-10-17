@@ -3,7 +3,7 @@ use std::fmt::Write;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use via::{App, BoxError, Next, Request, Response};
+use via::{App, BoxError, Next, Request, Response, Server};
 
 /// A struct of containing the shared state for the application. This struct
 /// will be made available to all middleware functions and responders by
@@ -78,10 +78,10 @@ async fn main() -> Result<ExitCode, BoxError> {
     // Add the `counter` middleware to the application. Since we are not
     // specifying an endpoint with the `at` method, this middleware will
     // be applied to all requests.
-    app.include(counter);
+    app.middleware(counter);
 
     // Add the `totals` responder to the endpoint GET /totals.
-    app.at("/totals").respond(via::get(totals));
+    app.route("/totals").respond(via::get(totals));
 
-    via::serve(app).listen(("127.0.0.1", 8080)).await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

@@ -1,5 +1,5 @@
 use std::process::ExitCode;
-use via::{App, BoxError, Next, Pipe, Request, Response};
+use via::{App, BoxError, Next, Pipe, Request, Response, Server};
 
 async fn echo(request: Request, _: Next) -> via::Result {
     request.pipe(Response::build())
@@ -10,12 +10,12 @@ async fn main() -> Result<ExitCode, BoxError> {
     let mut app = App::new(());
 
     // Add our echo responder to the endpoint /echo.
-    app.at("/echo").respond(via::post(echo));
+    app.route("/echo").respond(via::post(echo));
     //                           ^^^^
     // You can specify the HTTP method that middleware should accept with the
     // helper functions at the top-level of the `via` crate. In this case, the
     // `via::post` function is used to specify that the `echo` middleware should
     // only accept POST requests.
 
-    via::serve(app).listen(("127.0.0.1", 8080)).await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

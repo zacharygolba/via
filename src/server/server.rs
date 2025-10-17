@@ -24,22 +24,19 @@ pub(super) struct ServerConfig {
     pub(super) shutdown_timeout: Duration,
 }
 
-/// Creates a new server for the provided app.
-///
-pub fn serve<State>(app: App<State>) -> Server<State>
-where
-    State: Send + Sync + 'static,
-{
-    Server {
-        app,
-        config: Default::default(),
-    }
-}
-
 impl<State> Server<State>
 where
     State: Send + Sync + 'static,
 {
+    /// Creates a new server for the provided app.
+    ///
+    pub fn new(app: App<State>) -> Self {
+        Self {
+            app,
+            config: Default::default(),
+        }
+    }
+
     /// The amount of time in seconds that the server will wait before the
     /// connection is reset if the server is at capacity.
     ///

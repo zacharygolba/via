@@ -67,7 +67,7 @@ pub use payload::Payload;
 pub use pipe::Pipe;
 pub use request::Request;
 pub use response::Response;
-pub use server::{Server, serve};
+pub use server::Server;
 pub use timeout::{Timeout, timeout};
 
 #[doc(inline)]

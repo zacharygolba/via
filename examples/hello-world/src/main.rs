@@ -1,5 +1,5 @@
 use std::process::ExitCode;
-use via::{App, BoxError, Next, Request, Response};
+use via::{App, BoxError, Next, Request, Response, Server};
 
 async fn hello(request: Request, _: Next) -> via::Result {
     // Get a reference to the path parameter `name` from the request uri.
@@ -14,7 +14,7 @@ async fn main() -> Result<ExitCode, BoxError> {
     let mut app = App::new(());
 
     // Define a route that listens on /hello/:name.
-    app.at("/hello/:name").respond(via::get(hello));
+    app.route("/hello/:name").respond(via::get(hello));
 
-    via::serve(app).listen(("127.0.0.1", 8080)).await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }
