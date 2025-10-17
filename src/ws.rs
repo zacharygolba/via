@@ -70,17 +70,25 @@ pub struct Upgrade<State> {
 ///     let mut app = App::new(());
 ///
 ///     // GET /echo ~> web socket upgrade.
-///     app.at("/echo").respond(via::ws(echo));
+///     app.route("/echo").respond(via::ws(echo));
+///
+///     Ok(())
 /// }
 ///
 /// async fn echo(mut channel: ws::Channel, _: ws::Context) -> via::Result<()> {
 ///     while let Some(message) = channel.next().await {
-///         if matches!(&message, Message::Close(_)) {
-///             message.as_str().inspect(|reason| eprintln!("close: {}", reason));
-///             break;
+///         match message {
+///             echo @ (Message::Binary(_) | Message::Text(_)) => {
+///                 channel.send(echo).await?;
+///             }
+///             Message::Close(close) => {
+///                 if let Some((code, reason)) = close {
+///                     eprintln!("close: code = {}, reason = {:?}", u16::from(code), reason);
+///                 }
+///                 break;
+///             }
+///             _ => {}
 ///         }
-///
-///         channel.send(message.into_vec()).await?;
 ///     }
 ///
 ///     Ok(())
