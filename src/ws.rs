@@ -78,11 +78,8 @@ pub struct Upgrade<State> {
 /// async fn echo(mut channel: ws::Channel, _: ws::Context) -> via::Result<()> {
 ///     while let Some(message) = channel.next().await {
 ///         match message {
-///             binary @ Message::Binary(_) => {
-///                 channel.send(binary.copy_to_bytes()).await?;
-///             }
-///             text @ Message::Text(_) => {
-///                 channel.send(text.validate_utf8()?).await?;
+///             echo @ (Message::Binary(_) | Message::Text(_)) => {
+///                 channel.send(echo).await?;
 ///             }
 ///             Message::Close(close) => {
 ///                 if let Some((code, reason)) = close {
