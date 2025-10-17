@@ -5,7 +5,6 @@ mod raise;
 mod rescue;
 mod server;
 
-use either::Either;
 use http::HeaderValue;
 use http::header::CONTENT_TYPE;
 use serde::ser::SerializeStruct;
@@ -33,7 +32,13 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 #[derive(Debug)]
 pub struct Error {
     status: StatusCode,
-    reason: Either<BoxError, String>,
+    kind: ErrorKind,
+}
+
+#[derive(Debug)]
+enum ErrorKind {
+    Message(String),
+    Other(BoxError),
 }
 
 struct Errors<'a> {
@@ -52,7 +57,7 @@ impl Error {
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
         Self {
             status,
-            reason: Either::Right(message.into()),
+            kind: ErrorKind::Message(message.into()),
         }
     }
 
@@ -61,7 +66,7 @@ impl Error {
     pub fn from_source(status: StatusCode, source: BoxError) -> Self {
         Self {
             status,
-            reason: Either::Left(source),
+            kind: ErrorKind::Other(source),
         }
     }
 
@@ -105,7 +110,7 @@ impl Error {
     /// Returns a reference to the error source.
     ///
     pub fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        if let Either::Left(source) = &self.reason {
+        if let ErrorKind::Other(source) = &self.kind {
             Some(&**source)
         } else {
             None
@@ -117,7 +122,7 @@ impl Error {
     fn repr_json(&self, status_code: StatusCode) -> Errors<'_> {
         let mut errors = Errors::new(status_code);
 
-        if let Either::Right(message) = self.reason.as_ref() {
+        if let ErrorKind::Message(message) = &self.kind {
             errors.push(Cow::Borrowed(message.as_str()));
         } else {
             let mut source = self.source();
@@ -137,9 +142,9 @@ impl Error {
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match &self.reason {
-            Either::Left(source) => Display::fmt(&**source, f),
-            Either::Right(message) => Display::fmt(&**message, f),
+        match &self.kind {
+            ErrorKind::Other(source) => Display::fmt(&**source, f),
+            ErrorKind::Message(message) => Display::fmt(&**message, f),
         }
     }
 }

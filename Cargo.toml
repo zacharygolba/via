@@ -35,7 +35,6 @@ ws = [
 
 [dependencies]
 bytes = "1"
-either = "1"
 futures-core = "0.3"
 http = "1"
 http-body = "1"
