@@ -1,4 +1,4 @@
-use bytes::{Buf, Bytes};
+use bytes::{Bytes, BytesMut};
 use http::HeaderMap;
 use http_body::{Body, Frame, SizeHint};
 use http_body_util::combinators::BoxBody;
@@ -174,14 +174,13 @@ impl Payload for DataAndTrailers {
     }
 
     #[inline]
-    fn copy_to_vec(mut self) -> Vec<u8> {
-        let mut dest = Vec::with_capacity(self.len());
+    fn copy_to_bytes(self) -> Bytes {
+        let mut dest = BytesMut::with_capacity(self.len());
 
-        for frame in &mut self.frames {
+        for frame in &self.frames {
             dest.extend_from_slice(frame);
-            frame.advance(frame.remaining());
         }
 
-        dest
+        dest.freeze()
     }
 }

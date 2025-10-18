@@ -1,4 +1,4 @@
-use bytes::{Buf, Bytes};
+use bytes::{Buf, Bytes, BytesMut};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use std::borrow::Cow;
@@ -30,11 +30,9 @@ pub trait Payload: Sized {
     ///
     fn as_slice(&self) -> Option<&[u8]>;
 
-    /// Copy the bytes in self into an owned, contiguous `Vec<u8>`.
+    /// Copy the bytes in self into a unique, contiguous `Bytes` instance.
     ///
-    /// Any buffers contained in self are advanced to the end and consumed.
-    ///
-    fn copy_to_vec(self) -> Vec<u8>;
+    fn copy_to_bytes(self) -> Bytes;
 
     /// Borrows the payload and converts it to a `UTF-8` string slice if it is
     /// contiguous.
@@ -65,16 +63,10 @@ pub trait Payload: Sized {
             .map_err(|error| crate::raise!(400, error))
     }
 
-    /// Copy the bytes in self into an owned, contiguous `String`.
+    /// Copy the bytes in self into a contiguous `Vec<u8>`.
     ///
-    /// Any buffers contained in self are advanced to the end and consumed.
-    ///
-    /// # Errors
-    ///
-    /// If the payload is not valid `UTF-8`.
-    ///
-    fn validate_utf8(self) -> Result<String, Error> {
-        String::from_utf8(self.copy_to_vec()).map_err(|error| crate::raise!(400, error))
+    fn copy_to_vec(self) -> Vec<u8> {
+        self.copy_to_bytes().into()
     }
 
     /// Deserialize the payload as an instance of type `T`.
@@ -127,6 +119,16 @@ pub trait Payload: Sized {
             // code to 400 Bad Request.
             .map_err(|error| crate::raise!(400, error))
     }
+
+    /// Copy the bytes in self into an owned, contiguous `String`.
+    ///
+    /// # Errors
+    ///
+    /// If the payload is not valid `UTF-8`.
+    ///
+    fn validate_utf8(self) -> Result<String, Error> {
+        String::from_utf8(self.copy_to_vec()).map_err(|error| crate::raise!(400, error))
+    }
 }
 
 impl Payload for Bytes {
@@ -136,13 +138,11 @@ impl Payload for Bytes {
     }
 
     #[inline]
-    fn copy_to_vec(mut self) -> Vec<u8> {
+    fn copy_to_bytes(self) -> Bytes {
         let remaining = self.remaining();
-        let mut vec = Vec::with_capacity(remaining);
+        let mut bytes = BytesMut::with_capacity(remaining);
 
-        vec.extend_from_slice(&self);
-        self.advance(remaining);
-
-        vec
+        bytes.extend_from_slice(&self);
+        bytes.freeze()
     }
 }
