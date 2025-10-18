@@ -139,7 +139,7 @@ impl<State> Allow<State> {
             Response::build()
                 .status(StatusCode::METHOD_NOT_ALLOWED)
                 .header(ALLOW, allowed)
-                .text(format!("Method Not Allowed: {}", method))
+                .text(format!("Method not allowed: {}.", method))
         })
     }
 
