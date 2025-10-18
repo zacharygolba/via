@@ -4,6 +4,7 @@ use http_body::{Body, Frame, SizeHint};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyStream, Either, LengthLimitError, Limited};
 use hyper::body::Incoming;
+use smallvec::SmallVec;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
@@ -24,7 +25,7 @@ pub struct IntoFuture {
 ///
 #[derive(Debug)]
 pub struct DataAndTrailers {
-    frames: Vec<Bytes>,
+    frames: SmallVec<[Bytes; 1]>,
     trailers: Option<HeaderMap>,
 }
 
@@ -164,23 +165,29 @@ impl DataAndTrailers {
 }
 
 impl Payload for DataAndTrailers {
-    #[inline]
-    fn as_slice(&self) -> Option<&[u8]> {
-        if let [frame] = &*self.frames {
-            Some(frame)
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    fn copy_to_bytes(self) -> Bytes {
+    fn copy_to_bytes(&mut self) -> Bytes {
         let mut dest = BytesMut::with_capacity(self.len());
 
-        for frame in &self.frames {
-            dest.extend_from_slice(frame);
+        for frame in &mut self.frames {
+            let remaining = frame.len();
+            let detached = frame.split_to(remaining);
+
+            dest.extend_from_slice(detached.as_ref());
         }
 
         dest.freeze()
+    }
+
+    fn to_vec(&mut self) -> Vec<u8> {
+        let mut dest = Vec::with_capacity(self.len());
+
+        for frame in &mut self.frames {
+            let remaining = frame.len();
+            let detached = frame.split_to(remaining);
+
+            dest.extend_from_slice(detached.as_ref());
+        }
+
+        dest
     }
 }

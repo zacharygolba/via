@@ -43,7 +43,7 @@ impl Chat {
         room.messages.get(index).cloned()
     }
 
-    pub async fn push(&self, slug: &str, message: &str) -> Option<usize> {
+    pub async fn push(&self, slug: &str, message: String) -> Option<usize> {
         let mut guard = self.rooms.write().await;
         let room_mut = &mut guard.get_mut(slug)?;
         let index = room_mut.messages.len();

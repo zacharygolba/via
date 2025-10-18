@@ -5,6 +5,7 @@ use bytestring::ByteString;
 use futures_util::{SinkExt, StreamExt};
 use http::{StatusCode, header};
 use hyper_util::rt::TokioIo;
+use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_websockets::proto::ProtocolError;
@@ -26,7 +27,7 @@ use crate::response::Response;
 
 pub use tokio_websockets::CloseCode;
 
-const DEFAULT_FRAME_SIZE: usize = 1024 * 4; // 4 KB
+const DEFAULT_FRAME_SIZE: usize = 16 * 1024; // 16KB
 const GUID: &[u8] = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 type OnUpgrade<State> =
@@ -36,8 +37,8 @@ type OnUpgrade<State> =
 #[non_exhaustive]
 pub enum Message {
     Binary(Bytes),
-    Close(Option<(CloseCode, Option<ByteString>)>),
-    Text(ByteString),
+    Close(Option<(CloseCode, Option<ValidUtf8>)>),
+    Text(ValidUtf8),
 }
 
 pub struct Channel {
@@ -55,6 +56,11 @@ pub struct Upgrade<State> {
     flush_threshold: usize,
     frame_size: usize,
     on_upgrade: Arc<OnUpgrade<State>>,
+}
+
+#[derive(Debug)]
+pub struct ValidUtf8 {
+    bytes: Bytes,
 }
 
 /// Upgrade the connection to a web socket.
@@ -100,13 +106,10 @@ where
     F: Fn(Channel, Context<State>) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Error>> + Send + Sync + 'static,
 {
-    // 16 KB the max size of an HTTP/2 data frame.
-    let frame_size = DEFAULT_FRAME_SIZE * 4;
-
     Upgrade {
-        frame_size,
-        flush_threshold: frame_size,
-        max_payload_size: None,
+        frame_size: DEFAULT_FRAME_SIZE,
+        flush_threshold: DEFAULT_FRAME_SIZE,
+        max_payload_size: Some(DEFAULT_FRAME_SIZE),
         on_upgrade: Arc::new(move |socket, request| Box::pin(upgraded(socket, request))),
     }
 }
@@ -193,8 +196,12 @@ fn validate_accept_key<T>(request: &Request<T>) -> Result<String, crate::Error> 
 }
 
 #[inline]
-fn validate_utf8(bytes: Bytes) -> Result<ByteString, ProtocolError> {
-    bytes.try_into().or(Err(ProtocolError::InvalidUtf8))
+fn validate_utf8(bytes: Bytes) -> Result<ValidUtf8, ProtocolError> {
+    if str::from_utf8(bytes.as_ref()).is_ok() {
+        Ok(ValidUtf8 { bytes })
+    } else {
+        Err(ProtocolError::InvalidUtf8)
+    }
 }
 
 fn validate_websocket_version<T>(request: &Request<T>) -> Result<(), crate::Error> {
@@ -204,6 +211,20 @@ fn validate_websocket_version<T>(request: &Request<T>) -> Result<(), crate::Erro
             400,
             message = "Unsupported websocket version."
         )),
+    }
+}
+
+impl Channel {
+    pub async fn send(&self, message: impl Into<Message>) -> Result<(), Error> {
+        if self.sender.send(message.into()).await.is_err() {
+            Err(tokio_websockets::Error::AlreadyClosed.into())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub async fn next(&mut self) -> Option<Message> {
+        self.receiver.recv().await
     }
 }
 
@@ -246,6 +267,15 @@ impl From<Bytes> for Message {
     }
 }
 
+impl From<ByteString> for Message {
+    #[inline]
+    fn from(data: ByteString) -> Self {
+        Self::Text(ValidUtf8 {
+            bytes: data.into_bytes(),
+        })
+    }
+}
+
 impl From<Vec<u8>> for Message {
     #[inline]
     fn from(data: Vec<u8>) -> Self {
@@ -260,73 +290,52 @@ impl From<&'_ [u8]> for Message {
     }
 }
 
-impl From<ByteString> for Message {
-    #[inline]
-    fn from(data: ByteString) -> Self {
-        Self::Text(data)
-    }
-}
-
 impl From<String> for Message {
     #[inline]
     fn from(data: String) -> Self {
-        Self::from(ByteString::from(data))
+        Self::Text(ValidUtf8 {
+            bytes: Bytes::from(data),
+        })
     }
 }
 
 impl From<&'_ str> for Message {
     #[inline]
     fn from(data: &'_ str) -> Self {
-        Self::from(ByteString::from(data))
+        Self::Text(ValidUtf8 {
+            bytes: Bytes::copy_from_slice(data.as_bytes()),
+        })
     }
 }
 
 impl Payload for Message {
-    #[inline]
-    fn as_slice(&self) -> Option<&[u8]> {
+    fn copy_to_bytes(&mut self) -> Bytes {
         match self {
-            Self::Binary(bytes) => Some(bytes.as_ref()),
-            Self::Close(None) | Self::Close(Some((_, None))) => None,
-            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
-                Some(bytestring.as_ref())
-            }
-        }
-    }
-
-    #[inline]
-    fn as_str(&self) -> Result<Option<&str>, Error> {
-        match self {
-            Self::Binary(bytes) => bytes.as_str(),
-            Self::Close(None) | Self::Close(Some((_, None))) => Ok(None),
-            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
-                let slice = bytestring.as_ref();
-                // Safety: self is guaranteed to be valid UTF-8.
-                unsafe { Ok(Some(str::from_utf8_unchecked(slice))) }
-            }
-        }
-    }
-
-    #[inline]
-    fn copy_to_bytes(self) -> Bytes {
-        match self {
-            Self::Binary(bytes) => bytes.copy_to_bytes(),
+            Self::Binary(bytes) => Payload::copy_to_bytes(bytes),
             Self::Close(None) | Self::Close(Some((_, None))) => Default::default(),
-            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
-                bytestring.into_bytes().copy_to_bytes()
+            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => {
+                Payload::copy_to_bytes(&mut utf8.bytes)
             }
         }
     }
 
-    #[inline]
-    fn validate_utf8(self) -> Result<String, Error> {
+    fn to_utf8(&mut self) -> Result<String, Error> {
         match self {
-            Self::Binary(bytes) => bytes.validate_utf8(),
+            Self::Binary(bytes) => bytes.to_utf8(),
             Self::Close(None) | Self::Close(Some((_, None))) => Ok(Default::default()),
-            Self::Close(Some((_, Some(bytestring)))) | Self::Text(bytestring) => {
-                let vec = bytestring.into_bytes().copy_to_vec();
-                // Safety: self is guaranteed to be valid UTF-8.
+            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => {
+                let vec = utf8.bytes.to_vec();
+                // Safety: ValidUtf8 is only constructed from valid UTF-8 byte sequences.
                 unsafe { Ok(String::from_utf8_unchecked(vec)) }
             }
+        }
+    }
+
+    fn to_vec(&mut self) -> Vec<u8> {
+        match self {
+            Self::Binary(bytes) => bytes.to_vec(),
+            Self::Close(None) | Self::Close(Some((_, None))) => Default::default(),
+            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => utf8.bytes.to_vec(),
         }
     }
 }
@@ -335,37 +344,35 @@ impl TryFrom<tokio_websockets::Message> for Message {
     type Error = tokio_websockets::Error;
 
     fn try_from(message: tokio_websockets::Message) -> Result<Self, Self::Error> {
-        if message.is_binary() {
-            Ok(Self::Binary(message.into_payload().into()))
+        let is_binary = message.is_binary();
+        let is_text = !is_binary && message.is_text();
+
+        let mut bytes = Bytes::from(message.into_payload());
+
+        if is_binary {
+            Ok(Self::Binary(bytes))
+        } else if is_text {
+            Ok(Self::Text(validate_utf8(bytes)?))
         } else {
-            let is_text = message.is_text();
-            let mut bytes = Bytes::from(message.into_payload());
+            // Continuation, Ping, and Pong messages are handled by
+            // tokio_websockets. The message opcode must be close.
+            match bytes.try_get_u16() {
+                // The payload is empty and therefore, valid.
+                Err(TryGetError { available: 0, .. }) => Ok(Self::Close(None)),
 
-            if is_text {
-                Ok(Self::Text(validate_utf8(bytes)?))
-            } else {
-                // Continuation, Ping, and Pong messages are handled by
-                // tokio_websockets. The message opcode must be close.
-                match bytes.try_get_u16() {
-                    // The payload is empty and therefore, valid.
-                    Err(TryGetError { available: 0, .. }) => Ok(Self::Close(None)),
+                // The payload starts with an invalid close code.
+                Ok(0..=999) | Ok(4999..) | Err(_) => Err(ProtocolError::InvalidCloseCode.into()),
 
-                    // The payload starts with an invalid close code.
-                    Ok(0..=999) | Ok(4999..) | Err(_) => {
-                        Err(ProtocolError::InvalidCloseCode.into())
-                    }
+                // The payload contains a valid close code and reason.
+                Ok(u16) => {
+                    let code = u16.try_into()?;
 
-                    // The payload contains a valid close code and reason.
-                    Ok(u16) => {
-                        let code = u16.try_into()?;
-
-                        Ok(if bytes.remaining() == 0 {
-                            Self::Close(Some((code, None)))
-                        } else {
-                            let reason = validate_utf8(bytes)?;
-                            Self::Close(Some((code, Some(reason))))
-                        })
-                    }
+                    Ok(if bytes.remaining() == 0 {
+                        Self::Close(Some((code, None)))
+                    } else {
+                        let reason = validate_utf8(bytes)?;
+                        Self::Close(Some((code, Some(reason))))
+                    })
                 }
             }
         }
@@ -377,7 +384,7 @@ impl From<Message> for tokio_websockets::Message {
     fn from(message: Message) -> Self {
         match message {
             Message::Binary(binary) => Self::binary(binary),
-            Message::Text(text) => Self::text(text.into_bytes()),
+            Message::Text(text) => Self::text(text.bytes),
 
             Message::Close(None) => Self::close(None, ""),
             Message::Close(Some((code, reason))) => {
@@ -390,7 +397,7 @@ impl From<Message> for tokio_websockets::Message {
 impl<State> Upgrade<State> {
     /// The threshold at which the bytes queued at socket are flushed.
     ///
-    /// **Default:** `8 KB`
+    /// **Default:** `16 KB`
     ///
     pub fn flush_threshold(mut self, flush_threshold: usize) -> Self {
         self.flush_threshold = flush_threshold;
@@ -399,7 +406,7 @@ impl<State> Upgrade<State> {
 
     /// The frame size used for messages in bytes.
     ///
-    /// **Default:** `4 KB`
+    /// **Default:** `16 KB`
     ///
     pub fn frame_size(mut self, frame_size: usize) -> Self {
         self.frame_size = frame_size;
@@ -472,16 +479,12 @@ where
     }
 }
 
-impl Channel {
-    pub async fn send(&self, message: impl Into<Message>) -> Result<(), Error> {
-        if self.sender.send(message.into()).await.is_err() {
-            Err(tokio_websockets::Error::AlreadyClosed.into())
-        } else {
-            Ok(())
-        }
-    }
+impl Deref for ValidUtf8 {
+    type Target = str;
 
-    pub async fn next(&mut self) -> Option<Message> {
-        self.receiver.recv().await
+    fn deref(&self) -> &Self::Target {
+        let utf8 = self.bytes.as_ref();
+        // Safety: ValidUtf8 is only constructed from valid UTF-8 byte sequences.
+        unsafe { str::from_utf8_unchecked(utf8) }
     }
 }

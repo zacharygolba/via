@@ -1,6 +1,6 @@
 use serde_json::json;
 use via::ws::{self, Message};
-use via::{Next, Request, Response};
+use via::{Next, Payload, Request, Response};
 
 use crate::chat::Chat;
 
@@ -46,11 +46,11 @@ pub async fn join(mut channel: ws::Channel, request: ws::Context<Chat>) -> via::
             }
 
             // Message received from the websocket.
-            Some(message) = channel.next() => match message {
+            Some(mut message) = channel.next() => {
                 // Break the loop when we receive a close message.
-                Message::Close(close) => {
+                if let Message::Close(close) = &message {
                     if let Some((code, reason)) = close {
-                        let code = u16::from(code);
+                        let code = u16::from(*code);
                         let reason = reason.as_deref().unwrap_or("reason not provided");
 
                         eprintln!("close(room: {}, code: {}): {}", &slug, code, reason);
@@ -59,18 +59,8 @@ pub async fn join(mut channel: ws::Channel, request: ws::Context<Chat>) -> via::
                     break Ok(());
                 }
 
-                // Append the message content to the room thread and cast an
-                // update.
-                Message::Text(text) => {
-                    if let Some(index) = chat.push(&slug, &text).await {
-                        let _ = tx.send((id, index));
-                    }
-                }
-
-                ignored => {
-                    if cfg!(debug_assertions) {
-                        eprintln!("warn(room: {}): ignoring message {:?}", &slug, ignored);
-                    }
+                if let Some(index) = chat.push(&slug, message.to_utf8()?).await {
+                    let _ = tx.send((id, index));
                 }
             },
         }
