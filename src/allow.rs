@@ -4,12 +4,44 @@ use http::{HeaderValue, Method};
 use crate::middleware::{BoxFuture, Middleware};
 use crate::{Next, Request, Response};
 
-/// Middleware for routing based on the HTTP method of the request.
+/// HTTP method based middleware dispatch.
 ///
-/// When a route has different behavior depending on the HTTP method, grouping
-/// the various handlers into an [Allow] middleware can prevent the middleware
-/// stack from reallocating during request routing and reduce per-method
-/// atomic operations into a single operation.
+/// When a route’s behavior varies by method, grouping the handlers with
+/// [`Allow`] can prevent middleware stack reallocations and collapse
+/// per-method atomic operations into a single one.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::process::ExitCode;
+/// use via::{App, BoxError, Server};
+///
+/// mod users {
+///     use via::{Next, Request};
+///
+///     pub async fn create(_: Request, _: Next) -> via::Result { todo!() }
+///     pub async fn destroy(_: Request, _: Next) -> via::Result { todo!() }
+///     pub async fn list(_: Request, _: Next) -> via::Result { todo!() }
+///     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
+///     pub async fn update(_: Request, _: Next) -> via::Result { todo!() }
+/// }
+///
+/// #[tokio::main]
+/// async fn main() -> Result<ExitCode, BoxError> {
+///     let mut app = App::new(());
+///
+///     // HTTP method based dispatch.
+///     app.route("/users").scope(|resource| {
+///         resource.respond(via::get(users::list).post(users::create));
+///         resource.route("/:id").respond(
+///             via::get(users::show)
+///                 .patch(users::update)
+///                 .delete(users::destroy)
+///         );
+///     });
+///
+///     Server::new(app).listen(("127.0.0.1", 8080)).await
+/// }
 ///
 pub struct Allow<State> {
     allowed: Vec<(Method, Box<dyn Middleware<State>>)>,
