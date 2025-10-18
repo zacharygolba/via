@@ -25,13 +25,14 @@ pub trait Payload: Sized {
     /// ```
     /// # use bytes::Bytes;
     /// # use serde::Deserialize;
+    /// # use via::Payload;
     /// #
     /// #[derive(Deserialize)]
     /// struct Cat {
     ///     name: String,
     /// }
     ///
-    /// let payload = Bytes::copy_from_slice(b"{\"data\":{\"name\":\"Ciro\"}}");
+    /// let mut payload = Bytes::copy_from_slice(b"{\"data\":{\"name\":\"Ciro\"}}");
     /// let cat = payload.parse_json::<Cat>().expect("invalid payload");
     ///
     /// println!("Meow, {}!", cat.name);
