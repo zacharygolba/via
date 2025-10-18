@@ -18,13 +18,16 @@ impl<State> App<State> {
         }
     }
 
-    pub fn middleware(&mut self, middleware: impl Middleware<State> + 'static) {
+    pub fn middleware<T>(&mut self, middleware: T)
+    where
+        T: Middleware<State> + 'static,
+    {
         self.route("/").middleware(middleware);
     }
 
     pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
         Route {
-            inner: self.router.at(path),
+            inner: self.router.route(path),
         }
     }
 }
