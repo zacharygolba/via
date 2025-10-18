@@ -113,36 +113,6 @@ impl<State> Allow<State> {
         pub fn trace(TRACE),
     );
 
-    /// Return a `405 Method Not Allowed` response if the request method is not
-    /// supported.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use via::{App, Next, Request, Response};
-    /// #
-    /// # async fn greet(request: Request, _: Next) -> via::Result {
-    /// #    let name = request.param("name").into_result()?;
-    /// #    Response::build().text(format!("Hello, {}!", name))
-    /// # }
-    /// #
-    /// # fn main() {
-    /// # let mut app = App::new(());
-    /// // curl -XPOST http://localhost:8080/hello/world
-    /// // => Method Not Allowed: POST
-    /// app.route("/hello/:name").respond(via::get(greet).or_405());
-    /// # }
-    /// ```
-    ///
-    pub fn or_405(self) -> Self {
-        self.or_else(|method, allowed| {
-            Response::build()
-                .status(StatusCode::METHOD_NOT_ALLOWED)
-                .header(ALLOW, allowed)
-                .text(format!("Method not allowed: {}.", method))
-        })
-    }
-
     /// Call the provided function to generate a response if the request method
     /// is not supported.
     ///
@@ -158,10 +128,9 @@ impl<State> Allow<State> {
     /// #
     /// # fn main() {
     /// # let mut app = App::new(());
-    /// // curl -XPOST http://localhost:8080/hello/world
-    /// // => Method Not Allowed: POST
     /// app.route("/hello/:name").respond(
-    ///     // Manual implementation of .or_405().
+    ///     // curl -XPOST http://localhost:8080/hello/world
+    ///     // => Method Not Allowed: POST
     ///     via::get(greet).or_else(|method, allowed| {
     ///         Response::build()
     ///             .status(405)
@@ -178,6 +147,38 @@ impl<State> Allow<State> {
     {
         self.or_else = Some(Box::new(or_else));
         self
+    }
+
+    /// Return a `405 Method Not Allowed` response if the request method is not
+    /// supported.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use via::{App, Next, Request, Response};
+    /// #
+    /// # async fn greet(request: Request, _: Next) -> via::Result {
+    /// #    let name = request.param("name").into_result()?;
+    /// #    Response::build().text(format!("Hello, {}!", name))
+    /// # }
+    /// #
+    /// # fn main() {
+    /// # let mut app = App::new(());
+    /// app.route("/hello/:name").respond(
+    ///     // curl -XPOST http://localhost:8080/hello/world
+    ///     // => Method Not Allowed: POST
+    ///     via::get(greet).or_method_not_allowed()
+    /// );
+    /// # }
+    /// ```
+    ///
+    pub fn or_method_not_allowed(self) -> Self {
+        self.or_else(|method, allowed| {
+            Response::build()
+                .status(StatusCode::METHOD_NOT_ALLOWED)
+                .header(ALLOW, allowed)
+                .text(format!("Method not allowed: {}.", method))
+        })
     }
 }
 
