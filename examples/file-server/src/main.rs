@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 use via::response::File;
-use via::{App, BoxError, Next, Request};
+use via::{App, BoxError, Next, Request, Server};
 
 /// The maximum amount of memory that will be allocated to serve a single file.
 ///
@@ -58,7 +58,7 @@ async fn main() -> Result<ExitCode, BoxError> {
     let mut app = App::new(());
 
     // Serve any file located in the public dir.
-    app.at("/*path").respond(via::get(file_server).or_next());
+    app.route("/*path").respond(via::get(file_server));
 
-    via::serve(app).listen(("127.0.0.1", 8080)).await
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

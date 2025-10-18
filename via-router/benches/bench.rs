@@ -116,7 +116,7 @@ fn find_matches_1(b: &mut Bencher) {
     let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(Arc::new(()));
+        let _ = router.at(path).middleware(Arc::new(()));
     }
 
     b.iter(|| {
@@ -136,7 +136,7 @@ fn find_matches_2(b: &mut Bencher) {
     let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(Arc::new(()));
+        let _ = router.at(path).middleware(Arc::new(()));
     }
 
     b.iter(|| {
@@ -156,7 +156,7 @@ fn find_matches_3(b: &mut Bencher) {
     let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(Arc::new(()));
+        let _ = router.at(path).middleware(Arc::new(()));
     }
 
     b.iter(|| {
@@ -176,7 +176,7 @@ fn find_matches_4(b: &mut Bencher) {
     let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(Arc::new(()));
+        let _ = router.at(path).middleware(Arc::new(()));
     }
 
     b.iter(|| {
@@ -196,7 +196,7 @@ fn find_matches_5(b: &mut Bencher) {
     let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(Arc::new(()));
+        let _ = router.at(path).middleware(Arc::new(()));
     }
 
     b.iter(|| {
@@ -218,7 +218,7 @@ fn find_matches_6(b: &mut Bencher) {
     let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(Arc::new(()));
+        let _ = router.at(path).middleware(Arc::new(()));
     }
 
     b.iter(|| {
@@ -240,7 +240,7 @@ fn find_matches_7(b: &mut Bencher) {
     let mut next = VecDeque::with_capacity(8);
 
     for path in ROUTES {
-        let _ = router.at(path).include(Arc::new(()));
+        let _ = router.at(path).middleware(Arc::new(()));
     }
 
     b.iter(|| {

@@ -1,175 +1,203 @@
 use http::header::ALLOW;
-use http::{HeaderValue, Method};
+use http::{Method, StatusCode};
 
 use crate::middleware::{BoxFuture, Middleware};
 use crate::{Next, Request, Response};
 
-/// Middleware for routing based on the HTTP method of the request.
+/// HTTP method based middleware dispatch.
 ///
-/// When a route has different behavior depending on the HTTP method, grouping
-/// the various handlers into an [`Allow`] middleware can prevent the middleware
-/// stack from reallocating during request routing and reduce per-method atomic
-/// operations into a single operation.
+/// When a route’s behavior varies by method, grouping the handlers with
+/// [`Allow`] can prevent middleware stack reallocations and collapse
+/// per-method atomic operations into a single one.
 ///
-/// If the request method is not supported, [`Allow`] automatically returns a
-/// `405 Method Not Allowed` response and sets the `Allow` header with the list
-/// of permitted methods. You can override this behavior and instead call the
-/// next middleware in the stack with [`Allow::or_next`].
+/// # Example
+///
+/// ```no_run
+/// use std::process::ExitCode;
+/// use via::{App, BoxError, Server};
+///
+/// mod users {
+///     use via::{Next, Request};
+///
+///     pub async fn create(_: Request, _: Next) -> via::Result { todo!() }
+///     pub async fn destroy(_: Request, _: Next) -> via::Result { todo!() }
+///     pub async fn list(_: Request, _: Next) -> via::Result { todo!() }
+///     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
+///     pub async fn update(_: Request, _: Next) -> via::Result { todo!() }
+/// }
+///
+/// #[tokio::main]
+/// async fn main() -> Result<ExitCode, BoxError> {
+///     let mut app = App::new(());
+///
+///     // HTTP method based dispatch.
+///     app.route("/users").scope(|resource| {
+///         resource.respond(via::get(users::list).post(users::create));
+///         resource.route("/:id").respond(
+///             via::get(users::show)
+///                 .patch(users::update)
+///                 .delete(users::destroy)
+///         );
+///     });
+///
+///     Server::new(app).listen(("127.0.0.1", 8080)).await
+/// }
 ///
 pub struct Allow<State> {
     allowed: Vec<(Method, Box<dyn Middleware<State>>)>,
-    or_next: bool,
+    #[allow(clippy::type_complexity)]
+    or_else: Option<Box<dyn Fn(&Method, String) -> crate::Result + Send + Sync>>,
 }
 
-/// Allow `CONNECT` requests to call the provided middleware.
-///
-pub fn connect<State, T>(middleware: T) -> Allow<State>
-where
-    T: Middleware<State> + 'static,
-{
-    Allow::new(Method::CONNECT, middleware)
+macro_rules! allow_factory {
+    ( $( $vis:vis fn $name:ident($method:ident) ),* $(,)? ) => {
+        $(
+            #[doc = docs_for!($method)]
+            $vis fn $name<State, T>(middleware: T) -> Allow<State>
+            where
+                T: Middleware<State> + 'static,
+            {
+                Allow::new(Method::$method, middleware)
+            }
+        )*
+    };
 }
 
-/// Allow `DELETE` requests to call the provided middleware.
-///
-pub fn delete<State, T>(middleware: T) -> Allow<State>
-where
-    T: Middleware<State> + 'static,
-{
-    Allow::new(Method::DELETE, middleware)
+macro_rules! docs_for {
+    ($method:ident) => {
+        concat!(
+            "Route `",
+            stringify!($method),
+            "` requests to the provided middleware."
+        )
+    };
 }
 
-/// Allow `GET` requests to call the provided middleware.
-///
-pub fn get<State, T>(middleware: T) -> Allow<State>
-where
-    T: Middleware<State> + 'static,
-{
-    Allow::new(Method::GET, middleware)
+macro_rules! extend_allowed {
+    ( $( $vis:vis fn $name:ident($method:ident) ),* $(,)? ) => {
+        $(
+            #[doc = docs_for!($method)]
+            $vis fn $name<T>(mut self, middleware: T) -> Self
+            where
+                T: Middleware<State> + 'static,
+            {
+                self.allowed.push((Method::$method, Box::new(middleware)));
+                self
+            }
+        )*
+    };
 }
 
-/// Allow `HEAD` requests to call the provided middleware.
-///
-pub fn head<State, T>(middleware: T) -> Allow<State>
-where
-    T: Middleware<State> + 'static,
-{
-    Allow::new(Method::HEAD, middleware)
-}
-
-/// Allow `OPTIONS` requests to call the provided middleware.
-///
-pub fn options<State, T>(middleware: T) -> Allow<State>
-where
-    T: Middleware<State> + 'static,
-{
-    Allow::new(Method::OPTIONS, middleware)
-}
-
-/// Allow `PATCH` requests to call the provided middleware.
-///
-pub fn patch<State, T>(middleware: T) -> Allow<State>
-where
-    T: Middleware<State> + 'static,
-{
-    Allow::new(Method::PATCH, middleware)
-}
-
-/// Allow `POST` requests to call the provided middleware.
-///
-pub fn post<State, T>(middleware: T) -> Allow<State>
-where
-    T: Middleware<State> + 'static,
-{
-    Allow::new(Method::POST, middleware)
-}
-
-/// Allow `PUT` requests to call the provided middleware.
-///
-pub fn put<State, T>(middleware: T) -> Allow<State>
-where
-    T: Middleware<State> + 'static,
-{
-    Allow::new(Method::PUT, middleware)
-}
-
-/// Allow `TRACE` requests to call the provided middleware.
-///
-pub fn trace<State, T>(middleware: T) -> Allow<State>
-where
-    T: Middleware<State> + 'static,
-{
-    Allow::new(Method::TRACE, middleware)
-}
+allow_factory!(
+    pub fn connect(CONNECT),
+    pub fn delete(DELETE),
+    pub fn get(GET),
+    pub fn head(HEAD),
+    pub fn options(OPTIONS),
+    pub fn patch(PATCH),
+    pub fn post(POST),
+    pub fn put(PUT),
+    pub fn trace(TRACE),
+);
 
 impl<State> Allow<State> {
-    /// Combine the HTTP methods that allowed by `self` with the provided
-    /// argument.
+    extend_allowed!(
+        pub fn connect(CONNECT),
+        pub fn delete(DELETE),
+        pub fn get(GET),
+        pub fn head(HEAD),
+        pub fn options(OPTIONS),
+        pub fn patch(PATCH),
+        pub fn post(POST),
+        pub fn put(PUT),
+        pub fn trace(TRACE),
+    );
+
+    /// Call the provided function to generate a response if the request method
+    /// is not supported.
     ///
     /// # Example
     ///
     /// ```
-    /// # use via::{App, Request, Response, Next};
+    /// # use via::{App, Next, Request, Response};
     /// #
-    /// # macro_rules! define {
-    /// #     ( $($ident:ident),* ) => { $(let $ident = responder;)* }
+    /// # async fn greet(request: Request, _: Next) -> via::Result {
+    /// #   let name = request.param("name").into_result()?;
+    /// #   Response::build().text(format!("Hello, {}!", name))
     /// # }
     /// #
-    /// # async fn responder(_: Request, _: Next) -> via::Result {
-    /// #     Response::build().finish()
-    /// # }
-    /// #
+    /// # fn main() {
     /// # let mut app = App::new(());
-    /// # define!(index, create, show, update, destroy);
-    /// #
-    /// // A typical REST endpoint.
-    /// app.at("/users").scope(|users| {
-    ///     users.respond(via::get(index).and(via::post(create)));
-    ///     users.at("/:id").respond(
-    ///         via::get(show)
-    ///             .and(via::patch(update))
-    ///             .and(via::delete(destroy)),
-    ///     );
-    /// });
+    /// app.route("/hello/:name").respond(
+    ///     // curl -XPOST http://localhost:8080/hello/world
+    ///     // => Method Not Allowed: POST
+    ///     via::get(greet).or_else(|method, allowed| {
+    ///         Response::build()
+    ///             .status(405)
+    ///             .header("Allow", allowed)
+    ///             .text(format!("Method Not Allowed: {}", method))
+    ///     })
+    /// );
+    /// # }
     /// ```
     ///
-    pub fn and(mut self, also: Allow<State>) -> Self {
-        self.allowed.extend(also.allowed);
-        self.or_next = self.or_next || also.or_next;
+    pub fn or_else<F>(mut self, or_else: F) -> Self
+    where
+        F: Fn(&Method, String) -> crate::Result + Send + Sync + 'static,
+    {
+        self.or_else = Some(Box::new(or_else));
         self
     }
 
-    /// Forward the request to the next middleware in the stack if no allowed
-    /// method is matched.
+    /// Return a `405 Method Not Allowed` response if the request method is not
+    /// supported.
     ///
-    /// If this is the last middleware in the stack, a `404 Not Found` response
-    /// is returned.
+    /// # Example
     ///
-    /// This lets you override the default `405 Method Not Allowed` response.
+    /// ```
+    /// # use via::{App, Next, Request, Response};
+    /// #
+    /// # async fn greet(request: Request, _: Next) -> via::Result {
+    /// #    let name = request.param("name").into_result()?;
+    /// #    Response::build().text(format!("Hello, {}!", name))
+    /// # }
+    /// #
+    /// # fn main() {
+    /// # let mut app = App::new(());
+    /// app.route("/hello/:name").respond(
+    ///     // curl -XPOST http://localhost:8080/hello/world
+    ///     // => Method Not Allowed: POST
+    ///     via::get(greet).or_not_allowed()
+    /// );
+    /// # }
+    /// ```
     ///
-    pub fn or_next(mut self) -> Self {
-        self.or_next = true;
-        self
+    pub fn or_not_allowed(self) -> Self {
+        self.or_else(|method, allowed| {
+            Response::build()
+                .status(StatusCode::METHOD_NOT_ALLOWED)
+                .header(ALLOW, allowed)
+                .text(format!("Method not allowed: {}.", method))
+        })
     }
 }
 
 impl<State> Allow<State> {
-    fn new(method: Method, middleware: impl Middleware<State> + 'static) -> Self {
+    fn new<T>(method: Method, middleware: T) -> Self
+    where
+        T: Middleware<State> + 'static,
+    {
         Self {
             allowed: vec![(method, Box::new(middleware))],
-            or_next: false,
+            or_else: None,
         }
     }
 
-    fn allow_header(&self) -> Option<HeaderValue> {
-        let allowed = self.allowed.iter().fold(None, |init, (method, _)| {
-            Some(match init {
-                Some(allowed) => allowed + ", " + method.as_str(),
-                None => method.as_str().to_owned(),
-            })
-        })?;
-
-        allowed.try_into().ok()
+    fn allow_header(&self) -> String {
+        self.allowed
+            .iter()
+            .map(|(method, _)| method.as_str())
+            .fold(String::new(), |allowed, method| allowed + ", " + method)
     }
 
     fn respond_to(&self, method: &Method) -> Option<&dyn Middleware<State>> {
@@ -185,18 +213,15 @@ impl<State> Allow<State> {
 
 impl<State> Middleware<State> for Allow<State> {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
-        if let Some(middleware) = self.respond_to(request.method()) {
+        let method = request.method();
+
+        if let Some(middleware) = self.respond_to(method) {
             middleware.call(request, next)
-        } else if self.or_next {
-            next.call(request)
+        } else if let Some(or_else) = self.or_else.as_deref() {
+            let result = or_else(method, self.allow_header());
+            Box::pin(async { result })
         } else {
-            let mut response = Response::from(crate::raise!(405));
-
-            if let Some(value) = self.allow_header() {
-                response.headers_mut().insert(ALLOW, value);
-            }
-
-            Box::pin(async { Ok(response) })
+            next.call(request)
         }
     }
 }

@@ -9,7 +9,15 @@ pub struct Route<'a, State> {
 }
 
 impl<State> Route<'_, State> {
-    pub fn at(&mut self, path: &'static str) -> Route<'_, State> {
+    pub fn middleware(&mut self, middleware: impl Middleware<State> + 'static) {
+        self.inner.include(Arc::new(middleware));
+    }
+
+    pub fn respond(&mut self, middleware: impl Middleware<State> + 'static) {
+        self.inner.respond(Arc::new(middleware));
+    }
+
+    pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
         Route {
             inner: self.inner.at(path),
         }
@@ -17,13 +25,5 @@ impl<State> Route<'_, State> {
 
     pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
         scope(&mut self);
-    }
-
-    pub fn include(&mut self, middleware: impl Middleware<State> + 'static) {
-        self.inner.include(Arc::new(middleware));
-    }
-
-    pub fn respond(&mut self, middleware: impl Middleware<State> + 'static) {
-        self.inner.respond(Arc::new(middleware));
     }
 }

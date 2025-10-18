@@ -3,8 +3,10 @@ mod database;
 
 use std::process::ExitCode;
 use std::time::Duration;
-use via::{App, BoxError, Next, Request, rescue, timeout};
+use via::{App, BoxError, Next, Request, Server, rescue, timeout};
 
+use api::util::with_error_sanitizer;
+use api::{posts, users};
 use database::Pool;
 
 struct BlogApi {
@@ -21,57 +23,51 @@ async fn main() -> Result<ExitCode, BoxError> {
 
     // Setup a simple logger middleware that logs the method, path, and response
     // status code of every request.
-    app.include(async |request: Request<BlogApi>, next: Next<BlogApi>| {
-        let method = request.method().to_string();
-        let path = request.uri().path().to_string();
+    app.middleware(async |request: Request<BlogApi>, next: Next<BlogApi>| {
+        let method = request.method().clone();
+        let path = request.uri().path().to_owned();
 
         next.call(request).await.inspect(|response| {
-            let status = response.status();
             // TODO: Replace println with an actual logger.
-            println!("{} {} => {}", method, path, status);
+            println!("{} {} => {}", method, path, response.status());
         })
     });
 
     // Define the /api namespace.
-    app.at("/api").scope(|api| {
-        use api::util::with_error_sanitizer;
-        use api::{posts, users};
+    let mut api = app.route("/api");
 
-        // Capture errors that occur in the api namespace, log them, and then
-        // convert them into json responses. Upstream middleware remains
-        // unaffected and continues execution.
-        api.include(rescue(with_error_sanitizer));
+    // Capture errors that occur in the api namespace, log them, and then
+    // convert them into json responses. Upstream middleware remains
+    // unaffected and continues execution.
+    api.middleware(rescue(with_error_sanitizer));
 
-        // Add a timeout middleware to the /api routes. This will prevent the
-        // server from waiting indefinitely if we lose connection to the
-        // database. For this example, we're using a 10 second timeout.
-        api.include(timeout(Duration::from_secs(10)));
+    // Add a timeout middleware to the /api routes. This will prevent the
+    // server from waiting indefinitely if we lose connection to the
+    // database. For this example, we're using a 10 second timeout.
+    api.middleware(timeout(Duration::from_secs(10)));
 
-        // Define the /api/posts resource.
-        api.at("/posts").scope(|posts| {
-            // A mock authentication middleware that does nothing.
-            posts.include(posts::auth);
+    // Define the /api/posts resource.
+    api.route("/posts").scope(|resource| {
+        // A mock authentication middleware that does nothing.
+        resource.middleware(posts::auth);
 
-            posts.respond(via::get(posts::index).and(via::post(posts::create)));
-
-            posts.at("/:id").respond(
-                via::get(posts::show)
-                    .and(via::patch(posts::update))
-                    .and(via::delete(posts::destroy)),
-            );
-        });
-
-        // Define the /api/users resource.
-        api.at("/users").scope(|users| {
-            users.respond(via::get(users::index).and(via::post(users::create)));
-
-            users.at("/:id").respond(
-                via::get(users::show)
-                    .and(via::patch(users::update))
-                    .and(via::delete(users::destroy)),
-            );
-        });
+        resource.respond(via::get(posts::index).post(posts::create));
+        resource.route("/:id").respond(
+            via::get(posts::show)
+                .patch(posts::update)
+                .delete(posts::destroy),
+        );
     });
 
-    via::serve(app).listen(("127.0.0.1", 8080)).await
+    // Define the /api/users resource.
+    api.route("/users").scope(|resource| {
+        resource.respond(via::get(users::index).post(users::create));
+        resource.route("/:id").respond(
+            via::get(users::show)
+                .patch(users::update)
+                .delete(users::destroy),
+        );
+    });
+
+    Server::new(app).listen(("127.0.0.1", 8080)).await
 }

@@ -134,20 +134,20 @@ impl<T> Node<T> {
 }
 
 impl<T> RouteMut<'_, T> {
-    pub fn at(&mut self, path: &'static str) -> RouteMut<'_, T> {
-        RouteMut(insert(self.0, path::patterns(path)))
-    }
-
-    pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
-        scope(&mut self);
-    }
-
-    pub fn include(&mut self, middleware: T) {
+    pub fn middleware(&mut self, middleware: T) {
         self.0.route.push(MatchCond::Partial(middleware));
     }
 
     pub fn respond(&mut self, middleware: T) {
         self.0.route.push(MatchCond::Final(middleware));
+    }
+
+    pub fn route(&mut self, path: &'static str) -> RouteMut<'_, T> {
+        RouteMut(insert(self.0, path::patterns(path)))
+    }
+
+    pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
+        scope(&mut self);
     }
 }
 
@@ -156,7 +156,7 @@ impl<T> Router<T> {
         Default::default()
     }
 
-    pub fn at(&mut self, path: &'static str) -> RouteMut<'_, T> {
+    pub fn route(&mut self, path: &'static str) -> RouteMut<'_, T> {
         RouteMut(insert(&mut self.0, path::patterns(path)))
     }
 
@@ -363,7 +363,7 @@ mod tests {
         let mut router = Router::new();
 
         for path in PATHS {
-            router.at(path).include(path.to_owned());
+            router.route(path).middleware(path.to_owned());
         }
 
         fn assert_matches_wildcard_at_root<'a, I, F>(results: &mut I, assert_param: F)
