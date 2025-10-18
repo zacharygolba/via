@@ -9,17 +9,23 @@ pub struct Route<'a, State> {
 }
 
 impl<State> Route<'_, State> {
-    pub fn middleware(&mut self, middleware: impl Middleware<State> + 'static) {
-        self.inner.include(Arc::new(middleware));
+    pub fn middleware<T>(&mut self, middleware: T)
+    where
+        T: Middleware<State> + 'static,
+    {
+        self.inner.middleware(Arc::new(middleware));
     }
 
-    pub fn respond(&mut self, middleware: impl Middleware<State> + 'static) {
+    pub fn respond<T>(&mut self, middleware: T)
+    where
+        T: Middleware<State> + 'static,
+    {
         self.inner.respond(Arc::new(middleware));
     }
 
     pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
         Route {
-            inner: self.inner.at(path),
+            inner: self.inner.route(path),
         }
     }
 
