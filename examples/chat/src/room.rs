@@ -46,7 +46,7 @@ pub async fn join(mut channel: ws::Channel, request: ws::Context<Chat>) -> via::
             }
 
             // Message received from the websocket.
-            Some(mut message) = channel.next() => {
+            Some(message) = channel.next() => {
                 // Break the loop when we receive a close message.
                 if let Message::Close(close) = &message {
                     if let Some((code, reason)) = close {
