@@ -65,26 +65,16 @@ where
     T: DeserializeOwned,
 {
     #[derive(Deserialize)]
-    struct JsonPayload<T> {
-        data: T,
+    #[serde(untagged)]
+    enum JsonPayload<T> {
+        Tagged { data: T },
+        Untagged(T),
     }
 
-    // Attempt deserialize JSON assuming that type `D` exists in a top
-    // level data field. This is a common pattern so we optimize for it to
-    // provide a more convenient API. If you frequently expect `D` to be at
-    // the root of the JSON object contained in `payload` and not in a top-
-    // level `data` field, we recommend writing a utility function that
-    // circumvents the extra call to deserialize. Otherwise, this has no
-    // additional overhead.
-    serde_json::from_slice(slice)
-        // If `D` was contained in a top-level `data` field, unwrap it.
-        .map(|object: JsonPayload<T>| object.data)
-        // Otherwise, attempt to deserialize `D` from the object at the
-        // root of payload. If that also fails, use the original error.
-        .or_else(|error| serde_json::from_slice(slice).or(Err(error)))
-        // If an error occurred, wrap it with `via::Error` and set the status
-        // code to 400 Bad Request.
-        .map_err(|error| raise!(400, error))
+    match serde_json::from_slice(slice) {
+        Ok(JsonPayload::Tagged { data } | JsonPayload::Untagged(data)) => Ok(data),
+        Err(error) => Err(raise!(400, error)),
+    }
 }
 
 impl Payload for Bytes {
