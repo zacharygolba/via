@@ -1,42 +1,48 @@
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use http::StatusCode;
-use via::error::Sanitize;
+use via::error::Sanitizer;
 
 /// Sanitizes details about database errors that
-pub fn with_error_sanitizer(error: Sanitize) -> Sanitize {
+pub fn with_error_sanitizer(sanitizer: &mut Sanitizer) {
     // Print the original message to stderr. In production you probably want
     // to use env_logger, tracing, or something similar.
-    eprintln!("error: {}", error);
+    eprintln!("error: {}", sanitizer);
 
-    // Respond with json and sanitize potentially sensitive error messages.
-    error.as_json().map(|sanitize, source| {
-        match source.downcast_ref() {
-            Some(DieselError::DatabaseError(kind, _)) => {
-                if let Some(status_code) = status_for_database_error_kind(kind) {
-                    // The requested operation violates a database constraint.
-                    sanitize.with_status_code(status_code)
-                } else {
-                    // Opaque internal server error.
-                    sanitize.with_canonical_reason()
-                }
+    // Configure the sanitizer to generate a JSON response.
+    sanitizer.respond_with_json();
+
+    // If the error occurred during a database operation, set the appropriate
+    // status code or obsfuscate the message depending on the nature of the
+    // error.
+    let Some(database_error) = sanitizer.source().and_then(|error| error.downcast_ref()) else {
+        return;
+    };
+
+    match database_error {
+        DieselError::DatabaseError(kind, _) => match kind {
+            DatabaseErrorKind::CheckViolation | DatabaseErrorKind::NotNullViolation => {
+                sanitizer.set_status_code(StatusCode::BAD_REQUEST);
             }
+            DatabaseErrorKind::ForeignKeyViolation => {
+                sanitizer.set_status_code(StatusCode::UNPROCESSABLE_ENTITY);
+            }
+            DatabaseErrorKind::UniqueViolation => {
+                sanitizer.set_status_code(StatusCode::CONFLICT);
+            }
+            _ => {
+                // Some other database error occurred. To be safe, use the
+                // canonical reason phrase of the status code associated with
+                // the error as the error message.
+                sanitizer.use_canonical_reason();
+            }
+        },
 
-            // The requested resource does not exist.
-            Some(DieselError::NotFound) => sanitize.with_status_code(StatusCode::NOT_FOUND),
-
-            // The error occured for some other reason.
-            _ => sanitize.with_canonical_reason(),
+        // The requested resource does not exist.
+        DieselError::NotFound => {
+            sanitizer.set_status_code(StatusCode::NOT_FOUND);
         }
-    })
-}
 
-fn status_for_database_error_kind(kind: &DatabaseErrorKind) -> Option<StatusCode> {
-    match kind {
-        DatabaseErrorKind::CheckViolation | DatabaseErrorKind::NotNullViolation => {
-            Some(StatusCode::BAD_REQUEST)
-        }
-        DatabaseErrorKind::ForeignKeyViolation => Some(StatusCode::UNPROCESSABLE_ENTITY),
-        DatabaseErrorKind::UniqueViolation => Some(StatusCode::CONFLICT),
-        _ => None,
+        // The error occured for some other reason.
+        _ => {}
     }
 }

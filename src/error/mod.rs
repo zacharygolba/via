@@ -19,7 +19,7 @@ pub use http::StatusCode; // Required for the raise macro.
 
 use crate::response::{Response, ResponseBody};
 
-pub use rescue::{Rescue, Sanitize, rescue};
+pub use rescue::{Rescue, Sanitizer, rescue};
 pub(crate) use server::ServerError;
 
 /// A type alias for `Box<dyn Error + Send + Sync>`.
