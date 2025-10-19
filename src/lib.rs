@@ -16,7 +16,7 @@
 //!
 //! ```no_run
 //! use std::process::ExitCode;
-//! use via::{App, BoxError, Next, Request, Response, Server};
+//! use via::{App, Error, Next, Request, Response, Server};
 //!
 //! async fn hello(request: Request, _: Next) -> via::Result {
 //!     // Get a reference to the path parameter `name` from the request uri.
@@ -27,7 +27,7 @@
 //! }
 //!
 //! #[tokio::main]
-//! async fn main() -> Result<ExitCode, BoxError> {
+//! async fn main() -> Result<ExitCode, Error> {
 //!     let mut app = App::new(());
 //!
 //!     // Define a route that listens on /hello/:name.
@@ -71,7 +71,7 @@ pub use server::Server;
 pub use timeout::{Timeout, timeout};
 
 #[doc(inline)]
-pub use error::{BoxError, rescue};
+pub use error::rescue;
 
 #[cfg(feature = "ws")]
 #[doc(inline)]

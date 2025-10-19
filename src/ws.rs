@@ -70,10 +70,10 @@ pub struct ValidUtf8 {
 ///
 /// ```
 /// use via::ws::{self, Message};
-/// use via::{App, BoxError, Payload};
+/// use via::{App, Error, Payload};
 ///
 /// #[tokio::main]
-/// async fn main() -> Result<(), BoxError> {
+/// async fn main() -> Result<(), Error> {
 ///     let mut app = App::new(());
 ///
 ///     // GET /echo ~> web socket upgrade.

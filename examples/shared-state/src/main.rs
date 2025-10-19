@@ -3,7 +3,7 @@ use std::fmt::Write;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use via::{App, BoxError, Next, Request, Response, Server};
+use via::{App, Error, Next, Request, Response, Server};
 
 /// A struct of containing the shared state for the application. This struct
 /// will be made available to all middleware functions and responders by
@@ -69,7 +69,7 @@ async fn totals(request: Request<Counter>, _: Next<Counter>) -> via::Result {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, BoxError> {
+async fn main() -> Result<ExitCode, Error> {
     let mut app = App::new(Counter {
         errors: Arc::new(AtomicU32::new(0)),
         sucesses: Arc::new(AtomicU32::new(0)),

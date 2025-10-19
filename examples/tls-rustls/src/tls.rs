@@ -7,12 +7,12 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use tokio_rustls::rustls;
-use via::BoxError;
+use via::{Error, raise};
 
 /// Load the certificate and private key from the file system and use them
 /// to create a rustls::ServerConfig.
 ///
-pub fn server_config() -> Result<rustls::ServerConfig, BoxError> {
+pub fn server_config() -> Result<rustls::ServerConfig, Error> {
     let key = load_key("localhost.key")?;
     let cert = load_certs("localhost.cert")?;
     let mut config = rustls::ServerConfig::builder()
@@ -24,7 +24,7 @@ pub fn server_config() -> Result<rustls::ServerConfig, BoxError> {
     Ok(config)
 }
 
-fn load_certs(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, BoxError> {
+fn load_certs(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, Error> {
     let mut reader = BufReader::new(File::open(path)?);
 
     rustls_pemfile::certs(&mut reader)
@@ -32,15 +32,10 @@ fn load_certs(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, Bo
         .collect()
 }
 
-fn load_key(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>, BoxError> {
+fn load_key(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>, Error> {
     let mut reader = BufReader::new(File::open(path)?);
 
     rustls_pemfile::private_key(&mut reader)
         .map_err(|error| error.into())
-        .and_then(|option| {
-            option.ok_or_else(|| {
-                let message = "failed to load private key".to_owned();
-                message.into()
-            })
-        })
+        .and_then(|option| option.ok_or_else(|| raise!(message = "failed to load private key")))
 }

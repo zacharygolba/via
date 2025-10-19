@@ -10,12 +10,12 @@ pub mod prelude {
 
 use diesel_async::{AsyncPgConnection, pooled_connection::AsyncDieselConnectionManager};
 use std::env;
-use via::BoxError;
+use via::Error;
 
 type ConnectionManager = AsyncDieselConnectionManager<AsyncPgConnection>;
 pub type Pool = bb8::Pool<ConnectionManager>;
 
-pub async fn pool() -> Result<Pool, BoxError> {
+pub async fn pool() -> Result<Pool, Error> {
     let config = ConnectionManager::new(env::var("DATABASE_URL")?);
     Ok(Pool::builder().build(config).await?)
 }

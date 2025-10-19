@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::net::ToSocketAddrs;
 
 use crate::app::{App, AppService};
-use crate::error::BoxError;
+use crate::error::Error;
 
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
 use super::tls;
@@ -136,7 +136,7 @@ where
     /// process supervisor of an individual node and the replacement and
     /// decommissioning logic of the cluster.
     ///
-    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, BoxError>>
+    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, Error>>
     where
         A: ToSocketAddrs,
     {
@@ -162,7 +162,7 @@ where
         self,
         address: A,
         tls_config: native_tls::Identity,
-    ) -> impl Future<Output = Result<ExitCode, BoxError>>
+    ) -> impl Future<Output = Result<ExitCode, Error>>
     where
         A: ToSocketAddrs,
     {
@@ -177,7 +177,7 @@ where
         self,
         address: A,
         tls_config: rustls::ServerConfig,
-    ) -> impl Future<Output = Result<ExitCode, BoxError>>
+    ) -> impl Future<Output = Result<ExitCode, Error>>
     where
         A: ToSocketAddrs,
     {

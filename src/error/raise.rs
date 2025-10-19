@@ -233,4 +233,6 @@ macro_rules! raise {
     (511, $($arg:tt)*) => {
         $crate::raise!(@reason NETWORK_AUTHENTICATION_REQUIRED, $($arg)*)
     };
+
+    ($($arg:tt)*) => { $crate::raise!(500, $($arg)*) }
 }
