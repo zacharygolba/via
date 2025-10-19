@@ -433,7 +433,7 @@ impl<State> Upgrade<State> {
 
     /// The maximum payload size in bytes.
     ///
-    /// **Default:** `8 KB`
+    /// **Default:** `16 KB`
     ///
     pub fn max_payload_size(mut self, max_payload_size: Option<usize>) -> Self {
         self.max_payload_size = max_payload_size;
