@@ -165,7 +165,7 @@ impl DataAndTrailers {
 }
 
 impl Payload for DataAndTrailers {
-    fn copy_to_bytes(&mut self) -> Bytes {
+    fn copy_to_bytes(mut self) -> Bytes {
         let mut dest = BytesMut::with_capacity(self.len());
 
         for frame in &mut self.frames {
@@ -178,7 +178,7 @@ impl Payload for DataAndTrailers {
         dest.freeze()
     }
 
-    fn to_vec(&mut self) -> Vec<u8> {
+    fn into_vec(mut self) -> Vec<u8> {
         let mut dest = Vec::with_capacity(self.len());
 
         for frame in &mut self.frames {

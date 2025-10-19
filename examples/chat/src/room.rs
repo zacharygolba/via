@@ -59,7 +59,7 @@ pub async fn join(mut channel: ws::Channel, request: ws::Context<Chat>) -> via::
                     break Ok(());
                 }
 
-                if let Some(index) = chat.push(&slug, message.to_utf8()?).await {
+                if let Some(index) = chat.push(&slug, message.into_utf8()?).await {
                     let _ = tx.send((id, index));
                 }
             },

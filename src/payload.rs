@@ -10,7 +10,7 @@ use crate::raise;
 pub trait Payload: Sized {
     /// Copy the bytes in self into a unique, contiguous `Bytes` instance.
     ///
-    fn copy_to_bytes(&mut self) -> Bytes;
+    fn copy_to_bytes(self) -> Bytes;
 
     /// Deserialize the payload as an instance of type `T`.
     ///
@@ -36,7 +36,7 @@ pub trait Payload: Sized {
     /// // => Meow, Ciro!
     /// ```
     ///
-    fn parse_json<T>(&mut self) -> Result<T, Error>
+    fn parse_json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
@@ -49,13 +49,13 @@ pub trait Payload: Sized {
     ///
     /// If the payload is not valid `UTF-8`.
     ///
-    fn to_utf8(&mut self) -> Result<String, Error> {
-        String::from_utf8(self.to_vec()).map_err(|error| raise!(400, error))
+    fn into_utf8(self) -> Result<String, Error> {
+        String::from_utf8(self.into_vec()).map_err(|error| raise!(400, error))
     }
 
     /// Copy the bytes in self into a contiguous `Vec<u8>`.
     ///
-    fn to_vec(&mut self) -> Vec<u8> {
+    fn into_vec(self) -> Vec<u8> {
         self.copy_to_bytes().into()
     }
 }
@@ -78,7 +78,7 @@ where
 }
 
 impl Payload for Bytes {
-    fn copy_to_bytes(&mut self) -> Bytes {
+    fn copy_to_bytes(mut self) -> Bytes {
         let remaining = self.len();
         let detached = self.split_to(remaining);
 
@@ -87,7 +87,7 @@ impl Payload for Bytes {
         dest.freeze()
     }
 
-    fn to_vec(&mut self) -> Vec<u8> {
+    fn into_vec(mut self) -> Vec<u8> {
         let remaining = self.len();
         let detached = self.split_to(remaining);
 
