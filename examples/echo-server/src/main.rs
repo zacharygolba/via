@@ -1,12 +1,12 @@
 use std::process::ExitCode;
-use via::{App, BoxError, Next, Pipe, Request, Response, Server};
+use via::{App, Error, Next, Pipe, Request, Response, Server};
 
 async fn echo(request: Request, _: Next) -> via::Result {
     request.pipe(Response::build())
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, BoxError> {
+async fn main() -> Result<ExitCode, Error> {
     let mut app = App::new(());
 
     // Add our echo responder to the endpoint /echo.

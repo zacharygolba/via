@@ -22,7 +22,7 @@ use crate::response::{Response, ResponseBody};
 pub use rescue::{Rescue, Sanitize, rescue};
 pub(crate) use server::ServerError;
 
-/// A type alias for a boxed `dyn Error + Send + Sync`.
+/// A type alias for `Box<dyn Error + Send + Sync>`.
 ///
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 

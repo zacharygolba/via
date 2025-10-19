@@ -1,9 +1,9 @@
 use native_tls::Identity;
 use std::process::ExitCode;
 use std::{env, fs};
-use via::{App, BoxError, Next, Request, Response, Server};
+use via::{App, Error, Next, Request, Response, Server};
 
-fn load_pkcs12() -> Result<Identity, BoxError> {
+fn load_pkcs12() -> Result<Identity, Error> {
     let identity = fs::read("localhost.p12").expect("failed to load pkcs#12 file");
     let password = env::var("TLS_PKCS_PASSWORD").expect("missing TLS_PKCS_PASSWORD in env");
 
@@ -19,7 +19,7 @@ async fn hello(request: Request, _: Next) -> via::Result {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, BoxError> {
+async fn main() -> Result<ExitCode, Error> {
     dotenvy::dotenv()?;
 
     // Make sure that our TLS config is present and valid before we proceed.

@@ -7,7 +7,7 @@ use tokio_native_tls::TlsAcceptor;
 use super::super::accept;
 use super::super::server::ServerConfig;
 use crate::app::AppService;
-use crate::error::BoxError;
+use crate::error::Error;
 
 const MIN_PROTOCOL_VERSION: Protocol = Protocol::Tlsv12;
 
@@ -16,7 +16,7 @@ pub fn listen_native_tls<State, A>(
     address: A,
     identity: Identity,
     service: AppService<State>,
-) -> impl Future<Output = Result<ExitCode, BoxError>>
+) -> impl Future<Output = Result<ExitCode, Error>>
 where
     A: ToSocketAddrs,
     State: Send + Sync + 'static,

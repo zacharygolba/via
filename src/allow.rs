@@ -14,7 +14,7 @@ use crate::{Next, Request, Response};
 ///
 /// ```no_run
 /// use std::process::ExitCode;
-/// use via::{App, BoxError, Server};
+/// use via::{App, Error, Server};
 ///
 /// mod users {
 ///     use via::{Next, Request};
@@ -27,7 +27,7 @@ use crate::{Next, Request, Response};
 /// }
 ///
 /// #[tokio::main]
-/// async fn main() -> Result<ExitCode, BoxError> {
+/// async fn main() -> Result<ExitCode, Error> {
 ///     let mut app = App::new(());
 ///
 ///     // HTTP method based dispatch.

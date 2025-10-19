@@ -11,7 +11,7 @@ use tokio_rustls::server::{Accept, TlsAcceptor, TlsStream};
 use super::super::accept;
 use super::super::server::ServerConfig;
 use crate::app::AppService;
-use crate::error::BoxError;
+use crate::error::Error;
 
 enum Negotiate {
     Ready(TlsStream<TcpStream>),
@@ -23,7 +23,7 @@ pub fn listen_rustls<State, A>(
     address: A,
     tls_config: rustls::ServerConfig,
     service: AppService<State>,
-) -> impl Future<Output = Result<ExitCode, BoxError>>
+) -> impl Future<Output = Result<ExitCode, Error>>
 where
     A: ToSocketAddrs,
     State: Send + Sync + 'static,

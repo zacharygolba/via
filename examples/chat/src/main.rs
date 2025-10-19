@@ -3,14 +3,14 @@ mod room;
 
 use http::header;
 use std::process::ExitCode;
-use via::{App, BoxError, Response, Server};
+use via::{App, Error, Response, Server};
 
 use crate::chat::Chat;
 
 const CSP: &str = "default-src 'self'; connect-src 'self'";
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, BoxError> {
+async fn main() -> Result<ExitCode, Error> {
     let mut app = App::new(Chat::new());
 
     app.route("/").respond(via::get(async |_, _| {

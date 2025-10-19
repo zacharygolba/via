@@ -3,7 +3,7 @@ mod database;
 
 use std::process::ExitCode;
 use std::time::Duration;
-use via::{App, BoxError, Next, Request, Server, rescue, timeout};
+use via::{App, Error, Next, Request, Server, rescue, timeout};
 
 use api::util::with_error_sanitizer;
 use api::{posts, users};
@@ -14,7 +14,7 @@ struct BlogApi {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, BoxError> {
+async fn main() -> Result<ExitCode, Error> {
     dotenvy::dotenv()?;
 
     let mut app = App::new(BlogApi {
