@@ -78,6 +78,11 @@ impl Response {
         self.inner.extensions_mut()
     }
 
+    #[inline]
+    pub fn body(&self) -> &ResponseBody {
+        self.inner.body()
+    }
+
     /// Returns a reference to the response cookies.
     ///
     #[inline]
