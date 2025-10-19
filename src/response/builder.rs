@@ -5,16 +5,39 @@ use serde::Serialize;
 
 use super::body::ResponseBody;
 use super::response::Response;
+use crate::Pipe;
 use crate::error::Error;
+
+/// Serialize the contained type as an untagged JSON response.
+///
+/// # Example
+/// ```
+/// use serde::Serialize;
+/// use via::{Pipe, Response};
+/// use via::response::Json;
+///
+/// #[derive(Serialize)]
+/// struct Cat {
+///     name: String,
+/// }
+///
+/// let ciro = Cat {
+///     name: "Ciro".to_owned(),
+/// };
+///
+/// let tagged = Response::build().json(&ciro).unwrap();
+/// // => { "data": { "name": "Ciro" } }
+///
+/// let untagged = Json(&ciro).pipe(Response::build()).unwrap();
+/// // => { "name": "Ciro" }
+/// ```
+///
+#[derive(Debug)]
+pub struct Json<'a, T>(pub &'a T);
 
 #[derive(Debug, Default)]
 pub struct ResponseBuilder {
     inner: http::response::Builder,
-}
-
-#[derive(Serialize)]
-struct JsonPayload<'a, T> {
-    data: &'a T,
 }
 
 impl ResponseBuilder {
@@ -62,11 +85,12 @@ impl ResponseBuilder {
 
     #[inline]
     pub fn json(self, data: &impl Serialize) -> Result<Response, Error> {
-        let json = serde_json::to_string(&JsonPayload { data })?;
+        #[derive(Serialize)]
+        struct Tagged<'a, T> {
+            data: &'a T,
+        }
 
-        self.header(CONTENT_TYPE, "application/json; charset=utf-8")
-            .header(CONTENT_LENGTH, json.len())
-            .body(json)
+        Json(&Tagged { data }).pipe(self)
     }
 
     #[inline]
@@ -92,5 +116,17 @@ impl ResponseBuilder {
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
         self.body(ResponseBody::default())
+    }
+}
+
+impl<'a, T: Serialize> Pipe for Json<'a, T> {
+    #[inline]
+    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
+        let json = serde_json::to_vec(self.0)?;
+
+        response
+            .header(CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(CONTENT_LENGTH, json.len())
+            .body(json)
     }
 }

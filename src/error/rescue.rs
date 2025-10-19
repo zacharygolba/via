@@ -1,11 +1,10 @@
+use http::StatusCode;
 use std::borrow::Cow;
 use std::fmt::{self, Display, Formatter};
 
-use http::StatusCode;
-
 use crate::error::{Error, Errors};
 use crate::middleware::{BoxFuture, Middleware};
-use crate::response::{Response, ResponseBuilder};
+use crate::response::{Json, Response, ResponseBuilder};
 use crate::{Next, Pipe, Request};
 
 /// Recover from errors that occur in downstream middleware.
@@ -136,12 +135,21 @@ impl Pipe for Sanitize<'_> {
         let status_code = self.status_code();
         let response = response.status(status_code);
 
-        match self.message {
-            None if self.json => response.json(&self.error.repr_json(status_code)),
-            Some(message) if self.json => response.json(Errors::new(status_code).push(message)),
+        if self.json {
+            let payload = self.message.map_or_else(
+                || self.error.repr_json(status_code),
+                |message| {
+                    let mut errors = Errors::new(status_code);
+                    errors.push(message);
+                    errors
+                },
+            );
 
-            None => response.text(self.error.to_string()),
-            Some(message) => response.text(message),
+            Json(&payload).pipe(response)
+        } else if let Some(message) = self.message {
+            response.text(message)
+        } else {
+            response.text(self.error.to_string())
         }
     }
 }
