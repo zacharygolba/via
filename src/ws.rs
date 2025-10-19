@@ -5,6 +5,7 @@ use bytestring::ByteString;
 use futures_util::{SinkExt, StreamExt};
 use http::{StatusCode, header};
 use hyper_util::rt::TokioIo;
+use serde::de::DeserializeOwned;
 use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -18,10 +19,10 @@ use aws_lc_rs::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 #[cfg(feature = "ring")]
 use ring::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 
-use crate::Payload;
 use crate::error::Error;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
+use crate::payload::{self, Payload};
 use crate::request::{OwnedPathParams, PathParam, QueryParam, Request};
 use crate::response::Response;
 
@@ -317,6 +318,23 @@ impl Payload for Message {
                 Payload::copy_to_bytes(&mut utf8.bytes)
             }
         }
+    }
+
+    fn parse_json<T>(&mut self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        let detached = match self {
+            Self::Binary(bytes) => bytes.split_to(bytes.len()),
+            Self::Close(None) | Self::Close(Some((_, None))) => Bytes::new(),
+            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => {
+                let bytes = &mut utf8.bytes;
+                bytes.split_to(bytes.len())
+            }
+        };
+
+        // Allocation not required when json is sourced from a ws message.
+        payload::parse_json(detached.as_ref())
     }
 
     fn to_utf8(&mut self) -> Result<String, Error> {

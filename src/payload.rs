@@ -3,6 +3,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::Error;
+use crate::raise;
 
 /// Interact with data received from a client.
 ///
@@ -10,10 +11,6 @@ pub trait Payload: Sized {
     /// Copy the bytes in self into a unique, contiguous `Bytes` instance.
     ///
     fn copy_to_bytes(&mut self) -> Bytes;
-
-    /// Copy the bytes in self into a contiguous `Vec<u8>`.
-    ///
-    fn to_vec(&mut self) -> Vec<u8>;
 
     /// Deserialize the payload as an instance of type `T`.
     ///
@@ -43,29 +40,7 @@ pub trait Payload: Sized {
     where
         T: DeserializeOwned,
     {
-        #[derive(Deserialize)]
-        struct JsonPayload<T> {
-            data: T,
-        }
-
-        let input = self.to_vec();
-
-        // Attempt deserialize JSON assuming that type `D` exists in a top
-        // level data field. This is a common pattern so we optimize for it to
-        // provide a more convenient API. If you frequently expect `D` to be at
-        // the root of the JSON object contained in `payload` and not in a top-
-        // level `data` field, we recommend writing a utility function that
-        // circumvents the extra call to deserialize. Otherwise, this has no
-        // additional overhead.
-        serde_json::from_slice(&input)
-            // If `D` was contained in a top-level `data` field, unwrap it.
-            .map(|object: JsonPayload<T>| object.data)
-            // Otherwise, attempt to deserialize `D` from the object at the
-            // root of payload. If that also fails, use the original error.
-            .or_else(|error| serde_json::from_slice(&input).or(Err(error)))
-            // If an error occurred, wrap it with `via::Error` and set the status
-            // code to 400 Bad Request.
-            .map_err(|error| crate::raise!(400, error))
+        parse_json(&self.copy_to_bytes())
     }
 
     /// Copy the bytes in self into an owned, contiguous `String`.
@@ -75,8 +50,41 @@ pub trait Payload: Sized {
     /// If the payload is not valid `UTF-8`.
     ///
     fn to_utf8(&mut self) -> Result<String, Error> {
-        String::from_utf8(self.to_vec()).map_err(|error| crate::raise!(400, error))
+        String::from_utf8(self.to_vec()).map_err(|error| raise!(400, error))
     }
+
+    /// Copy the bytes in self into a contiguous `Vec<u8>`.
+    ///
+    fn to_vec(&mut self) -> Vec<u8> {
+        self.copy_to_bytes().into()
+    }
+}
+
+pub fn parse_json<T>(slice: &[u8]) -> Result<T, Error>
+where
+    T: DeserializeOwned,
+{
+    #[derive(Deserialize)]
+    struct JsonPayload<T> {
+        data: T,
+    }
+
+    // Attempt deserialize JSON assuming that type `D` exists in a top
+    // level data field. This is a common pattern so we optimize for it to
+    // provide a more convenient API. If you frequently expect `D` to be at
+    // the root of the JSON object contained in `payload` and not in a top-
+    // level `data` field, we recommend writing a utility function that
+    // circumvents the extra call to deserialize. Otherwise, this has no
+    // additional overhead.
+    serde_json::from_slice(slice)
+        // If `D` was contained in a top-level `data` field, unwrap it.
+        .map(|object: JsonPayload<T>| object.data)
+        // Otherwise, attempt to deserialize `D` from the object at the
+        // root of payload. If that also fails, use the original error.
+        .or_else(|error| serde_json::from_slice(slice).or(Err(error)))
+        // If an error occurred, wrap it with `via::Error` and set the status
+        // code to 400 Bad Request.
+        .map_err(|error| raise!(400, error))
 }
 
 impl Payload for Bytes {
