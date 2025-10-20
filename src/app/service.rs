@@ -14,13 +14,11 @@ use crate::next::Next;
 use crate::request::{PathParams, Request, RequestBody, RequestHead};
 use crate::response::{Response, ResponseBody};
 
+pub struct ServeRequest(BoxFuture);
+
 pub struct AppService<T> {
     app: Arc<App<T>>,
     max_request_size: usize,
-}
-
-pub struct ServeRequest {
-    future: BoxFuture,
 }
 
 impl<T> AppService<T> {
@@ -102,18 +100,18 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
             }
         }
 
-        ServeRequest {
-            // Call the middleware stack to get a response.
-            future: Next::new(deque).call(request),
-        }
+        // Call the middleware stack to get a response.
+        ServeRequest(Next::new(deque).call(request))
     }
 }
 
 impl Future for ServeRequest {
     type Output = Result<http::Response<ResponseBody>, Infallible>;
 
-    fn poll(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
-        self.future
+    fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
+        let Self(future) = self.get_mut();
+
+        future
             .as_mut()
             .poll(context)
             .map(|result| Ok(result.unwrap_or_else(Response::from).into()))
