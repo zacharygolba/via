@@ -12,7 +12,7 @@ use crate::app::App;
 use crate::middleware::BoxFuture;
 use crate::next::Next;
 use crate::request::{PathParams, Request, RequestBody, RequestHead};
-use crate::response::ResponseBody;
+use crate::response::{Response, ResponseBody};
 
 pub struct ServeRequest(BoxFuture);
 
@@ -47,6 +47,9 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
     type Response = http::Response<ResponseBody>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
+        // The middleware stack.
+        let mut deque = VecDeque::new();
+
         // Wrap the raw HTTP request in our custom Request struct.
         let mut request = {
             // Split the incoming request into it's component parts.
@@ -78,35 +81,27 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
             )
         };
 
-        // Preallocate for the middleware stack.
-        //
-        // In the future, we can cache lazily resolved middleware stacks to
-        // avoid this allocation and limit the atomic operations that occur
-        // during route resolution to 1 per dynamic param name.
-        let mut next = Next::new(VecDeque::with_capacity(8));
+        // Get a reference to the component parts of the request as well as a
+        // mutable reference to the path parameters.
+        let RequestHead {
+            ref mut params,
+            ref parts,
+            ..
+        } = *request.head_mut();
 
-        // Get a mutable reference to the component parts of the request as
-        // well as the vec that contains the path parameters.
-        let RequestHead { parts, params, .. } = request.head_mut();
-
-        // 1 atomic op per matched middleware fn and an additional op if the
-        // path segment matched a dynamic segment.
-        //
-        // Allocations only occur if a path segment has 2 :dynamic or *wildcard
-        // patterns and a static a static pattern that matches the path
-        // segment.
+        // Populate the middleware stack with the resolved routes.
         for (route, param) in self.app.router.traverse(parts.uri.path()) {
-            // Add the matched route's middleware to the call stack.
-            next.extend(route.map(Arc::clone));
+            // Extend the deque with the matching route's middleware.
+            deque.extend(route.cloned());
 
             if let Some((name, range)) = param {
-                // Include the resolved dynamic parameter in params.
+                // Include the route's dynamic parameter in params.
                 params.push(Arc::clone(name), range);
             }
         }
 
         // Call the middleware stack to get a response.
-        ServeRequest(next.call(request))
+        ServeRequest(Next::new(deque).call(request))
     }
 }
 
@@ -116,11 +111,9 @@ impl Future for ServeRequest {
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         let Self(future) = self.get_mut();
 
-        if let Poll::Ready(result) = future.as_mut().poll(context) {
-            let response = result.unwrap_or_else(|e| e.into());
-            Poll::Ready(Ok(response.into()))
-        } else {
-            Poll::Pending
-        }
+        future
+            .as_mut()
+            .poll(context)
+            .map(|result| Ok(result.unwrap_or_else(Response::from).into()))
     }
 }
