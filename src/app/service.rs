@@ -84,8 +84,8 @@ impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
         // Get a reference to the component parts of the request as well as a
         // mutable reference to the path parameters.
         let RequestHead {
-            ref parts,
             ref mut params,
+            ref parts,
             ..
         } = *request.head_mut();
 
