@@ -16,14 +16,14 @@ use crate::response::{Response, ResponseBody};
 
 pub struct ServeRequest(BoxFuture);
 
-pub struct AppService<T> {
-    app: Arc<App<T>>,
+pub struct AppService<State> {
+    app: Arc<App<State>>,
     max_request_size: usize,
 }
 
-impl<T> AppService<T> {
+impl<State> AppService<State> {
     #[inline]
-    pub(crate) fn new(app: Arc<App<T>>, max_request_size: usize) -> Self {
+    pub(crate) fn new(app: Arc<App<State>>, max_request_size: usize) -> Self {
         Self {
             app,
             max_request_size,
@@ -41,7 +41,10 @@ impl<State> Clone for AppService<State> {
     }
 }
 
-impl<T: Send + Sync> Service<http::Request<Incoming>> for AppService<T> {
+impl<State> Service<http::Request<Incoming>> for AppService<State>
+where
+    State: Send + Sync,
+{
     type Error = Infallible;
     type Future = ServeRequest;
     type Response = http::Response<ResponseBody>;
