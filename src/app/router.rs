@@ -4,7 +4,7 @@ use crate::middleware::Middleware;
 
 pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 
-/// A mutable route entry bound to a path segment pattern.
+/// A mutable route entry associated with a path segment pattern.
 ///
 /// Route definitions are composable and inherit middleware from their
 /// ancestors. The order in which routes and their middleware are defined
