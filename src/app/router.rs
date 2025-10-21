@@ -7,13 +7,13 @@ pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 /// A mutable route entry bound to a path segment pattern.
 ///
 /// Route definitions are composable and inherit middleware from their
-/// ancestors. The order in which routes are defined and the middleware they
-/// contain describe the order of operations that occur when a user visits a
-/// given route.
+/// ancestors. The order in which routes and their middleware are defined
+/// determines the sequence of operations that occur when a user visits a given
+/// route.
 ///
-/// A well-structured application strategically defines middleware in a way
-/// where shared behavior is expressed by a common path segment prefix and
-/// a linear execution sequence.
+/// A well-structured application strategically defines middleware so that
+/// shared behavior is expressed by a common path segment prefix and ordered
+/// to reflect its execution sequence.
 ///
 /// # Example
 ///
@@ -31,12 +31,11 @@ pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 /// }));
 ///
 /// // If a descendant of /api takes more 10 seconds to respond, return an
-/// // error. A practical solution to the common engineering task:
+/// // error. A practical solution to the common engineering task: Don't wait
+/// // indefinitely for a database connection.
 /// //
-/// // Don't wait indefinitely for a database connection.
-/// //
-/// // Since we defined this middleware after the rescue middleware, timeout
-/// // errors will generate the following response:
+/// // Since we defined our timeout middleware after the rescue middleware,
+/// // timeout errors will generate the following response:
 /// //
 /// // {
 /// //   "status": 503,
@@ -44,10 +43,9 @@ pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 /// // }
 /// api.middleware(timeout(Duration::from_secs(10)));
 ///
-/// // Define our /users resource as a child of /api. Anytime a user visits an
-/// // /api/users/* route, the middleware functions that we attached to the
-/// // /api namespace are called unconditionally before a response is generated
-/// // from any of the route handlers passed to `.respond()`.
+/// // Define a /users resource as a child of /api so the rescue and timeout
+/// // middleware run before any of the middleware or responders defined in the
+/// // /users resource.
 /// api.route("/users").scope(|resource| {
 ///     let todo = async |_: Request, _: Next| todo!();
 ///
@@ -66,8 +64,8 @@ pub struct Route<'a, State> {
 impl<State> Route<'_, State> {
     /// Append the provided middleware to the route's call stack.
     ///
-    /// Middleware that is attached to a route runs unconditionally when a user
-    /// visits an ancestor of the route to which it belongs.
+    /// Middleware attached to a route runs unconditionally when the route’s
+    /// path is a prefix of the request path.
     ///
     /// # Example
     ///
@@ -80,7 +78,7 @@ impl<State> Route<'_, State> {
     /// // Provides application-wide support for request and response cookies.
     /// app.middleware(cookies::unencoded());
     ///
-    /// // Requests made to /admin or any of it's descendants must have an
+    /// // Requests made to /admin or any of its descendants must have an
     /// // is_admin cookie present on the request.
     /// app.route("/admin").middleware(async |request: Request, next: Next| {
     ///     // We suggest using signed cookies to prevent tampering.
@@ -102,8 +100,8 @@ impl<State> Route<'_, State> {
 
     /// Defines how the route should respond when it is visited.
     ///
-    /// Business logic that is defined in middleware that is passed to respond
-    /// is only called when the request path matches the route exactly.
+    /// Middleware passed to `respond` runs only when the request path matches
+    /// the route exactly.
     ///
     /// # Example
     ///
@@ -118,10 +116,7 @@ impl<State> Route<'_, State> {
     /// let mut app = App::new(());
     /// let mut users = app.route("/users");
     ///
-    /// // Called before any subsequent middlewares in this scope.
-    /// users.middleware(todo);
-    ///
-    /// // Called only when the request path is /users/<id>.
+    /// // Called only when the request path matches /users/:id.
     /// users.route("/:id").respond(via::get(todo));
     ///
     /// // Called only when the request path is /users.
@@ -135,7 +130,64 @@ impl<State> Route<'_, State> {
         self.inner.respond(Arc::new(middleware));
     }
 
-    /// Returns a new route with the provided suffix applied to self.
+    /// Returns a new child route by appending the provided path to the current
+    /// route.
+    ///
+    /// The path argument can contain multiple segments. The returned route
+    /// always represents the final segment of that path.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # let mut app = via::App::new(());
+    /// // The following routes reference the router entry at /hello/:name.
+    /// app.route("/hello/:name");
+    /// app.route("/hello").route("/:name");
+    /// ```
+    ///
+    /// # Dynamic Segments
+    ///
+    /// Routes can include *dynamic* segments that capture portions of the
+    /// request path as parameters. These parameters are made available to
+    /// middleware and handlers at runtime.
+    ///
+    /// - `:dynamic` — Matches a single path segment. `/users/:id` matches
+    ///   `/users/12345` and captures `"12345"` as `id`.
+    ///
+    /// - `*splat` — Matches zero or more remaining path segments.
+    ///   `/static/*asset` matches `/static/logo.png` or `/static/css/main.css`
+    ///   and captures the remainder of the path starting from the splat
+    ///   pattern as `asset`. `logo.png` and `css/main.css`.
+    ///
+    /// Dynamic segments match any path segment, so define them after all
+    /// static sibling routes to ensure intended routing behavior.
+    ///
+    /// Consider the following sequence of route definitions:
+    ///
+    /// ```
+    /// # let mut app = via::App::new(());
+    /// #
+    /// app.route("/articles").scope(|resource| {
+    ///     // list articles
+    ///     resource.respond(via::get(articles::index));
+    ///     // list trending articles
+    ///     resource.route("/trending").respond(via::get(articles::trending));
+    ///     // find article with id = :id
+    ///     resource.route("/:id").respond(via::get(articles::show));
+    /// });
+    /// #
+    /// # mod articles {
+    /// #     use via::{Next, Request};
+    /// #     pub async fn trending(_: Request, _: Next) -> via::Result { todo!() }
+    /// #     pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
+    /// #     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
+    /// # }
+    /// ```
+    ///
+    /// We define `/articles/trending` before `/articles/:id` to ensure that a
+    /// request to `/articles/trending` is routed to `articles::trending`
+    /// rather than capturing `"trending"` as `id` and invoking
+    /// `articles::show`.
     ///
     pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
         Route {
@@ -153,7 +205,6 @@ impl<State> Route<'_, State> {
     /// use std::time::Instant;
     /// use via::{App, Middleware, Next, Request};
     ///
-    /// /// Partial application of a named middleware timer.
     /// struct Timer(String);
     ///
     /// let mut app = App::new(());
@@ -186,7 +237,7 @@ impl<State> Route<'_, State> {
     ///
     ///             async move {
     ///                 let response = future.await?;
-    ///                 let elapsed = started_at.duration_since(Instant::now());
+    ///                 let elapsed = Instant::now().duration_since(started_at);
     ///
     ///                 println!(
     ///                     "timer(name = {}): took {} nanoseconds",
