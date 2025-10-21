@@ -17,7 +17,7 @@ pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use std::time::Duration;
 /// use via::{App, Request, Next, rescue, timeout};
 ///
@@ -69,7 +69,7 @@ impl<State> Route<'_, State> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```
     /// use std::time::Duration;
     /// use via::{App, Request, Next, cookies, raise};
     ///
@@ -105,22 +105,17 @@ impl<State> Route<'_, State> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```
     /// use via::{App, Request, Next};
-    ///
-    /// // Used as a placeholder for middleware that is not yet implemented.
-    /// async fn todo(_: Request, _: Next) -> via::Result {
-    ///     Err(raise!(500, message = "Todo"))
-    /// }
     ///
     /// let mut app = App::new(());
     /// let mut users = app.route("/users");
     ///
-    /// // Called only when the request path matches /users/:id.
-    /// users.route("/:id").respond(via::get(todo));
-    ///
     /// // Called only when the request path is /users.
-    /// users.respond(via::get(todo));
+    /// users.respond(via::get(async |_, _| todo!()));
+    ///
+    /// // Called only when the request path matches /users/:id.
+    /// users.route("/:id").respond(via::get(async |_, _| todo!()));
     /// ```
     ///
     pub fn respond<T>(&mut self, middleware: T)
@@ -200,55 +195,30 @@ impl<State> Route<'_, State> {
     ///
     /// # Example
     ///
-    /// ```no_run
-    /// use std::sync::Arc;
-    /// use std::time::Instant;
-    /// use via::{App, Middleware, Next, Request};
+    /// ```
+    /// use via::App;
     ///
-    /// struct Timer(String);
+    /// mod users {
+    ///     use via::{Request, Next};
+    ///     pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
+    ///     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
+    /// }
     ///
     /// let mut app = App::new(());
     ///
-    /// app.route("/users").scope(|resource| {
-    ///     let timer = Timer::new("users");
-    ///     let todo = async |_: Request, _: Next| todo!();
+    /// app.route("/users").scope(|users| {
+    ///     // Imports are scoped to the users resource to prevent conflict.
+    ///     //
+    ///     // It's nice not having to define a variable to define 2 routes in
+    ///     // the users resource.
+    ///     //
+    ///     // It's also nice being able to reuse common identifiers without
+    ///     // worrying about whether or not a variable name is shadowed.
+    ///     use users::{index, show};
     ///
-    ///     resource.respond(timer.apply(via::get(todo)));
-    ///     resource.route("/:id").respond(timer.apply(via::get(todo)));
+    ///     users.respond(via::get(index));
+    ///     users.route("/:id").respond(via::get(show));
     /// });
-    ///
-    /// impl Timer {
-    ///     fn new(name: &str) -> Self {
-    ///         Self(name.to_owned())
-    ///     }
-    ///
-    ///     fn apply<State, T>(&self, middleware: T) -> impl Middleware<State> + 'static
-    ///     where
-    ///         T: Middleware<State> + 'static,
-    ///         State: Send + Sync,
-    ///     {
-    ///         let name: Arc<str> = self.0.clone().into();
-    ///
-    ///         move |request: Request<State>, next: Next<State>| {
-    ///             let name = Arc::clone(&name);
-    ///
-    ///             let started_at = Instant::now();
-    ///             let future = middleware.call(request, next);
-    ///
-    ///             async move {
-    ///                 let response = future.await?;
-    ///                 let elapsed = Instant::now().duration_since(started_at);
-    ///
-    ///                 println!(
-    ///                     "timer(name = {}): took {} nanoseconds",
-    ///                     name, elapsed.as_nanos()
-    ///                 );
-    ///
-    ///                 Ok(response)
-    ///             }
-    ///         }
-    ///     }
-    /// }
     /// ```
     ///
     pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
