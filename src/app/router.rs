@@ -142,7 +142,7 @@ impl<State> Route<'_, State> {
     ///
     /// Routes can include *dynamic* segments that capture portions of the
     /// request path as parameters. These parameters are made available to
-    /// middleware and handlers at runtime.
+    /// middleware at runtime.
     ///
     /// - `:dynamic` — Matches a single path segment. `/users/:id` matches
     ///   `/users/12345` and captures `"12345"` as `id`.
