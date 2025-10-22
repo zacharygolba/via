@@ -6,7 +6,7 @@ use tokio::time;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::{Error, Next, Request};
 
-/// Require dowstream middleware to respond within a specified duration.
+/// Enforce that downstream middleware respond within a specified duration.
 ///
 /// If the timeout expires before a response is generated, an error is returned.
 ///
