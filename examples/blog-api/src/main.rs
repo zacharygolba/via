@@ -3,10 +3,10 @@ mod database;
 
 use std::process::ExitCode;
 use std::time::Duration;
-use via::{App, Error, Next, Request, Server, rescue, timeout};
+use via::error::{Error, Rescue};
+use via::{App, Next, Request, Server, timeout};
 
-use api::util::with_error_sanitizer;
-use api::{posts, users};
+use api::{posts, users, util};
 use database::Pool;
 
 struct BlogApi {
@@ -39,7 +39,7 @@ async fn main() -> Result<ExitCode, Error> {
     // Capture errors that occur in the api namespace, log them, and then
     // convert them into json responses. Upstream middleware remains
     // unaffected and continues execution.
-    api.middleware(rescue(with_error_sanitizer));
+    api.middleware(Rescue::with(util::error_sanitizer));
 
     // Add a timeout middleware to the /api routes. This will prevent the
     // server from waiting indefinitely if we lose connection to the

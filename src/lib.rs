@@ -70,9 +70,6 @@ pub use response::Response;
 pub use server::Server;
 pub use timeout::{Timeout, timeout};
 
-#[doc(inline)]
-pub use error::rescue;
-
 #[cfg(feature = "ws")]
 #[doc(inline)]
 pub use ws::ws;

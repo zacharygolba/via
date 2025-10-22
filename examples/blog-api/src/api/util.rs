@@ -2,14 +2,13 @@ use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use http::StatusCode;
 use via::error::Sanitizer;
 
-/// Sanitizes details about database errors that
-pub fn with_error_sanitizer(sanitizer: &mut Sanitizer) {
+pub fn error_sanitizer(sanitizer: &mut Sanitizer) {
     // Print the original message to stderr. In production you probably want
     // to use env_logger, tracing, or something similar.
     eprintln!("error: {}", sanitizer);
 
     // Configure the sanitizer to generate a JSON response.
-    sanitizer.respond_with_json();
+    sanitizer.use_json();
 
     // If the error occurred during a database operation, set the appropriate
     // status code or obsfuscate the message depending on the nature of the

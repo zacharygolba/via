@@ -22,13 +22,13 @@ pub struct Sanitizer<'a> {
     message: Option<Cow<'a, str>>,
 }
 
-/// Recover from errors that occur in downstream middleware.
-///
-pub fn rescue<F>(recover: F) -> Rescue<F>
+impl<F> Rescue<F>
 where
     F: Fn(&mut Sanitizer) + Copy + Send + Sync + 'static,
 {
-    Rescue { recover }
+    pub fn with(recover: F) -> Self {
+        Self { recover }
+    }
 }
 
 impl<State, F> Middleware<State> for Rescue<F>
@@ -65,36 +65,32 @@ impl<'a> Sanitizer<'a> {
         self.error.source()
     }
 
-    /// Generate a json response for the error.
-    ///
-    pub fn respond_with_json(&mut self) -> &mut Self {
-        self.json = true;
-        self
-    }
-
     /// Provide a custom message to use for the response generated from this
     /// error.
     ///
-    pub fn set_message<T>(&mut self, message: T) -> &mut Self
+    pub fn set_message<T>(&mut self, message: T)
     where
         Cow<'a, str>: From<T>,
     {
         self.message = Some(message.into());
-        self
     }
 
     /// Overrides the HTTP status code of the error.
     ///
-    pub fn set_status_code(&mut self, status: StatusCode) -> &mut Self {
+    pub fn set_status_code(&mut self, status: StatusCode) {
         self.status = Some(status);
-        self
     }
 
     /// Use the canonical reason of the status code as the error message.
     ///
-    pub fn use_canonical_reason(&mut self) -> &mut Self {
+    pub fn use_canonical_reason(&mut self) {
         self.message = self.status_code().canonical_reason().map(Cow::Borrowed);
-        self
+    }
+
+    /// Generate a json response for the error.
+    ///
+    pub fn use_json(&mut self) {
+        self.json = true;
     }
 }
 
@@ -122,10 +118,10 @@ impl Display for Sanitizer<'_> {
 impl Pipe for Sanitizer<'_> {
     fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
         let status_code = self.status_code();
-        let response = response.status(status_code);
+        let message = self.message;
 
         if self.json {
-            let payload = self.message.map_or_else(
+            let payload = message.map_or_else(
                 || self.error.repr_json(status_code),
                 |message| {
                     let mut errors = Errors::new(status_code);
@@ -134,11 +130,11 @@ impl Pipe for Sanitizer<'_> {
                 },
             );
 
-            Json(&payload).pipe(response)
-        } else if let Some(message) = self.message {
-            response.text(message)
+            Json(&payload).pipe(response.status(status_code))
         } else {
-            response.text(self.error.to_string())
+            response
+                .status(status_code)
+                .text(message.map_or_else(|| self.error.to_string(), Cow::into_owned))
         }
     }
 }
