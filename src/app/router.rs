@@ -18,17 +18,15 @@ pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 /// # Example
 ///
 /// ```
-/// use std::time::Duration;
-/// use via::{App, Request, Next, rescue, timeout};
+/// use via::error::Rescue;
+/// use via::{App, Request, Next, Timeout};
 ///
 /// let mut app = App::new(());
 /// let mut api = app.route("/api");
 ///
 /// // If an error occurs on a descendant of /api, respond with json.
 /// // Siblings of /api must define their own error handling logic.
-/// api.middleware(rescue(|sanitizer| {
-///     sanitizer.respond_with_json();
-/// }));
+/// api.middleware(Rescue::with(|sanitizer| sanitizer.use_json()));
 ///
 /// // If a descendant of /api takes more 10 seconds to respond, return an
 /// // error. A practical solution to the common engineering task: Don't wait
@@ -41,7 +39,7 @@ pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 /// //   "status": 503,
 /// //   "errors": [{ "message": "Service Unavailable" }]
 /// // }
-/// api.middleware(timeout(Duration::from_secs(10)));
+/// api.middleware(Timeout::from_secs(10).or_service_unavailable());
 ///
 /// // Define a /users resource as a child of /api so the rescue and timeout
 /// // middleware run before any of the middleware or responders defined in the
