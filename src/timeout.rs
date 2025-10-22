@@ -8,8 +8,6 @@ use crate::{Error, Next, Request};
 
 /// Enforce that downstream middleware respond within a specified duration.
 ///
-/// If the timeout expires before a response is generated, an error is returned.
-///
 /// # Example
 ///
 /// ```
@@ -46,7 +44,7 @@ impl Clone for OrElse {
 }
 
 impl Timeout {
-    /// Create a `Timeout` middleware from the duration provided.
+    /// Returns a `Timeout` middleware with the provided duration.
     ///
     /// # Example
     ///
@@ -65,7 +63,7 @@ impl Timeout {
         }
     }
 
-    /// Create a `Timeout` middleware with the provided duration in seconds.
+    /// Returns a `Timeout` middleware with the provided duration in seconds.
     ///
     /// # Example
     ///
