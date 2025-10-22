@@ -18,6 +18,13 @@ impl<State> App<State> {
         }
     }
 
+    /// Append the provided middleware to applications call stack.
+    ///
+    /// Middleware attached to the root path `/` runs unconditionally for every
+    /// request.
+    ///
+    /// See [`Route::middleware`] for additional usage docs.
+    ///
     pub fn middleware<T>(&mut self, middleware: T)
     where
         T: Middleware<State> + 'static,
@@ -25,6 +32,10 @@ impl<State> App<State> {
         self.route("/").middleware(middleware);
     }
 
+    /// Returns a new route as a child of the root path `/`.
+    ///
+    /// See [`Route::route`] for additional usage docs.
+    ///
     pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
         Route {
             inner: self.router.route(path),
