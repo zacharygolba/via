@@ -4,22 +4,36 @@ use std::sync::Arc;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::request::Request;
 
-pub struct Next<T = ()> {
-    deque: VecDeque<Arc<dyn Middleware<T>>>,
+/// The next middleware in the logical call stack of a request.
+///
+pub struct Next<State = ()> {
+    deque: VecDeque<Arc<dyn Middleware<State>>>,
 }
 
-impl<T> Next<T> {
-    pub fn call(mut self, request: Request<T>) -> BoxFuture {
+impl<State> Next<State> {
+    #[inline]
+    pub(crate) fn new(deque: VecDeque<Arc<dyn Middleware<State>>>) -> Self {
+        Self { deque }
+    }
+
+    /// Calls the next middleware in the logical call stack of the request.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use via::{Request, Next};
+    ///
+    /// async fn logger(request: Request, next: Next) -> via::Result {
+    ///     println!("{} -> {}", request.method(), request.uri().path());
+    ///     next.call(request).await.inspect(|response| {
+    ///         println!("<- {}", response.status());
+    ///     })
+    /// }
+    /// ```
+    pub fn call(mut self, request: Request<State>) -> BoxFuture {
         match self.deque.pop_front() {
             Some(middleware) => middleware.call(request, self),
             None => Box::pin(async { Err(crate::raise!(404)) }),
         }
-    }
-}
-
-impl<T> Next<T> {
-    #[inline]
-    pub(crate) fn new(deque: VecDeque<Arc<dyn Middleware<T>>>) -> Self {
-        Self { deque }
     }
 }
