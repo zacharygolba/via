@@ -38,15 +38,9 @@ fn parse_cookie_header<State>(
     let mut existing = Vec::new();
 
     for result in &mut results {
-        match result {
-            Ok(cookie) => {
-                existing.push(cookie.clone());
-                cookies.add_original(cookie);
-            }
-            Err(error) => {
-                return Err(raise!(400, error));
-            }
-        }
+        let cookie = result.or_else(|error| raise!(400, error))?;
+        existing.push(cookie.clone());
+        cookies.add_original(cookie);
     }
 
     Ok(existing)

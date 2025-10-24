@@ -28,15 +28,15 @@
 #[macro_export]
 macro_rules! raise {
     (@reason $status:ident, message = $message:expr $(,)*) => {
-        $crate::Error::new($crate::error::StatusCode::$status, $message)
+        return Err($crate::Error::new($crate::error::StatusCode::$status, $message))
     };
 
     (@reason $status:ident, boxed = $source:expr) => {
-        $crate::Error::from_source($crate::error::StatusCode::$status, $source)
+        return Err($crate::Error::from_source($crate::error::StatusCode::$status, $source))
     };
 
     (@reason $status:ident, $source:expr) => {
-        $crate::Error::from_source($crate::error::StatusCode::$status, Box::new($source))
+        return Err($crate::Error::from_source($crate::error::StatusCode::$status, Box::new($source)))
     };
 
     (400) => { $crate::raise!(400, message = "Bad request.") };

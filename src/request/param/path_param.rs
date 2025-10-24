@@ -45,7 +45,7 @@ impl<'a, 'b> PathParam<'a, 'b> {
     {
         self.into_result()?
             .parse()
-            .map_err(|error| raise!(400, error))
+            .or_else(|error| raise!(400, error))
     }
 
     pub fn unwrap_or<U>(self, or: U) -> Cow<'a, str>
@@ -77,10 +77,10 @@ impl<'a, 'b> PathParam<'a, 'b> {
         match self.at {
             Some((start, Some(end))) => self.encoding.decode(&self.source[start..end]),
             Some((start, None)) => self.encoding.decode(&self.source[start..]),
-            None => Err(raise!(
+            None => raise!(
                 400,
                 message = format!("Missing required parameter \"{}\".", self.name),
-            )),
+            ),
         }
     }
 }
