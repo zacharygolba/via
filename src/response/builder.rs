@@ -1,43 +1,47 @@
+use bytes::Bytes;
 use cookie::CookieJar;
-use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
+use futures_core::Stream;
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::{HeaderName, HeaderValue, StatusCode, Version};
+use http_body::Frame;
+use http_body_util::StreamBody;
+use http_body_util::combinators::BoxBody;
 use serde::Serialize;
 
-use super::body::ResponseBody;
+use super::body::{Json, ResponseBody};
 use super::response::Response;
-use crate::Pipe;
-use crate::error::Error;
+use crate::error::{BoxError, Error};
 
-/// Serialize the contained type as an untagged JSON response.
+/// Define how a type finalizes a [`ResponseBuilder`].
 ///
-/// # Example
 /// ```
-/// use serde::Serialize;
-/// use via::{Pipe, Response};
-/// use via::response::Json;
+/// use via::response::{Finalize, Response};
+/// use via::{Next, Request};
 ///
-/// #[derive(Serialize)]
-/// struct Cat {
-///     name: String,
+/// async fn echo(request: Request, _: Next) -> via::Result {
+///     request.finalize(Response::build().header("X-Powered-By", "Via"))
 /// }
-///
-/// let ciro = Cat {
-///     name: "Ciro".to_owned(),
-/// };
-///
-/// let tagged = Response::build().json(&ciro).unwrap();
-/// // => { "data": { "name": "Ciro" } }
-///
-/// let untagged = Json(&ciro).pipe(Response::build()).unwrap();
-/// // => { "name": "Ciro" }
 /// ```
 ///
-#[derive(Debug)]
-pub struct Json<'a, T>(pub &'a T);
+pub trait Finalize {
+    fn finalize(self, response: ResponseBuilder) -> Result<Response, Error>;
+}
 
 #[derive(Debug, Default)]
 pub struct ResponseBuilder {
     inner: http::response::Builder,
+}
+
+impl<T> Finalize for T
+where
+    T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static,
+{
+    #[inline]
+    fn finalize(self, builder: ResponseBuilder) -> Result<Response, Error> {
+        builder
+            .header(TRANSFER_ENCODING, "chunked")
+            .body(BoxBody::new(StreamBody::new(self)))
+    }
 }
 
 impl ResponseBuilder {
@@ -90,7 +94,7 @@ impl ResponseBuilder {
             data: &'a T,
         }
 
-        Json(&Tagged { data }).pipe(self)
+        Json(&Tagged { data }).finalize(self)
     }
 
     #[inline]
@@ -116,17 +120,5 @@ impl ResponseBuilder {
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
         self.body(ResponseBody::default())
-    }
-}
-
-impl<'a, T: Serialize> Pipe for Json<'a, T> {
-    #[inline]
-    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
-        let json = serde_json::to_vec(self.0)?;
-
-        response
-            .header(CONTENT_TYPE, "application/json; charset=utf-8")
-            .header(CONTENT_LENGTH, json.len())
-            .body(json)
     }
 }

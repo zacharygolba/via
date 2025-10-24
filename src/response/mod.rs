@@ -10,7 +10,7 @@ pub(crate) mod body;
 #[cfg(feature = "file")]
 pub use file::File;
 
-pub use body::ResponseBody;
-pub use builder::{Json, ResponseBuilder};
+pub use body::{Json, ResponseBody};
+pub use builder::{Finalize, ResponseBuilder};
 pub use redirect::Redirect;
 pub use response::Response;

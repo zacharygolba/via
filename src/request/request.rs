@@ -10,8 +10,7 @@ use super::body::{DataAndTrailers, RequestBody};
 use super::param::PathParams;
 use super::param::{PathParam, QueryParam};
 use crate::error::{BoxError, Error};
-use crate::pipe::Pipe;
-use crate::response::{Response, ResponseBuilder};
+use crate::response::{Finalize, Response, ResponseBuilder};
 
 #[derive(Debug)]
 pub struct Request<State = ()> {
@@ -211,10 +210,11 @@ impl<State> Request<State> {
     }
 }
 
-impl<State> Pipe for Request<State> {
-    fn pipe(self, builder: ResponseBuilder) -> Result<Response, Error> {
-        let response = match self.headers().get(CONTENT_LENGTH) {
-            Some(len) => builder.header(CONTENT_LENGTH, len),
+impl<State> Finalize for Request<State> {
+    #[inline]
+    fn finalize(self, builder: ResponseBuilder) -> Result<Response, Error> {
+        let response = match self.headers().get(CONTENT_LENGTH).cloned() {
+            Some(header_value) => builder.header(CONTENT_LENGTH, header_value),
             None => builder.header(TRANSFER_ENCODING, "chunked"),
         };
 

@@ -4,8 +4,8 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::error::{Error, Errors};
 use crate::middleware::{BoxFuture, Middleware};
-use crate::response::{Json, Response, ResponseBuilder};
-use crate::{Next, Pipe, Request};
+use crate::response::{Finalize, Json, Response, ResponseBuilder};
+use crate::{Next, Request};
 
 /// Recover from errors that occur in downstream middleware.
 ///
@@ -45,7 +45,7 @@ where
                 let mut sanitizer = Sanitizer::new(&error);
 
                 recover(&mut sanitizer);
-                sanitizer.pipe(response).or_else(|residual| {
+                sanitizer.finalize(response).or_else(|residual| {
                     if cfg!(debug_assertions) {
                         eprintln!("warn: a residual error occurred in rescue");
                         eprintln!("{}", residual);
@@ -115,8 +115,8 @@ impl Display for Sanitizer<'_> {
     }
 }
 
-impl Pipe for Sanitizer<'_> {
-    fn pipe(self, response: ResponseBuilder) -> Result<Response, Error> {
+impl Finalize for Sanitizer<'_> {
+    fn finalize(self, response: ResponseBuilder) -> Result<Response, Error> {
         let status_code = self.status_code();
         let message = self.message;
 
@@ -130,7 +130,7 @@ impl Pipe for Sanitizer<'_> {
                 },
             );
 
-            Json(&payload).pipe(response.status(status_code))
+            Json(&payload).finalize(response.status(status_code))
         } else {
             response
                 .status(status_code)
