@@ -1,9 +1,9 @@
 use std::process::ExitCode;
-use via::response::{Finalize, Response};
+use via::response::Finalize;
 use via::{App, Error, Next, Request, Server};
 
 async fn echo(request: Request, _: Next) -> via::Result {
-    request.finalize(Response::build())
+    request.into_response()
 }
 
 #[tokio::main]

@@ -33,7 +33,7 @@ pub(super) const MAX_FRAME_SIZE: usize = 16 * 1024; // 16KB
 /// let tagged = Response::build().json(&ciro).unwrap();
 /// // => { "data": { "name": "Ciro" } }
 ///
-/// let untagged = Json(&ciro).finalize(Response::build()).unwrap();
+/// let untagged = Json(&ciro).into_response().unwrap();
 /// // => { "name": "Ciro" }
 /// ```
 ///
@@ -120,7 +120,10 @@ impl From<&'_ [u8]> for BufferBody {
     }
 }
 
-impl<'a, T: Serialize> Finalize for Json<'a, T> {
+impl<'a, T> Finalize for Json<'a, T>
+where
+    T: Serialize,
+{
     #[inline]
     fn finalize(self, response: ResponseBuilder) -> Result<Response, Error> {
         let Self(json) = self;

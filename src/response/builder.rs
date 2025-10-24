@@ -23,8 +23,13 @@ use crate::error::{BoxError, Error};
 /// }
 /// ```
 ///
-pub trait Finalize {
-    fn finalize(self, response: ResponseBuilder) -> Result<Response, Error>;
+pub trait Finalize: Sized {
+    fn finalize(self, builder: ResponseBuilder) -> Result<Response, Error>;
+
+    #[inline]
+    fn into_response(self) -> Result<Response, Error> {
+        self.finalize(Default::default())
+    }
 }
 
 #[derive(Debug, Default)]
