@@ -20,7 +20,7 @@ pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 /// ```
 /// use std::process::ExitCode;
 /// use via::error::{Error, Rescue};
-/// use via::{App, Next, Request, Server Timeout};
+/// use via::{App, Next, Request, Server, Timeout};
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<ExitCode, Error> {
