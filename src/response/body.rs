@@ -1,14 +1,44 @@
 use bytes::Bytes;
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use http_body::{Body, Frame, SizeHint};
 use http_body_util::Either;
 use http_body_util::combinators::BoxBody;
+use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::error::BoxError;
+use super::builder::{Finalize, ResponseBuilder};
+use super::response::Response;
+use crate::error::{BoxError, Error};
 
 pub(super) const MAX_FRAME_SIZE: usize = 16 * 1024; // 16KB
+
+/// Serialize the contained type as an untagged JSON response.
+///
+/// # Example
+/// ```
+/// use serde::Serialize;
+/// use via::response::{Finalize, Json, Response};
+///
+/// #[derive(Serialize)]
+/// struct Cat {
+///     name: String,
+/// }
+///
+/// let ciro = Cat {
+///     name: "Ciro".to_owned(),
+/// };
+///
+/// let tagged = Response::build().json(&ciro).unwrap();
+/// // => { "data": { "name": "Ciro" } }
+///
+/// let untagged = Json(&ciro).finalize(Response::build()).unwrap();
+/// // => { "name": "Ciro" }
+/// ```
+///
+#[derive(Debug)]
+pub struct Json<'a, T>(pub &'a T);
 
 /// A buffered `impl Body` that is written in `16 KB` chunks.
 ///
@@ -90,15 +120,16 @@ impl From<&'_ [u8]> for BufferBody {
     }
 }
 
-impl ResponseBody {
-    /// Consume the response body and return a dynamically-dispatched
-    /// [`BoxBody`] that is allocated on the heap.
-    ///
-    pub fn boxed(self) -> BoxBody<Bytes, BoxError> {
-        match self.kind {
-            Either::Left(inline) => BoxBody::new(inline),
-            Either::Right(boxed) => boxed,
-        }
+impl<'a, T: Serialize> Finalize for Json<'a, T> {
+    #[inline]
+    fn finalize(self, response: ResponseBuilder) -> Result<Response, Error> {
+        let Self(json) = self;
+        let payload = serde_json::to_vec(json)?;
+
+        response
+            .header(CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(CONTENT_LENGTH, payload.len())
+            .body(payload)
     }
 }
 
@@ -110,6 +141,16 @@ impl ResponseBody {
     {
         Self {
             kind: Either::Right(BoxBody::new(map(self))),
+        }
+    }
+
+    /// Consume the response body and return a dynamically-dispatched
+    /// [`BoxBody`] that is allocated on the heap.
+    ///
+    pub fn boxed(self) -> BoxBody<Bytes, BoxError> {
+        match self.kind {
+            Either::Left(inline) => BoxBody::new(inline),
+            Either::Right(boxed) => boxed,
         }
     }
 }

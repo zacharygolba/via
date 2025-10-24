@@ -14,10 +14,10 @@ use tokio::fs::File as TokioFile;
 use tokio::io::{AsyncRead, ReadBuf};
 use tokio::{task, time};
 
-use super::{Response, ResponseBuilder};
+use super::body::MAX_FRAME_SIZE;
+use super::builder::{Finalize, ResponseBuilder};
+use super::response::Response;
 use crate::error::{BoxError, Error};
-use crate::pipe::Pipe;
-use crate::response::body::MAX_FRAME_SIZE;
 
 /// The base amount of time that the server will wait before
 /// attempting to open a file after an error has occurred.
@@ -175,7 +175,7 @@ impl File {
             }
             Open::Stream(len, meta, file) => {
                 let response = self.set_headers(&meta, Response::build())?;
-                FileStream::new(len, file).pipe(response)
+                FileStream::new(len, file).finalize(response)
             }
         }
     }
