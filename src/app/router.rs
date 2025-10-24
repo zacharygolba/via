@@ -17,7 +17,7 @@ pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use std::process::ExitCode;
 /// use via::error::{Error, Rescue};
 /// use via::{App, Next, Request, Server, Timeout};
