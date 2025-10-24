@@ -4,7 +4,7 @@ use crate::middleware::Middleware;
 
 pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 
-/// A mutable route entry associated with a path segment pattern.
+/// An entry in the route tree associated with a path segment pattern.
 ///
 /// Route definitions are composable and inherit middleware from their
 /// ancestors. The order in which routes and their middleware are defined
@@ -17,42 +17,50 @@ pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 ///
 /// # Example
 ///
-/// ```
-/// use via::error::Rescue;
-/// use via::{App, Request, Next, Timeout};
+/// ```no_run
+/// use std::process::ExitCode;
+/// use via::error::{Error, Rescue};
+/// use via::{App, Next, Request, Server, Timeout};
 ///
-/// let mut app = App::new(());
-/// let mut api = app.route("/api");
+/// #[tokio::main]
+/// async fn main() -> Result<ExitCode, Error> {
+///     let mut app = App::new(());
+///     let mut api = app.route("/api");
 ///
-/// // If an error occurs on a descendant of /api, respond with json.
-/// // Siblings of /api must define their own error handling logic.
-/// api.middleware(Rescue::with(|sanitizer| sanitizer.use_json()));
+///     // If an error occurs on a descendant of /api, respond with json.
+///     // Siblings of /api must define their own error handling logic.
+///     api.middleware(Rescue::with(|sanitizer| sanitizer.use_json()));
 ///
-/// // If a descendant of /api takes more 10 seconds to respond, return an
-/// // error. A practical solution to the common engineering task: Don't wait
-/// // indefinitely for a database connection.
-/// //
-/// // Since we defined our timeout middleware after the rescue middleware,
-/// // timeout errors will generate the following response:
-/// //
-/// // {
-/// //   "status": 503,
-/// //   "errors": [{ "message": "Service Unavailable" }]
-/// // }
-/// api.middleware(Timeout::from_secs(10).or_service_unavailable());
+///     // If a descendant of /api takes more 10 seconds to respond, return an
+///     // error. A practical solution to the common engineering task: Don't
+///     // wait indefinitely for a database connection.
+///     //
+///     // Since we defined our timeout middleware after the rescue middleware,
+///     // timeout errors will generate the following response:
+///     //
+///     // {
+///     //   "status": 503,
+///     //   "errors": [{ "message": "Service Unavailable" }]
+///     // }
+///     api.middleware(Timeout::from_secs(10).or_service_unavailable());
 ///
-/// // Define a /users resource as a child of /api so the rescue and timeout
-/// // middleware run before any of the middleware or responders defined in the
-/// // /users resource.
-/// api.route("/users").scope(|resource| {
-///     let todo = async |_: Request, _: Next| todo!();
+///     // Define a /users resource as a child of /api so the rescue and timeout
+///     // middleware run before any of the middleware or responders defined in
+///     // the /users resource.
+///     api.route("/users").scope(|resource| {
+///         let todo = async |_: Request, _: Next| todo!();
 ///
-///     // GET /api/users ~> list users
-///     resource.respond(via::get(todo));
+///         // GET /api/users ~> list users
+///         resource.respond(via::get(todo));
 ///
-///     // GET /api/users/:id ~> find user with id = :id
-///     resource.route("/:id").respond(via::get(todo));
-/// });
+///         // GET /api/users/:id ~> find user with id = :id
+///         resource.route("/:id").respond(via::get(todo));
+///     });
+///
+///     // Start serving our application from http://localhost:8080/.
+///     Server::new(app).listen(("127.0.0.1", 8080)).await
+/// }
+///
 /// ```
 ///
 pub struct Route<'a, State> {
@@ -60,21 +68,19 @@ pub struct Route<'a, State> {
 }
 
 impl<State> Route<'_, State> {
-    /// Append the provided middleware to the route's call stack.
+    /// Appends the provided middleware to the route's call stack.
     ///
-    /// Middleware attached to a route runs unconditionally when the route’s
-    /// path is a prefix of the request path.
+    /// Middleware attached to a route runs anytime the route’s path is a
+    /// prefix of the request path.
     ///
     /// # Example
     ///
     /// ```
-    /// use std::time::Duration;
-    /// use via::{App, Request, Next, cookies, raise};
-    ///
-    /// let mut app = App::new(());
-    ///
+    /// # use via::{App, Request, Next, raise};
+    /// # let mut app = App::new(());
+    /// #
     /// // Provides application-wide support for request and response cookies.
-    /// app.middleware(cookies::unencoded());
+    /// app.middleware(via::cookies::unencoded());
     ///
     /// // Requests made to /admin or any of its descendants must have an
     /// // is_admin cookie present on the request.
@@ -104,9 +110,8 @@ impl<State> Route<'_, State> {
     /// # Example
     ///
     /// ```
-    /// use via::{App, Request, Next};
-    ///
-    /// let mut app = App::new(());
+    /// # use via::{App, Request, Next};
+    /// # let mut app = App::new(());
     /// let mut users = app.route("/users");
     ///
     /// // Called only when the request path is /users.
@@ -155,7 +160,10 @@ impl<State> Route<'_, State> {
     /// Dynamic segments match any path segment, so define them after all
     /// static sibling routes to ensure intended routing behavior.
     ///
-    /// Consider the following sequence of route definitions:
+    /// Consider the following sequence of route definitions. We define
+    /// `/articles/trending` before `/articles/:id` to ensure that a request to
+    /// `/articles/trending` is routed to `articles::trending` rather than
+    /// capturing `"trending"` as `id` and invoking `articles::show`.
     ///
     /// ```
     /// # let mut app = via::App::new(());
@@ -177,11 +185,6 @@ impl<State> Route<'_, State> {
     /// # }
     /// ```
     ///
-    /// We define `/articles/trending` before `/articles/:id` to ensure that a
-    /// request to `/articles/trending` is routed to `articles::trending`
-    /// rather than capturing `"trending"` as `id` and invoking
-    /// `articles::show`.
-    ///
     pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
         Route {
             inner: self.inner.route(path),
@@ -194,28 +197,29 @@ impl<State> Route<'_, State> {
     /// # Example
     ///
     /// ```
-    /// use via::App;
+    /// # let mut app = via::App::new(());
+    /// #
+    /// # mod users {
+    /// #     use via::{Request, Next};
+    /// #     pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
+    /// #     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
+    /// # }
+    /// #
+    /// app.route("/users").scope(|resource| {
+    ///     // Imports within a scope can be specific. No need to worry about
+    ///     // `index` being shadowed by another route definition.
+    ///     use users::index;
     ///
-    /// mod users {
-    ///     use via::{Request, Next};
-    ///     pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
-    ///     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
-    /// }
+    ///     // Scopes can also be used to define intermittent variables to
+    ///     // compose middleware without polluting the top-level scope of the
+    ///     // main fn.
+    ///     let show = via::get(users::show);
     ///
-    /// let mut app = App::new(());
+    ///     // List users.
+    ///     resource.respond(via::get(index));
     ///
-    /// app.route("/users").scope(|users| {
-    ///     // Imports are scoped to the users resource to prevent conflict.
-    ///     //
-    ///     // It's nice not having to define a variable to define 2 routes in
-    ///     // the users resource.
-    ///     //
-    ///     // It's also nice being able to reuse common identifiers without
-    ///     // worrying about whether or not a variable name is shadowed.
-    ///     use users::{index, show};
-    ///
-    ///     users.respond(via::get(index));
-    ///     users.route("/:id").respond(via::get(show));
+    ///     // Find user with id = :id.
+    ///     resource.route("/:id").respond(show);
     /// });
     /// ```
     ///
