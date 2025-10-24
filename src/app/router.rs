@@ -76,11 +76,12 @@ impl<State> Route<'_, State> {
     /// # Example
     ///
     /// ```
+    /// # use via::cookies::Cookies;
     /// # use via::{App, Request, Next, raise};
     /// # let mut app = App::new(());
     /// #
     /// // Provides application-wide support for request and response cookies.
-    /// app.middleware(via::cookies::unencoded());
+    /// app.middleware(Cookies::unencoded());
     ///
     /// // Requests made to /admin or any of its descendants must have an
     /// // is_admin cookie present on the request.
