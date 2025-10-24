@@ -1,13 +1,12 @@
 use bytes::Bytes;
-use cookie::{Cookie, CookieJar};
-use http::header::SET_COOKIE;
+use cookie::CookieJar;
 use http::{Extensions, HeaderMap, StatusCode, Version};
 use http_body::Body;
 use std::fmt::{self, Debug, Formatter};
 
 use super::body::ResponseBody;
 use super::builder::ResponseBuilder;
-use crate::error::{BoxError, Error};
+use crate::error::BoxError;
 
 pub struct Response {
     pub(super) cookies: CookieJar,
@@ -99,17 +98,9 @@ impl Response {
 }
 
 impl Response {
-    pub(crate) fn set_cookies<F>(&mut self, f: F) -> Result<(), Error>
-    where
-        F: Fn(&Cookie) -> String,
-    {
-        let headers = self.inner.headers_mut();
-
-        for cookie in self.cookies.delta() {
-            headers.try_append(SET_COOKIE, f(cookie).parse()?)?;
-        }
-
-        Ok(())
+    pub(crate) fn cookies_and_headers_mut(&mut self) -> (&mut CookieJar, &mut HeaderMap) {
+        let Self { cookies, inner } = self;
+        (cookies, inner.headers_mut())
     }
 }
 

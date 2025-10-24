@@ -1,10 +1,14 @@
 use cookie::{Cookie, Key};
 use std::process::ExitCode;
-use via::{App, Error, Next, Request, Response, Server, cookies};
+use via::cookies::Cookies;
+use via::{App, Error, Response, Server};
+
+type Request = via::Request<CookiesExample>;
+type Next = via::Next<CookiesExample>;
 
 /// A struct used to store application state.
 ///
-struct Cookies {
+struct CookiesExample {
     /// The secret key used to sign, verify, and optionally encrypt cookies. The
     /// value of this key should be kept secret and changed periodically.
     ///
@@ -14,7 +18,7 @@ struct Cookies {
 /// Responds with a greeting message with the name provided in the request uri
 /// path.
 ///
-async fn hello(request: Request<Cookies>, _: Next<Cookies>) -> via::Result {
+async fn hello(request: Request, _: Next) -> via::Result {
     // Get a reference to the path parameter `name` from the request uri.
     let name = request.param("name").percent_decode().into_result()?;
 
@@ -25,7 +29,7 @@ async fn hello(request: Request<Cookies>, _: Next<Cookies>) -> via::Result {
 /// Increments the value of the "n_visits" counter to the console. Returns a
 /// response with a message confirming the operation was successful.
 ///
-async fn count_visits(request: Request<Cookies>, next: Next<Cookies>) -> via::Result {
+async fn count_visits(request: Request, next: Next) -> via::Result {
     // Clone the state from the request so we can access the secret key after
     // passing ownership of the request to the next middleware.
     //
@@ -91,17 +95,17 @@ async fn main() -> Result<ExitCode, Error> {
     // a parameter store or secret manager to set the value in the environment
     // at the time of deployment.
     //
-    dotenvy::dotenv().ok();
+    dotenvy::dotenv()?;
 
     // Create a new application.
-    let mut app = App::new(Cookies {
+    let mut app = App::new(CookiesExample {
         secret: get_secret_from_env(),
     });
 
     // The CookieParser middleware can be added at any depth of the route tree.
     // In this example, we add it to the root of the app. This means that every
     // request will pass through the CookieParser middleware.
-    app.middleware(cookies::percent_decode());
+    app.middleware(Cookies::percent_decode());
 
     // Add the count_visits middleware to the app at "/".
     app.middleware(count_visits);
