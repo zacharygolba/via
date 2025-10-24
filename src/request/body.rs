@@ -29,11 +29,11 @@ pub struct DataAndTrailers {
     trailers: Option<HeaderMap>,
 }
 
-fn already_read() -> Error {
+fn already_read<T>() -> Result<T, Error> {
     raise!(500, message = "The request body has already been read.")
 }
 
-fn map_err(error: BoxError) -> Error {
+fn into_future_error<T>(error: BoxError) -> Result<T, Error> {
     if error.is::<LengthLimitError>() {
         raise!(413, boxed = error) // Payload Too Large
     } else {
@@ -59,11 +59,11 @@ impl Future for IntoFuture {
 
         loop {
             let Some(result) = ready!(body.as_mut().poll_frame(context)) else {
-                return Poll::Ready(payload.take().ok_or_else(already_read));
+                return Poll::Ready(payload.take().map_or_else(already_read, Ok));
             };
 
-            let frame = result.map_err(map_err)?;
-            let payload = payload.as_mut().ok_or_else(already_read)?;
+            let frame = result.or_else(into_future_error)?;
+            let payload = payload.as_mut().map_or_else(already_read, Ok)?;
 
             match frame.into_data() {
                 Ok(data) => payload.frames.push(data),

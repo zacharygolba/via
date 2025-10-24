@@ -183,12 +183,12 @@ async fn handle_upgrade<T>(
 
 fn validate_accept_key<T>(request: &Request<T>) -> Result<String, crate::Error> {
     let mut hasher = Hasher::new(&SHA1_FOR_LEGACY_USE_ONLY);
-    let accept_key = request.header(&header::SEC_WEBSOCKET_KEY)?.ok_or_else(|| {
+    let Some(accept_key) = request.header(&header::SEC_WEBSOCKET_KEY)? else {
         crate::raise!(
             400,
             message = "Missing required header: \"Sec-Websocket-Key\"."
         )
-    })?;
+    };
 
     hasher.update(accept_key.as_bytes());
     hasher.update(GUID);
@@ -208,10 +208,7 @@ fn validate_utf8(bytes: Bytes) -> Result<ValidUtf8, ProtocolError> {
 fn validate_websocket_version<T>(request: &Request<T>) -> Result<(), crate::Error> {
     match request.header(header::SEC_WEBSOCKET_VERSION)? {
         Some("13") => Ok(()),
-        Some(_) | None => Err(crate::raise!(
-            400,
-            message = "Unsupported websocket version."
-        )),
+        Some(_) | None => crate::raise!(400, message = "Unsupported websocket version."),
     }
 }
 

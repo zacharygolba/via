@@ -37,5 +37,7 @@ fn load_key(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>, Error> {
 
     rustls_pemfile::private_key(&mut reader)
         .map_err(|error| error.into())
-        .and_then(|option| option.ok_or_else(|| raise!(message = "failed to load private key")))
+        .and_then(|option| {
+            option.map_or_else(|| raise!(message = "failed to load private key"), Ok)
+        })
 }
