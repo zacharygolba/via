@@ -89,8 +89,9 @@ impl<State> App<State> {
 
     /// Append the provided middleware to applications call stack.
     ///
-    /// Middleware attached to the root path `/` runs for every request. See
-    /// also the usage example in [`Route::middleware`].
+    /// Middleware attached with this method runs for every request.
+    ///
+    /// See also the usage example in [`Route::middleware`].
     ///
     pub fn middleware<T>(&mut self, middleware: T)
     where
