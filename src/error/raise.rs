@@ -27,64 +27,9 @@
 ///
 #[macro_export]
 macro_rules! err {
-    (400 $($arg:tt)*) => { $crate::err!(@ctor BAD_REQUEST $($arg)*) };
-    (401 $($arg:tt)*) => { $crate::err!(@ctor UNAUTHORIZED $($arg)*) };
-    (402 $($arg:tt)*) => { $crate::err!(@ctor PAYMENT_REQUIRED $($arg)*) };
-    (403 $($arg:tt)*) => { $crate::err!(@ctor FORBIDDEN $($arg)*) };
-    (404 $($arg:tt)*) => { $crate::err!(@ctor NOT_FOUND $($arg)*) };
-    (405 $($arg:tt)*) => { $crate::err!(@ctor METHOD_NOT_ALLOWED $($arg)*) };
-    (406 $($arg:tt)*) => { $crate::err!(@ctor NOT_ACCEPTABLE $($arg)*) };
-    (407 $($arg:tt)*) => { $crate::err!(@ctor PROXY_AUTHENTICATION_REQUIRED $($arg)*) };
-    (408 $($arg:tt)*) => { $crate::err!(@ctor REQUEST_TIMEOUT $($arg)*) };
-    (409 $($arg:tt)*) => { $crate::err!(@ctor CONFLICT $($arg)*) };
-    (410 $($arg:tt)*) => { $crate::err!(@ctor GONE $($arg)*) };
-    (411 $($arg:tt)*) => { $crate::err!(@ctor LENGTH_REQUIRED $($arg)*) };
-    (412 $($arg:tt)*) => { $crate::err!(@ctor PRECONDITION_FAILED $($arg)*) };
-    (413 $($arg:tt)*) => { $crate::err!(@ctor PAYLOAD_TOO_LARGE $($arg)*) };
-    (414 $($arg:tt)*) => { $crate::err!(@ctor URI_TOO_LONG $($arg)*) };
-    (415 $($arg:tt)*) => { $crate::err!(@ctor UNSUPPORTED_MEDIA_TYPE $($arg)*) };
-    (416 $($arg:tt)*) => { $crate::err!(@ctor RANGE_NOT_SATISFIABLE $($arg)*) };
-    (417 $($arg:tt)*) => { $crate::err!(@ctor EXPECTATION_FAILED $($arg)*) };
-    (418 $($arg:tt)*) => { $crate::err!(@ctor IM_A_TEAPOT $($arg)*) };
-    (421 $($arg:tt)*) => { $crate::err!(@ctor MISDIRECTED_REQUEST $($arg)*) };
-    (422 $($arg:tt)*) => { $crate::err!(@ctor UNPROCESSABLE_ENTITY $($arg)*) };
-    (423 $($arg:tt)*) => { $crate::err!(@ctor LOCKED $($arg)*) };
-    (424 $($arg:tt)*) => { $crate::err!(@ctor FAILED_DEPENDENCY $($arg)*) };
-    (426 $($arg:tt)*) => { $crate::err!(@ctor UPGRADE_REQUIRED $($arg)*) };
-    (428 $($arg:tt)*) => { $crate::err!(@ctor PRECONDITION_REQUIRED $($arg)*) };
-    (429 $($arg:tt)*) => { $crate::err!(@ctor TOO_MANY_REQUESTS $($arg)*) };
-    (431 $($arg:tt)*) => { $crate::err!(@ctor REQUEST_HEADER_FIELDS_TOO_LARGE $($arg)*) };
-    (451 $($arg:tt)*) => { $crate::err!(@ctor UNAVAILABLE_FOR_LEGAL_REASONS $($arg)*) };
-    (500 $($arg:tt)*) => { $crate::err!(@ctor INTERNAL_SERVER_ERROR $($arg)*) };
-    (501 $($arg:tt)*) => { $crate::err!(@ctor NOT_IMPLEMENTED $($arg)*) };
-    (502 $($arg:tt)*) => { $crate::err!(@ctor BAD_GATEWAY $($arg)*) };
-    (503 $($arg:tt)*) => { $crate::err!(@ctor SERVICE_UNAVAILABLE $($arg)*) };
-    (504 $($arg:tt)*) => { $crate::err!(@ctor GATEWAY_TIMEOUT $($arg)*) };
-    (505 $($arg:tt)*) => { $crate::err!(@ctor HTTP_VERSION_NOT_SUPPORTED $($arg)*) };
-    (506 $($arg:tt)*) => { $crate::err!(@ctor VARIANT_ALSO_NEGOTIATES $($arg)*) };
-    (507 $($arg:tt)*) => { $crate::err!(@ctor INSUFFICIENT_STORAGE $($arg)*) };
-    (508 $($arg:tt)*) => { $crate::err!(@ctor LOOP_DETECTED $($arg)*) };
-    (510 $($arg:tt)*) => { $crate::err!(@ctor NOT_EXTENDED $($arg)*) };
-    (511 $($arg:tt)*) => { $crate::err!(@ctor NETWORK_AUTHENTICATION_REQUIRED $($arg)*) };
-
     (message = $message:expr $(,)?) => { $crate::err!(500, message = $message) };
     (boxed = $source:expr $(,)?) => { $crate::err!(500, boxed = $source) };
-    ($source:expr $(,)?) => { $crate::err!(500, $source) };
-
-    (@ctor $status:ident, message = $message:expr $(,)?) => {
-        $crate::Error::new($crate::error::StatusCode::$status, $message)
-    };
-    (@ctor $status:ident) => {{
-        let status = $crate::error::StatusCode::$status;
-        let message = status.canonical_reason().unwrap_or_default().to_owned();
-        $crate::Error::new(status, message)
-    }};
-    (@ctor $status:ident, boxed = $source:expr $(,)?) => {
-        $crate::Error::from_source($crate::error::StatusCode::$status, $source)
-    };
-    (@ctor $status:ident, $source:expr $(,)?) => {
-        $crate::err!(@ctor $status, boxed = Box::new($source))
-    };
+    ($($args:tt)*) => { $crate::__via_impl_err!($($args)*) };
 }
 
 /// Return early with a [`Result::Err`] by delegating to the [`err!`] macro.
@@ -93,14 +38,16 @@ macro_rules! err {
 ///
 /// ```
 /// use http::header::AUTHORIZATION;
-/// use via::{App, Next, Request, raise};
+/// use via::{App, Error, Next, Request, raise};
 ///
 /// let mut app = App::new(());
 ///
 /// app.middleware(async |request: Request, next: Next| {
-///     let Some(_) = request.header(AUTHORIZATION)? else {
-///         raise!(403, message = "Missing required header: Authorization.")
+///     let Some(jwt) = request.header(AUTHORIZATION)? else {
+///         raise!(401, message = "Missing required header: Authorization.")
 ///     };
+///
+///     // Insert JWT-based authentication code here.
 ///
 ///     next.call(request).await
 /// });
@@ -108,5 +55,64 @@ macro_rules! err {
 ///
 #[macro_export]
 macro_rules! raise {
-    ( $($arg:tt)* ) => { return Err($crate::err!($($arg)*)) };
+    ($($args:tt)*) => { return Err($crate::err!($($args)*)) };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __via_impl_err {
+    (400 $($args:tt)*) => { $crate::__via_impl_err!(BAD_REQUEST $($args)*) };
+    (401 $($args:tt)*) => { $crate::__via_impl_err!(UNAUTHORIZED $($args)*) };
+    (402 $($args:tt)*) => { $crate::__via_impl_err!(PAYMENT_REQUIRED $($args)*) };
+    (403 $($args:tt)*) => { $crate::__via_impl_err!(FORBIDDEN $($args)*) };
+    (404 $($args:tt)*) => { $crate::__via_impl_err!(NOT_FOUND $($args)*) };
+    (405 $($args:tt)*) => { $crate::__via_impl_err!(METHOD_NOT_ALLOWED $($args)*) };
+    (406 $($args:tt)*) => { $crate::__via_impl_err!(NOT_ACCEPTABLE $($args)*) };
+    (407 $($args:tt)*) => { $crate::__via_impl_err!(PROXY_AUTHENTICATION_REQUIRED $($args)*) };
+    (408 $($args:tt)*) => { $crate::__via_impl_err!(REQUEST_TIMEOUT $($args)*) };
+    (409 $($args:tt)*) => { $crate::__via_impl_err!(CONFLICT $($args)*) };
+    (410 $($args:tt)*) => { $crate::__via_impl_err!(GONE $($args)*) };
+    (411 $($args:tt)*) => { $crate::__via_impl_err!(LENGTH_REQUIRED $($args)*) };
+    (412 $($args:tt)*) => { $crate::__via_impl_err!(PRECONDITION_FAILED $($args)*) };
+    (413 $($args:tt)*) => { $crate::__via_impl_err!(PAYLOAD_TOO_LARGE $($args)*) };
+    (414 $($args:tt)*) => { $crate::__via_impl_err!(URI_TOO_LONG $($args)*) };
+    (415 $($args:tt)*) => { $crate::__via_impl_err!(UNSUPPORTED_MEDIA_TYPE $($args)*) };
+    (416 $($args:tt)*) => { $crate::__via_impl_err!(RANGE_NOT_SATISFIABLE $($args)*) };
+    (417 $($args:tt)*) => { $crate::__via_impl_err!(EXPECTATION_FAILED $($args)*) };
+    (418 $($args:tt)*) => { $crate::__via_impl_err!(IM_A_TEAPOT $($args)*) };
+    (421 $($args:tt)*) => { $crate::__via_impl_err!(MISDIRECTED_REQUEST $($args)*) };
+    (422 $($args:tt)*) => { $crate::__via_impl_err!(UNPROCESSABLE_ENTITY $($args)*) };
+    (423 $($args:tt)*) => { $crate::__via_impl_err!(LOCKED $($args)*) };
+    (424 $($args:tt)*) => { $crate::__via_impl_err!(FAILED_DEPENDENCY $($args)*) };
+    (426 $($args:tt)*) => { $crate::__via_impl_err!(UPGRADE_REQUIRED $($args)*) };
+    (428 $($args:tt)*) => { $crate::__via_impl_err!(PRECONDITION_REQUIRED $($args)*) };
+    (429 $($args:tt)*) => { $crate::__via_impl_err!(TOO_MANY_REQUESTS $($args)*) };
+    (431 $($args:tt)*) => { $crate::__via_impl_err!(REQUEST_HEADER_FIELDS_TOO_LARGE $($args)*) };
+    (451 $($args:tt)*) => { $crate::__via_impl_err!(UNAVAILABLE_FOR_LEGAL_REASONS $($args)*) };
+    (500 $($args:tt)*) => { $crate::__via_impl_err!(INTERNAL_SERVER_ERROR $($args)*) };
+    (501 $($args:tt)*) => { $crate::__via_impl_err!(NOT_IMPLEMENTED $($args)*) };
+    (502 $($args:tt)*) => { $crate::__via_impl_err!(BAD_GATEWAY $($args)*) };
+    (503 $($args:tt)*) => { $crate::__via_impl_err!(SERVICE_UNAVAILABLE $($args)*) };
+    (504 $($args:tt)*) => { $crate::__via_impl_err!(GATEWAY_TIMEOUT $($args)*) };
+    (505 $($args:tt)*) => { $crate::__via_impl_err!(HTTP_VERSION_NOT_SUPPORTED $($args)*) };
+    (506 $($args:tt)*) => { $crate::__via_impl_err!(VARIANT_ALSO_NEGOTIATES $($args)*) };
+    (507 $($args:tt)*) => { $crate::__via_impl_err!(INSUFFICIENT_STORAGE $($args)*) };
+    (508 $($args:tt)*) => { $crate::__via_impl_err!(LOOP_DETECTED $($args)*) };
+    (510 $($args:tt)*) => { $crate::__via_impl_err!(NOT_EXTENDED $($args)*) };
+    (511 $($args:tt)*) => { $crate::__via_impl_err!(NETWORK_AUTHENTICATION_REQUIRED $($args)*) };
+
+    ($status:ident, message = $message:expr $(,)?) => {
+        $crate::Error::new($crate::error::StatusCode::$status, $message)
+    };
+    ($status:ident, boxed = $source:expr $(,)?) => {
+        $crate::Error::from_source($crate::error::StatusCode::$status, $source)
+    };
+    ($status:ident, $source:expr $(,)?) => {
+        $crate::Error::from_source($crate::error::StatusCode::$status, Box::new($source))
+    };
+    ($status:ident) => {{
+        let status = $crate::error::StatusCode::$status;
+        let message = status.canonical_reason().unwrap_or_default().to_owned();
+        $crate::Error::new(status, message)
+    }};
 }
