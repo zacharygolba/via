@@ -98,22 +98,12 @@ where
             // The server is at capacity. Try to acquire a permit with the
             // configured timeout.
             Err(_) => {
-                let mut retry = true;
-
-                loop {
-                    task::yield_now().await;
-
-                    if let Ok(acquired) = semaphore.clone().try_acquire_owned() {
-                        break acquired;
-                    }
-
-                    if !retry {
-                        // Close the connection. Upstream load balancers take
-                        // this as a hint that it is time to try another node.
-                        continue 'accept;
-                    }
-
-                    retry = false;
+                task::yield_now().await;
+                match semaphore.clone().try_acquire_owned() {
+                    Ok(acquired) => acquired,
+                    // Close the connection. Upstream load balancers take
+                    // this as a hint that it is time to try another node.
+                    Err(_) => continue 'accept,
                 }
             }
         };
