@@ -88,11 +88,11 @@ impl<State> Route<'_, State> {
     /// app.route("/admin").middleware(async |request: Request, next: Next| {
     ///     // We suggest using signed cookies to prevent tampering.
     ///     // See the cookies example in our git repo for more information.
-    ///     if request.cookies().get("is_admin").is_some() {
-    ///         next.call(request).await
-    ///     } else {
-    ///         Err(raise!(401))
+    ///     if request.cookies().get("is_admin").is_none() {
+    ///         raise!(401);
     ///     }
+    ///
+    ///     next.call(request).await
     /// });
     /// ```
     ///
