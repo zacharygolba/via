@@ -38,19 +38,17 @@ macro_rules! err {
 ///
 /// ```
 /// use http::header::AUTHORIZATION;
-/// use via::{App, Error, Next, Request, raise};
+/// use via::{Next, Request, raise};
 ///
-/// let mut app = App::new(());
-///
-/// app.middleware(async |request: Request, next: Next| {
+/// async fn authenticate(request: Request, next: Next) -> via::Result {
 ///     let Some(jwt) = request.header(AUTHORIZATION)? else {
 ///         raise!(401, message = "Missing required header: Authorization.")
 ///     };
 ///
-///     // Insert JWT-based authentication code here.
+///     // Insert JWT-based authentication strategy here.
 ///
 ///     next.call(request).await
-/// });
+/// }
 /// ```
 ///
 #[macro_export]
