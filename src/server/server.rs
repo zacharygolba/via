@@ -18,7 +18,6 @@ pub struct Server<State> {
 
 #[derive(Debug)]
 pub(super) struct ServerConfig {
-    pub(super) accept_timeout: Duration,
     pub(super) max_connections: usize,
     pub(super) max_request_size: usize,
     pub(super) shutdown_timeout: Duration,
@@ -34,21 +33,6 @@ where
         Self {
             app,
             config: Default::default(),
-        }
-    }
-
-    /// The amount of time in seconds that the server will wait before the
-    /// connection is reset if the server is at capacity.
-    ///
-    /// **Default:** `1s`
-    ///
-    pub fn accept_timeout(self, accept_timeout: Duration) -> Self {
-        Self {
-            config: ServerConfig {
-                accept_timeout,
-                ..self.config
-            },
-            ..self
         }
     }
 
@@ -191,7 +175,6 @@ where
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            accept_timeout: Duration::from_secs(1),
             max_connections: 1000,
             max_request_size: 104_857_600, // 100 MB
             shutdown_timeout: Duration::from_secs(30),

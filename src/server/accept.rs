@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
-use tokio::task::{JoinSet, coop};
+use tokio::task::{self, JoinSet, coop};
 use tokio::{signal, time};
 
 #[cfg(feature = "http2")]
@@ -73,7 +73,7 @@ where
     let mut connections = JoinSet::new();
 
     // Start accepting incoming connections.
-    let exit_code = loop {
+    let exit_code = 'accept: loop {
         let (tcp_stream, _) = tokio::select! {
             // A new TCP stream was accepted from the listener.
             result = listener.accept() => match result {
@@ -98,25 +98,22 @@ where
             // The server is at capacity. Try to acquire a permit with the
             // configured timeout.
             Err(_) => {
-                let acquire = semaphore.clone().acquire_owned();
+                let mut retry = true;
 
-                tokio::select! {
-                    result = time::timeout(config.accept_timeout, acquire) => {
-                        match result {
-                            // Permit acquired!
-                            Ok(Ok(acquired)) => acquired,
+                loop {
+                    task::yield_now().await;
 
-                            // The semaphore was dropped. Likely unreachable.
-                            Ok(Err(_)) => break ExitCode::FAILURE,
-
-                            // The server is still at capacity. Reset the connection.
-                            Err(_) => continue,
-                        }
+                    if let Ok(acquired) = semaphore.clone().try_acquire_owned() {
+                        break acquired;
                     }
 
-                    _ = shutdown_rx.changed() => {
-                        break receive_ctrl_c!(shutdown_rx);
+                    if !retry {
+                        // Close the connection. Upstream load balancers take
+                        // this as a hint that it is time to try another node.
+                        continue 'accept;
                     }
+
+                    retry = false;
                 }
             }
         };
