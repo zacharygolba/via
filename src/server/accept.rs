@@ -73,7 +73,7 @@ where
     let mut connections = JoinSet::new();
 
     // Start accepting incoming connections.
-    let exit_code = 'accept: loop {
+    let exit_code = loop {
         let (tcp_stream, _) = tokio::select! {
             // A new TCP stream was accepted from the listener.
             result = listener.accept() => match result {
@@ -103,7 +103,7 @@ where
                     Ok(acquired) => acquired,
                     // Close the connection. Upstream load balancers take
                     // this as a hint that it is time to try another node.
-                    Err(_) => continue 'accept,
+                    Err(_) => continue,
                 }
             }
         };
