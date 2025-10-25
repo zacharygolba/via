@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
 use crate::error::{BoxError, Error};
-use crate::{Payload, raise};
+use crate::{Payload, err};
 
 #[derive(Debug)]
 pub struct RequestBody(Either<Limited<Incoming>, BoxBody<Bytes, BoxError>>);
@@ -29,15 +29,15 @@ pub struct DataAndTrailers {
     trailers: Option<HeaderMap>,
 }
 
-fn already_read<T>() -> Result<T, Error> {
-    raise!(500, message = "The request body has already been read.")
+fn already_read() -> Error {
+    err!(500, message = "The request body has already been read.")
 }
 
-fn into_future_error<T>(error: BoxError) -> Result<T, Error> {
+fn into_future_error(error: BoxError) -> Error {
     if error.is::<LengthLimitError>() {
-        raise!(413, boxed = error) // Payload Too Large
+        err!(413, boxed = error) // Payload Too Large
     } else {
-        raise!(400, boxed = error) // Bad Request
+        err!(400, boxed = error) // Bad Request
     }
 }
 
@@ -59,11 +59,11 @@ impl Future for IntoFuture {
 
         loop {
             let Some(result) = ready!(body.as_mut().poll_frame(context)) else {
-                return Poll::Ready(payload.take().map_or_else(already_read, Ok));
+                return Poll::Ready(payload.take().ok_or_else(already_read));
             };
 
-            let frame = result.or_else(into_future_error)?;
-            let payload = payload.as_mut().map_or_else(already_read, Ok)?;
+            let frame = result.map_err(into_future_error)?;
+            let payload = payload.as_mut().ok_or_else(already_read)?;
 
             match frame.into_data() {
                 Ok(data) => payload.frames.push(data),

@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::str::FromStr;
 
 use crate::error::Error;
-use crate::raise;
 use crate::util::UriEncoding;
+use crate::{err, raise};
 
 pub struct PathParam<'a, 'b> {
     encoding: UriEncoding,
@@ -45,7 +45,7 @@ impl<'a, 'b> PathParam<'a, 'b> {
     {
         self.into_result()?
             .parse()
-            .or_else(|error| raise!(400, error))
+            .map_err(|error| err!(400, error))
     }
 
     pub fn unwrap_or<U>(self, or: U) -> Cow<'a, str>
