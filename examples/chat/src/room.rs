@@ -1,6 +1,6 @@
 use serde_json::json;
 use via::ws::{self, Message};
-use via::{Next, Payload, Request, Response};
+use via::{Next, Payload, Request, Response, raise};
 
 use crate::chat::Chat;
 
@@ -11,19 +11,18 @@ pub async fn index(request: Request<Chat>, _: Next<Chat>) -> via::Result {
         Response::build().json(&body)
     });
 
-    all.await.unwrap_or_else(|| Err(via::raise!(404)))
+    all.await.unwrap_or_else(|| raise!(404))
 }
 
 pub async fn show(request: Request<Chat>, _: Next<Chat>) -> via::Result {
     let slug = request.param("room").into_result()?;
     let index = request.param("index").parse()?;
+    let Some(message) = request.state().get(&slug, index).await else {
+        raise!(404)
+    };
 
-    if let Some(message) = request.state().get(&slug, index).await {
-        let body = json!({ "data": { "message": &message } });
-        Response::build().json(&body)
-    } else {
-        Err(via::raise!(404))
-    }
+    let data = json!({ "message": &message });
+    Response::build().json(&data)
 }
 
 pub async fn join(mut channel: ws::Channel, request: ws::Context<Chat>) -> via::Result<()> {

@@ -3,7 +3,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::Error;
-use crate::raise;
+use crate::{err, raise};
 
 /// Interact with data received from a client.
 ///
@@ -50,7 +50,7 @@ pub trait Payload: Sized {
     /// If the payload is not valid `UTF-8`.
     ///
     fn into_utf8(self) -> Result<String, Error> {
-        String::from_utf8(self.into_vec()).map_err(|error| raise!(400, error))
+        String::from_utf8(self.into_vec()).map_err(|error| err!(400, error))
     }
 
     /// Copy the bytes in self into a contiguous `Vec<u8>`.
@@ -73,7 +73,7 @@ where
 
     match serde_json::from_slice(slice) {
         Ok(JsonPayload::Tagged { data } | JsonPayload::Untagged(data)) => Ok(data),
-        Err(error) => Err(raise!(400, error)),
+        Err(error) => raise!(400, error),
     }
 }
 
