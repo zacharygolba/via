@@ -11,13 +11,11 @@
 ///
 /// ### Decorate an existing error.
 ///
-/// The default impl of `From<E> where E: Error + ...` for
-/// [`via::Error`](super::Error)
-/// uses `500` as the status code.
-///
-/// It is often times desirable to provide a more appropriate status code when
-/// the error is in context rather than using dynamic typing to determine the
-/// status code that should be used in a
+/// The generic impl of
+/// [`From<E> for Error`](super::Error#impl-From<E>-for-Error)
+/// uses `500` as the status code. It is often times desirable to provide a
+/// more appropriate status code when the error is in context rather than using
+/// dynamic typing to determine the status code that should be used in a
 /// [`Rescue`](super::Rescue)
 /// callback.
 ///
