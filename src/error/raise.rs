@@ -162,9 +162,10 @@ macro_rules! __via_impl_err {
             "Status code must be in 400..=599 for errors.",
         );
 
-        match $crate::error::StatusCode::from_u16(CODE) {
-            Ok(status) => $crate::__via_impl_err!(@ctor status $($args)*),
-            Err(_) => unreachable!(),
-        }
+        let Ok(status) = $crate::error::StatusCode::from_u16(CODE) else {
+            unreachable!()
+        };
+
+        $crate::__via_impl_err!(@ctor status $($args)*)
     }};
 }
