@@ -1,29 +1,54 @@
 /// Construct a new [`Error`](super::Error) or wrap an existing one by
-/// providing a status code.
+/// providing a known error status code.
 ///
 /// # Example
+///
+/// Create a new error that uses the canonical reason prase of the provided
+/// status code.
+///
+/// ```
+/// via::err!(500);
+/// ```
+///
+/// ### Wrap an existing error.
+///
+/// The default impl of `From<E> where E: Error + ...` for
+/// [`via::Error`](super::Error)
+/// uses `500` as the status code.
+///
+/// It is often times desirable to provide a more appropriate status code when
+/// the error is in context rather than using dynamic typing to determine the
+/// status code that should be used in a
+/// [`Rescue`](super::Rescue)
+/// callback.
 ///
 /// ```
 /// use std::io;
 /// use via::err;
 ///
-/// // Use the canonical reason phrase of the status code as the message.
-/// err!(404);
+/// fn invalid_input() -> io::Result {
+///     Err(io::ErrorKind::InvalidInput.into())
+/// }
 ///
-/// // Or provide a custom error message.
-/// err!(404, message = "Could not find a user with the provided id.");
+/// // Unboxed error types are passed as the second positional argument.
+/// invalid_input().map_err(|error| err!(400, error));
 ///
-/// // An allocation is performed anytime an error occurs.
-/// // Use format! if it makes the error message more meaningful to your users.
-/// err!(404, message = format!("User with id: {} does not exist.", 1234));
+/// // If the error source is already boxed, specify so to avoid allocating.
+/// invalid_input().map_err(|error| err!(400, boxed = Box::new(error)));
+/// ```
 ///
-/// // Implicitly box the error source.
-/// let io_error = io::Error::from(io::ErrorKind::InvalidInput);
-/// let error = err!(400, io_error);
+/// ### Customizing the error message.
 ///
-/// // Or specify when the error source is already boxed.
-/// let io_error = io::Error::from(io::ErrorKind::InvalidInput);
-/// let error = err!(400, boxed = Box::new(io_error));
+/// The `err!` macro also allows you to provide a custom error message. The
+/// message argument accepts `impl Into<String>`. Passing an owned `String` is
+/// no less efficient than passing a `message = &'static str`.
+///
+/// ```
+/// // Implicit allocation for message:
+/// via::err!(404, message = "Could not find a user with the provided id.");
+///
+/// // Explicit allocation for message:
+/// via::err!(404, message = format!("User with id: {} does not exist.", 12345));
 /// ```
 ///
 #[macro_export]
