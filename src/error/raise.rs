@@ -25,7 +25,7 @@
 /// use std::io;
 /// use via::err;
 ///
-/// fn invalid_input() -> io::Result {
+/// fn invalid_input() -> io::Result<()> {
 ///     Err(io::ErrorKind::InvalidInput.into())
 /// }
 ///
