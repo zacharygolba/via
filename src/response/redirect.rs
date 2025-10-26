@@ -66,7 +66,7 @@ impl Redirect {
                 eprintln!("error: redirect status out of range {}", status);
             }
 
-            return Err(crate::raise!(500));
+            crate::raise!(500);
         }
 
         Response::build()
