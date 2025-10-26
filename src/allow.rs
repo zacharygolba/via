@@ -162,17 +162,16 @@ impl<State> Allow<State> {
     /// #    Response::build().text(format!("Hello, {}!", name))
     /// # }
     /// #
-    /// # fn main() {
     /// # let mut app = App::new(());
+    /// #
     /// app.route("/hello/:name").respond(
     ///     // curl -XPOST http://localhost:8080/hello/world
     ///     // => Method Not Allowed: POST
-    ///     via::get(greet).or_not_allowed()
+    ///     via::get(greet).or_method_not_allowed()
     /// );
-    /// # }
     /// ```
     ///
-    pub fn or_not_allowed(self) -> Self {
+    pub fn or_method_not_allowed(self) -> Self {
         self.or_else(|method, allowed| {
             Response::build()
                 .status(StatusCode::METHOD_NOT_ALLOWED)
