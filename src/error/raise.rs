@@ -13,7 +13,8 @@
 /// // Or provide a custom error message.
 /// err!(404, message = "Could not find a user with the provided id.");
 ///
-/// // You can allocate if you want.
+/// // An allocation is performed anytime an error occurs.
+/// // Use format! if it makes the error message more meaningful to your users.
 /// err!(404, message = format!("User with id: {} does not exist.", 1234));
 ///
 /// // Implicitly box the error source.
