@@ -5,7 +5,7 @@ use http::header::{COOKIE, SET_COOKIE};
 use crate::middleware::{BoxFuture, Middleware};
 use crate::request::{Request, RequestHead};
 use crate::util::UriEncoding;
-use crate::{Error, Next, raise};
+use crate::{Error, Next, err};
 
 #[derive(Debug)]
 pub struct Cookies {
@@ -23,7 +23,7 @@ fn parse_cookie_header<State>(
     request: &mut Request<State>,
     codec: &UriEncoding,
 ) -> Result<Vec<Cookie<'static>>, Error> {
-    let mut results = {
+    let results = {
         let Some(input) = request.header(COOKIE)? else {
             return Ok(vec![]);
         };
@@ -37,16 +37,10 @@ fn parse_cookie_header<State>(
     let RequestHead { cookies, .. } = request.head_mut();
     let mut existing = Vec::new();
 
-    for result in &mut results {
-        match result {
-            Ok(cookie) => {
-                existing.push(cookie.clone());
-                cookies.add_original(cookie);
-            }
-            Err(error) => {
-                return Err(raise!(400, error));
-            }
-        }
+    for result in results {
+        let cookie = result.map_err(|error| err!(400, error))?;
+        existing.push(cookie.clone());
+        cookies.add_original(cookie);
     }
 
     Ok(existing)
