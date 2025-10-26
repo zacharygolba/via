@@ -1,5 +1,4 @@
-/// Construct a new [`Error`](super::Error) or wrap an existing one by
-/// providing a known error status code.
+/// Create a new [`Error`](super::Error) or decorate an existing one.
 ///
 /// # Example
 ///
@@ -10,7 +9,7 @@
 /// via::err!(500);
 /// ```
 ///
-/// ### Wrap an existing error.
+/// ### Decorate an existing error.
 ///
 /// The default impl of `From<E> where E: Error + ...` for
 /// [`via::Error`](super::Error)
@@ -85,6 +84,34 @@ macro_rules! raise {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __via_impl_err {
+    /*
+     * Error constructor delegation
+     */
+    (@ctor $status:expr, message = $message:expr $(,)?) => {
+        $crate::Error::new($status, $message)
+    };
+    (@ctor $status:expr, boxed = $source:expr $(,)?) => {
+        $crate::Error::from_source($status, $source)
+    };
+    (@ctor $status:expr, $source:expr $(,)?) => {
+        $crate::Error::from_source($status, Box::new($source))
+    };
+    (@ctor $status:expr) => {{
+        let status = $status;
+        let message = status.canonical_reason().unwrap_or_default().to_owned();
+        $crate::Error::new(status, message)
+    }};
+
+    /*
+     * Expand a status identifier to an expr using a fully-qualified path.
+     */
+    ($status:ident $($args:tt)*) => {
+        $crate::__via_impl_err!(@ctor $crate::error::StatusCode::$status $($args)*)
+    };
+
+    /*
+     * Define standard (or well-known) error status codes.
+     */
     (400 $($args:tt)*) => { $crate::__via_impl_err!(BAD_REQUEST $($args)*) };
     (401 $($args:tt)*) => { $crate::__via_impl_err!(UNAUTHORIZED $($args)*) };
     (402 $($args:tt)*) => { $crate::__via_impl_err!(PAYMENT_REQUIRED $($args)*) };
@@ -125,18 +152,19 @@ macro_rules! __via_impl_err {
     (510 $($args:tt)*) => { $crate::__via_impl_err!(NOT_EXTENDED $($args)*) };
     (511 $($args:tt)*) => { $crate::__via_impl_err!(NETWORK_AUTHENTICATION_REQUIRED $($args)*) };
 
-    ($status:ident, message = $message:expr $(,)?) => {
-        $crate::Error::new($crate::error::StatusCode::$status, $message)
-    };
-    ($status:ident, boxed = $source:expr $(,)?) => {
-        $crate::Error::from_source($crate::error::StatusCode::$status, $source)
-    };
-    ($status:ident, $source:expr $(,)?) => {
-        $crate::Error::from_source($crate::error::StatusCode::$status, Box::new($source))
-    };
-    ($status:ident) => {{
-        let status = $crate::error::StatusCode::$status;
-        let message = status.canonical_reason().unwrap_or_default().to_owned();
-        $crate::Error::new(status, message)
+    /*
+     * Non-standard error status code support.
+     */
+    ($code:literal $($args:tt)*) => {{
+        const CODE: u16 = $code;
+        const _: () = assert!(
+            CODE >= 400 && CODE <= 599,
+            "Status code must be in 400..=599 for errors.",
+        );
+
+        match $crate::error::StatusCode::from_u16(CODE) {
+            Ok(status) => $crate::__via_impl_err!(@ctor status $($args)*),
+            Err(_) => unreachable!(),
+        }
     }};
 }
