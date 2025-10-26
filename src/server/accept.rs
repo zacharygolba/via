@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
-use tokio::task::{JoinSet, coop};
+use tokio::task::{self, JoinSet, coop};
 use tokio::{signal, time};
 
 #[cfg(feature = "http2")]
@@ -98,25 +98,12 @@ where
             // The server is at capacity. Try to acquire a permit with the
             // configured timeout.
             Err(_) => {
-                let acquire = semaphore.clone().acquire_owned();
-
-                tokio::select! {
-                    result = time::timeout(config.accept_timeout, acquire) => {
-                        match result {
-                            // Permit acquired!
-                            Ok(Ok(acquired)) => acquired,
-
-                            // The semaphore was dropped. Likely unreachable.
-                            Ok(Err(_)) => break ExitCode::FAILURE,
-
-                            // The server is still at capacity. Reset the connection.
-                            Err(_) => continue,
-                        }
-                    }
-
-                    _ = shutdown_rx.changed() => {
-                        break receive_ctrl_c!(shutdown_rx);
-                    }
+                task::yield_now().await;
+                match semaphore.clone().try_acquire_owned() {
+                    Ok(acquired) => acquired,
+                    // Close the connection. Upstream load balancers take
+                    // this as a hint that it is time to try another node.
+                    Err(_) => continue,
                 }
             }
         };
