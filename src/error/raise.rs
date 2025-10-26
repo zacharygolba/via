@@ -1,6 +1,6 @@
-/// Create a new [`Error`](super::Error) or decorate an existing one.
+/// Create a new error or decorate an existing one.
 ///
-/// # Example
+/// # Examples
 ///
 /// Create a new error that uses the canonical reason prase of the provided
 /// status code.
@@ -57,7 +57,7 @@ macro_rules! err {
     ($($args:tt)*) => { $crate::__via_impl_err!($($args)*) };
 }
 
-/// Return early with a [`Result::Err`] by delegating to the [`err!`] macro.
+/// Wrap the output of `err!` in a result and return early.
 ///
 /// # Example
 ///
