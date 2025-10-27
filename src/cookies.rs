@@ -47,16 +47,22 @@ fn parse_cookie_header<State>(
 }
 
 impl Cookies {
-    fn new(codec: UriEncoding) -> Self {
-        Self { codec }
+    pub fn new() -> Self {
+        Default::default()
     }
 
     pub fn percent_decode() -> Self {
-        Self::new(UriEncoding::Percent)
+        Self {
+            codec: UriEncoding::Percent,
+        }
     }
+}
 
-    pub fn unencoded() -> Self {
-        Self::new(UriEncoding::Unencoded)
+impl Default for Cookies {
+    fn default() -> Self {
+        Self {
+            codec: UriEncoding::Unencoded,
+        }
     }
 }
 
