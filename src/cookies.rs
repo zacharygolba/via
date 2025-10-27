@@ -7,7 +7,66 @@ use crate::request::{Request, RequestHead};
 use crate::util::UriEncoding;
 use crate::{Error, Next, err};
 
-#[derive(Debug)]
+/// Parse request cookies and serialize response cookies.
+///
+/// A bidirectional middleware that parses the cookie header of an incoming
+/// request, extends the request cookie jar with the cookies extracted from the
+/// cookie header. Then, calls `next` to get a response and serializes any
+/// cookies that changed into set-cookie headers.
+///
+/// # Example
+///
+/// ```
+/// use cookie::{Cookie, SameSite};
+/// use std::process::ExitCode;
+/// use via::{App, Cookies, Error, Next, Request, Response, Server};
+///
+/// async fn greet(request: Request, _: Next) -> via::Result {
+///     // The bool is a flag indicating whether or not "name" was sourced from
+///     // the request uri. When false, do not set the "name" cookie.
+///     //
+///     // The Cow contains either the percent-decoded value of the "name"
+///     // cookie or the percent-decoded value of the "name" parameter in the
+///     // request uri.
+///     let (should_set_name, name) = match request.cookies().get("name") {
+///         Some(cookie) => (false, cookie.value().into()),
+///         None => (true, request.param("name").percent_decode().into_result()?),
+///     };
+///
+///     // Build the greeting response using a reference to name.
+///     let mut response = Response::build().text(format!("Hello, {}!", name.as_ref()))?;
+///
+///     // If "name" came from the request uri, set the "name" cookie.
+///     if should_set_name {
+///         let saved_name = Cookie::build(("name", name.into_owned()))
+///             .same_site(SameSite::Strict)
+///             .http_only(true)
+///             .path("/");
+///
+///         response.cookies_mut().add(saved_name);
+///     }
+///
+///     Ok(response)
+/// }
+///
+/// #[tokio::main]
+/// async fn main() -> Result<ExitCode, Error> {
+///     let mut app = App::new(());
+///
+///     // Provides cookie support for downstream middleware.
+///     app.middleware(Cookies::percent_decode());
+///
+///     // Respond with a greeting when a user visits /hello/:name.
+///     app.route("/hello/:name").respond(via::get(greet));
+///
+///     // Start serving our application from http://localhost:8080/.
+///     Server::new(app).listen(("127.0.0.1", 8080)).await
+/// }
+/// ```
+///
+/// # Errors
+///
+///
 pub struct Cookies {
     codec: UriEncoding,
 }

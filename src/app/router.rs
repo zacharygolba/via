@@ -76,8 +76,7 @@ impl<State> Route<'_, State> {
     /// # Example
     ///
     /// ```
-    /// # use via::cookies::Cookies;
-    /// # use via::{App, Next, Request, raise};
+    /// # use via::{App, Next, Cookies, Request, raise};
     /// # let mut app = App::new(());
     /// #
     /// // Provides application-wide support for request and response cookies.
