@@ -233,6 +233,14 @@ impl<State> RequestHead<State> {
         }
     }
 
+    /// Consume the request head returning an arc to the state argument that
+    /// was passed to [`App::new`](crate::App::new).
+    ///
+    #[inline]
+    pub fn into_state(self) -> Arc<State> {
+        self.state
+    }
+
     /// Returns a reference to the request's method.
     ///
     #[inline]
