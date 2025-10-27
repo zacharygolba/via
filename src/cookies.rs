@@ -41,6 +41,7 @@ use crate::{Error, Next, err};
 ///         let saved_name = Cookie::build(("name", name.into_owned()))
 ///             .same_site(SameSite::Strict)
 ///             .http_only(true)
+///             .secure(true)
 ///             .path("/");
 ///
 ///         response.cookies_mut().add(saved_name);
@@ -66,10 +67,122 @@ use crate::{Error, Next, err};
 ///
 /// # Errors
 ///
-/// - `400` The cookie header cannot be parsed.
-/// - `500` A set-cookie header cannot be constructed or appended to the
-///   response.
+/// An error is returned if any of the following conditions are met:
 ///
+/// - The cookie header cannot be parsed `400 Bad Request`
+/// - A set-cookie header cannot be constructed or appended to a response
+///   `500 Internal Server Error`
+///
+/// # Security
+///
+/// In production, we recommend using either a
+/// [`SignedJar`](https://docs.rs/cookie/latest/cookie/struct.SignedJar.html)
+/// or
+/// [`PrivateJar`](https://docs.rs/cookie/latest/cookie/struct.PrivateJar.html)
+/// to store security sensitive cookies.
+///
+/// A _signed_ jar signs all the cookies added to it and verifies cookies
+/// retrieved from it. This prevents clients from tampering with the cookie or
+/// fabricating the data stored in the cookie.
+///
+/// A _private_ jar signs and encrypts all the cookies added to it and verifies
+/// and decrypts cookies retrieved from it. In addition to providing all of the
+/// safety guarantees of a signed jar, it also encrypts the value of the
+/// cookies it contains to ensure confidentiality.
+///
+/// ## Best Practices
+///
+/// As a best practice, in order to mitigate the vast majority of security
+/// related concerns of shared state with a client via cookies–we recommend
+/// setting `HttpOnly`, `SameSite=Strict`, and `Secure` for every cookie used
+/// by your application.
+///
+/// - `Secure` instructs the client to only include the cookie in requests made
+///   using the `https:` scheme or requests to `localhost`. Encrypting signed
+///   cookies that are both `HttpOnly` and `SameSite=strict` offers a similar
+///   level of protection to using a private jar.
+///
+/// - `HttpOnly` prevents the cookie from being used by JavaScript. The vast
+///   majority of cross-site scripting attacks exploit JavaScript in order to
+///   steal insecure cookies. If your application _must_ share a cookie with
+///   another domain, `HttpOnly` is _one of_ your best lines of defense against
+///   XSS.
+///
+/// - `SameSite=Strict` instructs the client to only include the cookie in
+///   requests to the site that set the cookie (i.e your Via application). If a
+///   cookie doesn't have to be shared with another application, setting
+///   `SameSite=Strict` makes CSRF attacks via cross-site requests practically
+///   impossible in modern browsers.
+///
+/// ```no_run
+/// use cookie::{Cookie, Key, SameSite};
+/// use http::StatusCode;
+/// use serde::Deserialize;
+/// use std::process::ExitCode;
+/// use via::{App, Cookies, Error, Next, Payload, Request, Response, Server};
+///
+/// #[derive(Deserialize)]
+/// struct Login {
+///     username: String,
+///     password: String,
+/// }
+///
+/// struct Unicorn {
+///     secret: Key,
+/// }
+///
+/// async fn login(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
+///     let (head, body) = request.into_parts();
+///     let state = head.state();
+///
+///     let Login { username, password } = body.into_future().await?.parse_json()?;
+///
+///     // Insert username and password verification here...
+///     // For now, we'll just assert that password the is not empty.
+///     if password.is_empty() {
+///         via::raise!(401, message = "Invalid username or password.");
+///     }
+///
+///     // Generate a response with no content.
+///     //
+///     // If we were verifying that that a username with the provided username
+///     // and password exist in a database table, we'd probably respond with
+///     // the matching row as JSON.
+///     let mut response = Response::build().status(StatusCode::NO_CONTENT).finish()?;
+///
+///     // Add our session cookie that contains the username of the active user
+///     // to our private cookie jar. The value of the cookie will be signed
+///     // and encrypted before it is included as a set-cookie header.
+///     response.cookies_mut().private_mut(&state.secret).add(
+///         Cookie::build(("unicorn-session", username))
+///             .same_site(SameSite::Strict)
+///             .http_only(true)
+///             .secure(true)
+///             .path("/"),
+///     );
+///
+///     Ok(response)
+/// }
+///
+/// #[tokio::main]
+/// async fn main() -> Result<ExitCode, Error> {
+///     let mut app = App::new(Unicorn {
+///         secret: std::env::var("VIA_SECRET_KEY")
+///             .map(|secret| secret.as_bytes().try_into())
+///             .expect("missing required env var: VIA_SECRET_KEY")
+///             .expect("unexpected end of input while parsing VIA_SECRET_KEY"),
+///     });
+///
+///     // Unencoded cookie support.
+///     app.middleware(Cookies::new());
+///
+///     // Add our login route to our application.
+///     app.route("/auth/login").respond(via::post(login));
+///
+///     // Start serving our application from http://localhost:8080/.
+///     Server::new(app).listen(("127.0.0.1", 8080)).await
+/// }
+/// ```
 ///
 pub struct Cookies {
     codec: UriEncoding,
