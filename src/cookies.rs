@@ -124,7 +124,7 @@ use crate::{Error, Next, err};
 ///
 /// async fn login(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
 ///     let (head, body) = request.into_parts();
-///     let state = head.state();
+///     let state = head.into_state();
 ///
 ///     let Login { username, password } = body.into_future().await?.parse_json()?;
 ///
