@@ -10,9 +10,9 @@ use crate::{Error, Next, err};
 /// Parse request cookies and serialize response cookies.
 ///
 /// A bidirectional middleware that parses the cookie header of an incoming
-/// request, extends the request cookie jar with the cookies extracted from the
-/// cookie header. Then, calls `next` to get a response and serializes any
-/// cookies that changed into set-cookie headers.
+/// request and extends the request's cookie jar with the extracted cookies,
+/// then calls `next` to obtain a response and serializes any modified cookies
+/// into `Set-Cookie` headers.
 ///
 /// # Example
 ///
@@ -22,12 +22,12 @@ use crate::{Error, Next, err};
 /// use via::{App, Cookies, Error, Next, Request, Response, Server};
 ///
 /// async fn greet(request: Request, _: Next) -> via::Result {
-///     // The bool is a flag indicating whether or not "name" was sourced from
-///     // the request uri. When false, do not set the "name" cookie.
+///     // `should_set_name` indicates whether "name" was sourced from the
+///     // request URI. When false, the "name" cookie should not be modified.
 ///     //
-///     // The Cow contains either the percent-decoded value of the "name"
-///     // cookie or the percent-decoded value of the "name" parameter in the
-///     // request uri.
+///     // `name` is a Cow that contains either the percent-decoded value of
+///     // the "name" cookie or the percent-decoded value of the "name"
+///     // parameter in the request uri.
 ///     let (should_set_name, name) = match request.cookies().get("name") {
 ///         Some(cookie) => (false, cookie.value().into()),
 ///         None => (true, request.param("name").percent_decode().into_result()?),
@@ -38,13 +38,13 @@ use crate::{Error, Next, err};
 ///
 ///     // If "name" came from the request uri, set the "name" cookie.
 ///     if should_set_name {
-///         let saved_name = Cookie::build(("name", name.into_owned()))
-///             .same_site(SameSite::Strict)
-///             .http_only(true)
-///             .secure(true)
-///             .path("/");
-///
-///         response.cookies_mut().add(saved_name);
+///         response.cookies_mut().add(
+///             Cookie::build(("name", name.into_owned()))
+///                 .same_site(SameSite::Strict)
+///                 .http_only(true)
+///                 .secure(true)
+///                 .path("/")
+///         );
 ///     }
 ///
 ///     Ok(response)
@@ -81,14 +81,11 @@ use crate::{Error, Next, err};
 /// [`PrivateJar`](https://docs.rs/cookie/latest/cookie/struct.PrivateJar.html)
 /// to store security sensitive cookies.
 ///
-/// A _signed_ jar signs all the cookies added to it and verifies cookies
-/// retrieved from it. This prevents clients from tampering with the cookie or
-/// fabricating the data stored in the cookie.
+/// A _signed jar_ signs all cookies added to it and verifies cookies retrieved
+/// from it, preventing clients from tampering with or fabricating cookie data.
 ///
-/// A _private_ jar signs and encrypts all the cookies added to it and verifies
-/// and decrypts cookies retrieved from it. In addition to providing all of the
-/// safety guarantees of a signed jar, it also encrypts the value of the
-/// cookies it contains to ensure confidentiality.
+/// A _private jar_ both signs and encrypts cookies, providing all the
+/// guarantees of a signed jar while also ensuring confidentiality.
 ///
 /// ## Best Practices
 ///
@@ -97,22 +94,16 @@ use crate::{Error, Next, err};
 /// setting `HttpOnly`, `SameSite=Strict`, and `Secure` for every cookie used
 /// by your application.
 ///
-/// - `Secure` instructs the client to only include the cookie in requests made
-///   using the `https:` scheme or requests to `localhost`. Encrypting signed
-///   cookies that are both `HttpOnly` and `SameSite=strict` offers a similar
-///   level of protection to using a private jar.
+/// - `Secure` Instructs the client to only include the cookie in requests made
+///   using the `https:` scheme or to `localhost`.
 ///
-/// - `HttpOnly` prevents the cookie from being used by JavaScript. The vast
-///   majority of cross-site scripting attacks exploit JavaScript in order to
-///   steal insecure cookies. If your application _must_ share a cookie with
-///   another domain, `HttpOnly` is _one of_ your best lines of defense against
-///   XSS.
+/// - `HttpOnly` Prevents cookies from being accessed by JavaScript, mitigating
+///   cross-site scripting (XSS) attacks. If your application must share a
+///   cookie with another domain, HttpOnly is one of your strongest defenses.
 ///
-/// - `SameSite=Strict` instructs the client to only include the cookie in
-///   requests to the site that set the cookie (i.e your Via application). If a
-///   cookie doesn't have to be shared with another application, setting
-///   `SameSite=Strict` makes CSRF attacks via cross-site requests practically
-///   impossible in modern browsers.
+/// - `SameSite=Strict` Restricts cookies to same-site requests, mitigating
+///   CSRF attacks. If the cookie does not need to be shared cross-site, set
+///   `SameSite=Strict` to practically eliminate CSRF risk in modern browsers.
 ///
 /// ```no_run
 /// use cookie::{Cookie, Key, SameSite};
