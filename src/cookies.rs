@@ -16,7 +16,7 @@ use crate::{Error, Next, err};
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use cookie::{Cookie, SameSite};
 /// use std::process::ExitCode;
 /// use via::{App, Cookies, Error, Next, Request, Response, Server};
@@ -66,6 +66,10 @@ use crate::{Error, Next, err};
 ///
 /// # Errors
 ///
+/// - `400` The cookie header cannot be parsed.
+/// - `500` A set-cookie header cannot be constructed or appended to the
+///   response.
+///
 ///
 pub struct Cookies {
     codec: UriEncoding,
@@ -106,10 +110,32 @@ fn parse_cookie_header<State>(
 }
 
 impl Cookies {
+    /// Returns middleware that provides support for unencoded request and
+    /// response cookies.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use via::{App, Cookies};
+    /// # let mut app = App::new(());
+    /// app.middleware(Cookies::new());
+    /// ```
+    ///
     pub fn new() -> Self {
         Default::default()
     }
 
+    /// Returns middleware that provides support for `percent%20encoded`
+    /// request and response cookies.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use via::{App, Cookies};
+    /// # let mut app = App::new(());
+    /// app.middleware(Cookies::percent_decode());
+    /// ```
+    ///
     pub fn percent_decode() -> Self {
         Self {
             codec: UriEncoding::Percent,

@@ -1,4 +1,5 @@
 use cookie::{Cookie, Key, SameSite};
+use std::env;
 use std::process::ExitCode;
 use via::{App, Cookies, Error, Response, Server};
 
@@ -68,14 +69,6 @@ async fn greet(request: Request, _: Next) -> via::Result {
     Response::build().text(format!("Hello, {}!", name))
 }
 
-/// Load the secret key from the "VIA_SECRET_KEY" environment variable.
-///
-fn get_secret_from_env() -> Key {
-    std::env::var("VIA_SECRET_KEY")
-        .map(|secret| Key::from(secret.as_bytes()))
-        .expect("missing required env var: VIA_SECRET_KEY")
-}
-
 #[tokio::main]
 async fn main() -> Result<ExitCode, Error> {
     // Load the environment variables from the ".env" file. This is where we
@@ -88,7 +81,9 @@ async fn main() -> Result<ExitCode, Error> {
 
     // Create a new application.
     let mut app = App::new(CookiesExample {
-        secret: get_secret_from_env(),
+        secret: env::var("VIA_SECRET_KEY")
+            .map(|secret| Key::from(secret.as_bytes()))
+            .expect("missing required env var: VIA_SECRET_KEY"),
     });
 
     // The CookieParser middleware can be added at any depth of the route tree.
