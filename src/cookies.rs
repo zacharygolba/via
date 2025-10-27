@@ -229,8 +229,8 @@ impl Cookies {
         Default::default()
     }
 
-    /// Returns middleware that provides support for `percent%20encoded`
-    /// request and response cookies.
+    /// Returns middleware that provides support for percent-encoded request
+    /// and response cookies.
     ///
     /// # Example
     ///
