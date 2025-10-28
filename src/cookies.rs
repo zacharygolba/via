@@ -265,7 +265,7 @@ impl Cookies {
         };
 
         results.filter(|result| match result {
-            Ok(cookie) => allow.iter().any(|name| cookie.name() == name),
+            Ok(cookie) => allow.iter().any(|name| name.as_str() == cookie.name()),
             Err(_) => false,
         })
     }
