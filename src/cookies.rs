@@ -258,7 +258,7 @@ impl Cookies {
     /// ```
     /// # use via::{App, Cookies};
     /// # let mut app = App::new(());
-    /// app.middleware(Cookies::new().allow("via:session").percent_decode());
+    /// app.middleware(Cookies::new().allow("via-session").percent_decode());
     /// ```
     ///
     pub fn percent_decode(mut self) -> Self {
