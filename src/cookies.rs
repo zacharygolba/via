@@ -188,11 +188,13 @@ fn encode_set_cookie_header(
     encoding: &UriEncoding,
     cookie: &Cookie,
 ) -> Result<http::HeaderValue, SetCookieError> {
-    Ok(if matches!(encoding, UriEncoding::Percent) {
-        cookie.encoded().to_string().try_into()?
+    let encoded = if matches!(encoding, UriEncoding::Percent) {
+        cookie.encoded().to_string()
     } else {
-        cookie.to_string().try_into()?
-    })
+        cookie.to_string()
+    };
+
+    Ok(encoded.try_into()?)
 }
 
 impl Cookies {
