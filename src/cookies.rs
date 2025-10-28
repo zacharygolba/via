@@ -5,7 +5,6 @@ use std::fmt::{self, Display, Formatter};
 use crate::Next;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::request::{Request, RequestHead};
-use crate::response::Response;
 use crate::util::UriEncoding;
 
 /// An error occurred while writing a Set-Cookie header to a response.
