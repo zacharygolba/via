@@ -1,4 +1,4 @@
-use cookie::Cookie;
+use cookie::{Cookie, ParseError};
 use http::header::{self, COOKIE, SET_COOKIE};
 use std::fmt::{self, Display, Formatter};
 
@@ -59,8 +59,8 @@ struct SetCookieError;
 /// async fn main() -> Result<ExitCode, Error> {
 ///     let mut app = App::new(());
 ///
-///     // Provides cookie support for downstream middleware.
-///     app.middleware(Cookies::percent_decode());
+///     // Provide cookie support for downstream middleware.
+///     app.middleware(Cookies::new().allow("name").percent_decode());
 ///
 ///     // Respond with a greeting when a user visits /hello/:name.
 ///     app.route("/hello/:name").respond(via::get(greet));
@@ -72,10 +72,10 @@ struct SetCookieError;
 ///
 /// # Errors
 ///
-/// An error is returned if any of the following conditions are met:
+/// An error is returned if either of the following conditions are met:
 ///
-/// - The cookie header cannot be parsed `400 Bad Request`
-/// - A set-cookie header cannot be constructed or appended to a response
+/// - A set-cookie header cannot be constructed `500 Internal Server Error`
+/// - The maximum capacity of the response header map is exceeded
 ///   `500 Internal Server Error`
 ///
 /// # Security
@@ -170,7 +170,7 @@ struct SetCookieError;
 ///     });
 ///
 ///     // Unencoded cookie support.
-///     app.middleware(Cookies::new());
+///     app.middleware(Cookies::new().allow("unicorn-session"));
 ///
 ///     // Add our login route to our application.
 ///     app.route("/auth/login").respond(via::post(login));
@@ -182,16 +182,16 @@ struct SetCookieError;
 ///
 pub struct Cookies {
     encoding: UriEncoding,
+    allow: Vec<String>,
 }
 
 fn encode_set_cookie_header(
     encoding: &UriEncoding,
     cookie: &Cookie,
 ) -> Result<http::HeaderValue, SetCookieError> {
-    let encoded = if matches!(encoding, UriEncoding::Percent) {
-        cookie.encoded().to_string()
-    } else {
-        cookie.to_string()
+    let encoded = match encoding {
+        UriEncoding::Percent => cookie.encoded().to_string(),
+        _ => cookie.to_string(),
     };
 
     Ok(encoded.try_into()?)
@@ -213,21 +213,49 @@ impl Cookies {
         Default::default()
     }
 
-    /// Returns middleware that provides support for percent-encoded request
-    /// and response cookies.
+    /// Allow cookies with the name argument to be parsed from the cookie
+    /// header of a request.
     ///
     /// # Example
     ///
     /// ```
     /// # use via::{App, Cookies};
     /// # let mut app = App::new(());
-    /// app.middleware(Cookies::percent_decode());
+    /// app.middleware(Cookies::new().allow("via-session"));
     /// ```
     ///
-    pub fn percent_decode() -> Self {
-        Self {
-            encoding: UriEncoding::Percent,
-        }
+    pub fn allow(mut self, name: impl AsRef<str>) -> Self {
+        self.allow.push(name.as_ref().to_owned());
+        self
+    }
+
+    /// Specify that cookies should be percent-decoded when parsed and percent-
+    /// encoded when serialized to a set-cookie header.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use via::{App, Cookies};
+    /// # let mut app = App::new(());
+    /// app.middleware(Cookies::new().allow("via:session").percent_decode());
+    /// ```
+    ///
+    pub fn percent_decode(mut self) -> Self {
+        self.encoding = UriEncoding::Percent;
+        self
+    }
+
+    fn parse<'a>(&self, input: &'a str) -> impl Iterator<Item = Result<Cookie<'a>, ParseError>> {
+        let Self { encoding, allow } = self;
+        let results = match encoding {
+            UriEncoding::Percent => Cookie::split_parse_encoded(input),
+            _ => Cookie::split_parse(input),
+        };
+
+        results.filter(|result| match result {
+            Ok(cookie) => allow.iter().any(|name| cookie.name() == name),
+            Err(_) => false,
+        })
     }
 }
 
@@ -235,6 +263,7 @@ impl Default for Cookies {
     fn default() -> Self {
         Self {
             encoding: UriEncoding::Unencoded,
+            allow: vec![],
         }
     }
 }
@@ -245,25 +274,31 @@ where
 {
     fn call(&self, mut request: Request<State>, next: Next<State>) -> BoxFuture {
         let RequestHead { cookies, parts, .. } = request.head_mut();
-        let mut existing = Vec::new();
+        let mut existing = Vec::with_capacity(self.allow.len());
 
         if let Some(header) = parts.headers.get(COOKIE)
             && let Ok(input) = header.to_str()
         {
-            let results = match &self.encoding {
-                UriEncoding::Percent => Cookie::split_parse_encoded(input),
-                _ => Cookie::split_parse(input),
-            };
+            for result in self.parse(input) {
+                let original = match result {
+                    Ok(cookie) => cookie.into_owned(),
+                    Err(error) => {
+                        // Placeholder for tracing...
+                        if cfg!(debug_assertions) {
+                            eprintln!("warn: {}", error);
+                        }
 
-            for cookie in results.filter_map(Result::ok) {
-                let original = cookie.into_owned();
+                        continue;
+                    }
+                };
+
                 existing.push(original.clone());
                 cookies.add_original(original);
             }
         }
 
         let future = next.call(request);
-        let Self { encoding } = *self;
+        let Self { encoding, .. } = *self;
 
         Box::pin(async move {
             let mut response = future.await?;

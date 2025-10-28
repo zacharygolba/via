@@ -27,7 +27,6 @@ async fn counter(request: Request, next: Next) -> via::Result {
     // Get the value of the "counter" cookie from the request before passing
     // ownership of the request to the next middleware. In this example, we are
     // using the signed cookie jar to store and retrieve the "counter" cookie.
-    // If
     //
     let mut counter = request
         .cookies()
@@ -91,7 +90,7 @@ async fn main() -> Result<ExitCode, Error> {
     // The CookieParser middleware can be added at any depth of the route tree.
     // In this example, we add it to the root of the app. This means that every
     // request will pass through the CookieParser middleware.
-    app.middleware(Cookies::new());
+    app.middleware(Cookies::new().allow("counter"));
 
     // Add the count_visits middleware to the app at "/".
     app.middleware(counter);

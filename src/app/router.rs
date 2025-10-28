@@ -80,14 +80,14 @@ impl<State> Route<'_, State> {
     /// # let mut app = App::new(());
     /// #
     /// // Provides application-wide support for request and response cookies.
-    /// app.middleware(Cookies::new());
+    /// app.middleware(Cookies::new().allow("is-admin"));
     ///
     /// // Requests made to /admin or any of its descendants must have an
     /// // is_admin cookie present on the request.
     /// app.route("/admin").middleware(async |request: Request, next: Next| {
     ///     // We suggest using signed cookies to prevent tampering.
     ///     // See the cookies example in our git repo for more information.
-    ///     if request.cookies().get("is_admin").is_none() {
+    ///     if request.cookies().get("is-admin").is_none() {
     ///         raise!(401);
     ///     }
     ///
