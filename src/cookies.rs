@@ -1,5 +1,6 @@
 use cookie::{Cookie, ParseError};
 use http::header::{self, COOKIE, SET_COOKIE};
+use std::collections::HashSet;
 use std::fmt::{self, Display, Formatter};
 
 use crate::Next;
@@ -200,7 +201,7 @@ struct SetCookieError;
 ///
 pub struct Cookies {
     encoding: UriEncoding,
-    allow: Vec<String>,
+    allow: HashSet<String>,
 }
 
 fn encode_set_cookie_header(
@@ -246,7 +247,7 @@ impl Cookies {
     /// ```
     ///
     pub fn allow(mut self, name: impl AsRef<str>) -> Self {
-        self.allow.push(name.as_ref().to_owned());
+        self.allow.insert(name.as_ref().to_owned());
         self
     }
 
@@ -274,7 +275,7 @@ impl Cookies {
         };
 
         results.filter(|result| match result {
-            Ok(cookie) => allow.iter().any(|name| name.as_str() == cookie.name()),
+            Ok(cookie) => allow.contains(cookie.name()),
             Err(_) => false,
         })
     }
@@ -284,7 +285,7 @@ impl Default for Cookies {
     fn default() -> Self {
         Self {
             encoding: UriEncoding::Unencoded,
-            allow: vec![],
+            allow: HashSet::new(),
         }
     }
 }
