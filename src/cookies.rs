@@ -1,11 +1,17 @@
 use cookie::Cookie;
-use http::HeaderValue;
-use http::header::{COOKIE, SET_COOKIE};
+use http::header::{self, COOKIE, SET_COOKIE};
+use std::fmt::{self, Display, Formatter};
 
+use crate::Next;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::request::{Request, RequestHead};
+use crate::response::Response;
 use crate::util::UriEncoding;
-use crate::{Error, Next, err};
+
+/// An error occurred while writing a Set-Cookie header to a response.
+///
+#[derive(Debug)]
+struct SetCookieError;
 
 /// Parse request cookies and serialize response cookies.
 ///
@@ -176,41 +182,18 @@ use crate::{Error, Next, err};
 /// ```
 ///
 pub struct Cookies {
-    codec: UriEncoding,
+    encoding: UriEncoding,
 }
 
-fn encode_set_cookie_header(codec: &UriEncoding, cookie: &Cookie) -> Result<HeaderValue, Error> {
-    Ok(match codec {
-        UriEncoding::Percent => cookie.encoded().to_string().try_into()?,
-        UriEncoding::Unencoded => cookie.to_string().try_into()?,
+fn encode_set_cookie_header(
+    encoding: &UriEncoding,
+    cookie: &Cookie,
+) -> Result<http::HeaderValue, SetCookieError> {
+    Ok(if matches!(encoding, UriEncoding::Percent) {
+        cookie.encoded().to_string().try_into()?
+    } else {
+        cookie.to_string().try_into()?
     })
-}
-
-fn parse_cookie_header<State>(
-    request: &mut Request<State>,
-    codec: &UriEncoding,
-) -> Result<Vec<Cookie<'static>>, Error> {
-    let results = {
-        let Some(input) = request.header(COOKIE)? else {
-            return Ok(vec![]);
-        };
-
-        match codec {
-            UriEncoding::Percent => Cookie::split_parse_encoded(input.to_owned()),
-            UriEncoding::Unencoded => Cookie::split_parse(input.to_owned()),
-        }
-    };
-
-    let RequestHead { cookies, .. } = request.head_mut();
-    let mut existing = Vec::new();
-
-    for result in results {
-        let cookie = result.map_err(|error| err!(400, error))?;
-        existing.push(cookie.clone());
-        cookies.add_original(cookie);
-    }
-
-    Ok(existing)
 }
 
 impl Cookies {
@@ -242,7 +225,7 @@ impl Cookies {
     ///
     pub fn percent_decode() -> Self {
         Self {
-            codec: UriEncoding::Percent,
+            encoding: UriEncoding::Percent,
         }
     }
 }
@@ -250,7 +233,7 @@ impl Cookies {
 impl Default for Cookies {
     fn default() -> Self {
         Self {
-            codec: UriEncoding::Unencoded,
+            encoding: UriEncoding::Unencoded,
         }
     }
 }
@@ -260,24 +243,65 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, mut request: Request<State>, next: Next<State>) -> BoxFuture {
-        let Self { codec } = *self;
-        let result = parse_cookie_header(&mut request, &codec);
+        let RequestHead { cookies, parts, .. } = request.head_mut();
+        let mut existing = Vec::new();
+
+        if let Some(header) = parts.headers.get(COOKIE)
+            && let Ok(input) = header.to_str()
+        {
+            let results = match &self.encoding {
+                UriEncoding::Percent => Cookie::split_parse_encoded(input),
+                _ => Cookie::split_parse(input),
+            };
+
+            for cookie in results.filter_map(Result::ok) {
+                let original = cookie.into_owned();
+                existing.push(original.clone());
+                cookies.add_original(original);
+            }
+        }
+
+        let future = next.call(request);
+        let Self { encoding } = *self;
 
         Box::pin(async move {
-            let existing = result?;
-            let mut response = next.call(request).await?;
+            let mut response = future.await?;
             let (cookies, headers) = response.cookies_and_headers_mut();
 
             for cookie in existing {
                 cookies.add_original(cookie);
             }
 
-            for cookie in cookies.delta() {
-                let set_cookie = encode_set_cookie_header(&codec, cookie)?;
+            cookies.delta().try_for_each(|cookie| {
+                let set_cookie = encode_set_cookie_header(&encoding, cookie)?;
                 headers.try_append(SET_COOKIE, set_cookie)?;
-            }
+                Ok::<_, SetCookieError>(())
+            })?;
 
             Ok(response)
         })
+    }
+}
+
+impl std::error::Error for SetCookieError {}
+
+impl Display for SetCookieError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "An error occurred while writing a Set-Cookie header to a response."
+        )
+    }
+}
+
+impl From<header::MaxSizeReached> for SetCookieError {
+    fn from(_: header::MaxSizeReached) -> Self {
+        Self
+    }
+}
+
+impl From<header::InvalidHeaderValue> for SetCookieError {
+    fn from(_: header::InvalidHeaderValue) -> Self {
+        Self
     }
 }
