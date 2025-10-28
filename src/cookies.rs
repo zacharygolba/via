@@ -295,7 +295,7 @@ where
 {
     fn call(&self, mut request: Request<State>, next: Next<State>) -> BoxFuture {
         let RequestHead { cookies, parts, .. } = request.head_mut();
-        let mut existing = Vec::with_capacity(self.allow.len());
+        let mut existing = Vec::new();
 
         if let Some(header) = parts.headers.get(COOKIE)
             && let Ok(input) = header.to_str()
