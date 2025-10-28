@@ -29,7 +29,7 @@ async fn counter(request: Request, next: Next) -> via::Result {
     // using the signed cookie jar to store and retrieve the "counter" cookie.
     // If
     //
-    let value = request
+    let mut counter = request
         .cookies()
         .private(&state.secret)
         .get("counter")
@@ -38,17 +38,19 @@ async fn counter(request: Request, next: Next) -> via::Result {
     // Call the next middleware to get the response.
     let mut response = next.call(request).await?;
 
+    // Increment the value of the visit counter.
+    counter += 1;
+
     // Print the number of times the user has visited the site to stdout.
-    println!("User has visited {} times.", value);
+    println!("User has visited {} times.", counter);
 
     // If the response status code is in 200..=299, update the counter cookie.
     if response.status().is_success() {
-        let incr = (value + 1).to_string();
-
         response.cookies_mut().private_mut(&state.secret).add(
-            Cookie::build(("counter", incr))
+            Cookie::build(("counter", counter.to_string()))
                 .same_site(SameSite::Strict)
                 .http_only(true)
+                .secure(true)
                 .path("/"),
         );
     }
