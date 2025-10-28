@@ -7,12 +7,10 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+cookie = { version = "0.18", features = ["percent-encode", "private"] }
 dotenvy = "0.15.7"
+time = "0.3.44"
 via = { path = "../.." }
-
-[dependencies.cookie]
-version = "0.18"
-features = ["percent-encode", "signed"]
 
 [dependencies.tokio]
 version = "1"

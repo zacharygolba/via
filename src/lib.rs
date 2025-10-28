@@ -40,7 +40,6 @@
 
 #![allow(clippy::module_inception)]
 
-pub mod cookies;
 pub mod error;
 pub mod request;
 pub mod response;
@@ -50,6 +49,7 @@ pub mod ws;
 
 mod allow;
 mod app;
+mod cookies;
 mod middleware;
 mod next;
 mod payload;
@@ -59,6 +59,7 @@ mod util;
 
 pub use allow::{Allow, connect, delete, get, head, options, patch, post, put, trace};
 pub use app::{App, Route};
+pub use cookies::Cookies;
 pub use error::Error;
 pub use middleware::{Middleware, Result};
 pub use next::Next;

@@ -35,6 +35,7 @@ ws = [
 
 [dependencies]
 bytes = "1"
+cookie = { version = "0.18", features = ["percent-encode"] }
 futures-core = "0.3"
 http = "1"
 http-body = "1"
@@ -60,10 +61,6 @@ optional = true
 [dependencies.bytestring]
 version = "1"
 optional = true
-
-[dependencies.cookie]
-version = "0.18"
-features = ["percent-encode"]
 
 [dependencies.futures-sink]
 version = "0.3"
@@ -102,6 +99,10 @@ default-features = false
 version = "0.12"
 features = ["aws_lc_rs", "server"]
 optional = true
+
+[dev-dependencies]
+cookie = { version = "0.18", features = ["percent-encode", "private"] }
+time = { version = "0.3" }
 
 [package.metadata.docs.rs]
 features = ["file", "native-tls", "rustls", "ws"]
