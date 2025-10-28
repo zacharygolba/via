@@ -45,10 +45,11 @@ struct SetCookieError;
 ///     if should_set_name {
 ///         response.cookies_mut().add(
 ///             Cookie::build(("name", name.into_owned()))
-///                 .same_site(SameSite::Strict)
 ///                 .http_only(true)
-///                 .secure(true)
+///                 .max_age(time::Duration::hours(1))
 ///                 .path("/")
+///                 .same_site(SameSite::Strict)
+///                 .secure(true),
 ///         );
 ///     }
 ///
@@ -72,11 +73,11 @@ struct SetCookieError;
 ///
 /// # Errors
 ///
-/// An error is returned if either of the following conditions are met:
+/// The Cookies middleware responds with a `500` error if any of the following
+/// conditions are met:
 ///
-/// - A set-cookie header cannot be constructed `500 Internal Server Error`
+/// - A Set-Cookie header cannot be constructed
 /// - The maximum capacity of the response header map is exceeded
-///   `500 Internal Server Error`
 ///
 /// # Security
 ///
@@ -88,7 +89,6 @@ struct SetCookieError;
 ///
 /// A _signed jar_ signs all cookies added to it and verifies cookies retrieved
 /// from it, preventing clients from tampering with or fabricating cookie data.
-///
 /// A _private jar_ both signs and encrypts cookies, providing all the
 /// guarantees of a signed jar while also ensuring confidentiality.
 ///
@@ -96,19 +96,30 @@ struct SetCookieError;
 ///
 /// As a best practice, in order to mitigate the vast majority of security
 /// related concerns of shared state with a client via cookies–we recommend
-/// setting `HttpOnly`, `SameSite=Strict`, and `Secure` for every cookie used
-/// by your application.
+/// setting `HttpOnly`, `Max-Age`, `SameSite=Strict`, and `Secure` for every
+/// cookie used by your application.
 ///
-/// - `Secure` Instructs the client to only include the cookie in requests made
-///   using the `https:` scheme or to `localhost`.
+/// - `HttpOnly`<br>
+///   Prevents client-side scripts from accessing the cookie, mitigating cross-
+///   site scripting (XSS) attacks. This should be enabled for any cookie that
+///   does not need to be accessed directly from JavaScript. Requests made from
+///   JavaScript using the Fetch API with `credentials: "include"` or
+///   `"same-origin"` automatically include all relevant cookies for the
+///   request's origin, including those marked as `HttpOnly`.
 ///
-/// - `HttpOnly` Prevents cookies from being accessed by JavaScript, mitigating
-///   cross-site scripting (XSS) attacks. If your application must share a
-///   cookie with another domain, HttpOnly is one of your strongest defenses.
+/// - `Max-Age`<br>
+///   Limits how long the browser will store and send the cookie. This reduces
+///   the window in which a leaked or stolen cookie can be used, and helps
+///   prevent session accumulation on the client.
 ///
-/// - `SameSite=Strict` Restricts cookies to same-site requests, mitigating
-///   CSRF attacks. If the cookie does not need to be shared cross-site, set
-///   `SameSite=Strict` to practically eliminate CSRF risk in modern browsers.
+/// - `SameSite=Strict`<br>
+///   Restricts cookies to same-site requests, mitigating CSRF attacks. If the
+///   cookie does not need to be shared cross-site, this setting practically
+///   eliminates CSRF risk in modern browsers.
+///
+/// - `Secure`<br>
+///   Instructs the client to only include the cookie in requests made using
+///   the `https:` scheme or to `localhost`.
 ///
 /// ```no_run
 /// use cookie::{Cookie, Key, SameSite};
@@ -151,10 +162,11 @@ struct SetCookieError;
 ///     // and encrypted before it is included as a set-cookie header.
 ///     response.cookies_mut().private_mut(&state.secret).add(
 ///         Cookie::build(("unicorn-session", username))
-///             .same_site(SameSite::Strict)
 ///             .http_only(true)
-///             .secure(true)
-///             .path("/"),
+///             .max_age(time::Duration::hours(1))
+///             .path("/")
+///             .same_site(SameSite::Strict)
+///             .secure(true),
 ///     );
 ///
 ///     Ok(response)
@@ -213,7 +225,7 @@ impl Cookies {
         Default::default()
     }
 
-    /// Allow cookies with the name argument to be parsed from the cookie
+    /// Allow cookies with the name argument to be parsed from the Cookie
     /// header of a request.
     ///
     /// # Example
@@ -230,7 +242,7 @@ impl Cookies {
     }
 
     /// Specify that cookies should be percent-decoded when parsed and percent-
-    /// encoded when serialized to a set-cookie header.
+    /// encoded when serialized as a Set-Cookie header.
     ///
     /// # Example
     ///

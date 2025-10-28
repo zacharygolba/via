@@ -47,10 +47,11 @@ async fn counter(request: Request, next: Next) -> via::Result {
     if response.status().is_success() {
         response.cookies_mut().private_mut(&state.secret).add(
             Cookie::build(("counter", counter.to_string()))
-                .same_site(SameSite::Strict)
                 .http_only(true)
-                .secure(true)
-                .path("/"),
+                .max_age(time::Duration::hours(1))
+                .path("/")
+                .same_site(SameSite::Strict)
+                .secure(true),
         );
     }
 

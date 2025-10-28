@@ -102,6 +102,7 @@ optional = true
 
 [dev-dependencies]
 cookie = { version = "0.18", features = ["percent-encode", "private"] }
+time = { version = "0.3" }
 
 [package.metadata.docs.rs]
 features = ["file", "native-tls", "rustls", "ws"]

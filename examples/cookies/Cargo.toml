@@ -9,6 +9,7 @@ edition = "2024"
 [dependencies]
 cookie = { version = "0.18", features = ["percent-encode", "private"] }
 dotenvy = "0.15.7"
+time = "0.3.44"
 via = { path = "../.." }
 
 [dependencies.tokio]
