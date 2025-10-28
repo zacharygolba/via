@@ -27,12 +27,14 @@ struct SetCookieError;
 /// use via::{App, Cookies, Error, Next, Request, Response, Server};
 ///
 /// async fn greet(request: Request, _: Next) -> via::Result {
+///     use time::Duration;
+///
 ///     // `should_set_name` indicates whether "name" was sourced from the
 ///     // request URI. When false, the "name" cookie should not be modified.
 ///     //
 ///     // `name` is a Cow that contains either the percent-decoded value of
 ///     // the "name" cookie or the percent-decoded value of the "name"
-///     // parameter in the request uri.
+///     // parameter in the request URI.
 ///     let (should_set_name, name) = match request.cookies().get("name") {
 ///         Some(cookie) => (false, cookie.value().into()),
 ///         None => (true, request.param("name").percent_decode().into_result()?),
@@ -46,7 +48,7 @@ struct SetCookieError;
 ///         response.cookies_mut().add(
 ///             Cookie::build(("name", name.into_owned()))
 ///                 .http_only(true)
-///                 .max_age(time::Duration::hours(1))
+///                 .max_age(Duration::hours(1))
 ///                 .path("/")
 ///                 .same_site(SameSite::Strict)
 ///                 .secure(true),
@@ -115,7 +117,9 @@ struct SetCookieError;
 /// - `SameSite=Strict`<br>
 ///   Restricts cookies to same-site requests, mitigating CSRF attacks. If the
 ///   cookie does not need to be shared cross-site, this setting practically
-///   eliminates CSRF risk in modern browsers.
+///   eliminates CSRF risk in modern browsers. However, it prevents
+///   authentication flows that involve redirects from external identity
+///   providers (OAuth, SAML, etc.).
 ///
 /// - `Secure`<br>
 ///   Instructs the client to only include the cookie in requests made using
@@ -139,22 +143,24 @@ struct SetCookieError;
 /// }
 ///
 /// async fn login(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
+///     use time::Duration;
+///
 ///     let (head, body) = request.into_parts();
 ///     let state = head.into_state();
 ///
 ///     let Login { username, password } = body.into_future().await?.parse_json()?;
 ///
 ///     // Insert username and password verification here...
-///     // For now, we'll just assert that password the is not empty.
+///     // For now, we'll just assert that the password is not empty.
 ///     if password.is_empty() {
 ///         via::raise!(401, message = "Invalid username or password.");
 ///     }
 ///
 ///     // Generate a response with no content.
 ///     //
-///     // If we were verifying that that a username with the provided username
-///     // and password exist in a database table, we'd probably respond with
-///     // the matching row as JSON.
+///     // If we were verifying that a user with the provided username and
+///     // password exists in a database table, we'd probably respond with the
+///     // matching row as JSON.
 ///     let mut response = Response::build().status(StatusCode::NO_CONTENT).finish()?;
 ///
 ///     // Add our session cookie that contains the username of the active user
@@ -163,7 +169,7 @@ struct SetCookieError;
 ///     response.cookies_mut().private_mut(&state.secret).add(
 ///         Cookie::build(("unicorn-session", username))
 ///             .http_only(true)
-///             .max_age(time::Duration::hours(1))
+///             .max_age(Duration::hours(1))
 ///             .path("/")
 ///             .same_site(SameSite::Strict)
 ///             .secure(true),
@@ -225,8 +231,11 @@ impl Cookies {
         Default::default()
     }
 
-    /// Allow cookies with the name argument to be parsed from the Cookie
-    /// header of a request.
+    /// Add the provided cookie name to the allow list.
+    ///
+    /// By default, the Cookies middleware ignores cookies with names that are
+    /// not explicitly allowed. This filters out irrelevant cookies and keeps
+    /// the number of cookies in the request and response cookie jars bounded.
     ///
     /// # Example
     ///

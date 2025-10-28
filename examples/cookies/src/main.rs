@@ -19,6 +19,8 @@ struct CookiesExample {
 /// response with a message confirming the operation was successful.
 ///
 async fn counter(request: Request, next: Next) -> via::Result {
+    use time::Duration;
+
     // Clone the state from the request so we can access the secret key after
     // passing ownership of the request to the next middleware.
     //
@@ -48,7 +50,7 @@ async fn counter(request: Request, next: Next) -> via::Result {
         response.cookies_mut().private_mut(&state.secret).add(
             Cookie::build(("counter", counter.to_string()))
                 .http_only(true)
-                .max_age(time::Duration::hours(1))
+                .max_age(Duration::hours(1))
                 .path("/")
                 .same_site(SameSite::Strict)
                 .secure(true),
