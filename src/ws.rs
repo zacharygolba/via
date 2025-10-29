@@ -317,23 +317,6 @@ impl Payload for Message {
         }
     }
 
-    fn parse_json<T>(mut self) -> Result<T, Error>
-    where
-        T: DeserializeOwned,
-    {
-        let detached = match &mut self {
-            Self::Binary(bytes) => bytes.split_to(bytes.len()),
-            Self::Close(None) | Self::Close(Some((_, None))) => Bytes::new(),
-            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => {
-                let bytes = &mut utf8.bytes;
-                bytes.split_to(bytes.len())
-            }
-        };
-
-        // Allocation not required when json is sourced from a ws message.
-        payload::parse_json(detached.as_ref())
-    }
-
     fn into_utf8(self) -> Result<String, Error> {
         match self {
             Self::Binary(bytes) => bytes.into_utf8(),
@@ -352,6 +335,23 @@ impl Payload for Message {
             Self::Close(None) | Self::Close(Some((_, None))) => Default::default(),
             Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => utf8.bytes.into_vec(),
         }
+    }
+
+    fn parse_untagged_json<T>(mut self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        let detached = match &mut self {
+            Self::Binary(bytes) => bytes.split_to(bytes.len()),
+            Self::Close(None) | Self::Close(Some((_, None))) => Bytes::new(),
+            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => {
+                let bytes = &mut utf8.bytes;
+                bytes.split_to(bytes.len())
+            }
+        };
+
+        // Allocation not required when json is sourced from a ws message.
+        payload::parse_json(detached.as_ref())
     }
 }
 
