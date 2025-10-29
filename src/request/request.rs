@@ -317,7 +317,7 @@ impl<State> RequestHead<State> {
             .get(key)
             .map(|value| value.to_str())
             .transpose()
-            .map_err(|error| crate::err!(400, error))
+            .or_else(|error| crate::raise!(400, error))
     }
 
     /// Returns reference to the cookies associated with the request.

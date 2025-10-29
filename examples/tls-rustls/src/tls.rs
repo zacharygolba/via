@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use tokio_rustls::rustls;
-use via::{Error, err};
+use via::{Error, raise};
 
 /// Load the certificate and private key from the file system and use them
 /// to create a rustls::ServerConfig.
@@ -37,5 +37,11 @@ fn load_key(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>, Error> {
 
     rustls_pemfile::private_key(&mut reader)
         .map_err(|error| error.into())
-        .and_then(|option| option.ok_or_else(|| err!(message = "failed to load private key")))
+        .and_then(|option| {
+            let Some(key) = option else {
+                raise!(message = "failed to load private key");
+            };
+
+            Ok(key)
+        })
 }
