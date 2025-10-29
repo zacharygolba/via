@@ -162,9 +162,10 @@ where
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
         let duration = self.duration;
         let or_else = self.or_else.clone();
+        let future = next.call(request);
 
         Box::pin(async move {
-            if let Ok(result) = time::timeout(duration, next.call(request)).await {
+            if let Ok(result) = time::timeout(duration, future).await {
                 return result;
             }
 
