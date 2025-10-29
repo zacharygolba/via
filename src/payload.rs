@@ -11,34 +11,6 @@ pub trait Payload: Sized {
     ///
     fn copy_to_bytes(self) -> Bytes;
 
-    /// Deserialize type `T` as JSON from the bytes in self.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use bytes::Bytes;
-    /// # use serde::Deserialize;
-    /// # use via::Payload;
-    /// #
-    /// #[derive(Deserialize)]
-    /// struct Cat {
-    ///     name: String,
-    /// }
-    ///
-    /// let mut payload = Bytes::copy_from_slice(b"{\"name\":\"Ciro\"}");
-    /// let cat = payload.parse_json::<Cat>().expect("invalid payload");
-    ///
-    /// println!("Meow, {}!", cat.name);
-    /// // => Meow, Ciro!
-    /// ```
-    ///
-    fn parse_json<T>(self) -> Result<T, Error>
-    where
-        T: DeserializeOwned,
-    {
-        parse_json(&self.copy_to_bytes())
-    }
-
     /// Deserialize and extract `T` as JSON from the top-level data field of
     /// the object contained by the bytes in self.
     ///
@@ -60,7 +32,8 @@ pub trait Payload: Sized {
     /// println!("Meow, {}!", cat.name);
     /// // => Meow, Ciro!
     /// ```
-    fn parse_json_data<T>(self) -> Result<T, Error>
+    ///
+    fn parse_json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
@@ -69,7 +42,35 @@ pub trait Payload: Sized {
             data: D,
         }
 
-        self.parse_json().map(|Json { data }| data)
+        self.parse_json_untagged().map(|Json { data }| data)
+    }
+
+    /// Deserialize type `T` as JSON from the bytes in self.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use bytes::Bytes;
+    /// # use serde::Deserialize;
+    /// # use via::Payload;
+    /// #
+    /// #[derive(Deserialize)]
+    /// struct Cat {
+    ///     name: String,
+    /// }
+    ///
+    /// let mut payload = Bytes::copy_from_slice(b"{\"name\":\"Ciro\"}");
+    /// let cat = payload.parse_json_untagged::<Cat>().expect("invalid payload");
+    ///
+    /// println!("Meow, {}!", cat.name);
+    /// // => Meow, Ciro!
+    /// ```
+    ///
+    fn parse_json_untagged<T>(self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        parse_json(&self.copy_to_bytes())
     }
 
     /// Copy the bytes in self into an owned, contiguous `String`.

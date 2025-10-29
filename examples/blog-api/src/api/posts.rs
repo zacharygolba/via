@@ -20,7 +20,7 @@ pub async fn create(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result 
     let (head, body) = request.into_parts();
     let state = head.into_state();
 
-    let post_params = body.into_future().await?.parse_json_data::<NewPost>()?;
+    let post_params = body.into_future().await?.parse_json::<NewPost>()?;
     let new_post = post_params.insert(&state.pool).await?;
 
     Response::build()
@@ -42,7 +42,7 @@ pub async fn update(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result 
     let (head, body) = request.into_parts();
     let state = head.into_state();
 
-    let change_set = body.into_future().await?.parse_json_data::<ChangeSet>()?;
+    let change_set = body.into_future().await?.parse_json::<ChangeSet>()?;
     let updated_post = change_set.apply(&state.pool, id).await?;
 
     Response::build().json(&updated_post)
