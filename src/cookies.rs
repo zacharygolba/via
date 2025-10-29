@@ -149,11 +149,11 @@ struct SetCookieError;
 ///     let (head, body) = request.into_parts();
 ///     let state = head.into_state();
 ///
-///     let Login { username, password } = body.into_future().await?.parse_json()?;
+///     let params = body.into_future().await?.serde_json::<Login>()?;
 ///
 ///     // Insert username and password verification here...
 ///     // For now, we'll just assert that the password is not empty.
-///     if password.is_empty() {
+///     if params.password.is_empty() {
 ///         via::raise!(401, message = "Invalid username or password.");
 ///     }
 ///
@@ -168,7 +168,7 @@ struct SetCookieError;
 ///     // to our private cookie jar. The value of the cookie will be signed
 ///     // and encrypted before it is included as a set-cookie header.
 ///     response.cookies_mut().private_mut(&state.secret).add(
-///         Cookie::build(("unicorn-session", username))
+///         Cookie::build(("via-session", params.username))
 ///             .http_only(true)
 ///             .max_age(Duration::hours(1))
 ///             .path("/")
@@ -189,7 +189,7 @@ struct SetCookieError;
 ///     });
 ///
 ///     // Unencoded cookie support.
-///     app.middleware(Cookies::new().allow("unicorn-session"));
+///     app.middleware(Cookies::new().allow("via-session"));
 ///
 ///     // Add our login route to our application.
 ///     app.route("/auth/login").respond(via::post(login));

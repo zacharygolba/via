@@ -11,6 +11,22 @@ pub trait Payload: Sized {
     ///
     fn copy_to_bytes(self) -> Bytes;
 
+    /// Copy the bytes in self into an owned, contiguous `String`.
+    ///
+    /// # Errors
+    ///
+    /// If the payload is not valid `UTF-8`.
+    ///
+    fn into_utf8(self) -> Result<String, Error> {
+        String::from_utf8(self.into_vec()).or_else(|error| raise!(400, error))
+    }
+
+    /// Copy the bytes in self into a contiguous `Vec<u8>`.
+    ///
+    fn into_vec(self) -> Vec<u8> {
+        self.copy_to_bytes().into()
+    }
+
     /// Deserialize and extract `T` as JSON from the top-level data field of
     /// the object contained by the bytes in self.
     ///
@@ -27,13 +43,13 @@ pub trait Payload: Sized {
     /// }
     ///
     /// let mut payload = Bytes::copy_from_slice(b"{\"data\":{\"name\":\"Ciro\"}}");
-    /// let cat = payload.parse_json::<Cat>().expect("invalid payload");
+    /// let cat = payload.serde_json::<Cat>().expect("invalid payload");
     ///
     /// println!("Meow, {}!", cat.name);
     /// // => Meow, Ciro!
     /// ```
     ///
-    fn parse_json<T>(self) -> Result<T, Error>
+    fn serde_json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
@@ -42,7 +58,7 @@ pub trait Payload: Sized {
             data: D,
         }
 
-        self.parse_untagged_json().map(|Json { data }| data)
+        self.serde_json_untagged().map(|Json { data }| data)
     }
 
     /// Deserialize type `T` as JSON from the bytes in self.
@@ -69,38 +85,22 @@ pub trait Payload: Sized {
     /// }
     ///
     /// let mut payload = Bytes::copy_from_slice(b"{\"name\":\"Ciro\"}");
-    /// let cat = payload.parse_untagged_json::<Cat>().expect("invalid payload");
+    /// let cat = payload.serde_json_untagged::<Cat>().expect("invalid payload");
     ///
     /// println!("Meow, {}!", cat.name);
     /// // => Meow, Ciro!
     /// ```
     ///
-    fn parse_untagged_json<T>(self) -> Result<T, Error>
+    fn serde_json_untagged<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        parse_json(&self.copy_to_bytes())
-    }
-
-    /// Copy the bytes in self into an owned, contiguous `String`.
-    ///
-    /// # Errors
-    ///
-    /// If the payload is not valid `UTF-8`.
-    ///
-    fn into_utf8(self) -> Result<String, Error> {
-        String::from_utf8(self.into_vec()).or_else(|error| raise!(400, error))
-    }
-
-    /// Copy the bytes in self into a contiguous `Vec<u8>`.
-    ///
-    fn into_vec(self) -> Vec<u8> {
-        self.copy_to_bytes().into()
+        deserialize_json(&self.copy_to_bytes())
     }
 }
 
 #[inline]
-pub fn parse_json<T>(slice: &[u8]) -> Result<T, Error>
+pub fn deserialize_json<T>(slice: &[u8]) -> Result<T, Error>
 where
     T: DeserializeOwned,
 {
