@@ -61,7 +61,7 @@ pub use allow::{Allow, connect, delete, get, head, options, patch, post, put, tr
 pub use app::{App, Route};
 pub use cookies::Cookies;
 pub use error::Error;
-pub use middleware::{Middleware, Result};
+pub use middleware::{BoxFuture, Middleware, Result};
 pub use next::Next;
 pub use payload::Payload;
 pub use request::Request;
