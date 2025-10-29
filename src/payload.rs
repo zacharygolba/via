@@ -47,6 +47,15 @@ pub trait Payload: Sized {
 
     /// Deserialize type `T` as JSON from the bytes in self.
     ///
+    /// The `_untagged` suffix comes from the container or variant attribute
+    /// that can be used when deriving `Deserialize` for an enum with the
+    /// `serde` crate.
+    ///
+    /// For additional context as to what a "tag" means and it's releationship
+    /// to deserializing JSON, consider reading the following section on enum
+    /// representations in the serde docs:
+    /// https://serde.rs/enum-representations.html
+    ///
     /// # Example
     ///
     /// ```
