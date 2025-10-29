@@ -1,6 +1,7 @@
 use http::StatusCode;
 use std::borrow::Cow;
 use std::fmt::{self, Display, Formatter};
+use std::sync::Arc;
 
 use crate::error::{Error, Errors};
 use crate::middleware::{BoxFuture, Middleware};
@@ -10,7 +11,7 @@ use crate::{Next, Request};
 /// Recover from errors that occur in downstream middleware.
 ///
 pub struct Rescue<F> {
-    recover: F,
+    recover: Arc<F>,
 }
 
 /// Customize how an [`Error`] is converted to a response.
@@ -24,27 +25,30 @@ pub struct Sanitizer<'a> {
 
 impl<F> Rescue<F>
 where
-    F: Fn(&mut Sanitizer) + Copy + Send + Sync + 'static,
+    F: Fn(&mut Sanitizer) + Send + Sync,
 {
     pub fn with(recover: F) -> Self {
-        Self { recover }
+        Self {
+            recover: Arc::new(recover),
+        }
     }
 }
 
 impl<State, F> Middleware<State> for Rescue<F>
 where
     State: Send + Sync + 'static,
-    F: Fn(&mut Sanitizer) + Copy + Send + Sync + 'static,
+    F: Fn(&mut Sanitizer) + Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
-        let Self { recover } = *self;
+        let recover = Arc::clone(&self.recover);
+        let future = next.call(request);
 
         Box::pin(async move {
-            next.call(request).await.or_else(|error| {
-                let response = Response::build();
+            future.await.or_else(|error| {
                 let mut sanitizer = Sanitizer::new(&error);
-
                 recover(&mut sanitizer);
+
+                let response = Response::build();
                 sanitizer.finalize(response).or_else(|residual| {
                     if cfg!(debug_assertions) {
                         eprintln!("warn: a residual error occurred in rescue");
