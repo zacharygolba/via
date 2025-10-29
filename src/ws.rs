@@ -337,7 +337,7 @@ impl Payload for Message {
         }
     }
 
-    fn parse_json_untagged<T>(mut self) -> Result<T, Error>
+    fn parse_untagged_json<T>(mut self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {

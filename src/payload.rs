@@ -42,14 +42,14 @@ pub trait Payload: Sized {
             data: D,
         }
 
-        self.parse_json_untagged().map(|Json { data }| data)
+        self.parse_untagged_json().map(|Json { data }| data)
     }
 
     /// Deserialize type `T` as JSON from the bytes in self.
     ///
-    /// The `_untagged` suffix comes from the container or variant attribute
-    /// that can be used when deriving `Deserialize` for an enum with the
-    /// `serde` crate.
+    /// The name "untagged" comes is inspired by the container or variant
+    /// attribute of the same name that can be used when deriving `Deserialize`
+    /// for an enum with the `serde` crate.
     ///
     /// For additional context as to what a "tag" means and it's releationship
     /// to deserializing JSON, consider reading the following section on enum
@@ -75,7 +75,7 @@ pub trait Payload: Sized {
     /// // => Meow, Ciro!
     /// ```
     ///
-    fn parse_json_untagged<T>(self) -> Result<T, Error>
+    fn parse_untagged_json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
