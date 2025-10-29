@@ -64,17 +64,19 @@ pub fn parse_json<T>(slice: &[u8]) -> Result<T, Error>
 where
     T: DeserializeOwned,
 {
+    use serde_json::value::{Map, Value};
+    use serde_json::{from_slice, from_value};
+
     #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum JsonPayload<T> {
-        Tagged { data: T },
-        Untagged(T),
+    struct Json<D> {
+        data: Option<D>,
+        #[serde(flatten)]
+        rest: Map<String, Value>,
     }
 
-    match serde_json::from_slice(slice) {
-        Ok(JsonPayload::Tagged { data } | JsonPayload::Untagged(data)) => Ok(data),
-        Err(error) => raise!(400, error),
-    }
+    from_slice(slice)
+        .and_then(|Json { data, rest }| data.map_or_else(|| from_value(rest.into()), Ok))
+        .or_else(|error| raise!(400, error))
 }
 
 impl Payload for Bytes {
