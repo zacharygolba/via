@@ -15,7 +15,7 @@ pub async fn create(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result 
     let (head, body) = request.into_parts();
     let state = head.into_state();
 
-    let user_params = body.into_future().await?.parse_json::<NewUser>()?;
+    let user_params = body.into_future().await?.deserialize_json::<NewUser>()?;
     let new_user = user_params.insert(&state.pool).await?;
 
     Response::build()
@@ -37,7 +37,7 @@ pub async fn update(request: Request<BlogApi>, _: Next<BlogApi>) -> via::Result 
     let (head, body) = request.into_parts();
     let state = head.into_state();
 
-    let change_set = body.into_future().await?.parse_json::<ChangeSet>()?;
+    let change_set = body.into_future().await?.deserialize_json::<ChangeSet>()?;
     let updated_user = change_set.apply(&state.pool, id).await?;
 
     Response::build().json(&updated_user)

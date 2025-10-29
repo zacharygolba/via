@@ -337,7 +337,7 @@ impl Payload for Message {
         }
     }
 
-    fn parse_untagged_json<T>(mut self) -> Result<T, Error>
+    fn deserialize_untagged_json<T>(mut self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
@@ -351,7 +351,7 @@ impl Payload for Message {
         };
 
         // Allocation not required when json is sourced from a ws message.
-        payload::parse_json(detached.as_ref())
+        payload::deserialize_json(detached.as_ref())
     }
 }
 

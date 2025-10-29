@@ -27,13 +27,13 @@ pub trait Payload: Sized {
     /// }
     ///
     /// let mut payload = Bytes::copy_from_slice(b"{\"data\":{\"name\":\"Ciro\"}}");
-    /// let cat = payload.parse_json::<Cat>().expect("invalid payload");
+    /// let cat = payload.deserialize_json::<Cat>().expect("invalid payload");
     ///
     /// println!("Meow, {}!", cat.name);
     /// // => Meow, Ciro!
     /// ```
     ///
-    fn parse_json<T>(self) -> Result<T, Error>
+    fn deserialize_json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
@@ -42,7 +42,7 @@ pub trait Payload: Sized {
             data: D,
         }
 
-        self.parse_untagged_json().map(|Json { data }| data)
+        self.deserialize_untagged_json().map(|Json { data }| data)
     }
 
     /// Deserialize type `T` as JSON from the bytes in self.
@@ -69,17 +69,17 @@ pub trait Payload: Sized {
     /// }
     ///
     /// let mut payload = Bytes::copy_from_slice(b"{\"name\":\"Ciro\"}");
-    /// let cat = payload.parse_untagged_json::<Cat>().expect("invalid payload");
+    /// let cat = payload.deserialize_untagged_json::<Cat>().expect("invalid payload");
     ///
     /// println!("Meow, {}!", cat.name);
     /// // => Meow, Ciro!
     /// ```
     ///
-    fn parse_untagged_json<T>(self) -> Result<T, Error>
+    fn deserialize_untagged_json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        parse_json(&self.copy_to_bytes())
+        deserialize_json(&self.copy_to_bytes())
     }
 
     /// Copy the bytes in self into an owned, contiguous `String`.
@@ -100,7 +100,7 @@ pub trait Payload: Sized {
 }
 
 #[inline]
-pub fn parse_json<T>(slice: &[u8]) -> Result<T, Error>
+pub fn deserialize_json<T>(slice: &[u8]) -> Result<T, Error>
 where
     T: DeserializeOwned,
 {
