@@ -149,7 +149,7 @@ struct SetCookieError;
 ///     let (head, body) = request.into_parts();
 ///     let state = head.into_state();
 ///
-///     let Login { username, password } = body.into_future().await?.parse_json_data()?;
+///     let Login { username, password } = body.into_future().await?.parse_json()?;
 ///
 ///     // Insert username and password verification here...
 ///     // For now, we'll just assert that the password is not empty.
