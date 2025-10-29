@@ -54,7 +54,7 @@ pub trait Payload: Sized {
     /// For additional context as to what a "tag" means and it's releationship
     /// to deserializing JSON, consider reading the following section on enum
     /// representations in the serde docs:
-    /// https://serde.rs/enum-representations.html
+    /// <https://serde.rs/enum-representations.html>
     ///
     /// # Example
     ///
