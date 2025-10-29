@@ -2,8 +2,7 @@ use bytes::{Bytes, BytesMut};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use crate::error::Error;
-use crate::{err, raise};
+use crate::{Error, raise};
 
 /// Interact with data received from a client.
 ///
@@ -12,10 +11,36 @@ pub trait Payload: Sized {
     ///
     fn copy_to_bytes(self) -> Bytes;
 
-    /// Deserialize the payload as an instance of type `T`.
+    /// Deserialize type `T` as JSON from the bytes in self.
     ///
-    /// If type `T` is in a top-level data field of the JSON object located at
-    /// the root of the payload, it is automatically resolved.
+    /// # Example
+    ///
+    /// ```
+    /// # use bytes::Bytes;
+    /// # use serde::Deserialize;
+    /// # use via::Payload;
+    /// #
+    /// #[derive(Deserialize)]
+    /// struct Cat {
+    ///     name: String,
+    /// }
+    ///
+    /// let mut payload = Bytes::copy_from_slice(b"{\"name\":\"Ciro\"}");
+    /// let cat = payload.parse_json::<Cat>().expect("invalid payload");
+    ///
+    /// println!("Meow, {}!", cat.name);
+    /// // => Meow, Ciro!
+    /// ```
+    ///
+    fn parse_json<T>(self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        parse_json(&self.copy_to_bytes())
+    }
+
+    /// Deserialize and extract `T` as JSON from the top-level data field of
+    /// the object contained by the bytes in self.
     ///
     /// # Example
     ///
@@ -30,17 +55,21 @@ pub trait Payload: Sized {
     /// }
     ///
     /// let mut payload = Bytes::copy_from_slice(b"{\"data\":{\"name\":\"Ciro\"}}");
-    /// let cat = payload.parse_json::<Cat>().expect("invalid payload");
+    /// let cat = payload.parse_json_data::<Cat>().expect("invalid payload");
     ///
     /// println!("Meow, {}!", cat.name);
     /// // => Meow, Ciro!
     /// ```
-    ///
-    fn parse_json<T>(self) -> Result<T, Error>
+    fn parse_json_data<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        parse_json(&self.copy_to_bytes())
+        #[derive(Deserialize)]
+        struct Json<D> {
+            data: D,
+        }
+
+        self.parse_json().map(|Json { data }| data)
     }
 
     /// Copy the bytes in self into an owned, contiguous `String`.
@@ -50,7 +79,7 @@ pub trait Payload: Sized {
     /// If the payload is not valid `UTF-8`.
     ///
     fn into_utf8(self) -> Result<String, Error> {
-        String::from_utf8(self.into_vec()).map_err(|error| err!(400, error))
+        String::from_utf8(self.into_vec()).or_else(|error| raise!(400, error))
     }
 
     /// Copy the bytes in self into a contiguous `Vec<u8>`.
@@ -60,21 +89,12 @@ pub trait Payload: Sized {
     }
 }
 
+#[inline]
 pub fn parse_json<T>(slice: &[u8]) -> Result<T, Error>
 where
     T: DeserializeOwned,
 {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum JsonPayload<T> {
-        Tagged { data: T },
-        Untagged(T),
-    }
-
-    match serde_json::from_slice(slice) {
-        Ok(JsonPayload::Tagged { data } | JsonPayload::Untagged(data)) => Ok(data),
-        Err(error) => raise!(400, error),
-    }
+    serde_json::from_slice(slice).or_else(|error| raise!(400, error))
 }
 
 impl Payload for Bytes {
