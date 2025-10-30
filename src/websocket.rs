@@ -201,7 +201,7 @@ fn gen_accept_key(key: &[u8]) -> String {
 }
 
 impl Channel {
-    pub async fn send(&self, message: impl Into<Message>) -> Result<(), Error> {
+    pub async fn send(&mut self, message: impl Into<Message>) -> Result<(), Error> {
         if self.sender.send(message.into()).await.is_err() {
             Err(tokio_websockets::Error::AlreadyClosed.into())
         } else {
