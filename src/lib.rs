@@ -45,7 +45,7 @@ pub mod request;
 pub mod response;
 
 #[cfg(feature = "ws")]
-pub mod ws;
+pub mod websocket;
 
 mod allow;
 mod app;
@@ -71,4 +71,4 @@ pub use timeout::Timeout;
 
 #[cfg(feature = "ws")]
 #[doc(inline)]
-pub use ws::ws;
+pub use websocket::websocket;

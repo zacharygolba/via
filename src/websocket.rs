@@ -6,7 +6,6 @@ use futures_util::{SinkExt, StreamExt};
 use http::{StatusCode, header};
 use hyper_util::rt::TokioIo;
 use serde::de::DeserializeOwned;
-use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_websockets::proto::ProtocolError;
@@ -23,6 +22,7 @@ use crate::error::Error;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
 use crate::payload::{self, Payload};
+use crate::raise;
 use crate::request::{OwnedPathParams, PathParam, QueryParam, Request};
 use crate::response::Response;
 
@@ -31,15 +31,12 @@ pub use tokio_websockets::CloseCode;
 const DEFAULT_FRAME_SIZE: usize = 16 * 1024; // 16KB
 const GUID: &[u8] = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-type OnUpgrade<State> =
-    dyn Fn(Channel, Context<State>) -> BoxFuture<Result<(), Error>> + Send + Sync;
-
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Message {
     Binary(Bytes),
-    Close(Option<(CloseCode, Option<ValidUtf8>)>),
-    Text(ValidUtf8),
+    Close(Option<(CloseCode, Option<ByteString>)>),
+    Text(ByteString),
 }
 
 pub struct Channel {
@@ -52,16 +49,16 @@ pub struct Context<State = ()> {
     state: Arc<State>,
 }
 
-pub struct Upgrade<State> {
+pub struct Upgrade<F> {
+    config: StreamConfig,
+    on_upgrade: Arc<F>,
+}
+
+#[derive(Clone)]
+struct StreamConfig {
     max_payload_size: Option<usize>,
     flush_threshold: usize,
     frame_size: usize,
-    on_upgrade: Arc<OnUpgrade<State>>,
-}
-
-#[derive(Debug)]
-pub struct ValidUtf8 {
-    bytes: Bytes,
 }
 
 /// Upgrade the connection to a web socket.
@@ -102,16 +99,14 @@ pub struct ValidUtf8 {
 /// }
 ///```
 ///
-pub fn ws<State, F, R>(upgraded: F) -> Upgrade<State>
+pub fn websocket<State, F, R>(upgraded: F) -> Upgrade<F>
 where
     F: Fn(Channel, Context<State>) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Error>> + Send + Sync + 'static,
 {
     Upgrade {
-        frame_size: DEFAULT_FRAME_SIZE,
-        flush_threshold: DEFAULT_FRAME_SIZE,
-        max_payload_size: Some(DEFAULT_FRAME_SIZE),
-        on_upgrade: Arc::new(move |socket, request| Box::pin(upgraded(socket, request))),
+        config: StreamConfig::default(),
+        on_upgrade: Arc::new(upgraded),
     }
 }
 
@@ -121,38 +116,53 @@ fn handle_error(error: &(dyn std::error::Error + 'static)) {
     }
 }
 
-async fn handle_upgrade<T>(
-    mut can_upgrade: http::Request<()>,
-    stream_builder: Builder,
-    on_upgrade: Arc<OnUpgrade<T>>,
-    context: Context<T>,
-) {
-    let stream = match hyper::upgrade::on(&mut can_upgrade).await {
-        Ok(io) => stream_builder.serve(TokioIo::new(io)),
-        Err(error) => return handle_error(&error),
+async fn start<State, F, R>(trx: Arc<F>, config: StreamConfig, request: Request<State>)
+where
+    F: Fn(Channel, Context<State>) -> R + Send + Sync + 'static,
+    R: Future<Output = Result<(), Error>> + Send,
+{
+    let (stream, context) = {
+        let path_and_query = request.uri().path_and_query().cloned();
+        let (head, _) = request.into_parts();
+        let context = Context {
+            params: OwnedPathParams::new(path_and_query, head.params),
+            state: head.state,
+        };
+
+        let mut request = http::Request::from_parts(head.parts, ());
+        let stream = match hyper::upgrade::on(&mut request).await {
+            Ok(io) => config.apply(Builder::new()).serve(TokioIo::new(io)),
+            Err(error) => return handle_error(&error),
+        };
+
+        (stream, context)
     };
 
     tokio::pin!(stream);
 
     let result = 'session: loop {
-        let (sender, mut rx) = mpsc::channel(128);
-        let (tx, receiver) = mpsc::channel(128);
-        let mut future = on_upgrade(Channel { sender, receiver }, context.clone());
+        let (sender, mut rx) = mpsc::channel(1);
+        let (tx, receiver) = mpsc::channel(1);
+        let mut future = Box::pin(trx(Channel { sender, receiver }, context.clone()));
 
         loop {
             let error_opt = tokio::select! {
                 Some(message) = rx.recv() => stream.send(message.into()).await.err(),
                 Some(result) = stream.next() => match result {
-                    Ok(next) if next.is_ping() || next.is_pong() => continue,
-
                     Err(error) => Some(error),
-                    Ok(next) => match next.try_into() {
-                        Err(error) => Some(error),
-                        Ok(message) => {
-                            let _ = tx.send(message).await;
-                            None
+                    Ok(next) => {
+                        if next.is_ping() || next.is_pong() {
+                            continue;
                         }
-                    },
+
+                        match next.try_into() {
+                            Err(error) => Some(error),
+                            Ok(message) => {
+                                let _ = tx.send(message).await;
+                                None
+                            }
+                        }
+                    }
                 },
                 result = future.as_mut() => {
                     if let Err(error) = result {
@@ -181,35 +191,13 @@ async fn handle_upgrade<T>(
     }
 }
 
-fn validate_accept_key<T>(request: &Request<T>) -> Result<String, crate::Error> {
+fn gen_accept_key(key: &[u8]) -> String {
     let mut hasher = Hasher::new(&SHA1_FOR_LEGACY_USE_ONLY);
-    let Some(accept_key) = request.header(&header::SEC_WEBSOCKET_KEY)? else {
-        crate::raise!(
-            400,
-            message = "Missing required header: \"Sec-Websocket-Key\"."
-        )
-    };
 
-    hasher.update(accept_key.as_bytes());
+    hasher.update(key);
     hasher.update(GUID);
 
-    Ok(base64_engine.encode(hasher.finish()))
-}
-
-#[inline]
-fn validate_utf8(bytes: Bytes) -> Result<ValidUtf8, ProtocolError> {
-    if str::from_utf8(bytes.as_ref()).is_ok() {
-        Ok(ValidUtf8 { bytes })
-    } else {
-        Err(ProtocolError::InvalidUtf8)
-    }
-}
-
-fn validate_websocket_version<T>(request: &Request<T>) -> Result<(), crate::Error> {
-    match request.header(header::SEC_WEBSOCKET_VERSION)? {
-        Some("13") => Ok(()),
-        Some(_) | None => crate::raise!(400, message = "Unsupported websocket version."),
-    }
+    base64_engine.encode(hasher.finish())
 }
 
 impl Channel {
@@ -228,13 +216,13 @@ impl Channel {
 
 impl<State> Context<State> {
     #[inline]
-    pub fn path(&self) -> &str {
-        self.params.path()
+    pub fn into_state(self) -> Arc<State> {
+        self.state
     }
 
     #[inline]
-    pub fn state(&self) -> &State {
-        &self.state
+    pub fn path(&self) -> &str {
+        self.params.path()
     }
 
     #[inline]
@@ -268,9 +256,7 @@ impl From<Bytes> for Message {
 impl From<ByteString> for Message {
     #[inline]
     fn from(data: ByteString) -> Self {
-        Self::Text(ValidUtf8 {
-            bytes: data.into_bytes(),
-        })
+        Self::Text(data)
     }
 }
 
@@ -291,18 +277,14 @@ impl From<&'_ [u8]> for Message {
 impl From<String> for Message {
     #[inline]
     fn from(data: String) -> Self {
-        Self::Text(ValidUtf8 {
-            bytes: Bytes::from(data),
-        })
+        ByteString::from(data).into()
     }
 }
 
 impl From<&'_ str> for Message {
     #[inline]
     fn from(data: &'_ str) -> Self {
-        Self::Text(ValidUtf8 {
-            bytes: Bytes::copy_from_slice(data.as_bytes()),
-        })
+        ByteString::from(data).into()
     }
 }
 
@@ -312,7 +294,7 @@ impl Payload for Message {
             Self::Binary(bytes) => Payload::copy_to_bytes(bytes),
             Self::Close(None) | Self::Close(Some((_, None))) => Default::default(),
             Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => {
-                Payload::copy_to_bytes(utf8.bytes)
+                Payload::copy_to_bytes(utf8.into_bytes())
             }
         }
     }
@@ -322,7 +304,7 @@ impl Payload for Message {
             Self::Binary(bytes) => bytes.into_utf8(),
             Self::Close(None) | Self::Close(Some((_, None))) => Ok(Default::default()),
             Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => {
-                let vec = utf8.bytes.into_vec();
+                let vec = utf8.into_bytes().into_vec();
                 // Safety: ValidUtf8 is only constructed from valid UTF-8 byte sequences.
                 unsafe { Ok(String::from_utf8_unchecked(vec)) }
             }
@@ -333,19 +315,19 @@ impl Payload for Message {
         match self {
             Self::Binary(bytes) => bytes.into_vec(),
             Self::Close(None) | Self::Close(Some((_, None))) => Default::default(),
-            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => utf8.bytes.into_vec(),
+            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => utf8.into_bytes().into_vec(),
         }
     }
 
-    fn serde_json_untagged<T>(mut self) -> Result<T, Error>
+    fn serde_json_untagged<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        let detached = match &mut self {
-            Self::Binary(bytes) => bytes.split_to(bytes.len()),
+        let detached = match self {
+            Self::Binary(mut bytes) => bytes.split_to(bytes.len()),
             Self::Close(None) | Self::Close(Some((_, None))) => Bytes::new(),
             Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => {
-                let bytes = &mut utf8.bytes;
+                let mut bytes = utf8.into_bytes();
                 bytes.split_to(bytes.len())
             }
         };
@@ -367,7 +349,8 @@ impl TryFrom<tokio_websockets::Message> for Message {
         if is_binary {
             Ok(Self::Binary(bytes))
         } else if is_text {
-            Ok(Self::Text(validate_utf8(bytes)?))
+            let utf8 = bytes.try_into().or(Err(ProtocolError::InvalidUtf8))?;
+            Ok(Self::Text(utf8))
         } else {
             // Continuation, Ping, and Pong messages are handled by
             // tokio_websockets. The message opcode must be close.
@@ -385,7 +368,7 @@ impl TryFrom<tokio_websockets::Message> for Message {
                     Ok(if bytes.remaining() == 0 {
                         Self::Close(Some((code, None)))
                     } else {
-                        let reason = validate_utf8(bytes)?;
+                        let reason = bytes.try_into().or(Err(ProtocolError::InvalidUtf8))?;
                         Self::Close(Some((code, Some(reason))))
                     })
                 }
@@ -399,12 +382,34 @@ impl From<Message> for tokio_websockets::Message {
     fn from(message: Message) -> Self {
         match message {
             Message::Binary(binary) => Self::binary(binary),
-            Message::Text(text) => Self::text(text.bytes),
+            Message::Text(text) => Self::text(text.into_bytes()),
 
             Message::Close(None) => Self::close(None, ""),
             Message::Close(Some((code, reason))) => {
                 Self::close(Some(code), reason.as_deref().unwrap_or_default())
             }
+        }
+    }
+}
+
+impl StreamConfig {
+    fn apply(self, builder: Builder) -> Builder {
+        builder
+            .limits(Limits::default().max_payload_len(self.max_payload_size))
+            .config(
+                Config::default()
+                    .frame_size(self.frame_size)
+                    .flush_threshold(self.flush_threshold),
+            )
+    }
+}
+
+impl Default for StreamConfig {
+    fn default() -> Self {
+        Self {
+            frame_size: DEFAULT_FRAME_SIZE,
+            flush_threshold: DEFAULT_FRAME_SIZE,
+            max_payload_size: Some(DEFAULT_FRAME_SIZE),
         }
     }
 }
@@ -415,7 +420,7 @@ impl<State> Upgrade<State> {
     /// **Default:** `16 KB`
     ///
     pub fn flush_threshold(mut self, flush_threshold: usize) -> Self {
-        self.flush_threshold = flush_threshold;
+        self.config.flush_threshold = flush_threshold;
         self
     }
 
@@ -424,7 +429,7 @@ impl<State> Upgrade<State> {
     /// **Default:** `16 KB`
     ///
     pub fn frame_size(mut self, frame_size: usize) -> Self {
-        self.frame_size = frame_size;
+        self.config.frame_size = frame_size;
         self
     }
 
@@ -433,73 +438,59 @@ impl<State> Upgrade<State> {
     /// **Default:** `16 KB`
     ///
     pub fn max_payload_size(mut self, max_payload_size: Option<usize>) -> Self {
-        self.max_payload_size = max_payload_size;
+        self.config.max_payload_size = max_payload_size;
         self
     }
 }
 
-impl<State> Upgrade<State> {
-    fn stream_builder(&self) -> Builder {
-        Builder::new()
-            .limits(Limits::default().max_payload_len(self.max_payload_size))
-            .config(
-                Config::default()
-                    .flush_threshold(self.flush_threshold)
-                    .frame_size(self.frame_size),
-            )
-    }
-}
-
-impl<State> Middleware<State> for Upgrade<State>
+impl<State, F, R> Middleware<State> for Upgrade<F>
 where
     State: Send + Sync + 'static,
+    F: Fn(Channel, Context<State>) -> R + Send + Sync + 'static,
+    R: Future<Output = Result<(), Error>> + Send + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
-        match request.header(header::UPGRADE) {
-            Ok(Some("websocket")) => {}
-            Err(error) => return Box::pin(async { Err(error) }),
-            Ok(_) => return next.call(request),
-        }
-
-        if let Err(error) = validate_websocket_version(&request) {
-            return Box::pin(async { Err(error) });
-        }
-
-        let accept_key = match validate_accept_key(&request) {
-            Ok(valid_key) => valid_key,
-            Err(error) => return Box::pin(async { Err(error) }),
+        let upgrade = match request.headers().get(header::UPGRADE) {
+            Some(value) if value == "websocket" => value.clone(),
+            _ => return next.call(request),
         };
 
-        let (head, _) = request.into_parts();
-        let context = Context {
-            params: OwnedPathParams::new(head.uri().path_and_query().cloned(), head.params),
-            state: head.state,
+        match request.header(header::SEC_WEBSOCKET_VERSION) {
+            Ok(Some("13")) => {}
+            Err(error) => return Box::pin(async { Err(error) }),
+            Ok(_) => {
+                return Box::pin(async {
+                    raise!(
+                        400,
+                        message = "sec-websocket-version header must be \"13\"."
+                    )
+                });
+            }
+        }
+
+        let accept = match request.header(header::SEC_WEBSOCKET_KEY) {
+            Ok(Some(key)) => gen_accept_key(key.as_bytes()),
+            Err(error) => return Box::pin(async { Err(error) }),
+            Ok(None) => {
+                return Box::pin(async {
+                    raise!(400, message = "missing required header: sec-websocket-key.")
+                });
+            }
         };
 
-        tokio::spawn(handle_upgrade(
-            http::Request::from_parts(head.parts, ()),
-            self.stream_builder(),
+        tokio::spawn(Box::pin(start(
             Arc::clone(&self.on_upgrade),
-            context,
-        ));
+            self.config.clone(),
+            request,
+        )));
 
         Box::pin(async {
             Response::build()
                 .status(StatusCode::SWITCHING_PROTOCOLS)
-                .header(header::CONNECTION, "Upgrade")
-                .header(header::UPGRADE, "websocket")
-                .header(header::SEC_WEBSOCKET_ACCEPT, accept_key)
+                .header(header::CONNECTION, "upgrade")
+                .header(header::SEC_WEBSOCKET_ACCEPT, accept)
+                .header(header::UPGRADE, upgrade)
                 .finish()
         })
-    }
-}
-
-impl Deref for ValidUtf8 {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        let utf8 = self.bytes.as_ref();
-        // Safety: ValidUtf8 is only constructed from valid UTF-8 byte sequences.
-        unsafe { str::from_utf8_unchecked(utf8) }
     }
 }
