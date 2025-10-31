@@ -5,7 +5,10 @@ use bytestring::ByteString;
 use futures_util::{SinkExt, StreamExt};
 use http::{StatusCode, header};
 use hyper_util::rt::TokioIo;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::mem;
+use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_websockets::proto::ProtocolError;
@@ -23,7 +26,7 @@ use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
 use crate::payload::{self, Payload};
 use crate::raise;
-use crate::request::{OwnedPathParams, PathParam, QueryParam, Request};
+use crate::request::{Request, RequestHead};
 use crate::response::Response;
 
 pub use tokio_websockets::CloseCode;
@@ -45,8 +48,7 @@ pub struct Channel {
 }
 
 pub struct Context<State = ()> {
-    params: OwnedPathParams,
-    state: Arc<State>,
+    head: Arc<RequestHead<State>>,
 }
 
 pub struct Upgrade<F> {
@@ -121,21 +123,15 @@ where
     F: Fn(Channel, Context<State>) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Error>> + Send,
 {
-    let (stream, context) = {
-        let path_and_query = request.uri().path_and_query().cloned();
-        let (head, _) = request.into_parts();
-        let context = Context {
-            params: OwnedPathParams::new(path_and_query, head.params),
-            state: head.state,
-        };
+    let (mut head, _) = request.into_parts();
+    let mut request = http::Request::new(());
 
-        let mut request = http::Request::from_parts(head.parts, ());
-        let stream = match hyper::upgrade::on(&mut request).await {
-            Ok(io) => config.apply(Builder::new()).serve(TokioIo::new(io)),
-            Err(error) => return handle_error(&error),
-        };
+    mem::swap(request.extensions_mut(), &mut head.parts.extensions);
 
-        (stream, context)
+    let context = Context::new(head);
+    let stream = match hyper::upgrade::on(request).await {
+        Ok(io) => config.apply(Builder::new()).serve(TokioIo::new(io)),
+        Err(error) => return handle_error(&error),
     };
 
     tokio::pin!(stream);
@@ -215,24 +211,10 @@ impl Channel {
 }
 
 impl<State> Context<State> {
-    #[inline]
-    pub fn into_state(self) -> Arc<State> {
-        self.state
-    }
-
-    #[inline]
-    pub fn path(&self) -> &str {
-        self.params.path()
-    }
-
-    #[inline]
-    pub fn param<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
-        self.params.get(name)
-    }
-
-    #[inline]
-    pub fn query<'b>(&self, name: &'b str) -> QueryParam<'_, 'b> {
-        QueryParam::new(name, self.params.query())
+    fn new(head: RequestHead<State>) -> Self {
+        Self {
+            head: Arc::new(head),
+        }
     }
 }
 
@@ -240,9 +222,23 @@ impl<State> Clone for Context<State> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            state: Arc::clone(&self.state),
-            params: self.params.clone(),
+            head: Arc::clone(&self.head),
         }
+    }
+}
+
+impl<State> Deref for Context<State> {
+    type Target = RequestHead<State>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.head.as_ref()
+    }
+}
+
+impl Message {
+    pub fn json(data: &impl Serialize) -> Result<Self, Error> {
+        Ok(serde_json::to_string(data)?.into())
     }
 }
 

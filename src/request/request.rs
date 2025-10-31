@@ -163,7 +163,7 @@ impl<State> Request<State> {
     ///
     #[inline]
     pub fn state(&self) -> &Arc<State> {
-        self.head.state()
+        &self.head.state
     }
 
     /// Consumes the request returning a new request with body mapped to the
@@ -331,7 +331,7 @@ impl<State> RequestHead<State> {
     /// was passed as an argument to the [`App`](crate::App) constructor.
     ///
     #[inline]
-    pub fn state(&self) -> &Arc<State> {
-        &self.state
+    pub fn state(&self) -> &State {
+        self.state.as_ref()
     }
 }

@@ -7,6 +7,3 @@ pub use path_param::PathParam;
 pub use query_param::QueryParam;
 
 pub(crate) use path_params::PathParams;
-
-#[cfg(feature = "ws")]
-pub(crate) use path_params::OwnedPathParams;
