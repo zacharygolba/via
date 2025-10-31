@@ -1,37 +1,30 @@
 mod chat;
-mod room;
+mod routes;
 
-use http::header;
+use std::env;
 use std::process::ExitCode;
-use via::{App, Error, Response, Server, error::Rescue};
+use via::error::{Error, Rescue};
+use via::{App, Cookies, Server};
 
 use crate::chat::Chat;
 
-const CSP: &str = "default-src 'self'; connect-src 'self'";
-
 #[tokio::main]
 async fn main() -> Result<ExitCode, Error> {
-    let mut app = App::new(Chat::new());
+    dotenvy::dotenv()?;
 
-    app.route("/").to(via::get(async |_, _| {
-        Response::build()
-            .header(header::CONTENT_SECURITY_POLICY, CSP)
-            .text("Chat Example frontend coming soon!")
-    }));
+    let mut app = App::new(Chat::new(
+        env::var("VIA_SECRET_KEY")
+            .map(|secret| secret.as_bytes().try_into())
+            .expect("missing required env var: VIA_SECRET_KEY")
+            .expect("unexpected end of input while parsing VIA_SECRET_KEY"),
+    ));
 
-    // Define the router namespace for our chat API.
-    {
-        let mut room = app.route("/chat/:room");
+    app.middleware(Cookies::new().allow("via-chat-session"));
+    app.middleware(Rescue::with(|sanitizer| sanitizer.use_json()));
 
-        // list all the messages in the room.
-        room.route("/").to(via::get(room::index));
-
-        // websocket to read / write messages.
-        room.route("/join").to(via::ws(room::join));
-
-        // show the message with the provided index.
-        room.route("/:index").to(via::get(room::show));
-    }
+    app.route("/").respond(via::get(routes::home));
+    app.route("/chat").scope(routes::chat);
+    app.route("/login").respond(via::post(routes::login));
 
     Server::new(app).listen(("127.0.0.1", 8080)).await
 }
