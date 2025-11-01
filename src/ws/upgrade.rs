@@ -5,11 +5,12 @@ use http::{HeaderMap, HeaderValue, StatusCode, header};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use std::fmt::{self, Display, Formatter};
-use std::mem::swap;
-use std::ops::ControlFlow::{Break, Continue};
+use std::ops::ControlFlow::{self, Break, Continue};
 use std::ops::Deref;
 use std::sync::Arc;
+use std::{io, mem};
 use tokio::sync::mpsc;
+use tokio_websockets::Error as WebSocketErrorKind;
 use tokio_websockets::server::Builder;
 use tokio_websockets::{Config, Limits, WebSocketStream};
 
@@ -46,7 +47,7 @@ pub struct Upgrade<F> {
 enum ErrorKind {
     App(Error),
     ChannelClosed,
-    WebSocket(tokio_websockets::Error),
+    WebSocket(WebSocketErrorKind),
 }
 
 #[derive(Clone)]
@@ -71,6 +72,19 @@ fn handle_error(error: &impl std::error::Error) {
     }
 }
 
+fn recover_from_ws_error(
+    error: WebSocketErrorKind,
+) -> ControlFlow<Option<ErrorKind>, Option<ErrorKind>> {
+    match &error {
+        WebSocketErrorKind::AlreadyClosed => Break(Some(ErrorKind::WebSocket(error))),
+        WebSocketErrorKind::Io(io) => match io.kind() {
+            io::ErrorKind::BrokenPipe => Break(Some(ErrorKind::WebSocket(error))),
+            _ => Continue(Some(ErrorKind::WebSocket(error))),
+        },
+        _ => Continue(Some(ErrorKind::WebSocket(error))),
+    }
+}
+
 async fn start<State, F, R>(trx: Arc<F>, config: StreamConfig, mut head: RequestHead<State>)
 where
     F: Fn(Channel, Request<State>) -> R + Send + Sync + 'static,
@@ -78,10 +92,10 @@ where
 {
     let stream = {
         let mut request = http::Request::new(());
-        swap(request.extensions_mut(), &mut head.parts.extensions);
+        mem::swap(request.extensions_mut(), &mut head.parts.extensions);
 
         let result = hyper::upgrade::on(&mut request).await;
-        swap(&mut head.parts.extensions, request.extensions_mut());
+        mem::swap(&mut head.parts.extensions, request.extensions_mut());
 
         match result {
             Ok(upgraded) => config.apply(TokioIo::new(upgraded)),
@@ -106,7 +120,7 @@ where
                 // Forward the incoming message to the channel.
                 Some(result) = stream.next() => {
                     match result.and_then(Message::try_from) {
-                        Err(error) => Continue(Some(ErrorKind::WebSocket(error))),
+                        Err(error) => recover_from_ws_error(error),
                         Ok(message) => match tx.send(message).await {
                             Err(_) => Break(Some(ErrorKind::ChannelClosed)),
                             Ok(_) => Continue(None),
@@ -116,8 +130,10 @@ where
 
                 // Forward the outbound message to the stream.
                 Some(message) = rx.recv() => {
-                    let result = stream.send(message.into()).await;
-                    Continue(result.err().map(ErrorKind::WebSocket))
+                    match stream.send(message.into()).await {
+                        Err(error) => recover_from_ws_error(error),
+                        Ok(_) => Continue(None),
+                    }
                 }
 
                 // The future returned from app code is ready.
