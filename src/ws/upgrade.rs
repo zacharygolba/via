@@ -1,14 +1,17 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as base64_engine;
 use futures_util::{SinkExt, StreamExt};
-use http::{StatusCode, header};
+use http::{HeaderMap, HeaderValue, StatusCode, header};
+use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
-use std::fmt::Display;
+use std::fmt::{self, Display, Formatter};
 use std::mem::swap;
+use std::ops::ControlFlow::{Break, Continue};
 use std::ops::Deref;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio_websockets::server::Builder;
-use tokio_websockets::{Config, Limits};
+use tokio_websockets::{Config, Limits, WebSocketStream};
 
 #[cfg(feature = "aws-lc-rs")]
 use aws_lc_rs::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
@@ -16,22 +19,34 @@ use aws_lc_rs::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 #[cfg(feature = "ring")]
 use ring::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 
-use super::channel::Channel;
+use super::channel::{Channel, Message};
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
-use crate::request::{Request, RequestHead};
+use crate::request::RequestHead;
 use crate::response::Response;
 use crate::{Error, raise};
+
+const CONNECTION_UPGRADE_HEADER: HeaderValue = HeaderValue::from_static("upgrade");
+const UPGRADE_WEBSOCKET_HEADER: HeaderValue = HeaderValue::from_static("websocket");
 
 const DEFAULT_FRAME_SIZE: usize = 16 * 1024; // 16KB
 const GUID: &[u8] = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 #[derive(Debug)]
-pub struct Context<State = ()>(Arc<RequestHead<State>>);
+pub struct Request<State = ()> {
+    head: Arc<RequestHead<State>>,
+}
 
 pub struct Upgrade<F> {
     config: StreamConfig,
     upgraded: Arc<F>,
+}
+
+#[derive(Debug)]
+enum ErrorKind {
+    App(Error),
+    ChannelClosed,
+    WebSocket(tokio_websockets::Error),
 }
 
 #[derive(Clone)]
@@ -50,73 +65,88 @@ fn gen_accept_key(key: &[u8]) -> String {
     base64_engine.encode(hasher.finish())
 }
 
-fn handle_error<E: Display>(error: &E) {
+fn handle_error(error: &impl std::error::Error) {
     if cfg!(debug_assertions) {
         eprintln!("error(ws): {}", error);
     }
 }
 
-async fn start<State, F, R>(trx: Arc<F>, config: StreamConfig, request: Request<State>)
+async fn start<State, F, R>(trx: Arc<F>, config: StreamConfig, mut head: RequestHead<State>)
 where
-    F: Fn(Channel, Context<State>) -> R + Send + Sync + 'static,
-    R: Future<Output = Result<(), Error>> + Send,
+    F: Fn(Channel, Request<State>) -> R + Send + Sync + 'static,
+    R: Future<Output = super::Result> + Send,
 {
-    let (mut head, _) = request.into_parts();
-    let mut request = http::Request::new(());
+    let stream = {
+        let mut request = http::Request::new(());
+        swap(request.extensions_mut(), &mut head.parts.extensions);
 
-    swap(request.extensions_mut(), &mut head.parts.extensions);
+        let result = hyper::upgrade::on(&mut request).await;
+        swap(&mut head.parts.extensions, request.extensions_mut());
 
-    let context = Context(Arc::new(head));
-    let stream = match hyper::upgrade::on(request).await {
-        Ok(io) => config.apply(Builder::new()).serve(TokioIo::new(io)),
-        Err(error) => return handle_error(&error),
-    };
-
-    tokio::pin!(stream);
-
-    let result = 'session: loop {
-        let (channel, tx, mut rx) = Channel::new();
-        let mut future = Box::pin(trx(channel, context.clone()));
-
-        loop {
-            let error_opt = tokio::select! {
-                Some(message) = rx.recv() => stream.send(message.into()).await.err(),
-                Some(result) = stream.next() => match result {
-                    Err(error) => Some(error),
-                    Ok(next) => {
-                        if next.is_ping() || next.is_pong() {
-                            continue;
-                        }
-
-                        match next.try_into() {
-                            Err(error) => Some(error),
-                            Ok(message) => {
-                                let _ = tx.send(message).await;
-                                None
-                            }
-                        }
-                    }
-                },
-                result = future.as_mut() => {
-                    if let Err(error) = result {
-                        if cfg!(debug_assertions) {
-                            eprintln!("error(ws): {}", error);
-                        }
-                        continue 'session;
-                    }
-
-                    break 'session stream.flush().await;
-                },
-            };
-
-            if let Some(error) = &error_opt {
-                handle_error(error);
-            }
+        match result {
+            Ok(upgraded) => config.apply(TokioIo::new(upgraded)),
+            Err(error) => return handle_error(&error),
         }
     };
 
-    if let Err(error) = &result {
-        handle_error(error);
+    let head = Arc::new(head);
+
+    tokio::pin!(stream);
+
+    'session: loop {
+        let (sender, mut rx) = mpsc::channel(1);
+        let (tx, receiver) = mpsc::channel(1);
+        let mut future = Box::pin(trx(
+            Channel::new(sender, receiver),
+            Request::new(Arc::clone(&head)),
+        ));
+
+        loop {
+            let flow = tokio::select! {
+                // Forward the incoming message to the channel.
+                Some(result) = stream.next() => {
+                    match result.and_then(Message::try_from) {
+                        Err(error) => Continue(Some(ErrorKind::WebSocket(error))),
+                        Ok(message) => match tx.send(message).await {
+                            Err(_) => Break(Some(ErrorKind::ChannelClosed)),
+                            Ok(_) => Continue(None),
+                        },
+                    }
+                }
+
+                // Forward the outbound message to the stream.
+                Some(message) = rx.recv() => {
+                    let result = stream.send(message.into()).await;
+                    Continue(result.err().map(ErrorKind::WebSocket))
+                }
+
+                // The future returned from app code is ready.
+                result = future.as_mut() => match result {
+                    Err(Continue(error)) => Continue(Some(ErrorKind::App(error))),
+                    Err(Break(error)) => Break(Some(ErrorKind::App(error))),
+                    Ok(_) => Break(None),
+                },
+            };
+
+            match flow {
+                Continue(Some(error @ ErrorKind::App(_))) => {
+                    handle_error(&error);
+                    continue 'session;
+                }
+                Continue(option) => {
+                    option.inspect(handle_error);
+                }
+                Break(option) => {
+                    option.inspect(handle_error);
+
+                    if let Err(error) = stream.flush().await {
+                        handle_error(&error);
+                    }
+
+                    break 'session;
+                }
+            }
+        }
     }
 
     if cfg!(debug_assertions) {
@@ -124,30 +154,41 @@ where
     }
 }
 
-impl<State> Clone for Context<State> {
-    fn clone(&self) -> Self {
-        Self(Arc::clone(&self.0))
+impl std::error::Error for ErrorKind {}
+
+impl Display for ErrorKind {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Self::App(error) => Display::fmt(error, f),
+            Self::ChannelClosed => write!(f, ""),
+            Self::WebSocket(error) => Display::fmt(error, f),
+        }
     }
 }
 
-impl<State> Deref for Context<State> {
+impl<State> Request<State> {
+    fn new(head: Arc<RequestHead<State>>) -> Self {
+        Self { head }
+    }
+}
+
+impl<State> Deref for Request<State> {
     type Target = RequestHead<State>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        self.0.as_ref()
+        Deref::deref(&self.head)
     }
 }
 
 impl StreamConfig {
-    fn apply(self, builder: Builder) -> Builder {
-        builder
-            .limits(Limits::default().max_payload_len(self.max_payload_size))
-            .config(
-                Config::default()
-                    .frame_size(self.frame_size)
-                    .flush_threshold(self.flush_threshold),
-            )
+    fn apply(self, io: TokioIo<Upgraded>) -> WebSocketStream<TokioIo<Upgraded>> {
+        let limits = Limits::default().max_payload_len(self.max_payload_size);
+        let config = Config::default()
+            .frame_size(self.frame_size)
+            .flush_threshold(self.flush_threshold);
+
+        Builder::new().config(config).limits(limits).serve(io)
     }
 }
 
@@ -197,53 +238,60 @@ impl<F> Upgrade<F> {
     }
 }
 
+fn is_websocket_upgrade(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::UPGRADE)
+        .is_some_and(|value| value == "websocket")
+}
+
+fn version_is_supported(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::SEC_WEBSOCKET_VERSION)
+        .is_some_and(|value| value == "13")
+}
+
 impl<State, F, R> Middleware<State> for Upgrade<F>
 where
     State: Send + Sync + 'static,
-    F: Fn(Channel, Context<State>) -> R + Send + Sync + 'static,
-    R: Future<Output = Result<(), Error>> + Send + 'static,
+    F: Fn(Channel, Request<State>) -> R + Send + Sync + 'static,
+    R: Future<Output = super::Result> + Send,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
-        let upgrade = match request.headers().get(header::UPGRADE) {
-            Some(value) if value == "websocket" => value.clone(),
-            _ => return next.call(request),
-        };
+    fn call(&self, request: crate::Request<State>, next: Next<State>) -> BoxFuture {
+        let headers = request.headers();
 
-        match request.header(header::SEC_WEBSOCKET_VERSION) {
-            Ok(Some("13")) => {}
-            Err(error) => return Box::pin(async { Err(error) }),
-            Ok(_) => {
-                return Box::pin(async {
-                    raise!(
-                        400,
-                        message = "sec-websocket-version header must be \"13\"."
-                    )
-                });
-            }
+        if !is_websocket_upgrade(headers) {
+            return next.call(request);
         }
 
-        let accept = match request.header(header::SEC_WEBSOCKET_KEY) {
-            Ok(Some(key)) => gen_accept_key(key.as_bytes()),
-            Err(error) => return Box::pin(async { Err(error) }),
-            Ok(None) => {
-                return Box::pin(async {
-                    raise!(400, message = "missing required header: sec-websocket-key.")
-                });
-            }
+        if !version_is_supported(headers) {
+            return Box::pin(async {
+                raise!(400, message = "sec-websocket-version header must be \"13\"");
+            });
+        }
+
+        let Some(accept) = headers
+            .get(header::SEC_WEBSOCKET_KEY)
+            .map(|value| gen_accept_key(value.as_ref()))
+        else {
+            return Box::pin(async {
+                raise!(400, message = "missing required header: sec-websocket-key.")
+            });
         };
 
-        tokio::spawn(Box::pin(start(
-            Arc::clone(&self.upgraded),
-            self.config.clone(),
-            request,
-        )));
+        tokio::spawn({
+            let trx = Arc::clone(&self.upgraded);
+            let config = self.config.clone();
+            let (head, _) = request.into_parts();
+
+            Box::pin(async move { start(trx, config, head).await })
+        });
 
         Box::pin(async {
             Response::build()
                 .status(StatusCode::SWITCHING_PROTOCOLS)
-                .header(header::CONNECTION, "upgrade")
+                .header(header::CONNECTION, CONNECTION_UPGRADE_HEADER)
                 .header(header::SEC_WEBSOCKET_ACCEPT, accept)
-                .header(header::UPGRADE, upgrade)
+                .header(header::UPGRADE, UPGRADE_WEBSOCKET_HEADER)
                 .finish()
         })
     }

@@ -24,11 +24,8 @@ pub enum Message {
 }
 
 impl Channel {
-    pub(super) fn new() -> (Self, Sender, Receiver) {
-        let (sender, rx) = mpsc::channel(1);
-        let (tx, receiver) = mpsc::channel(1);
-
-        (Self(tx, rx), sender, receiver)
+    pub(super) fn new(tx: Sender, rx: Receiver) -> Self {
+        Self(tx, rx)
     }
 
     pub async fn send(&mut self, message: impl Into<Message>) -> Result<(), Error> {
