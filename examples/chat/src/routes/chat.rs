@@ -1,9 +1,9 @@
-use via::websocket::{Channel, Context, Message};
+use via::ws::{self, Message};
 use via::{Next, Payload, Request};
 
 use crate::chat::{Chat, EventParams};
 
-pub async fn join(mut websocket: Channel, context: Context<Chat>) -> via::Result<()> {
+pub async fn join(mut channel: ws::Channel, context: ws::Context<Chat>) -> via::Result<()> {
     let (user, mut updates) = {
         let Some(id) = context
             .cookies()
@@ -29,12 +29,12 @@ pub async fn join(mut websocket: Channel, context: Context<Chat>) -> via::Result
             // Pubsub
             Ok((ref from_id, event)) = updates.recv() => {
                 if from_id != user.id() {
-                    websocket.send(event).await?;
+                    channel.send(event).await?;
                 }
             }
 
             // WebSocket
-            Some(next) = websocket.next() => match next {
+            Some(next) = channel.next() => match next {
                 // Append the message content to the chat thread.
                 payload @ (Message::Binary(_) | Message::Text(_)) => {
                     let chat = context.state();

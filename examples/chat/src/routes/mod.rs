@@ -7,7 +7,7 @@ use via::{Next, Payload, Request, Response, Route};
 use crate::chat::{Chat, UserParams};
 
 pub fn chat(router: &mut Route<Chat>) {
-    let join = via::websocket(chat::join);
+    let join = via::ws(chat::join);
     let index = via::get(chat::index);
     let message = via::get(chat::message);
     let reaction = via::get(chat::reaction);
