@@ -26,12 +26,7 @@ pub async fn join(mut channel: Channel, request: ws::Request<Chat>) -> ws::Resul
 
     loop {
         tokio::select! {
-            // Pubsub
-            Ok((ref from_id, event)) = updates.recv() => {
-                if from_id != &user_id {
-                    channel.send(event).await?;
-                }
-            }
+            biased;
 
             // WebSocket
             Some(next) = channel.recv() => match next {
@@ -60,6 +55,13 @@ pub async fn join(mut channel: Channel, request: ws::Request<Chat>) -> ws::Resul
                     eprintln!("warn(ignored): {:?}", ignore);
                 }
             },
+
+            // Pubsub
+            Ok((ref from_id, event)) = updates.recv() => {
+                if from_id != &user_id {
+                    channel.send(event).await?;
+                }
+            }
         }
     }
 }
