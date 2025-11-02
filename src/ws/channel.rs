@@ -5,6 +5,7 @@ use serde::de::DeserializeOwned;
 use tokio::sync::mpsc;
 use tokio_websockets::proto::ProtocolError;
 
+use super::error::ErrorKind;
 use crate::error::Error;
 use crate::payload::{Payload, deserialize_json};
 
@@ -30,7 +31,7 @@ impl Channel {
 
     pub async fn send(&mut self, message: impl Into<Message>) -> Result<(), Error> {
         if self.0.send(message.into()).await.is_err() {
-            Err(tokio_websockets::Error::AlreadyClosed.into())
+            Err(ErrorKind::CLOSED.into())
         } else {
             Ok(())
         }

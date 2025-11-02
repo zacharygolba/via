@@ -1,20 +1,10 @@
 mod channel;
+mod error;
 mod upgrade;
 
-use std::ops::ControlFlow;
-
-use crate::Error;
-
 pub use channel::{Channel, CloseCode, Message};
+pub use error::{Result, Retry};
 pub use upgrade::{Request, Upgrade};
-
-pub type Result<T = ()> = std::result::Result<T, ControlFlow<Error, Error>>;
-
-pub trait Retry {
-    type Output;
-    fn or_break(self) -> Result<Self::Output>;
-    fn or_continue(self) -> Result<Self::Output>;
-}
 
 /// Upgrade the connection to a web socket.
 ///
@@ -62,19 +52,4 @@ where
     R: Future<Output = Result> + Send,
 {
     Upgrade::new(upgraded)
-}
-
-impl<T, E> Retry for std::result::Result<T, E>
-where
-    Error: From<E>,
-{
-    type Output = T;
-
-    fn or_break(self) -> Result<Self::Output> {
-        self.map_err(|error| ControlFlow::Break(error.into()))
-    }
-
-    fn or_continue(self) -> Result<Self::Output> {
-        self.map_err(|error| ControlFlow::Continue(error.into()))
-    }
 }
