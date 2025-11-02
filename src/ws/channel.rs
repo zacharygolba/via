@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use bytes::{Buf, Bytes, TryGetError};
 use bytestring::ByteString;
 use serde::Serialize;
@@ -29,9 +31,9 @@ impl Channel {
         Self(tx, rx)
     }
 
-    pub async fn send(&mut self, message: impl Into<Message>) -> Result<(), Error> {
+    pub async fn send(&mut self, message: impl Into<Message>) -> super::Result<()> {
         if self.0.send(message.into()).await.is_err() {
-            Err(ErrorKind::CLOSED.into())
+            Err(ControlFlow::Break(ErrorKind::CLOSED.into()))
         } else {
             Ok(())
         }

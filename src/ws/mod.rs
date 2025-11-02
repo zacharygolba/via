@@ -11,8 +11,26 @@ pub use upgrade::{Request, Upgrade};
 /// # Example
 ///
 /// ```
-/// use via::ws::{self, Message};
+/// use via::ws::{self, Channel, Message};
 /// use via::{App, Error, Payload};
+///
+/// async fn echo(mut channel: Channel, _: ws::Request) -> ws::Result {
+///     loop {
+///         let Some(message) = channel.next().await else {
+///             break Ok(());
+///         };
+///
+///         if let Message::Close(close) = &message {
+///             close.as_ref().inspect(|(code, reason)| {
+///                 eprintln!("{:?}: {:?}", code, reason);
+///             });
+///
+///             break Ok(());
+///         }
+///
+///         channel.send(message).await?;
+///     }
+/// }
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Error> {
@@ -20,27 +38,6 @@ pub use upgrade::{Request, Upgrade};
 ///
 ///     // GET /echo ~> web socket upgrade.
 ///     app.route("/echo").respond(via::ws(echo));
-///
-///     Ok(())
-/// }
-///
-/// async fn echo(mut channel: ws::Channel, _: ws::Request) -> ws::Result {
-///     use std::ops::ControlFlow::{Break, Continue};
-///
-///     while let Some(message) = channel.next().await {
-///         match message {
-///             echo @ (Message::Binary(_) | Message::Text(_)) => {
-///                 channel.send(echo).await.map_err(Continue)?;
-///             }
-///             Message::Close(close) => {
-///                 if let Some((code, reason)) = close {
-///                     eprintln!("close: code = {}, reason = {:?}", u16::from(code), reason);
-///                 }
-///                 break;
-///             }
-///             _ => {}
-///         }
-///     }
 ///
 ///     Ok(())
 /// }
