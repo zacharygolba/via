@@ -16,7 +16,7 @@ pub use upgrade::{Request, Upgrade};
 ///
 /// async fn echo(mut channel: Channel, _: ws::Request) -> ws::Result {
 ///     loop {
-///         let Some(message) = channel.next().await else {
+///         let Some(message) = channel.recv().await else {
 ///             break Ok(());
 ///         };
 ///
