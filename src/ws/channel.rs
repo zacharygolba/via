@@ -1,10 +1,10 @@
-use std::ops::ControlFlow;
-
 use bytes::{Buf, Bytes, TryGetError};
 use bytestring::ByteString;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::ops::ControlFlow;
 use tokio::sync::mpsc;
+use tokio::task::coop;
 use tokio_websockets::proto::ProtocolError;
 
 use super::error::ErrorKind;
@@ -39,8 +39,8 @@ impl Channel {
         }
     }
 
-    pub async fn next(&mut self) -> Option<Message> {
-        self.1.recv().await
+    pub fn recv(&mut self) -> impl Future<Output = Option<Message>> {
+        coop::unconstrained(self.1.recv())
     }
 }
 
