@@ -1,19 +1,20 @@
 use bytestring::ByteString;
 use cookie::Key;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, convert::Infallible};
+use std::collections::HashMap;
+use std::convert::Infallible;
 use tokio::sync::{RwLock, broadcast};
 use uuid::Uuid;
-use via::Error;
+use via::{Error, raise};
 
 type Sender = broadcast::Sender<(Uuid, ByteString)>;
 type Receiver = broadcast::Receiver<(Uuid, ByteString)>;
 
 pub trait Insert {
     type Error;
-    type Output;
+    type Returning;
 
-    fn insert(self, into: &mut Database) -> Result<Self::Output, Self::Error>;
+    fn insert(self, into: &mut Database) -> Result<Self::Returning, Self::Error>;
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -106,12 +107,6 @@ pub struct Thread {
 }
 
 #[derive(Serialize)]
-pub struct ThreadPreview<'a> {
-    id: &'a Uuid,
-    name: &'a str,
-}
-
-#[derive(Serialize)]
 pub struct ThreadWithEvents<'a> {
     id: &'a Uuid,
     name: &'a str,
@@ -142,59 +137,82 @@ impl Chat {
         &self.secret
     }
 
-    pub async fn broadcast(&self, user: &User, event: Event) -> Result<(), Error> {
-        let message = {
-            let guard = self.database.read().await;
-            let Some(data) = guard.event(&event) else {
-                // TODO: log warning message.
-                return Ok(());
-            };
+    pub async fn thread<F, R>(&self, id: &Uuid, select: F) -> Option<R>
+    where
+        F: FnOnce(ThreadWithEvents) -> R,
+    {
+        self.database.read().await.thread(id).map(select)
+    }
 
-            ByteString::from(serde_json::to_string(&data)?)
+    pub async fn insert<T: Insert>(&self, value: T) -> Result<T::Returning, T::Error> {
+        let mut guard = self.database.write().await;
+        value.insert(&mut guard)
+    }
+
+    pub async fn insert_and_notify<'a, T>(&self, from: &'a Uuid, value: T) -> Result<(), Error>
+    where
+        (&'a Uuid, T): Insert<Returning = Event>,
+        Error: From<<(&'a Uuid, T) as Insert>::Error>,
+    {
+        let mut guard = self.database.write().await;
+        let event = match &(from, value).insert(&mut guard)? {
+            Event::Message(id) => EventWithContext::Message(guard.message(id)?),
+            Event::Reaction(id) => EventWithContext::Reaction(guard.reaction(id)?),
         };
 
-        let (tx, _) = &self.channel;
-        tx.send((user.id, message))?;
+        let json = serde_json::to_string(&event)?.into();
+        self.channel().send((*from, json))?;
 
         Ok(())
     }
 
-    pub async fn join(&self, id: &Uuid) -> Option<(User, Receiver)> {
-        let (tx, _) = &self.channel;
+    pub async fn subscribe(&self, id: &Uuid) -> Option<Receiver> {
         let guard = self.database.read().await;
-        let user = guard.users.get(id)?.clone();
 
-        Some((user, tx.subscribe()))
+        if guard.users.contains_key(id) {
+            Some(self.channel().subscribe())
+        } else {
+            None
+        }
     }
 
-    pub async fn insert<T: Insert>(&self, value: T) -> Result<T::Output, T::Error> {
-        value.insert(&mut *self.database.write().await)
+    #[inline]
+    fn channel(&self) -> &Sender {
+        &self.channel.0
     }
 }
 
 impl Database {
-    fn event(&self, event: &Event) -> Option<EventWithContext<'_>> {
-        match event {
-            Event::Message(id) => self.message(id).map(EventWithContext::Message),
-            Event::Reaction(id) => self.reaction(id).map(EventWithContext::Reaction),
-        }
+    fn message(&self, id: &Uuid) -> Result<MessageWithUser<'_>, Error> {
+        let Some(message) = self.messages.get(id) else {
+            raise!(message = format!("message with id \"{}\" does not exist", id));
+        };
+
+        Ok(MessageWithUser {
+            id: &message.id,
+            from: self.user(&message.from_id)?,
+            content: &message.content,
+        })
     }
 
-    fn message(&self, id: &Uuid) -> Option<MessageWithUser<'_>> {
-        let message = self.messages.get(id)?;
+    fn reaction(&self, id: &Uuid) -> Result<ReactionWithUser<'_>, Error> {
+        let Some(reaction) = self.reactions.get(id) else {
+            raise!(message = format!("reaction with id \"{}\" does not exist", id));
+        };
 
-        Some(MessageWithUser {
-            id: &message.id,
-            from: self.users.get(&message.from_id)?,
-            content: &message.content,
+        Ok(ReactionWithUser {
+            id: &reaction.id,
+            from: self.user(&reaction.from_id)?,
+            value: &reaction.value,
+            message_id: &reaction.message_id,
         })
     }
 
     fn thread(&self, id: &Uuid) -> Option<ThreadWithEvents<'_>> {
         let thread = self.threads.get(id)?;
         let events = thread.events.iter().filter_map(|event| match event {
-            Event::Message(id) => self.message(id).map(EventWithContext::Message),
-            Event::Reaction(id) => self.reaction(id).map(EventWithContext::Reaction),
+            Event::Message(id) => self.message(id).map(EventWithContext::Message).ok(),
+            Event::Reaction(id) => self.reaction(id).map(EventWithContext::Reaction).ok(),
         });
 
         Some(ThreadWithEvents {
@@ -204,23 +222,19 @@ impl Database {
         })
     }
 
-    fn reaction(&self, id: &Uuid) -> Option<ReactionWithUser<'_>> {
-        let reaction = self.reactions.get(id.as_ref())?;
-
-        Some(ReactionWithUser {
-            id: &reaction.id,
-            from: self.users.get(&reaction.from_id)?,
-            value: &reaction.value,
-            message_id: &reaction.message_id,
-        })
+    fn user(&self, id: &Uuid) -> Result<&User, Error> {
+        self.users.get(id).map_or_else(
+            || raise!(message = format!("user with id \"{}\" does not exist", id)),
+            Ok,
+        )
     }
 }
 
-impl Insert for (&'_ User, EventParams) {
+impl Insert for (&'_ Uuid, EventParams) {
     type Error = Infallible;
-    type Output = Event;
+    type Returning = Event;
 
-    fn insert(self, into: &mut Database) -> Result<Self::Output, Self::Error> {
+    fn insert(self, into: &mut Database) -> Result<Self::Returning, Self::Error> {
         match self.1 {
             EventParams::Message(message) => (self.0, message).insert(into),
             EventParams::Reaction(reaction) => (self.0, reaction).insert(into),
@@ -228,60 +242,68 @@ impl Insert for (&'_ User, EventParams) {
     }
 }
 
-impl Insert for (&'_ User, MessageParams) {
-    type Error = Infallible;
-    type Output = Event;
-
-    fn insert(self, database: &mut Database) -> Result<Self::Output, Self::Error> {
-        let id = Uuid::new_v4();
-        let (from, params) = self;
-
-        let thread = database
-            .threads
-            .entry(params.thread_id)
-            .or_insert_with(|| Thread::new(params.thread_id));
-
-        let message = Message {
-            id,
-            content: params.content,
-            from_id: from.id,
-        };
-
-        database.messages.insert(id, message);
-        Ok(thread.push(Event::Message(id)))
+impl Message {
+    fn new(content: String, from_id: Uuid) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            content,
+            from_id,
+        }
     }
 }
 
-impl Insert for (&'_ User, ReactionParams) {
+impl Insert for (&'_ Uuid, MessageParams) {
     type Error = Infallible;
-    type Output = Event;
+    type Returning = Event;
 
-    fn insert(self, database: &mut Database) -> Result<Self::Output, Self::Error> {
-        let id = Uuid::new_v4();
-        let (from, params) = self;
-
-        let thread = database
+    fn insert(self, database: &mut Database) -> Result<Self::Returning, Self::Error> {
+        let (from_id, params) = self;
+        let message = Message::new(params.content, *from_id);
+        let event = database
             .threads
             .entry(params.thread_id)
-            .or_insert_with(|| Thread::new(params.thread_id));
+            .or_insert_with(|| Thread::new(params.thread_id))
+            .push(Event::Message(message.id));
 
-        let reaction = Reaction {
-            id,
-            value: params.value,
-            from_id: from.id,
-            message_id: params.message_id,
-        };
+        database.messages.insert(message.id, message);
+        Ok(event)
+    }
+}
 
-        database.reactions.insert(id, reaction);
-        Ok(thread.push(Event::Reaction(id)))
+impl Reaction {
+    fn new(value: String, from_id: Uuid, message_id: Uuid) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            value,
+            from_id,
+            message_id,
+        }
+    }
+}
+
+impl Insert for (&'_ Uuid, ReactionParams) {
+    type Error = Infallible;
+    type Returning = Event;
+
+    fn insert(self, database: &mut Database) -> Result<Self::Returning, Self::Error> {
+        let (from_id, params) = self;
+        let reaction = Reaction::new(params.value, *from_id, params.message_id);
+        let event = database
+            .threads
+            .entry(params.thread_id)
+            .or_insert_with(|| Thread::new(params.thread_id))
+            .push(Event::Reaction(reaction.id));
+
+        database.reactions.insert(reaction.id, reaction);
+        Ok(event)
     }
 }
 
 impl Insert for UserParams {
     type Error = Error;
-    type Output = User;
+    type Returning = User;
 
-    fn insert(self, database: &mut Database) -> Result<Self::Output, Self::Error> {
+    fn insert(self, database: &mut Database) -> Result<Self::Returning, Self::Error> {
         let user = User::new(Uuid::new_v4(), self.username.into());
         let output = user.clone();
 

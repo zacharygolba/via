@@ -1,4 +1,4 @@
-mod chat;
+mod models;
 mod routes;
 
 use std::env;
@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use via::error::{Error, Rescue};
 use via::{App, Cookies, Server};
 
-use crate::chat::Chat;
+use crate::models::Chat;
 
 #[tokio::main]
 async fn main() -> Result<ExitCode, Error> {
@@ -23,8 +23,21 @@ async fn main() -> Result<ExitCode, Error> {
     app.middleware(Rescue::with(|sanitizer| sanitizer.use_json()));
 
     app.route("/").respond(via::get(routes::home));
-    app.route("/chat").scope(routes::chat);
-    app.route("/login").respond(via::post(routes::login));
+
+    app.route("/auth").scope(|auth| {
+        use routes::auth::login;
+
+        auth.route("/login").respond(via::post(login));
+    });
+
+    app.route("/chat").scope(|chat| {
+        use routes::chat::{join, message, reaction, thread};
+
+        chat.route("/join").respond(via::ws(join));
+        chat.route("/threads/:id").respond(via::get(thread));
+        chat.route("/messages/:id").respond(via::get(message));
+        chat.route("/reactions/:id").respond(via::get(reaction));
+    });
 
     Server::new(app).listen(("127.0.0.1", 8080)).await
 }
