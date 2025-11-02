@@ -109,11 +109,12 @@ where
 
                 // Forward the incoming message to the channel.
                 Some(result) = stream.next() => {
+                    coop::consume_budget().await;
+
                     match result.and_then(Message::try_from) {
                         Err(error) => try_rescue_ws(error),
                         Ok(message) => {
                             let Err(error) = tx.try_send(message) else {
-                                coop::consume_budget().await;
                                 continue;
                             };
 
