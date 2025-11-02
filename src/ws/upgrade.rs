@@ -7,7 +7,8 @@ use std::mem::swap;
 use std::ops::ControlFlow::{Break, Continue};
 use std::ops::Deref;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, error::TrySendError};
+use tokio::task::coop;
 use tokio_websockets::server::Builder;
 use tokio_websockets::{Config, Limits};
 
@@ -53,7 +54,7 @@ fn handle_error(error: &impl std::error::Error) {
     }
 }
 
-async fn start<State, F, R>(listen: Arc<F>, builder: Builder, mut head: RequestHead<State>)
+async fn start<State, F, R>(listen: Arc<F>, mut head: Box<RequestHead<State>>, builder: Builder)
 where
     F: Fn(Channel, Request<State>) -> R + Send + Sync + 'static,
     R: Future<Output = super::Result> + Send,
@@ -71,67 +72,87 @@ where
         }
     };
 
-    let head = Arc::new(head);
-
     tokio::pin!(stream);
 
-    'session: loop {
+    let head = Arc::from(head);
+    let err = 'session: loop {
         let (sender, mut rx) = mpsc::channel(1);
         let (tx, receiver) = mpsc::channel(1);
-        let mut future = Box::pin(listen(
+        let mut listener = Box::pin(listen(
             Channel::new(sender, receiver),
             Request::new(Arc::clone(&head)),
         ));
 
         loop {
             let flow = tokio::select! {
-                // Forward the incoming message to the channel.
-                Some(result) = stream.next() => {
-                    match result.and_then(Message::try_from) {
-                        Err(error) => try_rescue_ws(error),
-                        Ok(message) => if tx.send(message).await.is_err() {
-                            Break(Some(ErrorKind::CLOSED))
-                        } else {
-                            Continue(None)
-                        },
-                    }
-                }
-
-                // Forward the outbound message to the stream.
-                Some(message) = rx.recv() => {
-                    match stream.send(message.into()).await {
-                        Err(error) => try_rescue_ws(error),
-                        Ok(_) => Continue(None),
-                    }
-                }
+                biased;
 
                 // The future returned from app code is ready.
-                result = future.as_mut() => match result {
+                result = listener.as_mut() => match result {
                     Err(Continue(error)) => Continue(Some(error.into())),
                     Err(Break(error)) => Break(Some(error.into())),
                     Ok(_) => Break(None),
                 },
+
+                // Forward the outbound message to the stream.
+                Some(message) = coop::unconstrained(rx.recv()) => {
+                    let result = stream.feed(message.into()).await;
+
+                    coop::consume_budget().await;
+
+                    if let Err(error) = result {
+                        try_rescue_ws(error)
+                    } else {
+                        continue;
+                    }
+                }
+
+                // Forward the incoming message to the channel.
+                Some(result) = stream.next() => {
+                    match result.and_then(Message::try_from) {
+                        Err(error) => try_rescue_ws(error),
+                        Ok(message) => {
+                            let Err(error) = tx.try_send(message) else {
+                                coop::consume_budget().await;
+                                continue;
+                            };
+
+                            if let TrySendError::Full(message) = error
+                                && tx.send(message).await.is_ok()
+                            {
+                                continue;
+                            }
+
+                            Break(Some(ErrorKind::CLOSED))
+                        }
+                    }
+                }
             };
 
-            match &flow {
-                Continue(Some(error @ ErrorKind::Runtime(_))) => {
+            match flow {
+                Continue(Some(ref error)) => {
                     handle_error(error);
-                    continue 'session;
-                }
-                Continue(option) => {
-                    option.as_ref().inspect(handle_error);
-                }
-                Break(option) => {
-                    option.as_ref().inspect(handle_error);
-
-                    if let Err(error) = stream.flush().await {
-                        handle_error(&error);
+                    if matches!(error, ErrorKind::Runtime(_)) {
+                        continue 'session;
                     }
-
-                    break 'session;
                 }
+
+                Break(err) => {
+                    break 'session if err.is_none() {
+                        stream.flush().await.err().map(ErrorKind::Socket)
+                    } else {
+                        err
+                    };
+                }
+
+                // Unreachable.
+                Continue(None) => {}
             }
         }
+    };
+
+    if let Some(error) = err.as_ref() {
+        handle_error(error);
     }
 
     if cfg!(debug_assertions) {
@@ -236,11 +257,12 @@ where
         };
 
         tokio::spawn({
-            let listen = Arc::clone(&self.listen);
-            let builder = Builder::new().config(self.config).limits(self.limits);
             let (head, _) = request.into_parts();
+            let builder = Builder::new().config(self.config).limits(self.limits);
+            let listen = Arc::clone(&self.listen);
+            let head = Box::new(head);
 
-            Box::pin(start(listen, builder, head))
+            Box::pin(start(listen, head, builder))
         });
 
         Box::pin(async {

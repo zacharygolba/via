@@ -34,7 +34,7 @@ pub async fn join(mut channel: Channel, request: ws::Request<Chat>) -> ws::Resul
             }
 
             // WebSocket
-            Some(next) = channel.next() => match next {
+            Some(next) = channel.recv() => match next {
                 // Append the message content to the chat thread.
                 payload @ (Message::Binary(_) | Message::Text(_)) => {
                     let trx = async {
