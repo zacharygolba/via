@@ -11,8 +11,8 @@ pub async fn create(_: Request, _: Next) -> via::Result {
 
 pub async fn show(request: Request, _: Next) -> via::Result {
     let id = request.param("thread-id").parse()?;
-    let chat = request.state().as_ref();
-    let future = chat.thread(&id, |thread| Response::build().json(&thread));
+    let state = request.state().as_ref();
+    let future = state.thread(&id, |thread| Response::build().json(&thread));
 
     future.await.unwrap_or_else(|| raise!(404))
 }
