@@ -4,8 +4,11 @@ use via::{Payload, Response};
 use crate::database::models::post::*;
 use crate::{Next, Request};
 
-pub async fn authentication(request: Request, next: Next) -> via::Result {
-    println!("authenticate");
+pub async fn authorization(request: Request, next: Next) -> via::Result {
+    if cfg!(debug_assertions) {
+        println!("👍 user can perform the request operation");
+    }
+
     next.call(request).await
 }
 
