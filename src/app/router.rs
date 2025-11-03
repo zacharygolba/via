@@ -205,9 +205,6 @@ impl<State> Route<'_, State> {
 
     /// Defines how the route should respond when it is visited.
     ///
-    /// Middleware passed to `respond` runs only when the request path matches
-    /// the route exactly.
-    ///
     /// # Example
     ///
     /// ```
