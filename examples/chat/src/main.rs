@@ -19,17 +19,19 @@ async fn main() -> Result<ExitCode, Error> {
             .text("Chat Example frontend coming soon!")
     }));
 
-    // Define a router namespace for our chat API.
-    app.route("/chat/:room").scope(|route| {
-        // GET / -> list all the messages in the room.
-        route.to(via::get(room::index));
+    // Define the router namespace for our chat API.
+    {
+        let mut room = app.route("/chat/:room");
 
-        // GET /join -> websocket to read / write messages.
-        route.route("/join").to(via::ws(room::join));
+        // list all the messages in the room.
+        room.route("/").to(via::get(room::index));
 
-        // Get /:index -> show the message with the provided index.
-        route.route("/:index").to(via::get(room::show));
-    });
+        // websocket to read / write messages.
+        room.route("/join").to(via::ws(room::join));
+
+        // show the message with the provided index.
+        room.route("/:index").to(via::get(room::show));
+    }
 
     Server::new(app).listen(("127.0.0.1", 8080)).await
 }

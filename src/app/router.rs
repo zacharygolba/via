@@ -4,6 +4,18 @@ use crate::middleware::Middleware;
 
 pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 
+#[macro_export]
+macro_rules! rest {
+    ($module:path) => {{
+        use $module::{create, destroy, index, show, update};
+
+        (
+            $crate::get(index).post(create),
+            $crate::get(show).patch(update).delete(destroy),
+        )
+    }};
+}
+
 /// An entry in the route tree associated with a path segment pattern.
 ///
 /// Route definitions are composable and inherit middleware from their
@@ -68,40 +80,6 @@ pub struct Route<'a, State> {
 }
 
 impl<State> Route<'_, State> {
-    /// Appends the provided middleware to the route's call stack.
-    ///
-    /// Middleware attached to a route runs anytime the route’s path is a
-    /// prefix of the request path.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use via::{App, Next, Cookies, Request, raise};
-    /// # let mut app = App::new(());
-    /// #
-    /// // Provides application-wide support for request and response cookies.
-    /// app.middleware(Cookies::new().allow("is-admin"));
-    ///
-    /// // Requests made to /admin or any of its descendants must have an
-    /// // is-admin cookie present on the request.
-    /// app.route("/admin").middleware(async |request: Request, next: Next| {
-    ///     // We suggest using signed cookies to prevent tampering.
-    ///     // See the cookies example in our git repo for more information.
-    ///     if request.cookies().get("is-admin").is_none() {
-    ///         raise!(401);
-    ///     }
-    ///
-    ///     next.call(request).await
-    /// });
-    /// ```
-    ///
-    pub fn middleware<T>(&mut self, middleware: T)
-    where
-        T: Middleware<State> + 'static,
-    {
-        self.inner.middleware(Arc::new(middleware));
-    }
-
     /// Returns a new child route by appending the provided path to the current
     /// route.
     ///
@@ -142,22 +120,21 @@ impl<State> Route<'_, State> {
     /// ```
     /// # let mut app = via::App::new(());
     /// #
-    /// app.route("/articles").scope(|resource| {
-    ///     // list articles
-    ///     resource.to(via::get(articles::index));
+    /// use routes::articles;
     ///
-    ///     // list trending articles
-    ///     resource.route("/trending").to(via::get(articles::trending));
+    /// let mut resource = app.route("/articles");
     ///
-    ///     // find article with id = :id
-    ///     resource.route("/:id").to(via::get(articles::show));
-    /// });
+    /// resource.route("/").to(via::get(articles::index));
+    /// resource.route("/:id").to(via::get(articles::show));
+    /// resource.route("/trending").to(via::get(articles::trending));
     /// #
-    /// # mod articles {
-    /// #     use via::{Next, Request};
-    /// #     pub async fn trending(_: Request, _: Next) -> via::Result { todo!() }
-    /// #     pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
-    /// #     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
+    /// # mod routes {
+    /// #     mod articles {
+    /// #         use via::{Next, Request};
+    /// #         pub async fn trending(_: Request, _: Next) -> via::Result { todo!() }
+    /// #         pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
+    /// #         pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
+    /// #     }
     /// # }
     /// ```
     ///
@@ -169,35 +146,6 @@ impl<State> Route<'_, State> {
 
     /// Consumes self by calling the provided closure with a mutable reference
     /// to self.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # let mut app = via::App::new(());
-    /// #
-    /// # mod users {
-    /// #     use via::{Request, Next};
-    /// #     pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
-    /// #     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
-    /// # }
-    /// #
-    /// app.route("/users").scope(|resource| {
-    ///     // Imports within a scope can be specific. No need to worry about
-    ///     // `index` being shadowed by another route definition.
-    ///     use users::index;
-    ///
-    ///     // Scopes can also be used to define intermittent variables to
-    ///     // compose middleware without polluting the top-level scope of the
-    ///     // main fn.
-    ///     let show = via::get(users::show);
-    ///
-    ///     // List users.
-    ///     resource.to(via::get(index));
-    ///
-    ///     // Find user with id = :id.
-    ///     resource.route("/:id").to(show);
-    /// });
-    /// ```
     ///
     pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
         scope(&mut self);
@@ -223,10 +171,45 @@ impl<State> Route<'_, State> {
     /// app.route("/users/:id").to(via::get(users::show));
     /// ```
     ///
-    pub fn to<T>(&mut self, middleware: T)
+    pub fn to<T>(mut self, middleware: T) -> Self
     where
         T: Middleware<State> + 'static,
     {
         self.inner.respond(Arc::new(middleware));
+        self
+    }
+
+    /// Appends the provided middleware to the route's call stack.
+    ///
+    /// Middleware attached to a route runs anytime the route’s path is a
+    /// prefix of the request path.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use via::{App, Next, Cookies, Request, raise};
+    /// # let mut app = App::new(());
+    /// #
+    /// // Provides application-wide support for request and response cookies.
+    /// app.uses(Cookies::new().allow("is-admin"));
+    ///
+    /// // Requests made to /admin or any of its descendants must have an
+    /// // is-admin cookie present on the request.
+    /// app.route("/admin").uses(async |request: Request, next: Next| {
+    ///     // We suggest using signed cookies to prevent tampering.
+    ///     // See the cookies example in our git repo for more information.
+    ///     if request.cookies().get("is-admin").is_none() {
+    ///         raise!(401);
+    ///     }
+    ///
+    ///     next.call(request).await
+    /// });
+    /// ```
+    ///
+    pub fn uses<T>(&mut self, middleware: T)
+    where
+        T: Middleware<State> + 'static,
+    {
+        self.inner.middleware(Arc::new(middleware));
     }
 }
