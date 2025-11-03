@@ -32,8 +32,8 @@ use crate::{Next, Request, Response};
 ///
 ///     // HTTP method based dispatch.
 ///     app.route("/users").scope(|resource| {
-///         resource.respond(via::get(users::list).post(users::create));
-///         resource.route("/:id").respond(
+///         resource.to(via::get(users::list).post(users::create));
+///         resource.route("/:id").to(
 ///             via::get(users::show)
 ///                 .patch(users::update)
 ///                 .delete(users::destroy)
@@ -128,7 +128,7 @@ impl<State> Allow<State> {
     /// #
     /// # fn main() {
     /// # let mut app = App::new(());
-    /// app.route("/hello/:name").respond(
+    /// app.route("/hello/:name").to(
     ///     // curl -XPOST http://localhost:8080/hello/world
     ///     // => Method Not Allowed: POST
     ///     via::get(greet).or_else(|method, allowed| {
@@ -164,7 +164,7 @@ impl<State> Allow<State> {
     /// #
     /// # let mut app = App::new(());
     /// #
-    /// app.route("/hello/:name").respond(
+    /// app.route("/hello/:name").to(
     ///     // curl -XPOST http://localhost:8080/hello/world
     ///     // => Method Not Allowed: POST
     ///     via::get(greet).or_method_not_allowed()

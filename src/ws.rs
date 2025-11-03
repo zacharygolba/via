@@ -77,7 +77,7 @@ pub struct ValidUtf8 {
 ///     let mut app = App::new(());
 ///
 ///     // GET /echo ~> web socket upgrade.
-///     app.route("/echo").respond(via::ws(echo));
+///     app.route("/echo").to(via::ws(echo));
 ///
 ///     Ok(())
 /// }

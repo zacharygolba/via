@@ -11,7 +11,7 @@ async fn main() -> Result<ExitCode, Error> {
     let mut app = App::new(());
 
     // Add our echo middleware to the route /echo.
-    app.route("/echo").respond(via::post(echo));
+    app.route("/echo").to(via::post(echo));
 
     Server::new(app).listen(("127.0.0.1", 8080)).await
 }

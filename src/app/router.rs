@@ -51,10 +51,10 @@ pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 ///         let todo = async |_: Request, _: Next| todo!();
 ///
 ///         // GET /api/users ~> list users
-///         resource.respond(via::get(todo));
+///         resource.to(via::get(todo));
 ///
 ///         // GET /api/users/:id ~> find user with id = :id
-///         resource.route("/:id").respond(via::get(todo));
+///         resource.route("/:id").to(via::get(todo));
 ///     });
 ///
 ///     // Start serving our application from http://localhost:8080/.
@@ -102,32 +102,6 @@ impl<State> Route<'_, State> {
         self.inner.middleware(Arc::new(middleware));
     }
 
-    /// Defines how the route should respond when it is visited.
-    ///
-    /// Middleware passed to `respond` runs only when the request path matches
-    /// the route exactly.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use via::{App, Request, Next};
-    /// # let mut app = App::new(());
-    /// let mut users = app.route("/users");
-    ///
-    /// // Called only when the request path is /users.
-    /// users.respond(via::get(async |_, _| todo!()));
-    ///
-    /// // Called only when the request path matches /users/:id.
-    /// users.route("/:id").respond(via::get(async |_, _| todo!()));
-    /// ```
-    ///
-    pub fn respond<T>(&mut self, middleware: T)
-    where
-        T: Middleware<State> + 'static,
-    {
-        self.inner.respond(Arc::new(middleware));
-    }
-
     /// Returns a new child route by appending the provided path to the current
     /// route.
     ///
@@ -170,11 +144,13 @@ impl<State> Route<'_, State> {
     /// #
     /// app.route("/articles").scope(|resource| {
     ///     // list articles
-    ///     resource.respond(via::get(articles::index));
+    ///     resource.to(via::get(articles::index));
+    ///
     ///     // list trending articles
-    ///     resource.route("/trending").respond(via::get(articles::trending));
+    ///     resource.route("/trending").to(via::get(articles::trending));
+    ///
     ///     // find article with id = :id
-    ///     resource.route("/:id").respond(via::get(articles::show));
+    ///     resource.route("/:id").to(via::get(articles::show));
     /// });
     /// #
     /// # mod articles {
@@ -216,14 +192,40 @@ impl<State> Route<'_, State> {
     ///     let show = via::get(users::show);
     ///
     ///     // List users.
-    ///     resource.respond(via::get(index));
+    ///     resource.to(via::get(index));
     ///
     ///     // Find user with id = :id.
-    ///     resource.route("/:id").respond(show);
+    ///     resource.route("/:id").to(show);
     /// });
     /// ```
     ///
     pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
         scope(&mut self);
+    }
+
+    /// Defines how the route should respond when it is visited.
+    ///
+    /// Middleware passed to `respond` runs only when the request path matches
+    /// the route exactly.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use via::{App, Request, Next};
+    /// # let mut app = App::new(());
+    /// let mut users = app.route("/users");
+    ///
+    /// // Called only when the request path is /users.
+    /// users.to(via::get(async |_, _| todo!()));
+    ///
+    /// // Called only when the request path matches /users/:id.
+    /// users.route("/:id").to(via::get(async |_, _| todo!()));
+    /// ```
+    ///
+    pub fn to<T>(&mut self, middleware: T)
+    where
+        T: Middleware<State> + 'static,
+    {
+        self.inner.respond(Arc::new(middleware));
     }
 }
