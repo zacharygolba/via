@@ -64,7 +64,7 @@ struct SetCookieError;
 ///     let mut app = App::new(());
 ///
 ///     // Provide cookie support for downstream middleware.
-///     app.middleware(Cookies::new().allow("name").percent_decode());
+///     app.uses(Cookies::new().allow("name").percent_decode());
 ///
 ///     // Respond with a greeting when a user visits /hello/:name.
 ///     app.route("/hello/:name").to(via::get(greet));
@@ -189,7 +189,7 @@ struct SetCookieError;
 ///     });
 ///
 ///     // Unencoded cookie support.
-///     app.middleware(Cookies::new().allow("via-session"));
+///     app.uses(Cookies::new().allow("via-session"));
 ///
 ///     // Add our login route to our application.
 ///     app.route("/auth/login").to(via::post(login));
@@ -225,7 +225,7 @@ impl Cookies {
     /// ```
     /// # use via::{App, Cookies};
     /// # let mut app = App::new(());
-    /// app.middleware(Cookies::new());
+    /// app.uses(Cookies::new());
     /// ```
     ///
     pub fn new() -> Self {
@@ -243,7 +243,7 @@ impl Cookies {
     /// ```
     /// # use via::{App, Cookies};
     /// # let mut app = App::new(());
-    /// app.middleware(Cookies::new().allow("via-session"));
+    /// app.uses(Cookies::new().allow("via-session"));
     /// ```
     ///
     pub fn allow(mut self, name: impl AsRef<str>) -> Self {
@@ -259,7 +259,7 @@ impl Cookies {
     /// ```
     /// # use via::{App, Cookies};
     /// # let mut app = App::new(());
-    /// app.middleware(Cookies::new().allow("via-session").percent_decode());
+    /// app.uses(Cookies::new().allow("via-session").percent_decode());
     /// ```
     ///
     pub fn percent_decode(mut self) -> Self {
