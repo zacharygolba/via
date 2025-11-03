@@ -49,28 +49,27 @@ async fn main() -> Result<ExitCode, Error> {
     api.uses(Timeout::from_secs(10).or_service_unavailable());
 
     // Define the /api/posts resource.
-    {
-        use routes::posts;
+    api.route("/posts").scope(|posts| {
+        use routes::posts::authorization;
 
-        let mut resource = api.route("/posts");
-        let (collection, member) = via::rest!(posts);
+        let (collection, member) = via::rest!(routes::posts);
+        let comments = via::get(async |_, _| todo!());
 
-        resource.uses(posts::authentication);
+        posts.uses(authorization);
 
-        resource.route("/").to(collection);
-        resource.route("/:id").to(member);
-    }
+        posts.route("/").to(collection);
+        posts.route("/:id").to(member).scope(|post| {
+            post.route("/comments").to(comments);
+        });
+    });
 
     // Define the /api/users resource.
-    {
-        use routes::users;
+    api.route("/users").scope(|users| {
+        let (collection, member) = via::rest!(routes::users);
 
-        let mut resource = api.route("/users");
-        let (collection, member) = via::rest!(users);
-
-        resource.route("/").to(collection);
-        resource.route("/:id").to(member);
-    }
+        users.route("/").to(collection);
+        users.route("/:id").to(member);
+    });
 
     Server::new(app).listen(("127.0.0.1", 8080)).await
 }
