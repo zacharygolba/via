@@ -59,14 +59,15 @@ macro_rules! rest {
 ///     // Define a /users resource as a child of /api so the rescue and timeout
 ///     // middleware run before any of the middleware or responders defined in
 ///     // the /users resource.
-///     api.route("/users").scope(|resource| {
-///         let todo = async |_: Request, _: Next| todo!();
+///     api.route("/users").scope(|users| {
+///         let index = async |_, _| todo!();
+///         let show = async |_, _| todo!();
 ///
-///         // GET /api/users ~> list users
-///         resource.to(via::get(todo));
+///         // list users
+///         users.route("/").to(via::get(index));
 ///
-///         // GET /api/users/:id ~> find user with id = :id
-///         resource.route("/:id").to(via::get(todo));
+///         // find user with id = :id
+///         users.route("/:id").to(via::get(show));
 ///     });
 ///
 ///     // Start serving our application from http://localhost:8080/.
@@ -120,21 +121,17 @@ impl<State> Route<'_, State> {
     /// ```
     /// # let mut app = via::App::new(());
     /// #
-    /// use routes::articles;
+    /// let mut resource = app.route("/posts");
     ///
-    /// let mut resource = app.route("/articles");
-    ///
-    /// resource.route("/").to(via::get(articles::index));
-    /// resource.route("/:id").to(via::get(articles::show));
-    /// resource.route("/trending").to(via::get(articles::trending));
+    /// resource.route("/").to(via::get(posts::index));
+    /// resource.route("/:id").to(via::get(posts::show));
+    /// resource.route("/trending").to(via::get(posts::trending));
     /// #
-    /// # mod routes {
-    /// #     mod articles {
-    /// #         use via::{Next, Request};
-    /// #         pub async fn trending(_: Request, _: Next) -> via::Result { todo!() }
-    /// #         pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
-    /// #         pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
-    /// #     }
+    /// # mod posts {
+    /// #     use via::{Next, Request};
+    /// #     pub async fn trending(_: Request, _: Next) -> via::Result { todo!() }
+    /// #     pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
+    /// #     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
     /// # }
     /// ```
     ///
@@ -164,11 +161,13 @@ impl<State> Route<'_, State> {
     /// #
     /// # let mut app = via::App::new(());
     /// #
+    /// let mut users = app.route("/users");
+    ///
     /// // Called only when the request path is /users.
-    /// app.route("/users").to(via::get(users::show));
+    /// users.route("/").to(via::get(users::show));
     ///
     /// // Called only when the request path matches /users/:id.
-    /// app.route("/users/:id").to(via::get(users::show));
+    /// users.route("/:id").to(via::get(users::show));
     /// ```
     ///
     pub fn to<T>(mut self, middleware: T) -> Self
@@ -210,6 +209,6 @@ impl<State> Route<'_, State> {
     where
         T: Middleware<State> + 'static,
     {
-        self.inner.middlewareArc::new(middleware));
+        self.inner.middleware(Arc::new(middleware));
     }
 }
