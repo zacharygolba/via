@@ -51,11 +51,9 @@ async fn main() -> Result<ExitCode, Error> {
         };
 
         thread.route("/events").scope(|events| {
-            use routes::events::authorization;
-
             let (collection, member) = via::rest!(routes::events);
 
-            events.uses(authorization);
+            events.uses(routes::events::authorization);
 
             events.route("/").to(collection);
             events.route("/:event-id").to(member);
