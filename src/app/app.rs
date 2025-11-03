@@ -92,9 +92,7 @@ impl<State> App<State> {
     /// See also the usage example in [`Route::route`].
     ///
     pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
-        Route {
-            inner: self.router.route(path),
-        }
+        self.router.route(path)
     }
 
     /// Append the provided middleware to applications call stack.

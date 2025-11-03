@@ -133,21 +133,18 @@ impl<T> Node<T> {
     }
 }
 
-impl<T> RouteMut<'_, T> {
+impl<'a, T> RouteMut<'a, T> {
     pub fn middleware(&mut self, middleware: T) {
         self.0.route.push(MatchCond::Partial(middleware));
-    }
-
-    pub fn respond(&mut self, middleware: T) {
-        self.0.route.push(MatchCond::Final(middleware));
     }
 
     pub fn route(&mut self, path: &'static str) -> RouteMut<'_, T> {
         RouteMut(insert(self.0, path::patterns(path)))
     }
 
-    pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
-        scope(&mut self);
+    pub fn to(self, middleware: T) -> Self {
+        self.0.route.push(MatchCond::Final(middleware));
+        self
     }
 }
 

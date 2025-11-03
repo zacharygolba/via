@@ -1,8 +1,7 @@
 use std::sync::Arc;
+use via_router::{RouteMut, Router as Tree, Traverse};
 
 use crate::middleware::Middleware;
-
-pub type Router<State> = via_router::Router<Arc<dyn Middleware<State>>>;
 
 #[macro_export]
 macro_rules! rest {
@@ -14,6 +13,10 @@ macro_rules! rest {
             $crate::get(show).patch(update).delete(destroy),
         )
     }};
+}
+
+pub(super) struct Router<State> {
+    tree: Tree<Arc<dyn Middleware<State>>>,
 }
 
 /// An entry in the route tree associated with a path segment pattern.
@@ -77,10 +80,35 @@ macro_rules! rest {
 /// ```
 ///
 pub struct Route<'a, State> {
-    pub(super) inner: via_router::RouteMut<'a, Arc<dyn Middleware<State>>>,
+    pub(super) entry: RouteMut<'a, Arc<dyn Middleware<State>>>,
 }
 
-impl<State> Route<'_, State> {
+impl<State> Router<State> {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
+        Route {
+            entry: self.tree.route(path),
+        }
+    }
+
+    #[inline(always)]
+    pub fn traverse<'b>(&self, path: &'b str) -> Traverse<'_, 'b, Arc<dyn Middleware<State>>> {
+        self.tree.traverse(path)
+    }
+}
+
+impl<State> Default for Router<State> {
+    fn default() -> Self {
+        Self {
+            tree: Default::default(),
+        }
+    }
+}
+
+impl<'a, State> Route<'a, State> {
     /// Returns a new child route by appending the provided path to the current
     /// route.
     ///
@@ -137,45 +165,8 @@ impl<State> Route<'_, State> {
     ///
     pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
         Route {
-            inner: self.inner.route(path),
+            entry: self.entry.route(path),
         }
-    }
-
-    /// Consumes self by calling the provided closure with a mutable reference
-    /// to self.
-    ///
-    pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
-        scope(&mut self);
-    }
-
-    /// Defines how the route should respond when it is visited.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # mod users {
-    /// #     use via::{Next, Request};
-    /// #     pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
-    /// #     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
-    /// # }
-    /// #
-    /// # let mut app = via::App::new(());
-    /// #
-    /// let mut users = app.route("/users");
-    ///
-    /// // Called only when the request path is /users.
-    /// users.route("/").to(via::get(users::show));
-    ///
-    /// // Called only when the request path matches /users/:id.
-    /// users.route("/:id").to(via::get(users::show));
-    /// ```
-    ///
-    pub fn to<T>(mut self, middleware: T) -> Self
-    where
-        T: Middleware<State> + 'static,
-    {
-        self.inner.respond(Arc::new(middleware));
-        self
     }
 
     /// Appends the provided middleware to the route's call stack.
@@ -209,6 +200,42 @@ impl<State> Route<'_, State> {
     where
         T: Middleware<State> + 'static,
     {
-        self.inner.middleware(Arc::new(middleware));
+        self.entry.middleware(Arc::new(middleware));
+    }
+
+    /// Consumes self by calling the provided closure with a mutable reference
+    /// to self.
+    ///
+    pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
+        scope(&mut self);
+    }
+
+    /// Defines how the route should respond when it is visited.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # mod users {
+    /// #     use via::{Next, Request};
+    /// #     pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
+    /// #     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
+    /// # }
+    /// #
+    /// # let mut app = via::App::new(());
+    /// #
+    /// // Called only when the request path is /users.
+    /// let mut users = app.route("/users").to(via::get(users::show));
+    ///
+    /// // Called only when the request path matches /users/:id.
+    /// users.route("/:id").to(via::get(users::show));
+    /// ```
+    ///
+    pub fn to<T>(self, middleware: T) -> Self
+    where
+        T: Middleware<State> + 'static,
+    {
+        Self {
+            entry: self.entry.to(Arc::new(middleware)),
+        }
     }
 }
