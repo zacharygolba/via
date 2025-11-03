@@ -138,8 +138,8 @@ where
             match &flow {
                 Continue(None) => {}
                 Continue(Some(error)) => {
-                    handle_error(&error);
-                    if matches!(&error, ErrorKind::Runtime(_)) {
+                    handle_error(error);
+                    if matches!(error, ErrorKind::Runtime(_)) {
                         continue 'session;
                     }
                 }
