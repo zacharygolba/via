@@ -1,10 +1,11 @@
 use std::fmt::{self, Display, Formatter};
-use std::ops::ControlFlow::{self, Break, Continue};
+use std::ops::ControlFlow::{Break, Continue};
 use tokio_websockets::Error as WebSocketError;
 
 use crate::error::Error;
 
-pub type Result<T = ()> = std::result::Result<T, ControlFlow<Error, Error>>;
+type ControlFlow<T> = std::ops::ControlFlow<T, T>;
+pub type Result<T = ()> = std::result::Result<T, ControlFlow<Error>>;
 
 pub trait Retry {
     type Output;
@@ -18,7 +19,7 @@ pub enum ErrorKind {
     Socket(WebSocketError),
 }
 
-pub fn try_rescue_ws(error: WebSocketError) -> ControlFlow<Option<ErrorKind>, Option<ErrorKind>> {
+pub fn try_rescue_ws(error: WebSocketError) -> ControlFlow<Option<ErrorKind>> {
     let into_control_flow = match &error {
         WebSocketError::PayloadTooLong { .. } | WebSocketError::Protocol(_) => Continue,
         WebSocketError::Io(source) => match source.kind() {
@@ -64,11 +65,13 @@ impl From<WebSocketError> for ErrorKind {
 impl<T> Retry for crate::Result<T> {
     type Output = T;
 
+    #[inline]
     fn or_break(self) -> Result<Self::Output> {
-        self.map_err(ControlFlow::Break)
+        self.map_err(Break)
     }
 
+    #[inline]
     fn or_continue(self) -> Result<Self::Output> {
-        self.map_err(ControlFlow::Continue)
+        self.map_err(Continue)
     }
 }

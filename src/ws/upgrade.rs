@@ -7,7 +7,7 @@ use std::mem::swap;
 use std::ops::ControlFlow::{Break, Continue};
 use std::ops::Deref;
 use std::sync::Arc;
-use tokio::sync::mpsc::{self, error::TrySendError};
+use tokio::sync::mpsc;
 use tokio::task::coop;
 use tokio_websockets::server::Builder;
 use tokio_websockets::{Config, Limits};
@@ -18,7 +18,7 @@ use aws_lc_rs::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 #[cfg(feature = "ring")]
 use ring::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 
-use super::channel::{Channel, Message};
+use super::channel::Channel;
 use super::error::{ErrorKind, try_rescue_ws};
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
@@ -73,15 +73,23 @@ where
     };
 
     tokio::pin!(stream);
-
     let head = Arc::from(head);
-    let err = 'session: loop {
+
+    'session: loop {
         let (sender, mut rx) = mpsc::channel(1);
         let (tx, receiver) = mpsc::channel(1);
         let mut listener = Box::pin(listen(
             Channel::new(sender, receiver),
             Request::new(Arc::clone(&head)),
         ));
+
+        let send = async |message| {
+            if tx.send(message).await.is_ok() {
+                Continue(None)
+            } else {
+                Break(Some(ErrorKind::CLOSED))
+            }
+        };
 
         loop {
             let flow = tokio::select! {
@@ -103,7 +111,7 @@ where
                     if let Err(error) = result {
                         try_rescue_ws(error)
                     } else {
-                        continue;
+                        Continue(None)
                     }
                 }
 
@@ -111,49 +119,32 @@ where
                 Some(result) = stream.next() => {
                     coop::consume_budget().await;
 
-                    match result.and_then(Message::try_from) {
+                    match result.and_then(|next| next.try_into()) {
+                        Ok(message) => send(message).await,
                         Err(error) => try_rescue_ws(error),
-                        Ok(message) => {
-                            let Err(error) = tx.try_send(message) else {
-                                continue;
-                            };
-
-                            if let TrySendError::Full(message) = error
-                                && tx.send(message).await.is_ok()
-                            {
-                                continue;
-                            }
-
-                            Break(Some(ErrorKind::CLOSED))
-                        }
                     }
                 }
             };
 
-            match flow {
-                Continue(Some(ref error)) => {
-                    handle_error(error);
-                    if matches!(error, ErrorKind::Runtime(_)) {
+            match &flow {
+                Continue(None) => {}
+                Continue(Some(error)) => {
+                    handle_error(&error);
+                    if matches!(&error, ErrorKind::Runtime(_)) {
                         continue 'session;
                     }
                 }
 
-                Break(err) => {
-                    break 'session if err.is_none() {
-                        stream.flush().await.err().map(ErrorKind::Socket)
-                    } else {
-                        err
-                    };
+                Break(None) => {
+                    let _ = stream.flush().await.inspect_err(handle_error);
+                    break 'session;
                 }
-
-                // Unreachable.
-                Continue(None) => {}
+                Break(Some(error)) => {
+                    handle_error(error);
+                    break 'session;
+                }
             }
         }
-    };
-
-    if let Some(error) = err.as_ref() {
-        handle_error(error);
     }
 
     if cfg!(debug_assertions) {
@@ -263,7 +254,7 @@ where
             let listen = Arc::clone(&self.listen);
             let head = Box::new(head);
 
-            Box::pin(start(listen, head, builder))
+            start(listen, head, builder)
         });
 
         Box::pin(async {
