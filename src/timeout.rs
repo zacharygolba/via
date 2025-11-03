@@ -17,7 +17,7 @@ use crate::{Error, Next, Request};
 ///
 /// let mut app = App::new(());
 ///
-/// app.middleware(Timeout::new(Duration::from_secs(10)));
+/// app.uses(Timeout::new(Duration::from_secs(10)));
 /// app.route("/").to(via::get(async |_, _| {
 ///     sleep(Duration::from_secs(11)).await;
 ///     Response::build().text("Hello, world!")
@@ -53,7 +53,7 @@ impl Timeout {
     /// use via::{App, Timeout};
     ///
     /// let mut app = App::new(());
-    /// app.middleware(Timeout::new(Duration::from_secs(10)));
+    /// app.uses(Timeout::new(Duration::from_secs(10)));
     /// ```
     ///
     pub fn new(duration: Duration) -> Self {
@@ -71,7 +71,7 @@ impl Timeout {
     /// use via::{App, Timeout};
     ///
     /// let mut app = App::new(());
-    /// app.middleware(Timeout::from_secs(10));
+    /// app.uses(Timeout::from_secs(10));
     /// ```
     ///
     pub fn from_secs(secs: u64) -> Self {
@@ -89,7 +89,7 @@ impl Timeout {
     /// let mut app = App::new(());
     /// let mut api = app.route("/api");
     ///
-    /// api.middleware(Timeout::from_secs(10).or_else(|| {
+    /// api.uses(Timeout::from_secs(10).or_else(|| {
     ///     Response::build()
     ///         .status(503)
     ///         .header("Retry-After", "30")
@@ -119,7 +119,7 @@ impl Timeout {
     /// let mut app = App::new(());
     /// let mut api = app.route("/api");
     ///
-    /// api.middleware(Timeout::from_secs(10).or_gateway_timeout());
+    /// api.uses(Timeout::from_secs(10).or_gateway_timeout());
     /// ```
     ///
     pub fn or_gateway_timeout(self) -> Self {
@@ -140,7 +140,7 @@ impl Timeout {
     /// let mut app = App::new(());
     /// let mut api = app.route("/api");
     ///
-    /// api.middleware(Timeout::from_secs(10).or_service_unavailable());
+    /// api.uses(Timeout::from_secs(10).or_service_unavailable());
     /// ```
     ///
     pub fn or_service_unavailable(self) -> Self {

@@ -41,7 +41,7 @@ macro_rules! rest {
 ///
 ///     // If an error occurs on a descendant of /api, respond with json.
 ///     // Siblings of /api must define their own error handling logic.
-///     api.middleware(Rescue::with(|sanitizer| sanitizer.use_json()));
+///     api.uses(Rescue::with(|sanitizer| sanitizer.use_json()));
 ///
 ///     // If a descendant of /api takes more 10 seconds to respond, return an
 ///     // error. A practical solution to the common engineering task: Don't
@@ -54,7 +54,7 @@ macro_rules! rest {
 ///     //   "status": 503,
 ///     //   "errors": [{ "message": "Service Unavailable" }]
 ///     // }
-///     api.middleware(Timeout::from_secs(10).or_service_unavailable());
+///     api.uses(Timeout::from_secs(10).or_service_unavailable());
 ///
 ///     // Define a /users resource as a child of /api so the rescue and timeout
 ///     // middleware run before any of the middleware or responders defined in
@@ -210,6 +210,6 @@ impl<State> Route<'_, State> {
     where
         T: Middleware<State> + 'static,
     {
-        self.inner.middleware(Arc::new(middleware));
+        self.inner.middlewareArc::new(middleware));
     }
 }
