@@ -99,7 +99,7 @@ async fn main() -> Result<ExitCode, Error> {
     app.middleware(counter);
 
     // Add a route that responds with a greeting message.
-    app.route("/hello/:name").respond(via::get(greet));
+    app.route("/hello/:name").to(via::get(greet));
 
     Server::new(app).listen(("127.0.0.1", 8080)).await
 }

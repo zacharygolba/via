@@ -31,7 +31,7 @@
 //!     let mut app = App::new(());
 //!
 //!     // Define a route that listens on /hello/:name.
-//!     app.route("/hello/:name").respond(via::get(hello));
+//!     app.route("/hello/:name").to(via::get(hello));
 //!
 //!     Server::new(app).listen(("127.0.0.1", 8080)).await
 //! }

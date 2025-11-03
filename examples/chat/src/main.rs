@@ -13,7 +13,7 @@ const CSP: &str = "default-src 'self'; connect-src 'self'";
 async fn main() -> Result<ExitCode, Error> {
     let mut app = App::new(Chat::new());
 
-    app.route("/").respond(via::get(async |_, _| {
+    app.route("/").to(via::get(async |_, _| {
         Response::build()
             .header(header::CONTENT_SECURITY_POLICY, CSP)
             .text("Chat Example frontend coming soon!")
@@ -22,13 +22,13 @@ async fn main() -> Result<ExitCode, Error> {
     // Define a router namespace for our chat API.
     app.route("/chat/:room").scope(|route| {
         // GET / -> list all the messages in the room.
-        route.respond(via::get(room::index));
+        route.to(via::get(room::index));
 
         // GET /join -> websocket to read / write messages.
-        route.route("/join").respond(via::ws(room::join));
+        route.route("/join").to(via::ws(room::join));
 
         // Get /:index -> show the message with the provided index.
-        route.route("/:index").respond(via::get(room::show));
+        route.route("/:index").to(via::get(room::show));
     });
 
     Server::new(app).listen(("127.0.0.1", 8080)).await

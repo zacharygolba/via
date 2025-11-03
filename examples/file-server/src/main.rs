@@ -58,7 +58,7 @@ async fn main() -> Result<ExitCode, Error> {
     let mut app = App::new(());
 
     // Serve any file located in the public dir.
-    app.route("/*path").respond(via::get(file_server));
+    app.route("/*path").to(via::get(file_server));
 
     Server::new(app).listen(("127.0.0.1", 8080)).await
 }

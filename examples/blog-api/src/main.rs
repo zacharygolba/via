@@ -50,22 +50,18 @@ async fn main() -> Result<ExitCode, Error> {
         // A mock authentication middleware that does nothing.
         resource.middleware(posts::auth);
 
-        resource.respond(via::get(posts::index).post(posts::create));
-        resource.route("/:id").respond(
-            via::get(posts::show)
-                .patch(posts::update)
-                .delete(posts::destroy),
-        );
+        resource.to(via::get(posts::index).post(posts::create));
+        resource.route("/:id").to(via::get(posts::show)
+            .patch(posts::update)
+            .delete(posts::destroy));
     });
 
     // Define the /api/users resource.
     api.route("/users").scope(|resource| {
-        resource.respond(via::get(users::index).post(users::create));
-        resource.route("/:id").respond(
-            via::get(users::show)
-                .patch(users::update)
-                .delete(users::destroy),
-        );
+        resource.to(via::get(users::index).post(users::create));
+        resource.route("/:id").to(via::get(users::show)
+            .patch(users::update)
+            .delete(users::destroy));
     });
 
     Server::new(app).listen(("127.0.0.1", 8080)).await

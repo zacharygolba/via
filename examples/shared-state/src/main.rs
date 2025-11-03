@@ -81,7 +81,7 @@ async fn main() -> Result<ExitCode, Error> {
     app.middleware(counter);
 
     // Add the `totals` responder to the endpoint GET /totals.
-    app.route("/totals").respond(via::get(totals));
+    app.route("/totals").to(via::get(totals));
 
     Server::new(app).listen(("127.0.0.1", 8080)).await
 }

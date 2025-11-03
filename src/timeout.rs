@@ -18,7 +18,7 @@ use crate::{Error, Next, Request};
 /// let mut app = App::new(());
 ///
 /// app.middleware(Timeout::new(Duration::from_secs(10)));
-/// app.route("/").respond(via::get(async |_, _| {
+/// app.route("/").to(via::get(async |_, _| {
 ///     sleep(Duration::from_secs(11)).await;
 ///     Response::build().text("Hello, world!")
 /// }));
