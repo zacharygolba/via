@@ -1,24 +1,24 @@
-use via::ws::{self, Channel, Message, Retry};
-use via::{Next, Payload, Request, Response, raise};
+use via::ws::{self, Channel, Message, Request, Retry};
+use via::{Payload, raise};
 
 use crate::models::{Chat, EventParams};
 
-pub async fn join(mut channel: Channel, request: ws::Request<Chat>) -> ws::Result {
+pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
     let (user_id, mut updates) = {
-        let chat = request.state();
+        let state = request.state();
 
         let Some(id) = request
             .cookies()
-            .private(chat.secret())
+            .private(state.secret())
             .get("via-chat-session")
             .and_then(|cookie| cookie.value().parse().ok())
         else {
-            return raise!(-> 401).or_break();
+            return raise!(|| 401).or_break();
         };
 
-        let Some(rx) = chat.subscribe(&id).await else {
+        let Some(rx) = state.subscribe(&id).await else {
             let message = format!("invalid user id: {}", id);
-            return raise!(-> 401, message = message).or_break();
+            return raise!(|| 401, message = message).or_break();
         };
 
         (id, rx)
@@ -26,8 +26,6 @@ pub async fn join(mut channel: Channel, request: ws::Request<Chat>) -> ws::Resul
 
     loop {
         tokio::select! {
-            biased;
-
             // WebSocket
             Some(next) = channel.recv() => match next {
                 // Append the message content to the chat thread.
@@ -64,20 +62,4 @@ pub async fn join(mut channel: Channel, request: ws::Request<Chat>) -> ws::Resul
             }
         }
     }
-}
-
-pub async fn message(_: Request<Chat>, _: Next<Chat>) -> via::Result {
-    todo!()
-}
-
-pub async fn reaction(_: Request<Chat>, _: Next<Chat>) -> via::Result {
-    todo!()
-}
-
-pub async fn thread(request: Request<Chat>, _: Next<Chat>) -> via::Result {
-    let id = request.param("id").parse()?;
-    let chat = request.state().as_ref();
-    let future = chat.thread(&id, |thread| Response::build().json(&thread));
-
-    future.await.unwrap_or_else(|| raise!(404))
 }

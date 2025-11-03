@@ -6,7 +6,10 @@ use std::process::ExitCode;
 use via::error::{Error, Rescue};
 use via::{App, Cookies, Server, ws};
 
-use crate::models::Chat;
+use models::Chat;
+
+type Request = via::Request<Chat>;
+type Next = via::Next<Chat>;
 
 #[tokio::main]
 async fn main() -> Result<ExitCode, Error> {
@@ -19,24 +22,44 @@ async fn main() -> Result<ExitCode, Error> {
             .expect("unexpected end of input while parsing VIA_SECRET_KEY"),
     ));
 
-    app.middleware(Cookies::new().allow("via-chat-session"));
-    app.middleware(Rescue::with(|sanitizer| sanitizer.use_json()));
+    app.uses(Cookies::new().allow("via-chat-session"));
 
-    app.route("/").respond(via::get(routes::home));
+    app.route("/").to(via::get(routes::home));
 
-    app.route("/auth").scope(|auth| {
-        use routes::auth::login;
+    let mut api = app.route("/api");
 
-        auth.route("/login").respond(via::post(login));
+    api.uses(Rescue::with(|sanitizer| sanitizer.use_json()));
+
+    // Non-RESTful auth routes.
+    api.route("/auth").scope(|auth| {
+        use routes::auth::{login, logout};
+
+        auth.route("/login").to(via::post(login));
+        auth.route("/logout").to(via::delete(logout));
     });
 
-    app.route("/chat").scope(|chat| {
-        use routes::chat::{join, message, reaction, thread};
+    // Perform a websocket upgrade and start chatting.
+    api.route("/chat").to(ws::upgrade(routes::chat));
 
-        chat.route("/join").respond(ws::upgrade(join));
-        chat.route("/threads/:id").respond(via::get(thread));
-        chat.route("/messages/:id").respond(via::get(message));
-        chat.route("/reactions/:id").respond(via::get(reaction));
+    // Define the CRUD operations for threads and events.
+    api.route("/threads").scope(|threads| {
+        let mut thread = {
+            let (collection, member) = via::rest!(routes::threads);
+
+            threads.route("/").to(collection);
+            threads.route("/:thread-id").to(member)
+        };
+
+        thread.route("/events").scope(|events| {
+            use routes::events::authorization;
+
+            let (collection, member) = via::rest!(routes::events);
+
+            events.uses(authorization);
+
+            events.route("/").to(collection);
+            events.route("/:event-id").to(member);
+        });
     });
 
     Server::new(app).listen(("127.0.0.1", 8080)).await
