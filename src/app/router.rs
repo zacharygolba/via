@@ -211,15 +211,19 @@ impl<State> Route<'_, State> {
     /// # Example
     ///
     /// ```
-    /// # use via::{App, Request, Next};
-    /// # let mut app = App::new(());
-    /// let mut users = app.route("/users");
-    ///
+    /// # mod users {
+    /// #     use via::{Next, Request};
+    /// #     pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
+    /// #     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
+    /// # }
+    /// #
+    /// # let mut app = via::App::new(());
+    /// #
     /// // Called only when the request path is /users.
-    /// users.to(via::get(async |_, _| todo!()));
+    /// app.route("/users").to(via::get(users::show));
     ///
     /// // Called only when the request path matches /users/:id.
-    /// users.route("/:id").to(via::get(async |_, _| todo!()));
+    /// app.route("/users/:id").to(via::get(users::show));
     /// ```
     ///
     pub fn to<T>(&mut self, middleware: T)
