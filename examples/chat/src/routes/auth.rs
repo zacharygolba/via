@@ -22,3 +22,7 @@ pub async fn login(request: Request<Chat>, _: Next<Chat>) -> via::Result {
 
     Ok(response)
 }
+
+pub async fn logout(_: Request<Chat>, _: Next<Chat>) -> via::Result {
+    todo!()
+}

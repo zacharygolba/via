@@ -87,7 +87,7 @@ macro_rules! raise {
         return Err($crate::Error::new(status, message))
     }};
 
-    (-> $($args:tt)*) => { (|| { $crate::raise!($($args)*) })() };
+    (|| $($args:tt)*) => { (|| { $crate::raise!($($args)*) })() };
 
     (boxed = $source:expr $(,)?) => { $crate::raise!(500, boxed = $source) };
     (message = $message:expr $(,)?) => { $crate::raise!(500, message = $message) };

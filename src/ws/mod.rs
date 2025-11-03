@@ -37,7 +37,7 @@ pub use upgrade::{Request, Upgrade};
 ///     let mut app = App::new(());
 ///
 ///     // GET /echo ~> web socket upgrade.
-///     app.route("/echo").respond(ws::upgrade(echo));
+///     app.route("/echo").to(ws::upgrade(echo));
 ///
 ///     Ok(())
 /// }
