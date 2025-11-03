@@ -78,7 +78,7 @@ async fn main() -> Result<ExitCode, Error> {
     // Add the `counter` middleware to the application. Since we are not
     // specifying an endpoint with the `at` method, this middleware will
     // be applied to all requests.
-    app.middleware(counter);
+    app.uses(counter);
 
     // Add the `totals` responder to the endpoint GET /totals.
     app.route("/totals").to(via::get(totals));

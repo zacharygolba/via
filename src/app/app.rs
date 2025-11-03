@@ -33,7 +33,7 @@ use crate::middleware::Middleware;
 ///     });
 ///
 ///     // We can access our database in middleware with `request.state()`.
-///     app.middleware(async |request: Request<Unicorn>, next: Next<Unicorn>| {
+///     app.uses(async |request: Request<Unicorn>, next: Next<Unicorn>| {
 ///         // Get a reference to the state argument passed to `App::new`.
 ///         let state = request.state().as_ref();
 ///         //                          ^^^^^^
@@ -87,19 +87,6 @@ impl<State> App<State> {
         }
     }
 
-    /// Append the provided middleware to applications call stack.
-    ///
-    /// Middleware attached with this method runs for every request.
-    ///
-    /// See also the usage example in [`Route::middleware`].
-    ///
-    pub fn middleware<T>(&mut self, middleware: T)
-    where
-        T: Middleware<State> + 'static,
-    {
-        self.route("/").middleware(middleware);
-    }
-
     /// Returns a new route as a child of the root path `/`.
     ///
     /// See also the usage example in [`Route::route`].
@@ -108,5 +95,18 @@ impl<State> App<State> {
         Route {
             inner: self.router.route(path),
         }
+    }
+
+    /// Append the provided middleware to applications call stack.
+    ///
+    /// Middleware attached with this method runs for every request.
+    ///
+    /// See also the usage example in [`Route::uses`].
+    ///
+    pub fn uses<T>(&mut self, middleware: T)
+    where
+        T: Middleware<State> + 'static,
+    {
+        self.route("/").uses(middleware);
     }
 }

@@ -93,10 +93,10 @@ async fn main() -> Result<ExitCode, Error> {
     // The CookieParser middleware can be added at any depth of the route tree.
     // In this example, we add it to the root of the app. This means that every
     // request will pass through the CookieParser middleware.
-    app.middleware(Cookies::new().allow("counter"));
+    app.uses(Cookies::new().allow("counter"));
 
     // Add the count_visits middleware to the app at "/".
-    app.middleware(counter);
+    app.uses(counter);
 
     // Add a route that responds with a greeting message.
     app.route("/hello/:name").to(via::get(greet));
