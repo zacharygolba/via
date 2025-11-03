@@ -68,7 +68,3 @@ pub use request::Request;
 pub use response::Response;
 pub use server::Server;
 pub use timeout::Timeout;
-
-#[cfg(feature = "ws")]
-#[doc(inline)]
-pub use ws::ws;

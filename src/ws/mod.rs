@@ -1,9 +1,9 @@
-mod channel;
 mod error;
+mod message;
 mod upgrade;
 
-pub use channel::{Channel, CloseCode, Message};
 pub use error::{Result, Retry};
+pub use message::{Channel, CloseCode, Message};
 pub use upgrade::{Request, Upgrade};
 
 /// Upgrade the connection to a web socket.
@@ -11,10 +11,10 @@ pub use upgrade::{Request, Upgrade};
 /// # Example
 ///
 /// ```
-/// use via::ws::{self, Channel, Message};
+/// use via::ws::{self, Channel, Message, Request};
 /// use via::{App, Error, Payload};
 ///
-/// async fn echo(mut channel: Channel, _: ws::Request) -> ws::Result {
+/// async fn echo(mut channel: Channel, _: Request) -> ws::Result {
 ///     loop {
 ///         let Some(message) = channel.recv().await else {
 ///             break Ok(());
@@ -37,13 +37,13 @@ pub use upgrade::{Request, Upgrade};
 ///     let mut app = App::new(());
 ///
 ///     // GET /echo ~> web socket upgrade.
-///     app.route("/echo").respond(via::ws(echo));
+///     app.route("/echo").respond(ws::upgrade(echo));
 ///
 ///     Ok(())
 /// }
 ///```
 ///
-pub fn ws<State, F, R>(upgraded: F) -> Upgrade<F>
+pub fn upgrade<State, F, R>(upgraded: F) -> Upgrade<F>
 where
     F: Fn(Channel, Request<State>) -> R + Send + Sync + 'static,
     R: Future<Output = Result> + Send,
