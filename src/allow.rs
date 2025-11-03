@@ -15,29 +15,28 @@ use crate::{Next, Request, Response};
 /// ```no_run
 /// use std::process::ExitCode;
 /// use via::{App, Error, Server};
-///
-/// mod users {
-///     use via::{Next, Request};
-///
-///     pub async fn create(_: Request, _: Next) -> via::Result { todo!() }
-///     pub async fn destroy(_: Request, _: Next) -> via::Result { todo!() }
-///     pub async fn list(_: Request, _: Next) -> via::Result { todo!() }
-///     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
-///     pub async fn update(_: Request, _: Next) -> via::Result { todo!() }
-/// }
+/// #
+/// # mod routes {
+/// #     pub mod users {
+/// #         use via::{Next, Request};
+/// #         pub async fn create(_: Request, _: Next) -> via::Result { todo!() }
+/// #         pub async fn index(_: Request, _: Next) -> via::Result { todo!() }
+/// #         pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
+/// #         pub async fn update(_: Request, _: Next) -> via::Result { todo!() }
+/// #         pub async fn destroy(_: Request, _: Next) -> via::Result { todo!() }
+/// #     }
+/// # }
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<ExitCode, Error> {
 ///     let mut app = App::new(());
 ///
 ///     // HTTP method based dispatch.
-///     app.route("/users").scope(|resource| {
-///         resource.to(via::get(users::list).post(users::create));
-///         resource.route("/:id").to(
-///             via::get(users::show)
-///                 .patch(users::update)
-///                 .delete(users::destroy)
-///         );
+///     app.route("/users").scope(|users| {
+///         let (collection, member) = via::rest!(routes::users);
+///
+///         users.route("/").to(collection);
+///         users.route("/:id").to(member);
 ///     });
 ///
 ///     Server::new(app).listen(("127.0.0.1", 8080)).await
