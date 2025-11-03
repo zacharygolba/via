@@ -4,7 +4,7 @@ mod routes;
 use std::env;
 use std::process::ExitCode;
 use via::error::{Error, Rescue};
-use via::{App, Cookies, Server};
+use via::{App, Cookies, Server, ws};
 
 use crate::models::Chat;
 
@@ -33,7 +33,7 @@ async fn main() -> Result<ExitCode, Error> {
     app.route("/chat").scope(|chat| {
         use routes::chat::{join, message, reaction, thread};
 
-        chat.route("/join").respond(via::ws(join));
+        chat.route("/join").respond(ws::upgrade(join));
         chat.route("/threads/:id").respond(via::get(thread));
         chat.route("/messages/:id").respond(via::get(message));
         chat.route("/reactions/:id").respond(via::get(reaction));

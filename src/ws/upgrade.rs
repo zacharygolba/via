@@ -18,8 +18,8 @@ use aws_lc_rs::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 #[cfg(feature = "ring")]
 use ring::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 
-use super::channel::Channel;
 use super::error::{ErrorKind, try_rescue_ws};
+use super::message::Channel;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
 use crate::raise;
