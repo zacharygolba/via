@@ -54,17 +54,27 @@ fn handle_error(error: &impl std::error::Error) {
     }
 }
 
-async fn start<State, F, R>(listen: Arc<F>, mut head: Box<RequestHead<State>>, builder: Builder)
+async fn start<State, F, R>(listen: Arc<F>, mut head: Arc<RequestHead<State>>, builder: Builder)
 where
     F: Fn(Channel, Request<State>) -> R + Send + Sync + 'static,
     R: Future<Output = super::Result> + Send,
 {
     let stream = {
+        let Some(head_mut) = Arc::get_mut(&mut head) else {
+            if cfg!(debug_assertions) {
+                eprint!("error(ws): the future returned from start was polled simultaneously ");
+                eprint!("by another thread during the upgrade handshake. closing the socket.");
+                eprintln!(" ");
+            }
+
+            return;
+        };
+
         let mut request = http::Request::new(());
-        swap(request.extensions_mut(), &mut head.parts.extensions);
+        swap(head_mut.extensions_mut(), request.extensions_mut());
 
         let result = hyper::upgrade::on(&mut request).await;
-        swap(&mut head.parts.extensions, request.extensions_mut());
+        swap(request.extensions_mut(), head_mut.extensions_mut());
 
         match result {
             Ok(upgraded) => builder.serve(TokioIo::new(upgraded)),
@@ -73,7 +83,6 @@ where
     };
 
     tokio::pin!(stream);
-    let head = Arc::from(head);
 
     'session: loop {
         let (sender, mut rx) = mpsc::channel(1);
@@ -252,7 +261,7 @@ where
             let (head, _) = request.into_parts();
             let builder = Builder::new().config(self.config).limits(self.limits);
             let listen = Arc::clone(&self.listen);
-            let head = Box::new(head);
+            let head = Arc::new(head);
 
             start(listen, head, builder)
         });
