@@ -101,8 +101,8 @@ impl RequestBody {
         BodyStream::new(self)
     }
 
-    pub async fn into_future(self) -> Result<DataAndTrailers, Error> {
-        IntoFuture::new(self, DataAndTrailers::new()).await
+    pub fn into_future(self) -> IntoFuture {
+        IntoFuture::new(self, DataAndTrailers::new())
     }
 }
 

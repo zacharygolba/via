@@ -6,10 +6,11 @@ use http::{Extensions, HeaderMap, Method, Uri, Version};
 use http_body::Body;
 use std::sync::Arc;
 
-use super::body::{DataAndTrailers, RequestBody};
+use super::body::RequestBody;
 use super::param::PathParams;
 use super::param::{PathParam, QueryParam};
 use crate::error::{BoxError, Error};
+use crate::request::IntoFuture;
 use crate::response::{Finalize, Response, ResponseBuilder};
 
 #[derive(Debug)]
@@ -191,8 +192,9 @@ impl<State> Request<State> {
     /// Consumes the request and returns a future that resolves with the data
     /// in the body.
     ///
-    pub async fn into_future(self) -> Result<DataAndTrailers, Error> {
-        self.body.into_future().await
+    #[inline]
+    pub fn into_future(self) -> (RequestHead<State>, IntoFuture) {
+        (self.head, self.body.into_future())
     }
 }
 

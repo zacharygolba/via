@@ -8,8 +8,8 @@ edition = "2024"
 
 [dependencies]
 chrono = { features = ["serde"], version = "0.4" }
-diesel = { features = ["chrono"], version = "2.1.6" }
-diesel-async = { version = "0.4.1", features = ["bb8", "postgres"] }
+diesel = { features = ["chrono"], version = "2" }
+diesel-async = { version = "0.7", features = ["bb8", "postgres"] }
 dotenvy = "0.15.7"
 http = "1"
 serde = { features = ["derive"], version = "1" }

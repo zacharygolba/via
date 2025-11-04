@@ -1,12 +1,17 @@
+mod chat;
 mod models;
 mod routes;
+mod schema;
+mod util;
 
-use std::env;
 use std::process::ExitCode;
 use via::error::{Error, Rescue};
 use via::{App, Cookies, Server, ws};
 
-use models::Chat;
+use chat::Chat;
+use util::Auth;
+
+const SESSION: &str = "via-chat-session";
 
 type Request = via::Request<Chat>;
 type Next = via::Next<Chat>;
@@ -15,33 +20,25 @@ type Next = via::Next<Chat>;
 async fn main() -> Result<ExitCode, Error> {
     dotenvy::dotenv()?;
 
-    let mut app = App::new(Chat::new(
-        env::var("VIA_SECRET_KEY")
-            .map(|secret| secret.as_bytes().try_into())
-            .expect("missing required env var: VIA_SECRET_KEY")
-            .expect("unexpected end of input while parsing VIA_SECRET_KEY"),
-    ));
+    let mut app = {
+        let pool = chat::establish_pg_connection().await;
+        let secret = chat::load_session_secret();
 
-    app.uses(Cookies::new().allow("via-chat-session"));
+        App::new(Chat::new(pool, secret))
+    };
+
+    app.uses(Cookies::new().allow(SESSION));
+    app.uses(Auth::new(SESSION));
 
     app.route("/").to(via::get(routes::home));
 
     let mut api = app.route("/api");
 
-    api.uses(Rescue::with(|sanitizer| sanitizer.use_json()));
-
-    // Non-RESTful auth routes.
-    api.route("/auth").scope(|auth| {
-        use routes::auth::{login, logout};
-
-        auth.route("/login").to(via::post(login));
-        auth.route("/logout").to(via::delete(logout));
-    });
+    api.uses(Rescue::with(util::error_sanitizer));
 
     // Perform a websocket upgrade and start chatting.
-    api.route("/chat").to(ws::upgrade(routes::chat));
+    api.route("/subscribe").to(ws::upgrade(routes::subscribe));
 
-    // Define the CRUD operations for threads and events.
     api.route("/threads").scope(|threads| {
         let mut thread = {
             let (collection, member) = via::rest!(routes::threads);
@@ -50,14 +47,41 @@ async fn main() -> Result<ExitCode, Error> {
             threads.route("/:thread-id").to(member)
         };
 
-        thread.route("/events").scope(|events| {
-            let (collection, member) = via::rest!(routes::events);
+        // 403 when the current user is not in the thread.
+        thread.uses(routes::threads::authorization);
 
-            events.uses(routes::events::authorization);
+        thread.route("/messages").scope(|messages| {
+            let mut message = {
+                let (collection, member) = via::rest!(routes::messages);
 
-            events.route("/").to(collection);
-            events.route("/:event-id").to(member);
+                messages.route("/").to(collection);
+                messages.route("/:message-id").to(member)
+            };
+
+            message.route("/reactions").scope(|reactions| {
+                let (collection, member) = via::rest!(routes::reactions);
+
+                reactions.route("/").to(collection);
+                reactions.route("/:reaction-id").to(member);
+            });
         });
+
+        // Access control is defined by the owner of the thread.
+        thread.route("/users").scope(|users| {
+            use routes::threads::{add, remove};
+            users.route("/").to(via::post(add).delete(remove));
+        });
+    });
+
+    api.route("/users").scope(|users| {
+        use routes::users::{login, logout};
+
+        let (collection, member) = via::rest!(routes::users);
+
+        users.route("/").to(collection);
+        users.route("/:id").to(member);
+        users.route("/login").to(via::post(login));
+        users.route("/logout").to(via::post(logout));
     });
 
     Server::new(app).listen(("127.0.0.1", 8080)).await
