@@ -19,7 +19,7 @@ use aws_lc_rs::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 use ring::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 
 use super::error::{ErrorKind, try_rescue_ws};
-use super::message::Channel;
+use super::message::{Channel, Message};
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
 use crate::raise;
@@ -86,14 +86,6 @@ where
             Request::new(Arc::clone(&head)),
         ));
 
-        let send = async |message| {
-            if tx.send(message).await.is_ok() {
-                Continue(None)
-            } else {
-                Break(Some(ErrorKind::CLOSED))
-            }
-        };
-
         loop {
             let flow = tokio::select! {
                 biased;
@@ -122,8 +114,14 @@ where
                 Some(result) = stream.next() => {
                     coop::consume_budget().await;
 
-                    match result.and_then(|next| next.try_into()) {
-                        Ok(message) => send(message).await,
+                    match result.and_then(Message::try_from) {
+                        Ok(message) => {
+                            if tx.send(message).await.is_ok() {
+                                Continue(None)
+                            } else {
+                                Break(Some(ErrorKind::CLOSED))
+                            }
+                        }
                         Err(error) => try_rescue_ws(error),
                     }
                 }
