@@ -61,13 +61,7 @@ where
 {
     let stream = {
         let Some(head_mut) = Arc::get_mut(&mut head) else {
-            if cfg!(debug_assertions) {
-                eprint!("error(ws): the future returned from start was polled simultaneously ");
-                eprint!("by another thread during the upgrade handshake. closing the socket.");
-                eprintln!(" ");
-            }
-
-            return;
+            panic!("via::ws::upgrade: handshake already performed.");
         };
 
         let mut request = http::Request::new(());
