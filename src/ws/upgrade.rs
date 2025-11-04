@@ -131,7 +131,7 @@ where
                 Continue(None) => {}
                 Continue(Some(error)) => {
                     handle_error(error);
-                    if matches!(error, ErrorKind::Runtime(_)) {
+                    if matches!(error, ErrorKind::Listener(_)) {
                         continue 'session;
                     }
                 }
