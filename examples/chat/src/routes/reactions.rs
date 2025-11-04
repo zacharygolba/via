@@ -1,0 +1,149 @@
+use diesel::pg::Pg;
+use diesel::{BoolExpressionMethods, QueryDsl, SelectableHelper};
+use diesel_async::RunQueryDsl;
+use via::{Payload, Response};
+
+use crate::models::reaction::*;
+use crate::util::{Authenticate, FoundOrForbidden};
+use crate::{Next, Request};
+
+pub async fn index(request: Request, _: Next) -> via::Result {
+    let message_id = request.param("message-id").parse()?;
+
+    // Build the query from URI params.
+    let query = Reaction::select()
+        .filter(by_message(&message_id))
+        .order(created_at_desc())
+        .limit(50);
+
+    // Print the query to stdout in debug mode.
+    if cfg!(debug_assertions) {
+        println!("\n{}", diesel::debug_query::<Pg, _>(&query));
+    }
+
+    // Acquire a database connection and execute the query.
+    let messages: Vec<ReactionWithJoins> = {
+        let pool = request.state().pool();
+        let mut conn = pool.get().await?;
+
+        query.load(&mut conn).await?
+    };
+
+    Response::build().json(&messages)
+}
+
+pub async fn create(request: Request, _: Next) -> via::Result {
+    // Preconditions
+    let current_user_id = request.current_user()?.id;
+    let message_id = request.param("message-id").parse()?;
+
+    // Deserialize the request body into message params.
+    let (head, future) = request.into_future();
+    let mut params = future.await?.serde_json::<ReactionParams>()?;
+
+    // Source foreign keys from request metadata when possible.
+    params.message_id = Some(message_id);
+    params.user_id = Some(current_user_id);
+
+    // Build the insert statement with the params from the body.
+    let insert = diesel::insert_into(Reaction::TABLE)
+        .values(params)
+        .returning(Reaction::as_returning());
+
+    // Print the query to stdout in debug mode.
+    if cfg!(debug_assertions) {
+        println!("\n{}", diesel::debug_query::<Pg, _>(&insert));
+    }
+
+    // Acquire a database connection and execute the insert.
+    let message = {
+        let pool = head.state().pool();
+        let mut conn = pool.get().await?;
+
+        insert.get_result(&mut conn).await?
+    };
+
+    Response::build().status(201).json(&message)
+}
+
+pub async fn show(request: Request, _: Next) -> via::Result {
+    // Preconditions
+    let id = request.param("message-id").parse()?;
+
+    // Build the query from URI params.
+    let query = Reaction::select().filter(by_id(&id));
+
+    // Print the query to stdout in debug mode.
+    if cfg!(debug_assertions) {
+        println!("\n{}", diesel::debug_query::<Pg, _>(&query));
+    }
+
+    // Acquire a database connection and execute the query.
+    let reaction: ReactionWithJoins = {
+        let pool = request.state().pool();
+        let mut conn = pool.get().await?;
+
+        query.first(&mut conn).await?
+    };
+
+    Response::build().json(&reaction)
+}
+
+pub async fn update(request: Request, _: Next) -> via::Result {
+    // Preconditions
+    let current_user_id = request.current_user()?.id;
+    let reaction_id = request.param("reaction-id").parse()?;
+
+    // Deserialize the request body into message params.
+    let (head, future) = request.into_future();
+    let change_set = future.await?.serde_json::<ReactionChangeSet>()?;
+
+    // Build the update statement with the params from the body.
+    let update = diesel::update(Reaction::TABLE)
+        .set(change_set)
+        // Proceed if the message is authored by the current user.
+        .filter(by_id(&reaction_id).and(by_user(&current_user_id)))
+        .returning(Reaction::as_returning());
+
+    // Print the query to stdout in debug mode.
+    if cfg!(debug_assertions) {
+        println!("\n{}", diesel::debug_query::<Pg, _>(&update));
+    }
+
+    // Acquire a database connection and execute the update.
+    let reaction = {
+        let pool = head.state().pool();
+        let mut conn = pool.get().await?;
+
+        update.get_result(&mut conn).await.found_or_forbidden()?
+    };
+
+    Response::build().json(&reaction)
+}
+
+pub async fn destroy(request: Request, _: Next) -> via::Result {
+    // Preconditions
+    let current_user_id = request.current_user()?.id;
+    let reaction_id = request.param("reaction-id").parse()?;
+
+    // Build the delete statement from URI params.
+    let delete = diesel::delete(Reaction::TABLE).filter(
+        // Proceed if the message is authored by the current user.
+        by_id(&reaction_id).and(by_user(&current_user_id)),
+    );
+
+    // Print the query to stdout in debug mode.
+    if cfg!(debug_assertions) {
+        println!("\n{}", diesel::debug_query::<Pg, _>(&delete));
+    }
+
+    // Acquire a database connection and execute the delete.
+    {
+        let pool = request.state().pool();
+        let mut conn = pool.get().await?;
+
+        delete.execute(&mut conn).await.found_or_forbidden()?;
+    }
+
+    Response::build().status(204).finish()
+}

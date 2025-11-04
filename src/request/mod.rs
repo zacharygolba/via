@@ -2,7 +2,7 @@ mod body;
 mod param;
 mod request;
 
-pub use body::{DataAndTrailers, RequestBody};
+pub use body::{DataAndTrailers, IntoFuture, RequestBody};
 pub use param::{PathParam, QueryParam};
 pub use request::{Request, RequestHead};
 

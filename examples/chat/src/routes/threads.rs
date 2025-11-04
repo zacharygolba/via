@@ -1,20 +1,31 @@
+use via::{Payload, Response};
+
+use crate::models::thread::{NewThread, Thread};
+use crate::util::Authenticate;
 use crate::{Next, Request};
-use via::{Response, raise};
 
 pub async fn index(_: Request, _: Next) -> via::Result {
     todo!()
 }
 
-pub async fn create(_: Request, _: Next) -> via::Result {
-    todo!()
+pub async fn create(request: Request, _: Next) -> via::Result {
+    let (head, future) = request.into_future();
+    let mut params = future.await?.serde_json::<NewThread>()?;
+
+    params.owner_id = Some(head.current_user()?.id);
+
+    let mut connection = head.state().pool().get().await?;
+    let thread = Thread::create(&mut connection, params).await?;
+
+    Response::build().status(201).json(&thread)
 }
 
-pub async fn show(request: Request, _: Next) -> via::Result {
-    let id = request.param("thread-id").parse()?;
-    let state = request.state().as_ref();
-    let future = state.thread(&id, |thread| Response::build().json(&thread));
+pub async fn authorization(request: Request, next: Next) -> via::Result {
+    next.call(request).await
+}
 
-    future.await.unwrap_or_else(|| raise!(404))
+pub async fn show(_: Request, _: Next) -> via::Result {
+    todo!()
 }
 
 pub async fn update(_: Request, _: Next) -> via::Result {
@@ -22,5 +33,13 @@ pub async fn update(_: Request, _: Next) -> via::Result {
 }
 
 pub async fn destroy(_: Request, _: Next) -> via::Result {
+    todo!()
+}
+
+pub async fn add(_: Request, _: Next) -> via::Result {
+    todo!()
+}
+
+pub async fn remove(_: Request, _: Next) -> via::Result {
     todo!()
 }
