@@ -15,7 +15,7 @@ pub trait Retry {
 
 #[derive(Debug)]
 pub enum ErrorKind {
-    Runtime(Error),
+    Listener(Error),
     Socket(WebSocketError),
 }
 
@@ -44,7 +44,7 @@ impl std::error::Error for ErrorKind {}
 impl Display for ErrorKind {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::Runtime(error) => Display::fmt(error, f),
+            Self::Listener(error) => Display::fmt(error, f),
             Self::Socket(error) => Display::fmt(error, f),
         }
     }
@@ -52,7 +52,7 @@ impl Display for ErrorKind {
 
 impl From<Error> for ErrorKind {
     fn from(error: Error) -> Self {
-        Self::Runtime(error)
+        Self::Listener(error)
     }
 }
 
