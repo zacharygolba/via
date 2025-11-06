@@ -68,17 +68,19 @@ impl<State> Request<State> {
         &self.head
     }
 
-    #[inline]
-    pub fn head_mut(&mut self) -> &mut RequestHead<State> {
-        &mut self.head
-    }
-
     /// Returns a reference to an [`Arc`] that contains the state argument that
     /// was passed as an argument to the [`App`](crate::App) constructor.
     ///
     #[inline]
     pub fn state(&self) -> &Arc<State> {
         &self.head.state
+    }
+
+    /// Returns a mutable reference to the associated extensions.
+    ///
+    #[inline]
+    pub fn extensions_mut(&mut self) -> &mut Extensions {
+        self.head.extensions_mut()
     }
 }
 
