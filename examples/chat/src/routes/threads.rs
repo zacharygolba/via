@@ -1,31 +1,101 @@
+use diesel::pg::Pg;
+use diesel::prelude::*;
+use diesel_async::RunQueryDsl;
 use via::{Payload, Response};
 
-use crate::models::thread::{NewThread, Thread};
+use crate::models::message::Message;
+use crate::models::thread::*;
 use crate::util::Authenticate;
 use crate::{Next, Request};
 
-pub async fn index(_: Request, _: Next) -> via::Result {
-    todo!()
+pub async fn index(request: Request, _: Next) -> via::Result {
+    // Get pagination params from the URI query.
+    let limit = request.query("limit").first().parse().unwrap_or(25);
+    let offset = request.query("offset").first().parse().unwrap_or(0);
+
+    // Build the query from URI params.
+    let query = Thread::query()
+        .order(created_at_desc())
+        .limit(limit)
+        .offset(offset);
+
+    // Print the query to stdout in debug mode.
+    if cfg!(debug_assertions) {
+        println!("\n{}", diesel::debug_query::<Pg, _>(&query));
+    }
+
+    // Acquire a database connection and execute the query.
+    let threads: Vec<ThreadWithOwner> = {
+        let pool = request.state().pool();
+        let mut conn = pool.get().await?;
+
+        query.load(&mut conn).await?
+    };
+
+    Response::build().json(&threads)
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
+    // Preconditions
+    let current_user_id = request.current_user()?.id;
+
+    // Deserialize the request body into message params.
     let (head, future) = request.into_future();
-    let mut params = future.await?.serde_json::<NewThread>()?;
+    let mut params = future.await?.serde_json::<ThreadParams>()?;
 
-    params.owner_id = Some(head.current_user()?.id);
+    // Source foreign keys from request metadata when possible.
+    params.owner_id = Some(current_user_id);
 
-    let mut connection = head.state().pool().get().await?;
-    let thread = Thread::create(&mut connection, params).await?;
+    // Build the insert statement with the params from the body.
+    let insert = diesel::insert_into(Thread::TABLE)
+        .values(params)
+        .returning(Thread::as_returning());
+
+    // Print the query to stdout in debug mode.
+    if cfg!(debug_assertions) {
+        println!("\n{}", diesel::debug_query::<Pg, _>(&insert));
+    }
+
+    // Acquire a database connection and execute the insert.
+    let thread = {
+        let pool = head.state().pool();
+        let mut conn = pool.get().await?;
+
+        insert.get_result(&mut conn).await?
+    };
 
     Response::build().status(201).json(&thread)
 }
 
-pub async fn authorization(request: Request, next: Next) -> via::Result {
-    next.call(request).await
-}
+pub async fn show(request: Request, _: Next) -> via::Result {
+    // Preconditions
+    let id = request.param("thread-id").parse()?;
 
-pub async fn show(_: Request, _: Next) -> via::Result {
-    todo!()
+    // Acquire a database connection.
+    let mut conn = request.state().pool().get().await?;
+
+    let query = Thread::query().filter(by_id(id));
+
+    if cfg!(debug_assertions) {
+        println!("\n{}", diesel::debug_query::<Pg, _>(&query));
+    }
+
+    let (thread, owner) = query.first(&mut conn).await?;
+    let query = Message::belonging_to(&thread)
+        .select(Message::as_select())
+        .limit(25);
+
+    if cfg!(debug_assertions) {
+        println!("\n{}", diesel::debug_query::<Pg, _>(&query));
+    }
+
+    let thread = ThreadDetails {
+        messages: query.load(&mut conn).await?,
+        thread,
+        owner,
+    };
+
+    Response::build().json(&thread)
 }
 
 pub async fn update(_: Request, _: Next) -> via::Result {
@@ -33,13 +103,5 @@ pub async fn update(_: Request, _: Next) -> via::Result {
 }
 
 pub async fn destroy(_: Request, _: Next) -> via::Result {
-    todo!()
-}
-
-pub async fn add(_: Request, _: Next) -> via::Result {
-    todo!()
-}
-
-pub async fn remove(_: Request, _: Next) -> via::Result {
     todo!()
 }

@@ -48,7 +48,7 @@ async fn main() -> Result<ExitCode, Error> {
         };
 
         // 403 when the current user is not in the thread.
-        thread.uses(routes::threads::authorization);
+        // thread.uses(routes::threads::authorization);
 
         thread.route("/messages").scope(|messages| {
             let mut message = {
@@ -67,9 +67,9 @@ async fn main() -> Result<ExitCode, Error> {
         });
 
         // Access control is defined by the owner of the thread.
-        thread.route("/users").scope(|users| {
-            use routes::threads::{add, remove};
-            users.route("/").to(via::post(add).delete(remove));
+        thread.route("/users").scope(|_| {
+            // use routes::threads::{add, remove};
+            // users.route("/").to(via::post(add).delete(remove));
         });
     });
 
