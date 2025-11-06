@@ -100,11 +100,13 @@ pub trait Payload: Sized {
 }
 
 #[inline]
-pub fn deserialize_json<T>(slice: &[u8]) -> Result<T, Error>
+fn deserialize_json<T>(slice: &[u8]) -> Result<T, Error>
 where
     T: DeserializeOwned,
 {
-    serde_json::from_slice(slice).or_else(|error| raise!(400, error))
+    serde_json::from_slice(slice).or_else(|error| {
+        raise!(400, error);
+    })
 }
 
 impl Payload for Bytes {
@@ -124,5 +126,12 @@ impl Payload for Bytes {
         let mut dest = Vec::with_capacity(remaining);
         dest.extend_from_slice(detached.as_ref());
         dest
+    }
+
+    fn serde_json_untagged<T>(self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        deserialize_json(self.as_ref())
     }
 }

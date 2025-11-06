@@ -62,16 +62,19 @@ impl From<WebSocketError> for ErrorKind {
     }
 }
 
-impl<T> Retry for crate::Result<T> {
+impl<T, E> Retry for std::result::Result<T, E>
+where
+    Error: From<E>,
+{
     type Output = T;
 
     #[inline]
     fn or_break(self) -> Result<Self::Output> {
-        self.map_err(Break)
+        self.map_err(|error| Break(error.into()))
     }
 
     #[inline]
     fn or_continue(self) -> Result<Self::Output> {
-        self.map_err(Continue)
+        self.map_err(|error| Continue(error.into()))
     }
 }

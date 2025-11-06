@@ -1,17 +1,30 @@
 use bb8::Pool;
 use bytestring::ByteString;
 use cookie::Key;
+use http::header;
 use serde::Serialize;
 use std::env::{self, VarError};
 use tokio::sync::broadcast;
 use uuid::Uuid;
+use via::response::{Finalize, ResponseBuilder};
+use via::{raise, ws};
 
 use crate::models::ConnectionManager;
 use crate::models::message::Message;
 use crate::models::reaction::Reaction;
 
-type Sender = broadcast::Sender<(Uuid, Uuid, ByteString)>;
-type Receiver = broadcast::Receiver<(Uuid, Uuid, ByteString)>;
+type Sender = broadcast::Sender<(EventContext, EventPayload)>;
+type Receiver = broadcast::Receiver<(EventContext, EventPayload)>;
+
+#[derive(Clone)]
+pub struct EventPayload(ByteString);
+
+#[derive(Serialize)]
+#[serde(content = "data", rename_all = "lowercase", tag = "type")]
+pub enum Event {
+    Message(Message),
+    Reaction(Reaction),
+}
 
 pub struct Chat {
     database: Pool<ConnectionManager>,
@@ -19,11 +32,10 @@ pub struct Chat {
     secret: Key,
 }
 
-#[derive(Serialize)]
-#[serde(content = "data", tag = "type")]
-pub enum Event<'a> {
-    Message(&'a Message),
-    Reaction(&'a Reaction),
+#[derive(Clone, Debug)]
+pub struct EventContext {
+    thread_id: Option<Uuid>,
+    user_id: Uuid,
 }
 
 pub async fn establish_pg_connection() -> Pool<ConnectionManager> {
@@ -68,10 +80,14 @@ impl Chat {
         &self.database
     }
 
-    pub fn publish(&self, user_id: Uuid, thread_id: Uuid, event: Event) -> via::Result<()> {
-        let json = serde_json::to_string(&event)?.into();
-        self.channel.0.send((user_id, thread_id, json))?;
-        Ok(())
+    pub fn publish(&self, context: EventContext, event: Event) -> via::Result<EventPayload> {
+        let payload = EventPayload(serde_json::to_string(&event)?.into());
+
+        if self.channel.0.send((context, payload.clone())).is_err() {
+            raise!(message = "pubsub channel closed.");
+        }
+
+        Ok(payload)
     }
 
     pub fn secret(&self) -> &Key {
@@ -80,5 +96,36 @@ impl Chat {
 
     pub fn subscribe(&self) -> Receiver {
         self.channel.0.subscribe()
+    }
+}
+
+impl Finalize for EventPayload {
+    fn finalize(self, builder: ResponseBuilder) -> via::Result {
+        let bytes = self.0.into_bytes();
+
+        builder
+            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(header::CONTENT_LENGTH, bytes.len())
+            .body(bytes)
+    }
+}
+
+impl From<EventPayload> for ws::Message {
+    fn from(payload: EventPayload) -> Self {
+        ws::Message::Text(payload.0)
+    }
+}
+
+impl EventContext {
+    pub fn new(thread_id: Option<Uuid>, user_id: Uuid) -> Self {
+        Self { thread_id, user_id }
+    }
+
+    pub fn thread_id(&self) -> Option<&Uuid> {
+        self.thread_id.as_ref()
+    }
+
+    pub fn user_id(&self) -> &Uuid {
+        &self.user_id
     }
 }
