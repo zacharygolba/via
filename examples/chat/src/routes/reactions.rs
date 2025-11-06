@@ -1,9 +1,10 @@
 use diesel::pg::Pg;
 use diesel::{BoolExpressionMethods, QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
-use via::{Payload, Response};
+use via::Payload;
+use via::response::{Finalize, Response};
 
-use crate::chat::Event;
+use crate::chat::{Event, EventContext};
 use crate::models::reaction::*;
 use crate::util::{Authenticate, FoundOrForbidden};
 use crate::{Next, Request};
@@ -71,11 +72,13 @@ pub async fn create(request: Request, _: Next) -> via::Result {
         insert.get_result(&mut conn).await?
     };
 
-    // Notify subscribers that a message has been created.
-    head.state()
-        .publish(current_user_id, thread_id, Event::Reaction(&reaction))?;
+    let context = EventContext::new(Some(thread_id), current_user_id);
+    let event = Event::Reaction(reaction);
 
-    Response::build().status(201).json(&reaction)
+    // Notify subscribers that a reaction has been created and respond.
+    head.state()
+        .publish(context, event)?
+        .finalize(Response::build().status(201))
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result {

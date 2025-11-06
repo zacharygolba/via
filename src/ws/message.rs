@@ -9,7 +9,7 @@ use tokio_websockets::proto::ProtocolError;
 
 use super::error::ErrorKind;
 use crate::error::Error;
-use crate::payload::{Payload, deserialize_json};
+use crate::payload::Payload;
 
 pub use tokio_websockets::CloseCode;
 
@@ -92,52 +92,23 @@ impl From<&'_ str> for Message {
     }
 }
 
-impl Payload for Message {
+impl Payload for ByteString {
+    #[inline]
     fn copy_to_bytes(self) -> Bytes {
-        match self {
-            Self::Binary(bytes) => Payload::copy_to_bytes(bytes),
-            Self::Close(None) | Self::Close(Some((_, None))) => Default::default(),
-            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => {
-                Payload::copy_to_bytes(utf8.into_bytes())
-            }
-        }
+        Payload::copy_to_bytes(self.into_bytes())
     }
 
-    fn into_utf8(self) -> Result<String, Error> {
-        match self {
-            Self::Binary(bytes) => bytes.into_utf8(),
-            Self::Close(None) | Self::Close(Some((_, None))) => Ok(Default::default()),
-            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => {
-                let vec = utf8.into_bytes().into_vec();
-                // Safety: ValidUtf8 is only constructed from valid UTF-8 byte sequences.
-                unsafe { Ok(String::from_utf8_unchecked(vec)) }
-            }
-        }
-    }
-
+    #[inline]
     fn into_vec(self) -> Vec<u8> {
-        match self {
-            Self::Binary(bytes) => bytes.into_vec(),
-            Self::Close(None) | Self::Close(Some((_, None))) => Default::default(),
-            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => utf8.into_bytes().into_vec(),
-        }
+        Payload::into_vec(self.into_bytes())
     }
 
+    #[inline]
     fn serde_json_untagged<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        let detached = match self {
-            Self::Binary(mut bytes) => bytes.split_to(bytes.len()),
-            Self::Close(None) | Self::Close(Some((_, None))) => Bytes::new(),
-            Self::Close(Some((_, Some(utf8)))) | Self::Text(utf8) => {
-                let mut bytes = utf8.into_bytes();
-                bytes.split_to(bytes.len())
-            }
-        };
-
-        // Allocation not required when json is sourced from a ws message.
-        deserialize_json(detached.as_ref())
+        Payload::serde_json_untagged(self.into_bytes())
     }
 }
 
