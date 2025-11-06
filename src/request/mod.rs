@@ -1,9 +1,9 @@
+pub mod params;
+
 mod body;
-mod param;
+mod query;
 mod request;
 
 pub use body::{DataAndTrailers, IntoFuture, RequestBody};
-pub use param::{PathParam, QueryParam};
+pub use params::{Param, PathParams, QueryParams};
 pub use request::{Request, RequestHead};
-
-pub(crate) use param::PathParams;

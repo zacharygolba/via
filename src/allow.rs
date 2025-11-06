@@ -121,7 +121,7 @@ impl<State> Allow<State> {
     /// # use via::{App, Next, Request, Response};
     /// #
     /// # async fn greet(request: Request, _: Next) -> via::Result {
-    /// #   let name = request.param("name").into_result()?;
+    /// #   let name = request.head().param("name").into_result()?;
     /// #   Response::build().text(format!("Hello, {}!", name))
     /// # }
     /// #
@@ -157,7 +157,7 @@ impl<State> Allow<State> {
     /// # use via::{App, Next, Request, Response};
     /// #
     /// # async fn greet(request: Request, _: Next) -> via::Result {
-    /// #    let name = request.param("name").into_result()?;
+    /// #    let name = request.head().param("name").into_result()?;
     /// #    Response::build().text(format!("Hello, {}!", name))
     /// # }
     /// #
@@ -211,7 +211,7 @@ impl<State> Allow<State> {
 
 impl<State> Middleware<State> for Allow<State> {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
-        let method = request.method();
+        let method = request.head().method();
 
         if let Some(middleware) = self.respond_to(method) {
             middleware.call(request, next)

@@ -1,11 +1,11 @@
 use cookie::{Cookie, ParseError};
-use http::header::{self, COOKIE, SET_COOKIE};
+use http::header::{self, SET_COOKIE};
 use std::collections::HashSet;
 use std::fmt::{self, Display, Formatter};
 
 use crate::Next;
 use crate::middleware::{BoxFuture, Middleware};
-use crate::request::{Request, RequestHead};
+use crate::request::Request;
 use crate::util::UriEncoding;
 
 /// An error occurred while writing a Set-Cookie header to a response.
@@ -30,15 +30,17 @@ struct SetCookieError;
 /// async fn greet(request: Request, _: Next) -> via::Result {
 ///     use time::Duration;
 ///
+///     let head = request.head();
+///
 ///     // `should_set_name` indicates whether "name" was sourced from the
 ///     // request URI. When false, the "name" cookie should not be modified.
 ///     //
 ///     // `name` is a Cow that contains either the percent-decoded value of
 ///     // the "name" cookie or the percent-decoded value of the "name"
 ///     // parameter in the request URI.
-///     let (should_set_name, name) = match request.cookies().get("name") {
+///     let (should_set_name, name) = match head.cookies().get("name") {
 ///         Some(cookie) => (false, cookie.value().into()),
-///         None => (true, request.param("name").percent_decode().into_result()?),
+///         None => (true, head.param("name").decode().into_result()?),
 ///     };
 ///
 ///     // Build the greeting response using a reference to name.
@@ -64,7 +66,7 @@ struct SetCookieError;
 ///     let mut app = App::new(());
 ///
 ///     // Provide cookie support for downstream middleware.
-///     app.uses(Cookies::new().allow("name").percent_decode());
+///     app.uses(Cookies::new().allow("name").decode());
 ///
 ///     // Respond with a greeting when a user visits /hello/:name.
 ///     app.route("/hello/:name").to(via::get(greet));
@@ -146,14 +148,12 @@ struct SetCookieError;
 /// async fn login(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
 ///     use time::Duration;
 ///
-///     let (head, body) = request.into_parts();
-///     let state = head.into_state();
-///
-///     let params = body.into_future().await?.serde_json::<Login>()?;
+///     let (head, future) = request.into_future();
+///     let Login { username, password } = future.await?.serde_json()?;
 ///
 ///     // Insert username and password verification here...
 ///     // For now, we'll just assert that the password is not empty.
-///     if params.password.is_empty() {
+///     if password.is_empty() {
 ///         via::raise!(401, message = "Invalid username or password.");
 ///     }
 ///
@@ -163,12 +163,13 @@ struct SetCookieError;
 ///     // password exists in a database table, we'd probably respond with the
 ///     // matching row as JSON.
 ///     let mut response = Response::build().status(StatusCode::NO_CONTENT).finish()?;
+///     let state = head.state();
 ///
 ///     // Add our session cookie that contains the username of the active user
 ///     // to our private cookie jar. The value of the cookie will be signed
 ///     // and encrypted before it is included as a set-cookie header.
 ///     response.cookies_mut().private_mut(&state.secret).add(
-///         Cookie::build(("via-session", params.username))
+///         Cookie::build(("via-session", username))
 ///             .http_only(true)
 ///             .max_age(Duration::hours(1))
 ///             .path("/")
@@ -259,10 +260,10 @@ impl Cookies {
     /// ```
     /// # use via::{App, Cookies};
     /// # let mut app = App::new(());
-    /// app.uses(Cookies::new().allow("via-session").percent_decode());
+    /// app.uses(Cookies::new().allow("via-session").decode());
     /// ```
     ///
-    pub fn percent_decode(mut self) -> Self {
+    pub fn decode(mut self) -> Self {
         self.encoding = UriEncoding::Percent;
         self
     }
@@ -295,12 +296,9 @@ where
     State: Send + Sync + 'static,
 {
     fn call(&self, mut request: Request<State>, next: Next<State>) -> BoxFuture {
-        let RequestHead { cookies, parts, .. } = request.head_mut();
         let mut existing = Vec::new();
 
-        if let Some(header) = parts.headers.get(COOKIE)
-            && let Ok(input) = header.to_str()
-        {
+        if let Some((input, cookies)) = request.cookie_str_with_cookies_mut() {
             for result in self.parse(input) {
                 let original = match result {
                     Ok(cookie) => cookie.into_owned(),

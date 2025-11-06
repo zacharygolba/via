@@ -15,6 +15,12 @@ struct BlogApi {
     pool: Pool,
 }
 
+impl BlogApi {
+    pub fn pool(&self) -> &Pool {
+        &self.pool
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<ExitCode, Error> {
     dotenvy::dotenv()?;
@@ -26,8 +32,10 @@ async fn main() -> Result<ExitCode, Error> {
     // Setup a simple logger middleware that logs the method, path, and response
     // status code of every request.
     app.uses(async |request: Request, next: Next| {
-        let method = request.method().clone();
-        let path = request.uri().path().to_owned();
+        let head = request.head();
+
+        let method = head.method().clone();
+        let path = head.uri().path().to_owned();
 
         next.call(request).await.inspect(|response| {
             // TODO: Replace println with an actual logger.

@@ -222,7 +222,7 @@ where
     R: Future<Output = super::Result> + Send + 'static,
 {
     fn call(&self, request: crate::Request<State>, next: Next<State>) -> BoxFuture {
-        let headers = request.headers();
+        let headers = request.head().headers();
 
         if headers
             .get(header::UPGRADE)
