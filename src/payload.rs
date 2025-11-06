@@ -128,10 +128,11 @@ impl Payload for Bytes {
         dest
     }
 
-    fn serde_json_untagged<T>(self) -> Result<T, Error>
+    fn serde_json_untagged<T>(mut self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        deserialize_json(self.as_ref())
+        let detached = self.split_to(self.len());
+        deserialize_json(detached.as_ref())
     }
 }
