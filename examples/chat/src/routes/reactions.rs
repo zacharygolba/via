@@ -3,18 +3,25 @@ use diesel::{BoolExpressionMethods, QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
 use via::{Payload, Response};
 
+use crate::chat::Event;
 use crate::models::reaction::*;
 use crate::util::{Authenticate, FoundOrForbidden};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
+    // Preconditions
     let message_id = request.param("message-id").parse()?;
+
+    // Get pagination params from the URI query.
+    let limit = request.query("limit").first().parse().unwrap_or(25).max(50);
+    let offset = request.query("offset").first().parse().unwrap_or(0);
 
     // Build the query from URI params.
     let query = Reaction::select()
         .filter(by_message(&message_id))
         .order(created_at_desc())
-        .limit(50);
+        .limit(limit)
+        .offset(offset);
 
     // Print the query to stdout in debug mode.
     if cfg!(debug_assertions) {
@@ -22,20 +29,21 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     }
 
     // Acquire a database connection and execute the query.
-    let messages: Vec<ReactionWithJoins> = {
+    let reactions: Vec<ReactionWithJoins> = {
         let pool = request.state().pool();
         let mut conn = pool.get().await?;
 
         query.load(&mut conn).await?
     };
 
-    Response::build().json(&messages)
+    Response::build().json(&reactions)
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
     // Preconditions
     let current_user_id = request.current_user()?.id;
     let message_id = request.param("message-id").parse()?;
+    let thread_id = request.param("thread-id").parse()?;
 
     // Deserialize the request body into message params.
     let (head, future) = request.into_future();
@@ -56,14 +64,18 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     }
 
     // Acquire a database connection and execute the insert.
-    let message = {
+    let reaction = {
         let pool = head.state().pool();
         let mut conn = pool.get().await?;
 
         insert.get_result(&mut conn).await?
     };
 
-    Response::build().status(201).json(&message)
+    // Notify subscribers that a message has been created.
+    head.state()
+        .publish(current_user_id, thread_id, Event::Reaction(&reaction))?;
+
+    Response::build().status(201).json(&reaction)
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result {

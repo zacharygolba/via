@@ -7,9 +7,11 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::models::ConnectionManager;
+use crate::models::message::Message;
+use crate::models::reaction::Reaction;
 
-type Sender = broadcast::Sender<(Uuid, ByteString)>;
-type Receiver = broadcast::Receiver<(Uuid, ByteString)>;
+type Sender = broadcast::Sender<(Uuid, Uuid, ByteString)>;
+type Receiver = broadcast::Receiver<(Uuid, Uuid, ByteString)>;
 
 pub struct Chat {
     database: Pool<ConnectionManager>,
@@ -19,9 +21,9 @@ pub struct Chat {
 
 #[derive(Serialize)]
 #[serde(content = "data", tag = "type")]
-pub enum Event {
-    Message(),
-    Reaction(),
+pub enum Event<'a> {
+    Message(&'a Message),
+    Reaction(&'a Reaction),
 }
 
 pub async fn establish_pg_connection() -> Pool<ConnectionManager> {
@@ -64,6 +66,12 @@ impl Chat {
 
     pub fn pool(&self) -> &Pool<ConnectionManager> {
         &self.database
+    }
+
+    pub fn publish(&self, user_id: Uuid, thread_id: Uuid, event: Event) -> via::Result<()> {
+        let json = serde_json::to_string(&event)?.into();
+        self.channel.0.send((user_id, thread_id, json))?;
+        Ok(())
     }
 
     pub fn secret(&self) -> &Key {

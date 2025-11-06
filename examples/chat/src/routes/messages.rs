@@ -5,6 +5,7 @@ use diesel_async::RunQueryDsl;
 use uuid::Uuid;
 use via::{Payload, Response};
 
+use crate::chat::Event;
 use crate::models::message::*;
 use crate::util::{Authenticate, FoundOrForbidden};
 use crate::{Next, Request};
@@ -69,6 +70,10 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
         insert.get_result(&mut conn).await?
     };
+
+    // Notify subscribers that a message has been created.
+    head.state()
+        .publish(current_user_id, thread_id, Event::Message(&message))?;
 
     Response::build().status(201).json(&message)
 }
