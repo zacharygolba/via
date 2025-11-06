@@ -5,29 +5,21 @@ use diesel_async::RunQueryDsl;
 use uuid::Uuid;
 use via::{Payload, Response};
 
-use crate::models::BoxFilter;
 use crate::models::message::*;
 use crate::util::{Authenticate, FoundOrForbidden};
 use crate::{Next, Request};
 
-fn page_from_uri(request: &Request) -> Option<(NaiveDateTime, Uuid)> {
-    let before = request.query("before").first().parse().ok()?;
-    let cursor = request.query("cursor").first().parse().ok()?;
-
-    Some((before, cursor))
-}
-
 pub async fn index(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let cursor_opt = page_from_uri(&request);
     let thread_id = request.param("thread-id").parse()?;
+    let cursor: (NaiveDateTime, Uuid) = (
+        request.query("createdBefore").first().parse()?,
+        request.query("occurringBefore").first().parse()?,
+    );
 
     // Build the query from URI params.
     let query = Message::select()
-        .filter(match cursor_opt.map(by_cursor) {
-            Some(cursor) => Box::new(by_thread(thread_id).and(cursor)),
-            None => Box::new(by_thread(thread_id)) as BoxFilter<_>,
-        })
+        .filter(by_thread(thread_id).and(by_cursor(cursor)))
         .order(created_at_desc())
         .limit(50);
 
