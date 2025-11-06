@@ -30,7 +30,7 @@ pub struct Message {
 
     #[serde(skip)]
     author_id: Uuid,
-    thread_id: Uuid,
+    pub thread_id: Uuid,
 
     created_at: NaiveDateTime,
     updated_at: NaiveDateTime,
