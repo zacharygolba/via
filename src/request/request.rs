@@ -1,8 +1,7 @@
 use bytes::Bytes;
 use cookie::CookieJar;
-use http::header::{self, CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::request::Parts;
-use http::{Extensions, HeaderMap, Method, Uri, Version};
+use http::{Extensions, HeaderMap, Method, Uri, Version, header};
 use http_body::Body;
 use std::sync::Arc;
 
@@ -104,14 +103,19 @@ impl<State> Request<State> {
 
 impl<State> Finalize for Request<State> {
     fn finalize(self, builder: ResponseBuilder) -> Result<Response, Error> {
-        let Self { head, body } = self;
-        let body = body.boxed();
+        let headers = self.head.headers();
 
-        if let Some(value) = head.headers().get(CONTENT_LENGTH) {
-            builder.header(CONTENT_LENGTH, value).body(body)
-        } else {
-            builder.header(TRANSFER_ENCODING, "chunked").body(body)
-        }
+        let builder = match headers.get(header::CONTENT_LENGTH).cloned() {
+            Some(value) => builder.header(header::CONTENT_LENGTH, value),
+            None => builder.header(header::TRANSFER_ENCODING, "chunked"),
+        };
+
+        let builder = match headers.get(header::CONTENT_TYPE).cloned() {
+            Some(value) => builder.header(header::CONTENT_TYPE, value),
+            None => builder,
+        };
+
+        builder.body(self.body.boxed())
     }
 }
 
