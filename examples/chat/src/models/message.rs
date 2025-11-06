@@ -12,16 +12,12 @@ use uuid::Uuid;
 use super::thread::Thread;
 use super::user::User;
 use crate::schema::messages::{self, dsl as col};
-use crate::schema::{threads, users};
+use crate::schema::users;
 
-pub type TableWithJoins = InnerJoin<InnerJoin<messages::table, threads::table>, users::table>;
-pub type DefaultSelection = (
-    AsSelect<Message, Pg>,
-    AsSelect<Thread, Pg>,
-    AsSelect<User, Pg>,
-);
+pub type TableWithJoins = InnerJoin<messages::table, users::table>;
+pub type DefaultSelection = (AsSelect<Message, Pg>, AsSelect<User, Pg>);
 
-#[derive(Associations, Queryable, Selectable, Serialize)]
+#[derive(Associations, Identifiable, Queryable, Selectable, Serialize)]
 #[diesel(belongs_to(Thread))]
 #[diesel(belongs_to(User, foreign_key = author_id))]
 #[diesel(table_name = messages)]
@@ -34,8 +30,6 @@ pub struct Message {
 
     #[serde(skip)]
     author_id: Uuid,
-
-    #[serde(skip)]
     thread_id: Uuid,
 
     created_at: NaiveDateTime,
@@ -62,7 +56,6 @@ pub struct MessageParams {
 pub struct MessageWithJoins {
     #[serde(flatten)]
     message: Message,
-    thread: Thread,
     author: User,
 }
 
@@ -93,21 +86,15 @@ impl Message {
 
     pub fn select() -> Select<TableWithJoins, DefaultSelection> {
         Self::TABLE
-            .inner_join(threads::table)
             .inner_join(users::table)
-            .select((Self::as_select(), Thread::as_select(), User::as_select()))
+            .select((Self::as_select(), User::as_select()))
     }
 }
 
 impl FromSqlRow<DefaultSelection, Pg> for MessageWithJoins {
     fn build_from_row<'a>(row: &impl Row<'a, Pg>) -> diesel::deserialize::Result<Self> {
-        let (message, thread, author) =
-            <_ as FromSqlRow<DefaultSelection, _>>::build_from_row(row)?;
+        let (message, author) = <_ as FromSqlRow<DefaultSelection, _>>::build_from_row(row)?;
 
-        Ok(MessageWithJoins {
-            message,
-            thread,
-            author,
-        })
+        Ok(MessageWithJoins { message, author })
     }
 }

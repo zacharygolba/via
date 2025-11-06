@@ -21,7 +21,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     let query = Message::select()
         .filter(by_thread(thread_id).and(by_cursor(cursor)))
         .order(created_at_desc())
-        .limit(50);
+        .limit(25);
 
     // Print the query to stdout in debug mode.
     if cfg!(debug_assertions) {
