@@ -15,7 +15,7 @@ http = "1"
 serde = { features = ["derive"], version = "1" }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-bb8 = "0.8.3"
+bb8 = "0.9"
 via = { path = "../.." }
 
 [dev-dependencies]
