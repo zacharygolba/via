@@ -34,7 +34,7 @@ pub struct Thread {
 #[derive(Clone, Deserialize, Insertable)]
 #[diesel(table_name = threads)]
 #[serde(rename_all = "camelCase")]
-pub struct ThreadParams {
+pub struct NewThread {
     pub name: String,
 
     pub owner_id: Option<Uuid>,

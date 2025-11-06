@@ -36,21 +36,16 @@ impl Auth {
 
 impl Middleware<Chat> for Auth {
     fn call(&self, mut request: Request, next: Next) -> via::BoxFuture {
-        let jar = request.cookies().private(request.state().secret());
+        let head = request.head_mut();
+        let jar = head.cookies().private(head.state().secret());
 
         if let Some(cookie) = jar.get(&self.cookie)
             && let Ok(user) = serde_json::from_str(cookie.value())
         {
-            request.extensions_mut().insert(Verify(user));
+            head.extensions_mut().insert(Verify(user));
         }
 
         next.call(request)
-    }
-}
-
-impl Authenticate for Request {
-    fn current_user(&self) -> via::Result<&User> {
-        try_from_extensions(self.extensions())
     }
 }
 

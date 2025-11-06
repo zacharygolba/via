@@ -1,7 +1,6 @@
+use super::params::ParamRange;
 use percent_encoding::percent_decode_str;
 use std::borrow::Cow;
-
-type QueryParserOutput<'a> = (Cow<'a, str>, Option<(usize, Option<usize>)>);
 
 pub struct QueryParser<'a> {
     input: &'a str,
@@ -56,14 +55,10 @@ impl<'a> QueryParser<'a> {
     pub fn new(input: &'a str) -> Self {
         Self { input, from: 0 }
     }
-
-    pub fn input(&self) -> &'a str {
-        self.input
-    }
 }
 
 impl<'a> Iterator for QueryParser<'a> {
-    type Item = QueryParserOutput<'a>;
+    type Item = (Cow<'a, str>, Option<ParamRange>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let (start, name) = take_name(self.input, self.from);

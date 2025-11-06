@@ -1,21 +1,38 @@
 use diesel::pg::Pg;
-use diesel::{BoolExpressionMethods, QueryDsl, SelectableHelper};
+use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
+use uuid::Uuid;
 use via::Payload;
+use via::request::PathParams;
 use via::response::{Finalize, Response};
 
 use crate::chat::{Event, EventContext};
 use crate::models::reaction::*;
-use crate::util::{Authenticate, FoundOrForbidden};
+use crate::util::{Authenticate, FoundOrForbidden, LimitAndOffset};
 use crate::{Next, Request};
+
+struct ReactionParams {
+    thread_id: Uuid,
+    message_id: Uuid,
+}
+
+impl TryFrom<PathParams<'_>> for ReactionParams {
+    type Error = via::Error;
+
+    fn try_from(params: PathParams<'_>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            thread_id: params.get("thread-id").parse()?,
+            message_id: params.get("message-id").parse()?,
+        })
+    }
+}
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let message_id = request.param("message-id").parse()?;
+    let message_id = request.head().param("message-id").parse()?;
 
     // Get pagination params from the URI query.
-    let limit = request.query("limit").first().parse().unwrap_or(25).max(50);
-    let offset = request.query("offset").first().parse().unwrap_or(0);
+    let LimitAndOffset(limit, offset) = request.head().query()?;
 
     // Build the query from URI params.
     let query = Reaction::select()
@@ -42,21 +59,20 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 
 pub async fn create(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let current_user_id = request.current_user()?.id;
-    let message_id = request.param("message-id").parse()?;
-    let thread_id = request.param("thread-id").parse()?;
+    let current_user_id = request.head().current_user()?.id;
+    let params = request.head().params::<ReactionParams>()?;
 
     // Deserialize the request body into message params.
     let (head, future) = request.into_future();
-    let mut params = future.await?.serde_json::<ReactionParams>()?;
+    let mut new_reaction = future.await?.serde_json::<NewReaction>()?;
 
     // Source foreign keys from request metadata when possible.
-    params.message_id = Some(message_id);
-    params.user_id = Some(current_user_id);
+    new_reaction.message_id = Some(params.message_id);
+    new_reaction.user_id = Some(current_user_id);
 
     // Build the insert statement with the params from the body.
     let insert = diesel::insert_into(Reaction::TABLE)
-        .values(params)
+        .values(new_reaction)
         .returning(Reaction::as_returning());
 
     // Print the query to stdout in debug mode.
@@ -72,7 +88,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
         insert.get_result(&mut conn).await?
     };
 
-    let context = EventContext::new(Some(thread_id), current_user_id);
+    let context = EventContext::new(Some(params.thread_id), current_user_id);
     let event = Event::Reaction(reaction);
 
     // Notify subscribers that a reaction has been created and respond.
@@ -83,7 +99,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
 pub async fn show(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let id = request.param("message-id").parse()?;
+    let id = request.head().param("message-id").parse()?;
 
     // Build the query from URI params.
     let query = Reaction::select().filter(by_id(&id));
@@ -106,12 +122,12 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 
 pub async fn update(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let current_user_id = request.current_user()?.id;
-    let reaction_id = request.param("reaction-id").parse()?;
+    let current_user_id = request.head().current_user()?.id;
+    let reaction_id = request.head().param("reaction-id").parse()?;
 
     // Deserialize the request body into message params.
     let (head, future) = request.into_future();
-    let change_set = future.await?.serde_json::<ReactionChangeSet>()?;
+    let change_set = future.await?.serde_json::<ChangeSet>()?;
 
     // Build the update statement with the params from the body.
     let update = diesel::update(Reaction::TABLE)
@@ -138,8 +154,8 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 
 pub async fn destroy(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let current_user_id = request.current_user()?.id;
-    let reaction_id = request.param("reaction-id").parse()?;
+    let current_user_id = request.head().current_user()?.id;
+    let reaction_id = request.head().param("reaction-id").parse()?;
 
     // Build the delete statement from URI params.
     let delete = diesel::delete(Reaction::TABLE).filter(

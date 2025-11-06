@@ -1,16 +1,15 @@
 use bytes::Bytes;
 use cookie::CookieJar;
-use http::header::{AsHeaderName, CONTENT_LENGTH, TRANSFER_ENCODING};
+use http::header::{self, CONTENT_LENGTH, TRANSFER_ENCODING};
 use http::request::Parts;
 use http::{Extensions, HeaderMap, Method, Uri, Version};
 use http_body::Body;
 use std::sync::Arc;
 
-use super::body::RequestBody;
-use super::param::PathParams;
-use super::param::{PathParam, QueryParam};
+use super::body::{IntoFuture, RequestBody};
+use super::params::{Param, PathParamEntry, PathParams};
 use crate::error::{BoxError, Error};
-use crate::request::IntoFuture;
+use crate::request::params::QueryParams;
 use crate::response::{Finalize, Response, ResponseBuilder};
 
 #[derive(Debug)]
@@ -23,148 +22,31 @@ pub struct Request<State = ()> {
 ///
 #[derive(Debug)]
 pub struct RequestHead<State> {
-    pub(crate) parts: Parts,
+    envelope: Box<Envelope>,
+    state: Arc<State>,
+}
 
-    /// The request's path parameters.
-    ///
-    pub(crate) params: PathParams,
-
-    /// The cookies associated with the request. If there is not a
-    /// [CookieParser](crate::middleware::CookieParser)
-    /// middleware in the middleware stack for the request, this will be empty.
-    ///
-    pub(crate) cookies: CookieJar,
-
-    /// The shared application state passed to the
-    /// [`App`](crate::App)
-    /// constructor.
-    ///
-    pub(crate) state: Arc<State>,
+#[derive(Debug)]
+struct Envelope {
+    parts: Parts,
+    params: Vec<PathParamEntry>,
+    cookies: CookieJar,
 }
 
 impl<State> Request<State> {
-    /// Returns a reference to the request's method.
+    /// Consumes the request and returns a future that resolves with the data
+    /// in the body.
     ///
     #[inline]
-    pub fn method(&self) -> &Method {
-        self.head.method()
+    pub fn into_future(self) -> (RequestHead<State>, IntoFuture) {
+        (self.head, self.body.into_future())
     }
 
-    /// Returns a reference to the request's URI.
+    /// Consumes the request and returns a tuple containing the head and body.
     ///
     #[inline]
-    pub fn uri(&self) -> &Uri {
-        self.head.uri()
-    }
-
-    /// Returns the HTTP version that was used to make the request.
-    ///
-    #[inline]
-    pub fn version(&self) -> Version {
-        self.head.version()
-    }
-
-    /// Returns a reference to the request's headers.
-    ///
-    #[inline]
-    pub fn headers(&self) -> &HeaderMap {
-        self.head.headers()
-    }
-
-    /// Returns a reference to the associated extensions.
-    ///
-    #[inline]
-    pub fn extensions(&self) -> &Extensions {
-        self.head.extensions()
-    }
-
-    /// Returns a mutable reference to the associated extensions.
-    ///
-    #[inline]
-    pub fn extensions_mut(&mut self) -> &mut Extensions {
-        self.head.extensions_mut()
-    }
-
-    /// Returns a convenient wrapper around an optional reference to the path
-    /// parameter in the request's uri with the provided `name`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use via::{Next, Request, Response};
-    ///
-    /// async fn hello(request: Request, _: Next) -> via::Result {
-    ///     let name = request.param("name").into_result()?;
-    ///     Response::build().text(format!("Hello, {}!", name))
-    /// }
-    /// ```
-    ///
-    #[inline]
-    pub fn param<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
-        self.head.param(name)
-    }
-
-    /// Returns a convenient wrapper around an optional references to the query
-    /// parameters in the request's uri with the provided `name`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use via::{Next, Request, Response};
-    ///
-    /// async fn hello(request: Request, _: Next) -> via::Result {
-    ///     // Attempt to parse the first query parameter named `n` to a `usize`
-    ///     // no greater than 1000. If the query parameter doesn't exist or
-    ///     // can't be converted to a `usize`, default to 1.
-    ///     let n = request.query("n").first().parse().unwrap_or(1).min(1000);
-    ///
-    ///     // Get a reference to the path parameter `name` from the request uri.
-    ///     let name = request.param("name").into_result()?;
-    ///
-    ///     // Create a greeting message with the provided `name`.
-    ///     let message = format!("Hello, {}!\n", name);
-    ///
-    ///     // Send a response with our greeting message, repeated `n` times.
-    ///     Response::build().text(message.repeat(n))
-    /// }
-    /// ```
-    ///
-    #[inline]
-    pub fn query<'b>(&self, name: &'b str) -> QueryParam<'_, 'b> {
-        self.head.query(name)
-    }
-
-    /// Returns a result that contains an Option<&str> with the header value
-    /// associated with the provided key.
-    ///
-    /// # Errors
-    ///
-    /// *Status Code:* `400`
-    ///
-    /// If the header value associated with key contains a char that is not
-    /// considered to be visible ascii.
-    ///
-    #[inline]
-    pub fn header<K>(&self, key: K) -> Result<Option<&str>, Error>
-    where
-        K: AsHeaderName,
-    {
-        self.head.header(key)
-    }
-
-    /// Returns reference to the cookies associated with the request.
-    ///
-    #[inline]
-    pub fn cookies(&self) -> &CookieJar {
-        self.head.cookies()
-    }
-
-    /// Returns a reference to an [`Arc`] that contains the state argument that
-    /// was passed as an argument to the [`App`](crate::App) constructor.
-    ///
-    #[inline]
-    pub fn state(&self) -> &Arc<State> {
-        &self.head.state
+    pub fn into_parts(self) -> (RequestHead<State>, RequestBody) {
+        (self.head, self.body)
     }
 
     /// Consumes the request returning a new request with body mapped to the
@@ -182,19 +64,22 @@ impl<State> Request<State> {
         }
     }
 
-    /// Consumes the request and returns a tuple containing the head and body.
-    ///
     #[inline]
-    pub fn into_parts(self) -> (RequestHead<State>, RequestBody) {
-        (self.head, self.body)
+    pub fn head(&self) -> &RequestHead<State> {
+        &self.head
     }
 
-    /// Consumes the request and returns a future that resolves with the data
-    /// in the body.
+    #[inline]
+    pub fn head_mut(&mut self) -> &mut RequestHead<State> {
+        &mut self.head
+    }
+
+    /// Returns a reference to an [`Arc`] that contains the state argument that
+    /// was passed as an argument to the [`App`](crate::App) constructor.
     ///
     #[inline]
-    pub fn into_future(self) -> (RequestHead<State>, IntoFuture) {
-        (self.head, self.body.into_future())
+    pub fn state(&self) -> &Arc<State> {
+        &self.head.state
     }
 }
 
@@ -204,129 +89,118 @@ impl<State> Request<State> {
         Self { head, body }
     }
 
-    /// Returns a mutable reference to the associated path params.
-    ///
-    #[inline]
-    pub(crate) fn head_mut(&mut self) -> &mut RequestHead<State> {
-        &mut self.head
+    pub(crate) fn cookie_str_with_cookies_mut(&mut self) -> Option<(&str, &mut CookieJar)> {
+        let envelope = &mut *self.head.envelope;
+        let header = envelope.parts.headers.get(header::COOKIE)?.to_str().ok()?;
+
+        Some((header, &mut envelope.cookies))
+    }
+
+    pub(crate) fn path_with_params_mut(&mut self) -> (&str, &mut Vec<PathParamEntry>) {
+        let envelope = &mut *self.head.envelope;
+        (envelope.parts.uri.path(), &mut envelope.params)
     }
 }
 
 impl<State> Finalize for Request<State> {
-    #[inline]
     fn finalize(self, builder: ResponseBuilder) -> Result<Response, Error> {
-        let response = match self.headers().get(CONTENT_LENGTH).cloned() {
-            Some(header_value) => builder.header(CONTENT_LENGTH, header_value),
-            None => builder.header(TRANSFER_ENCODING, "chunked"),
-        };
+        let Self { head, body } = self;
+        let body = body.boxed();
 
-        response.body(self.body.boxed())
+        if let Some(value) = head.headers().get(CONTENT_LENGTH) {
+            builder.header(CONTENT_LENGTH, value).body(body)
+        } else {
+            builder.header(TRANSFER_ENCODING, "chunked").body(body)
+        }
     }
 }
 
 impl<State> RequestHead<State> {
-    #[inline]
-    pub(crate) fn new(parts: Parts, state: Arc<State>, params: PathParams) -> Self {
+    pub(crate) fn new(parts: Parts, state: Arc<State>) -> Self {
         Self {
-            parts,
-            params,
-            cookies: CookieJar::new(),
+            envelope: Box::new(Envelope {
+                cookies: CookieJar::new(),
+                params: Vec::with_capacity(8),
+                parts,
+            }),
             state,
         }
-    }
-
-    /// Consume the request head returning an arc to the state argument that
-    /// was passed to [`App::new`](crate::App::new).
-    ///
-    #[inline]
-    pub fn into_state(self) -> Arc<State> {
-        self.state
     }
 
     /// Returns a reference to the request's method.
     ///
     #[inline]
     pub fn method(&self) -> &Method {
-        &self.parts.method
+        &self.envelope.parts.method
     }
 
     /// Returns a reference to the request's URI.
     ///
     #[inline]
     pub fn uri(&self) -> &Uri {
-        &self.parts.uri
+        &self.envelope.parts.uri
     }
 
     /// Returns the HTTP version that was used to make the request.
     ///
     #[inline]
     pub fn version(&self) -> Version {
-        self.parts.version
+        self.envelope.parts.version
     }
 
     /// Returns a reference to the request's headers.
     ///
     #[inline]
     pub fn headers(&self) -> &HeaderMap {
-        &self.parts.headers
+        &self.envelope.parts.headers
     }
 
     /// Returns a reference to the associated extensions.
     ///
     #[inline]
     pub fn extensions(&self) -> &Extensions {
-        &self.parts.extensions
+        &self.envelope.parts.extensions
     }
 
     /// Returns a mutable reference to the associated extensions.
     ///
     #[inline]
     pub fn extensions_mut(&mut self) -> &mut Extensions {
-        &mut self.parts.extensions
+        &mut self.envelope.parts.extensions
+    }
+
+    pub fn params<'a, T>(&'a self) -> crate::Result<T>
+    where
+        T: TryFrom<PathParams<'a>, Error = Error>,
+    {
+        let envelope = &*self.envelope;
+        let params = PathParams::new(envelope.parts.uri.path(), &envelope.params);
+
+        T::try_from(params)
     }
 
     /// Returns a convenient wrapper around an optional reference to the path
     /// parameter in the request's uri with the provided `name`.
     ///
-    #[inline]
-    pub fn param<'b>(&self, name: &'b str) -> PathParam<'_, 'b> {
-        self.params.get(self.uri().path(), name)
+    pub fn param<'b>(&self, name: &'b str) -> Param<'_, 'b> {
+        let envelope = &*self.envelope;
+        let params = PathParams::new(envelope.parts.uri.path(), &envelope.params);
+
+        params.get(name)
     }
 
-    /// Returns a convenient wrapper around an optional references to the query
-    /// parameters in the request's uri with the provided `name`.
-    ///
-    #[inline]
-    pub fn query<'b>(&self, name: &'b str) -> QueryParam<'_, 'b> {
-        QueryParam::new(name, self.uri().query().unwrap_or(""))
-    }
-
-    /// Returns a result that contains an Option<&str> with the header value
-    /// associated with the provided key.
-    ///
-    /// # Errors
-    ///
-    /// *Status Code:* `400`
-    ///
-    /// If the header value associated with key contains a char that is not
-    /// considered to be visible ascii.
-    ///
-    pub fn header<K>(&self, key: K) -> Result<Option<&str>, Error>
+    pub fn query<'a, T>(&'a self) -> crate::Result<T>
     where
-        K: AsHeaderName,
+        T: TryFrom<QueryParams<'a>, Error = Error>,
     {
-        self.headers()
-            .get(key)
-            .map(|value| value.to_str())
-            .transpose()
-            .or_else(|error| crate::raise!(400, error))
+        T::try_from(QueryParams::new(self.uri().query()))
     }
 
     /// Returns reference to the cookies associated with the request.
     ///
     #[inline]
     pub fn cookies(&self) -> &CookieJar {
-        &self.cookies
+        &self.envelope.cookies
     }
 
     /// Returns a reference to an [`Arc`] that contains the state argument that
@@ -334,6 +208,6 @@ impl<State> RequestHead<State> {
     ///
     #[inline]
     pub fn state(&self) -> &State {
-        self.state.as_ref()
+        &self.state
     }
 }

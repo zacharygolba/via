@@ -20,9 +20,11 @@ const PUBLIC_DIR: &str = "./public";
 ///
 async fn file_server(request: Request, _: Next) -> via::Result {
     let path_param = request
+        .head()
         .param("path")
-        .percent_decode()
-        .into_result()
+        .decode()
+        .optional()
+        .transpose()?
         .unwrap_or("index.html".into());
 
     let file_path = resolve_path(path_param.as_ref());

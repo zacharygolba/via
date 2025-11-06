@@ -5,13 +5,12 @@ use via::{Payload, Response};
 
 use crate::models::message::Message;
 use crate::models::thread::*;
-use crate::util::Authenticate;
+use crate::util::{Authenticate, LimitAndOffset};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // Get pagination params from the URI query.
-    let limit = request.query("limit").first().parse().unwrap_or(25);
-    let offset = request.query("offset").first().parse().unwrap_or(0);
+    let LimitAndOffset(limit, offset) = request.head().query()?;
 
     // Build the query from URI params.
     let query = Thread::query()
@@ -37,11 +36,11 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 
 pub async fn create(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let current_user_id = request.current_user()?.id;
+    let current_user_id = request.head().current_user()?.id;
 
     // Deserialize the request body into message params.
     let (head, future) = request.into_future();
-    let mut params = future.await?.serde_json::<ThreadParams>()?;
+    let mut params = future.await?.serde_json::<NewThread>()?;
 
     // Source foreign keys from request metadata when possible.
     params.owner_id = Some(current_user_id);
@@ -69,7 +68,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
 pub async fn show(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let id = request.param("thread-id").parse()?;
+    let id = request.head().param("thread-id").parse()?;
 
     // Acquire a database connection.
     let mut conn = request.state().pool().get().await?;

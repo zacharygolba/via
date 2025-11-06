@@ -10,7 +10,7 @@
 /// use via::{Next, Request};
 ///
 /// async fn authenticate(request: Request, next: Next) -> via::Result {
-///     let Some(jwt) = request.header(AUTHORIZATION)? else {
+///     let Some(jwt) = request.head().headers().get(AUTHORIZATION) else {
 ///         via::raise!(401, message = "Missing required header: Authorization.");
 ///     };
 ///

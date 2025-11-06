@@ -5,7 +5,7 @@ use via::Payload;
 use via::ws::{self, Channel, CloseCode, Message, Request, Retry};
 
 use crate::chat::{Chat, Event, EventContext};
-use crate::models::message::{Message as MessageModel, MessageParams};
+use crate::models::message::{Message as MessageModel, NewMessage};
 use crate::util::Authenticate;
 
 fn on_close(close: &(CloseCode, Option<ByteString>)) {
@@ -31,7 +31,7 @@ pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Resu
 
                 // Append the message content to the chat thread.
                 Message::Text(text) => {
-                    let mut params = text.serde_json::<MessageParams>().or_continue()?;
+                    let mut params = text.serde_json::<NewMessage>().or_continue()?;
                     let thread_id = params.thread_id;
 
                     params.author_id = Some(user.id);

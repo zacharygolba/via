@@ -39,14 +39,14 @@ pub struct Reaction {
 
 #[derive(AsChangeset, Deserialize)]
 #[diesel(table_name = reactions)]
-pub struct ReactionChangeSet {
+pub struct ChangeSet {
     pub emoji: String,
 }
 
 #[derive(Deserialize, Insertable)]
 #[diesel(table_name = reactions)]
 #[serde(rename_all = "camelCase")]
-pub struct ReactionParams {
+pub struct NewReaction {
     pub emoji: String,
 
     pub message_id: Option<Uuid>,

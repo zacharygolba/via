@@ -11,7 +11,7 @@ use std::task::{Context, Poll};
 use crate::app::App;
 use crate::middleware::BoxFuture;
 use crate::next::Next;
-use crate::request::{PathParams, Request, RequestBody, RequestHead};
+use crate::request::{Request, RequestBody, RequestHead};
 use crate::response::{Response, ResponseBody};
 
 pub struct ServeRequest(BoxFuture);
@@ -58,19 +58,12 @@ where
             // Split the incoming request into it's component parts.
             let (parts, body) = request.into_parts();
 
+            // The request type owns an Arc to the application state.
+            // This is the only unconditional atomic op of the service.
+            let state = Arc::clone(&self.app.state);
+
             Request::new(
-                RequestHead::new(
-                    parts,
-                    // The request type owns an Arc to the application state.
-                    // This is the only unconditional atomic op of the service.
-                    Arc::clone(&self.app.state),
-                    // Allocate early for path parameters to confirm that we are
-                    // able to perform an allocation before serving the request.
-                    //
-                    // It's safer to fail here than later on when application
-                    // specific business logic takes over.
-                    PathParams::new(Vec::with_capacity(8)),
-                ),
+                RequestHead::new(parts, state),
                 // Do not allocate for the request body until it's absolutely
                 // necessary.
                 //
@@ -86,20 +79,16 @@ where
 
         // Get a reference to the component parts of the request as well as a
         // mutable reference to the path parameters.
-        let RequestHead {
-            ref mut params,
-            ref parts,
-            ..
-        } = *request.head_mut();
+        let (path, params) = request.path_with_params_mut();
 
         // Populate the middleware stack with the resolved routes.
-        for (route, param) in self.app.router.traverse(parts.uri.path()) {
+        for (route, param) in self.app.router.traverse(path) {
             // Extend the deque with the matching route's middleware.
             deque.extend(route.cloned());
 
             if let Some((name, range)) = param {
                 // Include the route's dynamic parameter in params.
-                params.push(Arc::clone(name), range);
+                params.push((Arc::clone(name), range));
             }
         }
 

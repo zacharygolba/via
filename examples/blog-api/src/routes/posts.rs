@@ -13,18 +13,15 @@ pub async fn authorization(request: Request, next: Next) -> via::Result {
 }
 
 pub async fn index(request: Request, _: Next) -> via::Result {
-    let state = request.state().as_ref();
-    let posts = Post::public(&state.pool).await?;
-
+    let posts = Post::public(request.head().state().pool()).await?;
     Response::build().json(&posts)
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
-    let (head, body) = request.into_parts();
-    let state = head.into_state();
+    let (head, future) = request.into_future();
+    let post_params = future.await?.serde_json::<NewPost>()?;
 
-    let post_params = body.into_future().await?.serde_json::<NewPost>()?;
-    let new_post = post_params.insert(&state.pool).await?;
+    let new_post = post_params.insert(head.state().pool()).await?;
 
     Response::build()
         .status(StatusCode::CREATED)
@@ -32,30 +29,30 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result {
-    let id = request.param("id").parse()?;
-    let state = request.state().as_ref();
-    let post_by_id = Post::find(&state.pool, id).await?;
+    let head = request.head();
+    let id = head.param("id").parse()?;
+
+    let post_by_id = Post::find(head.state().pool(), id).await?;
 
     Response::build().json(&post_by_id)
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result {
-    let id = request.param("id").parse()?;
+    let id = request.head().param("id").parse()?;
 
-    let (head, body) = request.into_parts();
-    let state = head.into_state();
+    let (head, future) = request.into_future();
+    let change_set = future.await?.serde_json::<ChangeSet>()?;
 
-    let change_set = body.into_future().await?.serde_json::<ChangeSet>()?;
-    let updated_post = change_set.apply(&state.pool, id).await?;
+    let updated_post = change_set.apply(&head.state().pool, id).await?;
 
     Response::build().json(&updated_post)
 }
 
 pub async fn destroy(request: Request, _: Next) -> via::Result {
-    let id = request.param("id").parse()?;
+    let head = request.head();
+    let id = head.param("id").parse()?;
 
-    let state = request.state().as_ref();
-    Post::delete(&state.pool, id).await?;
+    Post::delete(head.state().pool(), id).await?;
 
     Response::build().status(StatusCode::NO_CONTENT).finish()
 }

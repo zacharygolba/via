@@ -13,6 +13,7 @@ use super::thread::Thread;
 use super::user::User;
 use crate::schema::messages::{self, dsl as col};
 use crate::schema::users;
+use crate::util::Cursor;
 
 pub type TableWithJoins = InnerJoin<messages::table, users::table>;
 pub type DefaultSelection = (AsSelect<Message, Pg>, AsSelect<User, Pg>);
@@ -38,14 +39,14 @@ pub struct Message {
 
 #[derive(AsChangeset, Deserialize)]
 #[diesel(table_name = messages)]
-pub struct MessageChangeSet {
+pub struct ChangeSet {
     pub body: String,
 }
 
 #[derive(Deserialize, Insertable)]
 #[diesel(table_name = messages)]
 #[serde(rename_all = "camelCase")]
-pub struct MessageParams {
+pub struct NewMessage {
     pub body: String,
 
     pub author_id: Option<Uuid>,
@@ -64,7 +65,7 @@ pub fn by_author(id: Uuid) -> Eq<col::author_id, Uuid> {
 }
 
 pub fn by_cursor(
-    cursor: (NaiveDateTime, Uuid),
+    cursor: Cursor,
 ) -> And<Eq<col::created_at, NaiveDateTime>, Lt<col::id, Uuid>, Bool> {
     col::created_at.eq(cursor.0).and(col::id.lt(cursor.1))
 }
