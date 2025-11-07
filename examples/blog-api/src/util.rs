@@ -20,13 +20,13 @@ pub fn error_sanitizer(sanitizer: &mut Sanitizer) {
     match database_error {
         DieselError::DatabaseError(kind, _) => match kind {
             DatabaseErrorKind::CheckViolation | DatabaseErrorKind::NotNullViolation => {
-                sanitizer.set_status_code(StatusCode::BAD_REQUEST);
+                sanitizer.set_status(StatusCode::BAD_REQUEST);
             }
             DatabaseErrorKind::ForeignKeyViolation => {
-                sanitizer.set_status_code(StatusCode::UNPROCESSABLE_ENTITY);
+                sanitizer.set_status(StatusCode::UNPROCESSABLE_ENTITY);
             }
             DatabaseErrorKind::UniqueViolation => {
-                sanitizer.set_status_code(StatusCode::CONFLICT);
+                sanitizer.set_status(StatusCode::CONFLICT);
             }
             _ => {
                 // Some other database error occurred. To be safe, use the
@@ -38,7 +38,7 @@ pub fn error_sanitizer(sanitizer: &mut Sanitizer) {
 
         // The requested resource does not exist.
         DieselError::NotFound => {
-            sanitizer.set_status_code(StatusCode::NOT_FOUND);
+            sanitizer.set_status(StatusCode::NOT_FOUND);
         }
 
         // The error occured for some other reason.

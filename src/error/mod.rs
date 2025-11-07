@@ -48,6 +48,7 @@ struct Errors<'a> {
 
 #[derive(Serialize)]
 struct ErrorMessage<'a> {
+    #[serde(borrow)]
     message: Cow<'a, str>,
 }
 
@@ -179,8 +180,8 @@ impl From<Error> for http::Response<ResponseBody> {
 impl<'a> Errors<'a> {
     pub(crate) fn new(status: StatusCode) -> Self {
         Self {
-            status,
             errors: SmallVec::new(),
+            status,
         }
     }
 
