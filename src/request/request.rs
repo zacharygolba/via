@@ -14,16 +14,16 @@ use crate::error::{BoxError, Error};
 use crate::request::params::QueryParams;
 use crate::response::{Finalize, Response, ResponseBuilder};
 
+pub struct Request<State = ()> {
+    head: RequestHead<State>,
+    body: RequestBody,
+}
+
 /// The component parts of a HTTP request.
 ///
 pub struct RequestHead<State> {
     envelope: Box<Envelope>,
     state: Arc<State>,
-}
-
-pub struct Request<State = ()> {
-    head: RequestHead<State>,
-    body: RequestBody,
 }
 
 #[derive(Debug)]
