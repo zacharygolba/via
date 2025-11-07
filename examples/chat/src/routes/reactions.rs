@@ -16,17 +16,6 @@ struct ReactionParams {
     message_id: Uuid,
 }
 
-impl TryFrom<PathParams<'_>> for ReactionParams {
-    type Error = via::Error;
-
-    fn try_from(params: PathParams<'_>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            thread_id: params.get("thread-id").parse()?,
-            message_id: params.get("message-id").parse()?,
-        })
-    }
-}
-
 pub async fn index(request: Request, _: Next) -> via::Result {
     // Preconditions
     let message_id = request.head().param("message-id").parse()?;
@@ -48,9 +37,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the query.
     let reactions: Vec<ReactionWithJoins> = {
-        let pool = request.state().pool();
-        let mut conn = pool.get().await?;
-
+        let mut conn = request.state().pool().get().await?;
         query.load(&mut conn).await?
     };
 
@@ -82,9 +69,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the insert.
     let reaction = {
-        let pool = head.state().pool();
-        let mut conn = pool.get().await?;
-
+        let mut conn = head.state().pool().get().await?;
         insert.get_result(&mut conn).await?
     };
 
@@ -111,9 +96,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the query.
     let reaction: ReactionWithJoins = {
-        let pool = request.state().pool();
-        let mut conn = pool.get().await?;
-
+        let mut conn = request.state().pool().get().await?;
         query.first(&mut conn).await?
     };
 
@@ -143,9 +126,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the update.
     let reaction = {
-        let pool = head.state().pool();
-        let mut conn = pool.get().await?;
-
+        let mut conn = head.state().pool().get().await?;
         update.get_result(&mut conn).await.found_or_forbidden()?
     };
 
@@ -170,11 +151,20 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the delete.
     {
-        let pool = request.state().pool();
-        let mut conn = pool.get().await?;
-
+        let mut conn = request.state().pool().get().await?;
         delete.execute(&mut conn).await.found_or_forbidden()?;
     }
 
     Response::build().status(204).finish()
+}
+
+impl TryFrom<PathParams<'_>> for ReactionParams {
+    type Error = via::Error;
+
+    fn try_from(params: PathParams<'_>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            thread_id: params.get("thread-id").parse()?,
+            message_id: params.get("message-id").parse()?,
+        })
+    }
 }
