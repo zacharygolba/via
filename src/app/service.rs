@@ -1,3 +1,4 @@
+use http::request::Parts;
 use http_body_util::Limited;
 use hyper::body::Incoming;
 use hyper::service::Service;
@@ -11,7 +12,7 @@ use std::task::{Context, Poll};
 use crate::app::App;
 use crate::middleware::BoxFuture;
 use crate::next::Next;
-use crate::request::{Request, RequestBody, RequestHead};
+use crate::request::{Envelope, Request, RequestBody, RequestHead};
 use crate::response::{Response, ResponseBody};
 
 pub struct ServeRequest(BoxFuture);
@@ -58,31 +59,24 @@ where
             // Split the incoming request into it's component parts.
             let (parts, body) = request.into_parts();
 
-            // The request type owns an Arc to the application state.
-            // This is the only unconditional atomic op of the service.
-            let state = Arc::clone(&self.app.state);
-
             Request::new(
-                RequestHead::new(parts, state),
-                // Do not allocate for the request body until it's absolutely
-                // necessary.
+                // The request type owns an Arc to the application state.
+                RequestHead::new(parts, Arc::clone(&self.app.state)),
                 //
-                // They are buffered by default behind a channel. Therefore,
-                // there is no risk of the request body overflowing the stack.
-                //
-                // This is also a small performance optimization that avoids an
-                // additional allocation if you end up reading the entire body
-                // into memory, a common case for backend JSON APIs.
+                // Limit the length of the request body to max_request_size.
                 RequestBody::new(Limited::new(body, self.max_request_size)),
             )
         };
 
-        // Get a reference to the component parts of the request as well as a
-        // mutable reference to the path parameters.
-        let (path, params) = request.path_with_params_mut();
+        // Borrow the request params mutably and borrow the uri.
+        let Envelope {
+            ref mut params,
+            parts: Parts { ref uri, .. },
+            ..
+        } = *request.envelope_mut();
 
         // Populate the middleware stack with the resolved routes.
-        for (route, param) in self.app.router.traverse(path) {
+        for (route, param) in self.app.router.traverse(uri.path()) {
             // Extend the deque with the matching route's middleware.
             deque.extend(route.cloned());
 
@@ -102,10 +96,11 @@ impl Future for ServeRequest {
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         let Self(future) = self.get_mut();
-
-        future
-            .as_mut()
-            .poll(context)
-            .map(|result| Ok(result.unwrap_or_else(Response::from).into()))
+        future.as_mut().poll(context).map(|result| {
+            Ok(match result {
+                Ok(response) => response.into(),
+                Err(error) => Response::from(error).into(),
+            })
+        })
     }
 }
