@@ -155,7 +155,7 @@ impl ResponseBody {
     }
 }
 
-impl http_body::Body for ResponseBody {
+impl Body for ResponseBody {
     type Data = Bytes;
     type Error = BoxError;
 
@@ -164,11 +164,7 @@ impl http_body::Body for ResponseBody {
         context: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let Self { kind } = self.get_mut();
-
-        match kind {
-            Either::Left(inline) => Pin::new(inline).poll_frame(context),
-            Either::Right(boxed) => Pin::new(boxed).poll_frame(context),
-        }
+        Pin::new(kind).poll_frame(context)
     }
 
     fn is_end_stream(&self) -> bool {
