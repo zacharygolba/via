@@ -8,13 +8,6 @@ use crate::chat::{Chat, Event, EventContext};
 use crate::models::message::{Message as MessageModel, NewMessage};
 use crate::util::Authenticate;
 
-fn on_close(close: &(CloseCode, Option<ByteString>)) {
-    let (code, reason) = close;
-    let reason = reason.as_deref().unwrap_or("reason not provided");
-
-    eprintln!("{:?}: {}", code, reason);
-}
-
 pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Result {
     let user = request.current_user().or_break()?.clone();
     let mut rx = request.state().subscribe();
@@ -36,17 +29,16 @@ pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Resu
 
                     params.author_id = Some(user.id);
 
-                    let state = request.state();
                     let result = diesel::insert_into(MessageModel::TABLE)
                         .values(params)
                         .returning(MessageModel::as_returning())
-                        .get_result(&mut state.pool().get().await.or_continue()?)
+                        .get_result(&mut request.state().pool().get().await.or_continue()?)
                         .await;
 
                     let event = Event::Message(result.or_continue()?);
                     let context = EventContext::new(thread_id, user.id);
 
-                    state.publish(context, event).or_continue()?;
+                    request.state().publish(context, event).or_continue()?;
                 }
 
                 // Print a warning to stderr for ignored messages.
@@ -67,4 +59,11 @@ pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Resu
             }
         }
     }
+}
+
+fn on_close(close: &(CloseCode, Option<ByteString>)) {
+    let (code, reason) = close;
+    let reason = reason.as_deref().unwrap_or("reason not provided");
+
+    eprintln!("{:?}: {}", code, reason);
 }
