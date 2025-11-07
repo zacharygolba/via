@@ -1,6 +1,7 @@
-use super::params::ParamRange;
 use percent_encoding::percent_decode_str;
 use std::borrow::Cow;
+
+use super::params::ParamRange;
 
 pub struct QueryParser<'a> {
     input: &'a str,
