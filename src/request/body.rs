@@ -12,19 +12,21 @@ use std::task::{Context, Poll, ready};
 use crate::error::{BoxError, Error};
 use crate::{Payload, raise};
 
-#[derive(Debug)]
-pub struct RequestBody(Either<Limited<Incoming>, BoxBody<Bytes, BoxError>>);
-
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct IntoFuture {
     body: RequestBody,
-    payload: Option<DataAndTrailers>,
+    payload: Option<RequestPayload>,
+}
+
+#[derive(Debug)]
+pub struct RequestBody {
+    pub(super) kind: Either<Limited<Incoming>, BoxBody<Bytes, BoxError>>,
 }
 
 /// The data and trailers of a request body.
 ///
 #[derive(Debug)]
-pub struct DataAndTrailers {
+pub struct RequestPayload {
     frames: SmallVec<[Bytes; 1]>,
     trailers: Option<HeaderMap>,
 }
@@ -43,17 +45,8 @@ fn into_future_error<T>(error: BoxError) -> Result<T, Error> {
     raise!(400, boxed = error);
 }
 
-impl IntoFuture {
-    fn new(body: RequestBody, payload: DataAndTrailers) -> Self {
-        Self {
-            body,
-            payload: Some(payload),
-        }
-    }
-}
-
 impl Future for IntoFuture {
-    type Output = Result<DataAndTrailers, Error>;
+    type Output = Result<RequestPayload, Error>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         let Self { body, payload } = self.get_mut();
@@ -87,38 +80,27 @@ impl Future for IntoFuture {
 }
 
 impl RequestBody {
-    /// Consume the request body and return a dynamically-dispatched
-    /// [`BoxBody`].
-    ///
-    pub fn boxed(self) -> BoxBody<Bytes, BoxError> {
-        match self {
-            Self(Either::Left(inline)) => BoxBody::new(inline),
-            Self(Either::Right(boxed)) => boxed,
+    #[inline]
+    pub(crate) fn new(body: Limited<Incoming>) -> Self {
+        Self {
+            kind: Either::Left(body),
         }
     }
 
+    #[inline]
     pub fn into_stream(self) -> BodyStream<Self> {
         BodyStream::new(self)
     }
 
+    #[inline]
     pub fn into_future(self) -> IntoFuture {
-        IntoFuture::new(self, DataAndTrailers::new())
-    }
-}
-
-impl RequestBody {
-    #[inline]
-    pub(crate) fn new(body: Limited<Incoming>) -> Self {
-        Self(Either::Left(body))
-    }
-
-    #[inline]
-    pub(crate) fn map<U, F>(self, map: F) -> Self
-    where
-        F: FnOnce(RequestBody) -> U,
-        U: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
-    {
-        Self(Either::Right(BoxBody::new(map(self))))
+        IntoFuture {
+            body: self,
+            payload: Some(RequestPayload {
+                frames: Default::default(),
+                trailers: None,
+            }),
+        }
     }
 }
 
@@ -130,20 +112,20 @@ impl Body for RequestBody {
         self: Pin<&mut Self>,
         context: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let Self(body) = self.get_mut();
-        Pin::new(body).poll_frame(context)
+        let Self { kind } = self.get_mut();
+        Pin::new(kind).poll_frame(context)
     }
 
     fn is_end_stream(&self) -> bool {
-        self.0.is_end_stream()
+        self.kind.is_end_stream()
     }
 
     fn size_hint(&self) -> SizeHint {
-        self.0.size_hint()
+        self.kind.size_hint()
     }
 }
 
-impl DataAndTrailers {
+impl RequestPayload {
     pub fn len(&self) -> usize {
         self.frames.iter().map(Bytes::len).sum()
     }
@@ -157,39 +139,23 @@ impl DataAndTrailers {
     }
 }
 
-impl DataAndTrailers {
-    fn new() -> Self {
-        Self {
-            frames: Default::default(),
-            trailers: None,
-        }
-    }
-}
-
-impl Payload for DataAndTrailers {
-    fn copy_to_bytes(mut self) -> Bytes {
-        let mut dest = BytesMut::with_capacity(self.len());
-
-        for frame in &mut self.frames {
-            let remaining = frame.len();
-            let detached = frame.split_to(remaining);
-
-            dest.extend_from_slice(detached.as_ref());
-        }
-
-        dest.freeze()
+impl Payload for RequestPayload {
+    fn copy_to_bytes(self) -> Bytes {
+        self.frames
+            .into_iter()
+            .fold(BytesMut::new(), |mut buf, mut frame| {
+                buf.extend_from_slice(&frame.split_to(frame.len()));
+                buf
+            })
+            .freeze()
     }
 
-    fn into_vec(mut self) -> Vec<u8> {
-        let mut dest = Vec::with_capacity(self.len());
-
-        for frame in &mut self.frames {
-            let remaining = frame.len();
-            let detached = frame.split_to(remaining);
-
-            dest.extend_from_slice(detached.as_ref());
-        }
-
-        dest
+    fn into_vec(self) -> Vec<u8> {
+        self.frames
+            .into_iter()
+            .fold(Vec::new(), |mut buf, mut frame| {
+                buf.extend_from_slice(&frame.split_to(frame.len()));
+                buf
+            })
     }
 }

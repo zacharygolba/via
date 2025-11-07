@@ -1,11 +1,12 @@
 use cookie::{Cookie, ParseError};
-use http::header::{self, SET_COOKIE};
+use http::header;
+use http::request::Parts;
 use std::collections::HashSet;
 use std::fmt::{self, Display, Formatter};
 
 use crate::Next;
 use crate::middleware::{BoxFuture, Middleware};
-use crate::request::Request;
+use crate::request::{Envelope, Request};
 use crate::util::UriEncoding;
 
 /// An error occurred while writing a Set-Cookie header to a response.
@@ -298,7 +299,15 @@ where
     fn call(&self, mut request: Request<State>, next: Next<State>) -> BoxFuture {
         let mut existing = Vec::new();
 
-        if let Some((input, cookies)) = request.cookie_str_with_cookies_mut() {
+        let Envelope {
+            ref mut cookies,
+            parts: Parts { ref headers, .. },
+            ..
+        } = *request.envelope_mut();
+
+        if let Some(header) = headers.get(header::COOKIE)
+            && let Ok(input) = header.to_str()
+        {
             for result in self.parse(input) {
                 let original = match result {
                     Ok(cookie) => cookie.into_owned(),
@@ -330,7 +339,7 @@ where
 
             cookies.delta().try_for_each(|cookie| {
                 let set_cookie = encode_set_cookie_header(&encoding, cookie)?;
-                headers.try_append(SET_COOKIE, set_cookie)?;
+                headers.try_append(header::SET_COOKIE, set_cookie)?;
                 Ok::<_, SetCookieError>(())
             })?;
 
