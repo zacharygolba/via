@@ -90,7 +90,7 @@ impl Debug for ResponseBody {
 impl From<Bytes> for ResponseBody {
     #[inline]
     fn from(buf: Bytes) -> Self {
-        ResponseBody {
+        Self {
             kind: Either::Left(Full::new(buf)),
         }
     }
