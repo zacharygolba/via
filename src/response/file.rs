@@ -172,7 +172,7 @@ impl File {
         match open(&self.path, max_alloc_size).await? {
             Open::Eager(meta, data) => {
                 let response = Response::build().header(CONTENT_LENGTH, data.len());
-                self.set_headers(&meta, response)?.body(data)
+                self.set_headers(&meta, response)?.body(data.into())
             }
             Open::Stream(len, meta, file) => {
                 let response = self.set_headers(&meta, Response::build())?;

@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
+use http::header;
 use http_body::{Body, Frame, SizeHint};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{Either, Full};
@@ -35,7 +35,7 @@ use crate::error::{BoxError, Error};
 /// // => { "name": "Ciro" }
 /// ```
 ///
-pub struct Json<'a, T>(pub &'a T);
+pub struct Json<T>(pub T);
 
 pub struct ResponseBody {
     pub(super) kind: Either<Full<Bytes>, BoxBody<Bytes, BoxError>>,
@@ -133,15 +133,14 @@ impl From<BoxBody<Bytes, BoxError>> for ResponseBody {
     }
 }
 
-impl<'a, T: Serialize> Finalize for Json<'a, T> {
+impl<T: Serialize> Finalize for Json<T> {
     #[inline]
     fn finalize(self, response: ResponseBuilder) -> Result<Response, Error> {
-        let Self(json) = self;
-        let payload = serde_json::to_vec(json)?;
+        let json = serde_json::to_vec(&self.0)?;
 
         response
-            .header(CONTENT_TYPE, "application/json; charset=utf-8")
-            .header(CONTENT_LENGTH, payload.len())
-            .body(payload)
+            .header(header::CONTENT_LENGTH, json.len())
+            .header(header::CONTENT_TYPE, super::APPLICATION_JSON)
+            .body(json.into())
     }
 }

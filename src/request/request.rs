@@ -12,7 +12,7 @@ use super::body::{IntoFuture, RequestBody};
 use super::params::{Param, PathParamEntry, PathParams};
 use crate::error::{BoxError, Error};
 use crate::request::params::QueryParams;
-use crate::response::{Finalize, Response, ResponseBuilder};
+use crate::response::{Finalize, Response, ResponseBody, ResponseBuilder};
 
 pub struct Request<State = ()> {
     head: RequestHead<State>,
@@ -224,10 +224,6 @@ impl<State> Finalize for Request<State> {
 
         let Self { ref head, body } = self;
         let headers = head.headers();
-        let body = match body.kind {
-            Either::Left(inline) => BoxBody::new(inline),
-            Either::Right(boxed) => boxed,
-        };
 
         let mut response = match headers.get(CONTENT_LENGTH).cloned() {
             Some(content_length) => response.header(CONTENT_LENGTH, content_length),
@@ -238,6 +234,9 @@ impl<State> Finalize for Request<State> {
             response = response.header(CONTENT_TYPE, content_type);
         }
 
-        response.body(body)
+        response.body(ResponseBody::from(match body.kind {
+            Either::Left(inline) => BoxBody::new(inline),
+            Either::Right(boxed) => boxed,
+        }))
     }
 }
