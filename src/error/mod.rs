@@ -5,9 +5,7 @@ mod raise;
 mod rescue;
 mod server;
 
-use http::HeaderValue;
-use http::header::CONTENT_TYPE;
-use serde::ser::SerializeStruct;
+use http::header;
 use serde::{Serialize, Serializer};
 use smallvec::SmallVec;
 use std::borrow::Cow;
@@ -17,7 +15,7 @@ use std::io::{self, Error as IoError};
 #[doc(hidden)]
 pub use http::StatusCode; // Required for the raise macro.
 
-use crate::response::{Response, ResponseBody};
+use crate::response::{Response, TEXT_PLAIN};
 
 pub use rescue::{Rescue, Sanitizer};
 pub(crate) use server::ServerError;
@@ -41,15 +39,23 @@ enum ErrorKind {
     Other(BoxError),
 }
 
+#[derive(Serialize)]
 struct Errors<'a> {
+    #[serde(serialize_with = "serialize_status_code")]
     status: StatusCode,
     errors: SmallVec<[ErrorMessage<'a>; 1]>,
 }
 
 #[derive(Serialize)]
 struct ErrorMessage<'a> {
-    #[serde(borrow)]
     message: Cow<'a, str>,
+}
+
+fn serialize_status_code<S>(status: &StatusCode, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u16(status.as_u16())
 }
 
 impl Error {
@@ -117,9 +123,7 @@ impl Error {
             None
         }
     }
-}
 
-impl Error {
     fn repr_json(&self, status_code: StatusCode) -> Errors<'_> {
         let mut errors = Errors::new(status_code);
 
@@ -161,27 +165,25 @@ where
 
 impl From<Error> for Response {
     fn from(error: Error) -> Self {
-        let mut response = Self::new(error.to_string().into());
+        let message = error.to_string();
+        let content_len = message.len().into();
+
+        let mut response = Self::new(message.into());
         *response.status_mut() = error.status;
 
         let headers = response.headers_mut();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/plain"));
+        headers.insert(header::CONTENT_LENGTH, content_len);
+        headers.insert(header::CONTENT_TYPE, TEXT_PLAIN);
 
         response
-    }
-}
-
-impl From<Error> for http::Response<ResponseBody> {
-    fn from(error: Error) -> Self {
-        Response::from(error).into()
     }
 }
 
 impl<'a> Errors<'a> {
     pub(crate) fn new(status: StatusCode) -> Self {
         Self {
-            errors: SmallVec::new(),
             status,
+            errors: SmallVec::new(),
         }
     }
 
@@ -192,16 +194,5 @@ impl<'a> Errors<'a> {
 
     fn reverse(&mut self) {
         self.errors.reverse();
-    }
-}
-
-impl Serialize for Errors<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("Errors", 2)?;
-
-        state.serialize_field("status", &self.status.as_u16())?;
-        state.serialize_field("errors", &*self.errors)?;
-
-        state.end()
     }
 }

@@ -10,9 +10,11 @@ use super::body::ResponseBody;
 use super::builder::ResponseBuilder;
 use crate::error::BoxError;
 
+type HttpResponse = http::Response<ResponseBody>;
+
 pub struct Response {
+    pub(super) http: HttpResponse,
     pub(super) cookies: CookieJar,
-    pub(super) inner: http::Response<ResponseBody>,
 }
 
 impl Response {
@@ -25,7 +27,7 @@ impl Response {
     pub fn new(body: ResponseBody) -> Self {
         Self {
             cookies: CookieJar::new(),
-            inner: http::Response::new(body),
+            http: http::Response::new(body),
         }
     }
 
@@ -40,7 +42,7 @@ impl Response {
     {
         Self {
             cookies: self.cookies,
-            inner: self.inner.map(|body| ResponseBody {
+            http: self.http.map(|body| ResponseBody {
                 kind: Either::Right(BoxBody::new(map(body))),
             }),
         }
@@ -48,42 +50,27 @@ impl Response {
 
     #[inline]
     pub fn status(&self) -> StatusCode {
-        self.inner.status()
+        self.http.status()
     }
 
     #[inline]
     pub fn status_mut(&mut self) -> &mut StatusCode {
-        self.inner.status_mut()
+        self.http.status_mut()
     }
 
     #[inline]
     pub fn version(&self) -> Version {
-        self.inner.version()
+        self.http.version()
     }
 
     #[inline]
     pub fn headers(&self) -> &HeaderMap {
-        self.inner.headers()
+        self.http.headers()
     }
 
     #[inline]
     pub fn headers_mut(&mut self) -> &mut HeaderMap {
-        self.inner.headers_mut()
-    }
-
-    #[inline]
-    pub fn extensions(&self) -> &Extensions {
-        self.inner.extensions()
-    }
-
-    #[inline]
-    pub fn extensions_mut(&mut self) -> &mut Extensions {
-        self.inner.extensions_mut()
-    }
-
-    #[inline]
-    pub fn body(&self) -> &ResponseBody {
-        self.inner.body()
+        self.http.headers_mut()
     }
 
     /// Returns a reference to the response cookies.
@@ -99,11 +86,29 @@ impl Response {
     pub fn cookies_mut(&mut self) -> &mut CookieJar {
         &mut self.cookies
     }
+
+    #[inline]
+    pub fn extensions(&self) -> &Extensions {
+        self.http.extensions()
+    }
+
+    #[inline]
+    pub fn extensions_mut(&mut self) -> &mut Extensions {
+        self.http.extensions_mut()
+    }
+
+    #[inline]
+    pub fn body(&self) -> &ResponseBody {
+        self.http.body()
+    }
 }
 
 impl Response {
     pub(crate) fn cookies_and_headers_mut(&mut self) -> (&mut CookieJar, &mut HeaderMap) {
-        let Self { cookies, inner } = self;
+        let Self {
+            cookies,
+            http: inner,
+        } = self;
         (cookies, inner.headers_mut())
     }
 }
@@ -115,14 +120,24 @@ impl Debug for Response {
             .field("status", &self.status())
             .field("headers", self.headers())
             .field("cookies", &self.cookies)
-            .field("body", self.inner.body())
+            .field("body", self.http.body())
             .finish()
     }
 }
 
-impl From<Response> for http::Response<ResponseBody> {
+impl From<Response> for HttpResponse {
     #[inline]
     fn from(response: Response) -> Self {
-        response.inner
+        response.http
+    }
+}
+
+impl From<HttpResponse> for Response {
+    #[inline]
+    fn from(http: HttpResponse) -> Self {
+        Self {
+            cookies: CookieJar::new(),
+            http,
+        }
     }
 }

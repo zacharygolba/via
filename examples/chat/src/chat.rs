@@ -1,4 +1,5 @@
 use bb8::Pool;
+use bytes::Bytes;
 use bytestring::ByteString;
 use cookie::Key;
 use http::header;
@@ -101,12 +102,12 @@ impl Chat {
 
 impl Finalize for EventPayload {
     fn finalize(self, builder: ResponseBuilder) -> via::Result {
-        let bytes = self.0.into_bytes();
+        let bytes = Bytes::copy_from_slice(self.0.as_bytes());
 
         builder
-            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
             .header(header::CONTENT_LENGTH, bytes.len())
-            .body(bytes)
+            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .body(bytes.into())
     }
 }
 
