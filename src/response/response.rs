@@ -2,6 +2,8 @@ use bytes::Bytes;
 use cookie::CookieJar;
 use http::{Extensions, HeaderMap, StatusCode, Version};
 use http_body::Body;
+use http_body_util::Either;
+use http_body_util::combinators::BoxBody;
 use std::fmt::{self, Debug, Formatter};
 
 use super::body::ResponseBody;
@@ -37,8 +39,10 @@ impl Response {
         U: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
     {
         Self {
-            inner: self.inner.map(|body| body.map(map)),
-            ..self
+            cookies: self.cookies,
+            inner: self.inner.map(|body| ResponseBody {
+                kind: Either::Right(BoxBody::new(map(body))),
+            }),
         }
     }
 
