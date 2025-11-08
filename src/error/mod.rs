@@ -15,10 +15,10 @@ use std::io::{self, Error as IoError};
 #[doc(hidden)]
 pub use http::StatusCode; // Required for the raise macro.
 
-use crate::response::{Response, TEXT_PLAIN};
-
 pub use rescue::{Rescue, Sanitizer};
 pub(crate) use server::ServerError;
+
+use crate::response::Response;
 
 /// A type alias for `Box<dyn Error + Send + Sync>`.
 ///
@@ -172,8 +172,11 @@ impl From<Error> for Response {
         *response.status_mut() = error.status;
 
         let headers = response.headers_mut();
+
         headers.insert(header::CONTENT_LENGTH, content_len);
-        headers.insert(header::CONTENT_TYPE, TEXT_PLAIN);
+        if let Ok(content_type) = "text/plain; charset=utf-8".try_into() {
+            headers.insert(header::CONTENT_TYPE, content_type);
+        }
 
         response
     }
