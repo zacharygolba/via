@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use bytes::Bytes;
 use futures_core::Stream;
 use http::{HeaderName, HeaderValue, StatusCode, Version, header};
@@ -32,19 +34,6 @@ pub struct ResponseBuilder {
 
 impl ResponseBuilder {
     #[inline]
-    pub fn header<K, V>(self, key: K, value: V) -> Self
-    where
-        HeaderName: TryFrom<K>,
-        <HeaderName as TryFrom<K>>::Error: Into<http::Error>,
-        HeaderValue: TryFrom<V>,
-        <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
-    {
-        Self {
-            response: self.response.header(key, value),
-        }
-    }
-
-    #[inline]
     pub fn status<T>(self, status: T) -> Self
     where
         StatusCode: TryFrom<T>,
@@ -63,23 +52,49 @@ impl ResponseBuilder {
     }
 
     #[inline]
+    pub fn header<K, V>(self, key: K, value: V) -> Self
+    where
+        HeaderName: TryFrom<K>,
+        <HeaderName as TryFrom<K>>::Error: Into<http::Error>,
+        HeaderValue: TryFrom<V>,
+        <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+    {
+        Self {
+            response: self.response.header(key, value),
+        }
+    }
+
+    #[inline]
+    pub fn extension<T>(self, extension: T) -> Self
+    where
+        T: Clone + Any + Send + Sync + 'static,
+    {
+        Self {
+            response: self.response.extension(extension),
+        }
+    }
+
+    #[inline]
     pub fn body(self, body: ResponseBody) -> Result<Response, Error> {
         Ok(self.response.body(body)?.into())
     }
 
     #[inline]
-    pub fn json(self, data: &impl Serialize) -> Result<Response, Error> {
+    pub fn json<T>(self, body: T) -> Result<Response, Error>
+    where
+        T: Serialize,
+    {
         #[derive(Serialize)]
-        struct Tagged<'a, T> {
-            data: &'a T,
+        struct Tagged<D> {
+            data: D,
         }
 
-        Json(Tagged { data }).finalize(self)
+        Json(Tagged { data: body }).finalize(self)
     }
 
     #[inline]
-    pub fn html(self, data: impl Into<String>) -> Result<Response, Error> {
-        let string = data.into();
+    pub fn html(self, body: impl Into<String>) -> Result<Response, Error> {
+        let string = body.into();
 
         self.header(header::CONTENT_LENGTH, string.len())
             .header(header::CONTENT_TYPE, super::TEXT_HTML)
@@ -87,8 +102,8 @@ impl ResponseBuilder {
     }
 
     #[inline]
-    pub fn text(self, data: impl Into<String>) -> Result<Response, Error> {
-        let string = data.into();
+    pub fn text(self, body: impl Into<String>) -> Result<Response, Error> {
+        let string = body.into();
 
         self.header(header::CONTENT_LENGTH, string.len())
             .header(header::CONTENT_TYPE, super::TEXT_PLAIN)
