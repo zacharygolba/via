@@ -144,7 +144,7 @@ impl<T: Serialize> Finalize for Json<T> {
 
         response
             .header(header::CONTENT_LENGTH, body.len())
-            .header(header::CONTENT_TYPE, super::APPLICATION_JSON)
+            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
             .body(body.into())
     }
 }

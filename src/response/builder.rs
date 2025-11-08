@@ -97,7 +97,7 @@ impl ResponseBuilder {
         let string = body.into();
 
         self.header(header::CONTENT_LENGTH, string.len())
-            .header(header::CONTENT_TYPE, super::TEXT_HTML)
+            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
             .body(string.into())
     }
 
@@ -106,7 +106,7 @@ impl ResponseBuilder {
         let string = body.into();
 
         self.header(header::CONTENT_LENGTH, string.len())
-            .header(header::CONTENT_TYPE, super::TEXT_PLAIN)
+            .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
             .body(string.into())
     }
 
