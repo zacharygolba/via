@@ -109,11 +109,10 @@ impl Body for RequestBody {
     type Error = BoxError;
 
     fn poll_frame(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let Self { kind } = self.get_mut();
-        Pin::new(kind).poll_frame(context)
+        Pin::new(&mut self.kind).poll_frame(context)
     }
 
     fn is_end_stream(&self) -> bool {
