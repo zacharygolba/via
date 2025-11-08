@@ -2,7 +2,6 @@ use bytes::Bytes;
 use cookie::CookieJar;
 use http::{Extensions, HeaderMap, StatusCode, Version};
 use http_body::Body;
-use http_body_util::Either;
 use http_body_util::combinators::BoxBody;
 use std::fmt::{self, Debug, Formatter};
 
@@ -42,9 +41,7 @@ impl Response {
     {
         Self {
             cookies: self.cookies,
-            http: self.http.map(|body| ResponseBody {
-                kind: Either::Right(BoxBody::new(map(body))),
-            }),
+            http: self.http.map(|body| BoxBody::new(map(body)).into()),
         }
     }
 
@@ -105,11 +102,8 @@ impl Response {
 
 impl Response {
     pub(crate) fn cookies_and_headers_mut(&mut self) -> (&mut CookieJar, &mut HeaderMap) {
-        let Self {
-            cookies,
-            http: inner,
-        } = self;
-        (cookies, inner.headers_mut())
+        let Self { cookies, http } = self;
+        (cookies, http.headers_mut())
     }
 }
 

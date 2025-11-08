@@ -24,21 +24,25 @@ use crate::error::{BoxError, Error};
 ///     name: String,
 /// }
 ///
-/// let ciro = Cat {
-///     name: "Ciro".to_owned(),
-/// };
+/// impl Cat {
+///     fn new(name: String) -> Self {
+///         Self { name }
+///     }
+/// }
 ///
-/// let tagged = Response::build().json(&ciro).unwrap();
-/// // => { "data": { "name": "Ciro" } }
+/// let ciro = Cat::new("Ciro".to_owned());
+/// let response = Response::build().json(ciro).unwrap();
+/// // body: { "data": { "name": "Ciro" } }
 ///
-/// let untagged = Json(&ciro).finalize(Response::build()).unwrap();
-/// // => { "name": "Ciro" }
+/// let ciro = Cat::new("Ciro".to_owned());
+/// let response = Json(ciro).finalize(Response::build()).unwrap();
+/// // body: { "name": "Ciro" }
 /// ```
 ///
 pub struct Json<T>(pub T);
 
 pub struct ResponseBody {
-    pub(super) kind: Either<Full<Bytes>, BoxBody<Bytes, BoxError>>,
+    kind: Either<Full<Bytes>, BoxBody<Bytes, BoxError>>,
 }
 
 impl Body for ResponseBody {
@@ -61,15 +65,6 @@ impl Body for ResponseBody {
     }
 }
 
-impl Default for ResponseBody {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            kind: Either::Left(Default::default()),
-        }
-    }
-}
-
 impl Debug for ResponseBody {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         #[derive(Debug)]
@@ -87,11 +82,29 @@ impl Debug for ResponseBody {
     }
 }
 
+impl Default for ResponseBody {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            kind: Either::Left(Default::default()),
+        }
+    }
+}
+
 impl From<Bytes> for ResponseBody {
     #[inline]
     fn from(buf: Bytes) -> Self {
         Self {
             kind: Either::Left(Full::new(buf)),
+        }
+    }
+}
+
+impl From<BoxBody<Bytes, BoxError>> for ResponseBody {
+    #[inline]
+    fn from(body: BoxBody<Bytes, BoxError>) -> Self {
+        Self {
+            kind: Either::Right(body),
         }
     }
 }
@@ -124,23 +137,14 @@ impl From<&'_ [u8]> for ResponseBody {
     }
 }
 
-impl From<BoxBody<Bytes, BoxError>> for ResponseBody {
-    #[inline]
-    fn from(body: BoxBody<Bytes, BoxError>) -> Self {
-        Self {
-            kind: Either::Right(body),
-        }
-    }
-}
-
 impl<T: Serialize> Finalize for Json<T> {
     #[inline]
     fn finalize(self, response: ResponseBuilder) -> Result<Response, Error> {
-        let json = serde_json::to_vec(&self.0)?;
+        let body = serde_json::to_string(&self.0)?;
 
         response
-            .header(header::CONTENT_LENGTH, json.len())
+            .header(header::CONTENT_LENGTH, body.len())
             .header(header::CONTENT_TYPE, super::APPLICATION_JSON)
-            .body(json.into())
+            .body(body.into())
     }
 }
