@@ -6,7 +6,7 @@ mod util;
 
 use std::process::ExitCode;
 use via::error::{Error, Rescue};
-use via::{App, Cookies, Server, ws};
+use via::{App, Cookies, Server, rest, ws};
 
 use chat::Chat;
 use util::Auth;
@@ -36,12 +36,19 @@ async fn main() -> Result<ExitCode, Error> {
 
     api.uses(Rescue::with(util::error_sanitizer));
 
+    api.route("/auth").scope(|auth| {
+        use routes::users::{login, logout};
+
+        auth.route("/login").to(via::post(login));
+        auth.route("/logout").to(via::post(logout));
+    });
+
     // Perform a websocket upgrade and start chatting.
     api.route("/subscribe").to(ws::upgrade(routes::subscribe));
 
     api.route("/threads").scope(|threads| {
         let mut thread = {
-            let (collection, member) = via::rest!(routes::threads);
+            let (collection, member) = rest!(routes::threads);
 
             threads.route("/").to(collection);
             threads.route("/:thread-id").to(member)
@@ -52,14 +59,14 @@ async fn main() -> Result<ExitCode, Error> {
 
         thread.route("/messages").scope(|messages| {
             let mut message = {
-                let (collection, member) = via::rest!(routes::messages);
+                let (collection, member) = rest!(routes::messages);
 
                 messages.route("/").to(collection);
                 messages.route("/:message-id").to(member)
             };
 
             message.route("/reactions").scope(|reactions| {
-                let (collection, member) = via::rest!(routes::reactions);
+                let (collection, member) = rest!(routes::reactions);
 
                 reactions.route("/").to(collection);
                 reactions.route("/:reaction-id").to(member);
@@ -74,14 +81,10 @@ async fn main() -> Result<ExitCode, Error> {
     });
 
     api.route("/users").scope(|users| {
-        use routes::users::{login, logout};
-
-        let (collection, member) = via::rest!(routes::users);
+        let (collection, member) = rest!(routes::users);
 
         users.route("/").to(collection);
-        users.route("/:id").to(member);
-        users.route("/login").to(via::post(login));
-        users.route("/logout").to(via::post(logout));
+        users.route("/:user-id").to(member);
     });
 
     Server::new(app).listen(("127.0.0.1", 8080)).await

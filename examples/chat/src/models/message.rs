@@ -7,13 +7,12 @@ use diesel::prelude::*;
 use diesel::row::Row;
 use diesel::sql_types::Bool;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::thread::Thread;
 use super::user::User;
 use crate::schema::messages::{self, dsl as col};
 use crate::schema::users;
-use crate::util::Cursor;
+use crate::util::{Cursor, Id};
 
 pub type TableWithJoins = InnerJoin<messages::table, users::table>;
 pub type DefaultSelection = (AsSelect<Message, Pg>, AsSelect<User, Pg>);
@@ -22,16 +21,15 @@ pub type DefaultSelection = (AsSelect<Message, Pg>, AsSelect<User, Pg>);
 #[diesel(belongs_to(Thread))]
 #[diesel(belongs_to(User, foreign_key = author_id))]
 #[diesel(table_name = messages)]
-#[diesel(check_for_backend(Pg))]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
-    id: Uuid,
+    id: Id,
 
     body: String,
 
     #[serde(skip)]
-    author_id: Uuid,
-    pub thread_id: Uuid,
+    author_id: Id,
+    pub thread_id: Id,
 
     created_at: NaiveDateTime,
     updated_at: NaiveDateTime,
@@ -49,8 +47,8 @@ pub struct ChangeSet {
 pub struct NewMessage {
     pub body: String,
 
-    pub author_id: Option<Uuid>,
-    pub thread_id: Option<Uuid>,
+    pub author_id: Option<Id>,
+    pub thread_id: Option<Id>,
 }
 
 #[derive(Serialize)]
@@ -60,21 +58,19 @@ pub struct MessageWithJoins {
     author: User,
 }
 
-pub fn by_author(id: Uuid) -> Eq<col::author_id, Uuid> {
+pub fn by_author(id: Id) -> Eq<col::author_id, Id> {
     col::author_id.eq(id)
 }
 
-pub fn by_cursor(
-    cursor: Cursor,
-) -> And<Eq<col::created_at, NaiveDateTime>, Lt<col::id, Uuid>, Bool> {
+pub fn by_cursor(cursor: Cursor) -> And<Eq<col::created_at, NaiveDateTime>, Lt<col::id, Id>, Bool> {
     col::created_at.eq(cursor.0).and(col::id.lt(cursor.1))
 }
 
-pub fn by_id(id: &Uuid) -> Eq<col::id, &Uuid> {
+pub fn by_id(id: Id) -> Eq<col::id, Id> {
     col::id.eq(id)
 }
 
-pub fn by_thread(thread_id: Uuid) -> Eq<col::thread_id, Uuid> {
+pub fn by_thread(thread_id: Id) -> Eq<col::thread_id, Id> {
     col::thread_id.eq(thread_id)
 }
 
@@ -85,7 +81,7 @@ pub fn created_at_desc() -> (Desc<col::created_at>, Desc<col::id>) {
 impl Message {
     pub const TABLE: messages::table = messages::table;
 
-    pub fn select() -> Select<TableWithJoins, DefaultSelection> {
+    pub fn query() -> Select<TableWithJoins, DefaultSelection> {
         Self::TABLE
             .inner_join(users::table)
             .select((Self::as_select(), User::as_select()))

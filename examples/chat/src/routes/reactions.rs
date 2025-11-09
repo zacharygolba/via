@@ -1,19 +1,18 @@
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
-use uuid::Uuid;
 use via::Payload;
 use via::request::PathParams;
 use via::response::{Finalize, Response};
 
 use crate::chat::{Event, EventContext};
 use crate::models::reaction::*;
-use crate::util::{Authenticate, FoundOrForbidden, LimitAndOffset};
+use crate::util::{Authenticate, FoundOrForbidden, Id, LimitAndOffset};
 use crate::{Next, Request};
 
 struct ReactionParams {
-    thread_id: Uuid,
-    message_id: Uuid,
+    thread_id: Id,
+    message_id: Id,
 }
 
 pub async fn index(request: Request, _: Next) -> via::Result {
@@ -24,8 +23,8 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     let LimitAndOffset(limit, offset) = request.head().query()?;
 
     // Build the query from URI params.
-    let query = Reaction::select()
-        .filter(by_message(&message_id))
+    let query = Reaction::query()
+        .filter(by_message(message_id))
         .order(created_at_desc())
         .limit(limit)
         .offset(offset);
@@ -87,7 +86,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let id = request.head().param("message-id").parse()?;
 
     // Build the query from URI params.
-    let query = Reaction::select().filter(by_id(&id));
+    let query = Reaction::query().filter(by_id(id));
 
     // Print the query to stdout in debug mode.
     if cfg!(debug_assertions) {
@@ -116,7 +115,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
     let update = diesel::update(Reaction::TABLE)
         .set(change_set)
         // Proceed if the message is authored by the current user.
-        .filter(by_id(&reaction_id).and(by_user(&current_user_id)))
+        .filter(by_id(reaction_id).and(by_user(current_user_id)))
         .returning(Reaction::as_returning());
 
     // Print the query to stdout in debug mode.
@@ -141,7 +140,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     // Build the delete statement from URI params.
     let delete = diesel::delete(Reaction::TABLE).filter(
         // Proceed if the message is authored by the current user.
-        by_id(&reaction_id).and(by_user(&current_user_id)),
+        by_id(reaction_id).and(by_user(current_user_id)),
     );
 
     // Print the query to stdout in debug mode.

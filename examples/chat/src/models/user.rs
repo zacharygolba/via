@@ -5,20 +5,19 @@ use diesel::prelude::*;
 use diesel::result::Error;
 use diesel_async::RunQueryDsl;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::Connection;
 use crate::schema::users::{self, dsl as col};
+use crate::util::Id;
 
 pub type AsSelect = diesel::dsl::AsSelect<User, Pg>;
 pub type Select = diesel::helper_types::Select<users::table, AsSelect>;
 
 #[derive(Clone, Deserialize, Queryable, Selectable, Serialize)]
 #[diesel(table_name = users)]
-#[diesel(check_for_backend(Pg))]
 #[serde(rename_all = "camelCase")]
 pub struct User {
-    pub id: Uuid,
+    pub id: Id,
 
     pub email: String,
     pub username: String,
