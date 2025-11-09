@@ -49,8 +49,8 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let params = request.head().params::<ReactionParams>()?;
 
     // Deserialize the request body into message params.
-    let (head, future) = request.into_future();
-    let mut new_reaction = future.await?.serde_json::<NewReaction>()?;
+    let (state, body) = request.into_future();
+    let mut new_reaction = body.await?.serde_json::<NewReaction>()?;
 
     // Source foreign keys from request metadata when possible.
     new_reaction.message_id = Some(params.message_id);
@@ -68,17 +68,16 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the insert.
     let reaction = {
-        let mut conn = head.state().pool().get().await?;
+        let mut conn = state.pool().get().await?;
         insert.get_result(&mut conn).await?
     };
 
-    let context = EventContext::new(Some(params.thread_id), current_user_id);
     let event = Event::Reaction(reaction);
+    let context = EventContext::new(Some(params.thread_id), current_user_id);
+    let response = Response::build().status(201);
 
     // Notify subscribers that a reaction has been created and respond.
-    head.state()
-        .publish(context, event)?
-        .finalize(Response::build().status(201))
+    state.publish(context, event)?.finalize(response)
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result {
@@ -108,8 +107,8 @@ pub async fn update(request: Request, _: Next) -> via::Result {
     let reaction_id = request.head().param("reaction-id").parse()?;
 
     // Deserialize the request body into message params.
-    let (head, future) = request.into_future();
-    let change_set = future.await?.serde_json::<ChangeSet>()?;
+    let (state, body) = request.into_future();
+    let change_set = body.await?.serde_json::<ChangeSet>()?;
 
     // Build the update statement with the params from the body.
     let update = diesel::update(Reaction::TABLE)
@@ -125,7 +124,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the update.
     let reaction = {
-        let mut conn = head.state().pool().get().await?;
+        let mut conn = state.pool().get().await?;
         update.get_result(&mut conn).await.found_or_forbidden()?
     };
 

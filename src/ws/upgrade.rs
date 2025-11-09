@@ -23,15 +23,13 @@ use super::message::{Channel, Message};
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
 use crate::raise;
-use crate::request::RequestHead;
+use crate::request::Parts;
 use crate::response::Response;
 
 const DEFAULT_FRAME_SIZE: usize = 16 * 1024; // 16KB
 
 #[derive(Debug)]
-pub struct Request<State = ()> {
-    head: Arc<RequestHead<State>>,
-}
+pub struct Request<State = ()>(Arc<Parts<State>>);
 
 pub struct Upgrade<F> {
     config: Config,
@@ -54,21 +52,17 @@ fn handle_error(error: &impl std::error::Error) {
     }
 }
 
-async fn start<State, F, R>(listen: Arc<F>, mut head: Arc<RequestHead<State>>, builder: Builder)
+async fn start<State, F, R>(listen: Arc<F>, mut parts: Parts<State>, builder: Builder)
 where
     F: Fn(Channel, Request<State>) -> R + Send + Sync + 'static,
     R: Future<Output = super::Result> + Send,
 {
     let stream = {
-        let Some(head_mut) = Arc::get_mut(&mut head) else {
-            panic!("via::ws::upgrade: handshake already performed.");
-        };
+        let mut upgrade = http::Request::new(());
+        swap(upgrade.extensions_mut(), parts.head_mut().extensions_mut());
 
-        let mut request = http::Request::new(());
-        swap(head_mut.extensions_mut(), request.extensions_mut());
-
-        let result = hyper::upgrade::on(&mut request).await;
-        swap(request.extensions_mut(), head_mut.extensions_mut());
+        let result = hyper::upgrade::on(&mut upgrade).await;
+        swap(upgrade.extensions_mut(), parts.head_mut().extensions_mut());
 
         match result {
             Ok(upgraded) => builder.serve(TokioIo::new(upgraded)),
@@ -77,14 +71,17 @@ where
     };
 
     tokio::pin!(stream);
+    let parts = Arc::new(parts);
 
     'session: loop {
         let (sender, mut rx) = mpsc::channel(1);
         let (tx, receiver) = mpsc::channel(1);
-        let mut listener = Box::pin(listen(
-            Channel::new(sender, receiver),
-            Request::new(Arc::clone(&head)),
-        ));
+        let mut listener = {
+            let channel = Channel::new(sender, receiver);
+            let request = Request(Arc::clone(&parts));
+
+            Box::pin(listen(channel, request))
+        };
 
         loop {
             let flow = tokio::select! {
@@ -153,18 +150,12 @@ where
     }
 }
 
-impl<State> Request<State> {
-    fn new(head: Arc<RequestHead<State>>) -> Self {
-        Self { head }
-    }
-}
-
 impl<State> Deref for Request<State> {
-    type Target = RequestHead<State>;
+    type Target = Parts<State>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        Deref::deref(&self.head)
+        Deref::deref(&self.0)
     }
 }
 
@@ -250,12 +241,11 @@ where
         };
 
         tokio::spawn({
-            let (head, _) = request.into_parts();
+            let (parts, _) = request.into_parts();
             let builder = Builder::new().config(self.config).limits(self.limits);
             let listen = Arc::clone(&self.listen);
-            let head = Arc::new(head);
 
-            start(listen, head, builder)
+            start(listen, parts, builder)
         });
 
         Box::pin(async {

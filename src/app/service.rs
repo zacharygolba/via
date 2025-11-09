@@ -12,7 +12,7 @@ use std::task::{Context, Poll};
 use crate::app::App;
 use crate::middleware::BoxFuture;
 use crate::next::Next;
-use crate::request::{Envelope, Request, RequestBody, RequestHead};
+use crate::request::{Head, Request};
 use crate::response::{Response, ResponseBody};
 
 pub struct ServeRequest(BoxFuture);
@@ -59,21 +59,21 @@ where
             // Split the incoming request into it's component parts.
             let (parts, body) = request.into_parts();
 
-            Request::new(
-                // The request type owns an Arc to the application state.
-                RequestHead::new(parts, Arc::clone(&self.app.state)),
-                //
-                // Limit the length of the request body to max_request_size.
-                RequestBody::new(Limited::new(body, self.max_request_size)),
-            )
+            // The request type owns an Arc to the application state.
+            let state = self.app.state.clone();
+
+            // Limit the length of the request body to max_request_size.
+            let body = Limited::new(body, self.max_request_size);
+
+            Request::new(state, parts, body)
         };
 
         // Borrow the request params mutably and borrow the uri.
-        let Envelope {
+        let Head {
             ref mut params,
             parts: Parts { ref uri, .. },
             ..
-        } = *request.envelope_mut();
+        } = *request.head_mut();
 
         // Populate the middleware stack with the resolved routes.
         for (route, param) in self.app.router.traverse(uri.path()) {

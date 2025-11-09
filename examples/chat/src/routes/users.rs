@@ -24,28 +24,26 @@ pub async fn index(_: Request, _: Next) -> via::Result {
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
-    let (head, future) = request.into_future();
-    let params = future.await?.serde_json::<NewUser>()?;
-
-    let mut connection = head.state().pool().get().await?;
-    let user = User::create(&mut connection, params).await?;
+    let (state, body) = request.into_future();
+    let params = body.await?.serde_json::<NewUser>()?;
+    let user = User::create(&mut state.pool().get().await?, params).await?;
 
     let mut response = Response::build().status(201).json(&user)?;
-    set_current_user(&mut response, head.state(), &user)?;
+    set_current_user(&mut response, &state, &user)?;
 
     Ok(response)
 }
 
 pub async fn login(request: Request, _: Next) -> via::Result {
-    let (head, future) = request.into_future();
-    let params = future.await?.serde_json::<LoginParams>()?;
+    let (state, body) = request.into_future();
+    let params = body.await?.serde_json::<LoginParams>()?;
     let user = User::query()
         .filter(by_username(&params.username))
-        .first(&mut head.state().pool().get().await?)
+        .first(&mut state.pool().get().await?)
         .await?;
 
     let mut response = Response::build().json(&user)?;
-    set_current_user(&mut response, head.state(), &user)?;
+    set_current_user(&mut response, &state, &user)?;
 
     Ok(response)
 }

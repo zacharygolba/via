@@ -1,6 +1,6 @@
 use http::Extensions;
-use via::request::RequestHead;
-use via::{Middleware, raise, ws};
+use via::request::Head;
+use via::{Middleware, raise};
 
 use crate::chat::Chat;
 use crate::models::user::User;
@@ -37,10 +37,11 @@ impl Auth {
 impl Middleware<Chat> for Auth {
     fn call(&self, mut request: Request, next: Next) -> via::BoxFuture {
         let session = {
-            let head = request.head();
+            let envelope = request.head();
 
-            head.cookies()
-                .private(head.state().secret())
+            envelope
+                .cookies()
+                .private(request.state().secret())
                 .get(&self.cookie)
                 .map(|cookie| serde_json::from_str(cookie.value()))
         };
@@ -51,20 +52,14 @@ impl Middleware<Chat> for Auth {
                 Ok(user) => Verify(user),
             };
 
-            request.extensions_mut().insert(extension);
+            request.head_mut().extensions_mut().insert(extension);
         }
 
         next.call(request)
     }
 }
 
-impl Authenticate for ws::Request<Chat> {
-    fn current_user(&self) -> via::Result<&User> {
-        try_from_extensions(self.extensions())
-    }
-}
-
-impl Authenticate for RequestHead<Chat> {
+impl Authenticate for Head {
     fn current_user(&self) -> via::Result<&User> {
         try_from_extensions(self.extensions())
     }

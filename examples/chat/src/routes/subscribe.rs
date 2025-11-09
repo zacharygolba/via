@@ -10,7 +10,7 @@ use crate::util::Authenticate;
 
 pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Result {
     // The current user that opened the websocket.
-    let user = request.current_user().or_break()?.clone();
+    let user = request.head().current_user().or_break()?.clone();
 
     // Subscribe to event notifications from peers.
     let mut rx = request.state().subscribe();

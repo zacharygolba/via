@@ -58,7 +58,7 @@ mod timeout;
 mod util;
 
 pub use allow::{Allow, connect, delete, get, head, options, patch, post, put, trace};
-pub use app::{App, Route};
+pub use app::{App, Route, Shared};
 pub use cookies::Cookies;
 pub use error::Error;
 pub use middleware::{BoxFuture, Middleware, Result};
