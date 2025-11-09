@@ -32,7 +32,7 @@ async fn main() -> Result<ExitCode, Error> {
     // Setup a simple logger middleware that logs the method, path, and response
     // status code of every request.
     app.uses(async |request: Request, next: Next| {
-        let head = request.head();
+        let head = request.envelope();
 
         let method = head.method().clone();
         let path = head.uri().path().to_owned();

@@ -1,7 +1,7 @@
 use bytestring::ByteString;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
-use via::Payload;
+use via::request::Payload;
 use via::ws::{self, Channel, CloseCode, Message, Request, Retry};
 
 use crate::chat::{Chat, Event, EventContext};
@@ -10,7 +10,7 @@ use crate::util::Authenticate;
 
 pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Result {
     // The current user that opened the websocket.
-    let user = request.head().current_user().or_break()?.clone();
+    let user = request.envelope().current_user().or_break()?.clone();
 
     // Subscribe to event notifications from peers.
     let mut rx = request.state().subscribe();
@@ -19,7 +19,7 @@ pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Resu
         let mut params: NewMessage = tokio::select! {
             // Received a message from the websocket channel.
             Some(message) = channel.recv() => match message {
-                Message::Text(payload) => payload.serde_json().or_continue()?,
+                Message::Text(payload) => payload.json().or_continue()?,
                 Message::Close(close) => break on_close(close),
                 ignored => {
                     eprintln!("warn(/api/subscribe): ignoring {:?}", ignored);

@@ -6,7 +6,7 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::Next;
 use crate::middleware::{BoxFuture, Middleware};
-use crate::request::{Head, Request};
+use crate::request::{Envelope, Request};
 use crate::util::UriEncoding;
 
 /// An error occurred while writing a Set-Cookie header to a response.
@@ -298,11 +298,11 @@ where
 {
     fn call(&self, mut request: Request<State>, next: Next<State>) -> BoxFuture {
         let mut existing = Vec::new();
-        let Head {
+        let Envelope {
             ref mut cookies,
             parts: Parts { ref headers, .. },
             ..
-        } = *request.head_mut();
+        } = *request.envelope_mut();
 
         if let Some(header) = headers.get(header::COOKIE)
             && let Ok(input) = header.to_str()

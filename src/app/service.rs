@@ -12,7 +12,7 @@ use std::task::{Context, Poll};
 use crate::app::App;
 use crate::middleware::BoxFuture;
 use crate::next::Next;
-use crate::request::{Head, Request};
+use crate::request::{Envelope, Request};
 use crate::response::{Response, ResponseBody};
 
 pub struct ServeRequest(BoxFuture);
@@ -69,11 +69,11 @@ where
         };
 
         // Borrow the request params mutably and borrow the uri.
-        let Head {
+        let Envelope {
             ref mut params,
             parts: Parts { ref uri, .. },
             ..
-        } = *request.head_mut();
+        } = *request.envelope_mut();
 
         // Populate the middleware stack with the resolved routes.
         for (route, param) in self.app.router.traverse(uri.path()) {

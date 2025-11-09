@@ -1,5 +1,6 @@
 use http::StatusCode;
-use via::{Payload, Response};
+use via::request::Payload;
+use via::response::Response;
 
 use crate::database::models::post::*;
 use crate::{Next, Request};
@@ -18,8 +19,8 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
-    let (state, body) = request.into_future();
-    let post_params = body.await?.serde_json::<NewPost>()?;
+    let (body, state) = request.into_future();
+    let post_params = body.await?.json::<NewPost>()?;
 
     let new_post = post_params.insert(state.pool()).await?;
 
@@ -29,17 +30,17 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result {
-    let id = request.head().param("id").parse()?;
+    let id = request.envelope().param("id").parse()?;
     let post_by_id = Post::find(request.state().pool(), id).await?;
 
     Response::build().json(&post_by_id)
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result {
-    let id = request.head().param("id").parse()?;
+    let id = request.envelope().param("id").parse()?;
 
-    let (state, body) = request.into_future();
-    let change_set = body.await?.serde_json::<ChangeSet>()?;
+    let (body, state) = request.into_future();
+    let change_set = body.await?.json::<ChangeSet>()?;
 
     let updated_post = change_set.apply(state.pool(), id).await?;
 
@@ -47,7 +48,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn destroy(request: Request, _: Next) -> via::Result {
-    let id = request.head().param("id").parse()?;
+    let id = request.envelope().param("id").parse()?;
 
     Post::delete(request.state().pool(), id).await?;
     Response::build().status(StatusCode::NO_CONTENT).finish()

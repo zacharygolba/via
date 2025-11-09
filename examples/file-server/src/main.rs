@@ -20,7 +20,7 @@ const PUBLIC_DIR: &str = "./public";
 ///
 async fn file_server(request: Request, _: Next) -> via::Result {
     let path_param = request
-        .head()
+        .envelope()
         .param("path")
         .decode()
         .optional()

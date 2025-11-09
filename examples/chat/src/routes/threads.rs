@@ -10,7 +10,7 @@ use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // Get pagination params from the URI query.
-    let LimitAndOffset(limit, offset) = request.head().query()?;
+    let LimitAndOffset(limit, offset) = request.envelope().query()?;
 
     // Build the query from URI params.
     let query = Thread::query()
@@ -36,11 +36,11 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 
 pub async fn create(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let current_user_id = request.head().current_user()?.id;
+    let current_user_id = request.envelope().current_user()?.id;
 
     // Deserialize the request body into message params.
-    let (state, body) = request.into_future();
-    let mut params = body.await?.serde_json::<NewThread>()?;
+    let (body, state) = request.into_future();
+    let mut params = body.await?.json::<NewThread>()?;
 
     // Source foreign keys from request metadata when possible.
     params.owner_id = Some(current_user_id);
@@ -66,7 +66,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
 pub async fn show(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let id = request.head().param("thread-id").parse()?;
+    let id = request.envelope().param("thread-id").parse()?;
 
     // Acquire a database connection.
     let mut conn = request.state().pool().get().await?;
