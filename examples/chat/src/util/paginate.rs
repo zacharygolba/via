@@ -1,9 +1,10 @@
 use chrono::NaiveDateTime;
-use uuid::Uuid;
 use via::raise;
 use via::request::QueryParams;
 
-pub struct Cursor(pub NaiveDateTime, pub Uuid);
+use super::Id;
+
+pub struct Cursor(pub NaiveDateTime, pub Id);
 
 pub struct LimitAndOffset(pub i64, pub i64);
 
@@ -12,8 +13,8 @@ impl TryFrom<QueryParams<'_>> for Cursor {
 
     fn try_from(query: QueryParams<'_>) -> Result<Self, Self::Error> {
         Ok(Self(
-            query.first("createdBefore").parse()?,
-            query.first("occursBefore").parse()?,
+            query.first("created-before").parse()?,
+            query.first("occurs-before").parse()?,
         ))
     }
 }

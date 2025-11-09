@@ -1,6 +1,7 @@
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use http::StatusCode;
-use via::{error::Sanitizer, raise};
+use via::error::Sanitizer;
+use via::raise;
 
 pub trait FoundOrForbidden {
     type Output;
@@ -15,39 +16,41 @@ pub fn error_sanitizer(sanitizer: &mut Sanitizer) {
     // Configure the sanitizer to generate a JSON response.
     sanitizer.use_json();
 
-    // If the error occurred during a database operation, set the appropriate
-    // status code or obsfuscate the message depending on the nature of the
-    // error.
-    let Some(database_error) = sanitizer.source().and_then(|error| error.downcast_ref()) else {
+    let Some(error) = sanitizer.source() else {
         return;
     };
 
-    match database_error {
-        DieselError::DatabaseError(kind, _) => match kind {
-            DatabaseErrorKind::CheckViolation | DatabaseErrorKind::NotNullViolation => {
-                sanitizer.set_status(StatusCode::BAD_REQUEST);
-            }
-            DatabaseErrorKind::ForeignKeyViolation => {
-                sanitizer.set_status(StatusCode::UNPROCESSABLE_ENTITY);
-            }
-            DatabaseErrorKind::UniqueViolation => {
-                sanitizer.set_status(StatusCode::CONFLICT);
-            }
-            _ => {
-                // Some other database error occurred. To be safe, use the
-                // canonical reason phrase of the status code associated with
-                // the error as the error message.
-                sanitizer.use_canonical_reason();
-            }
-        },
+    if let Some(diesel_error) = error.downcast_ref() {
+        match diesel_error {
+            DieselError::DatabaseError(kind, _) => match kind {
+                DatabaseErrorKind::CheckViolation | DatabaseErrorKind::NotNullViolation => {
+                    sanitizer.set_status(StatusCode::BAD_REQUEST);
+                }
+                DatabaseErrorKind::ForeignKeyViolation => {
+                    sanitizer.set_status(StatusCode::UNPROCESSABLE_ENTITY);
+                }
+                DatabaseErrorKind::UniqueViolation => {
+                    sanitizer.set_status(StatusCode::CONFLICT);
+                }
+                _ => {
+                    // Some other database error occurred. To be safe, use the
+                    // canonical reason phrase of the status code associated with
+                    // the error as the error message.
+                    sanitizer.use_canonical_reason();
+                }
+            },
 
-        // The requested resource does not exist.
-        DieselError::NotFound => {
-            sanitizer.set_status(StatusCode::NOT_FOUND);
+            // The requested resource does not exist.
+            DieselError::NotFound => {
+                sanitizer.set_status(StatusCode::NOT_FOUND);
+            }
+
+            // The error occured for some other reason.
+            _ => {}
         }
-
-        // The error occured for some other reason.
-        _ => {}
+    } else if error.is::<chrono::ParseError>() {
+        sanitizer.set_status(StatusCode::BAD_REQUEST);
+        sanitizer.set_message("invalid timestamp");
     }
 }
 

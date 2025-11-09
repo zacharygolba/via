@@ -5,12 +5,12 @@ use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel::row::Row;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::user::User;
 use crate::models::message::Message;
 use crate::schema::threads::{self, dsl as col};
 use crate::schema::users;
+use crate::util::Id;
 
 pub type TableWithJoins = InnerJoin<threads::table, users::table>;
 pub type DefaultSelection = (AsSelect<Thread, Pg>, AsSelect<User, Pg>);
@@ -18,14 +18,13 @@ pub type DefaultSelection = (AsSelect<Thread, Pg>, AsSelect<User, Pg>);
 #[derive(Identifiable, Queryable, Selectable, Serialize)]
 #[diesel(belongs_to(User, foreign_key = owner_id))]
 #[diesel(table_name = threads)]
-#[diesel(check_for_backend(Pg))]
 #[serde(rename_all = "camelCase")]
 pub struct Thread {
-    id: Uuid,
+    id: Id,
 
     name: String,
 
-    owner_id: Uuid,
+    owner_id: Id,
 
     created_at: NaiveDateTime,
     updated_at: NaiveDateTime,
@@ -37,7 +36,7 @@ pub struct Thread {
 pub struct NewThread {
     pub name: String,
 
-    pub owner_id: Option<Uuid>,
+    pub owner_id: Option<Id>,
 }
 
 #[derive(Serialize)]
@@ -55,7 +54,7 @@ pub struct ThreadWithOwner {
     pub owner: User,
 }
 
-pub fn by_id(id: Uuid) -> Eq<col::id, Uuid> {
+pub fn by_id(id: Id) -> Eq<col::id, Id> {
     col::id.eq(id)
 }
 

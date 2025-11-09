@@ -15,7 +15,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     let cursor = request.head().query::<Cursor>()?;
 
     // Build the query from URI params.
-    let query = Message::select()
+    let query = Message::query()
         .filter(by_thread(thread_id).and(by_cursor(cursor)))
         .order(created_at_desc())
         .limit(25);
@@ -81,7 +81,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let id = request.head().param("message-id").parse()?;
 
     // Build the query from URI params.
-    let query = Message::select().filter(by_id(&id));
+    let query = Message::query().filter(by_id(id));
 
     // Print the query to stdout in debug mode.
     if cfg!(debug_assertions) {
@@ -112,7 +112,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
     let update = diesel::update(Message::TABLE)
         .set(change_set)
         // Proceed if the message is authored by the current user.
-        .filter(by_id(&message_id).and(by_author(current_user_id)))
+        .filter(by_id(message_id).and(by_author(current_user_id)))
         .returning(Message::as_returning());
 
     // Print the query to stdout in debug mode.
@@ -139,7 +139,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     // Build the delete statement from URI params.
     let delete = diesel::delete(Message::TABLE).filter(
         // Proceed if the message is authored by the current user.
-        by_id(&message_id).and(by_author(current_user_id)),
+        by_id(message_id).and(by_author(current_user_id)),
     );
 
     // Print the query to stdout in debug mode.

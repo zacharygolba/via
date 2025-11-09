@@ -6,13 +6,13 @@ use http::header;
 use serde::Serialize;
 use std::env::{self, VarError};
 use tokio::sync::broadcast;
-use uuid::Uuid;
 use via::response::{Finalize, ResponseBuilder};
 use via::{raise, ws};
 
 use crate::models::ConnectionManager;
 use crate::models::message::Message;
 use crate::models::reaction::Reaction;
+use crate::util::Id;
 
 type Sender = broadcast::Sender<(EventContext, EventPayload)>;
 type Receiver = broadcast::Receiver<(EventContext, EventPayload)>;
@@ -35,8 +35,8 @@ pub struct Chat {
 
 #[derive(Clone, Debug)]
 pub struct EventContext {
-    thread_id: Option<Uuid>,
-    user_id: Uuid,
+    thread_id: Option<Id>,
+    user_id: Id,
 }
 
 pub async fn establish_pg_connection() -> Pool<ConnectionManager> {
@@ -118,15 +118,15 @@ impl From<EventPayload> for ws::Message {
 }
 
 impl EventContext {
-    pub fn new(thread_id: Option<Uuid>, user_id: Uuid) -> Self {
+    pub fn new(thread_id: Option<Id>, user_id: Id) -> Self {
         Self { thread_id, user_id }
     }
 
-    pub fn thread_id(&self) -> Option<&Uuid> {
+    pub fn thread_id(&self) -> Option<&Id> {
         self.thread_id.as_ref()
     }
 
-    pub fn user_id(&self) -> &Uuid {
+    pub fn user_id(&self) -> &Id {
         &self.user_id
     }
 }
