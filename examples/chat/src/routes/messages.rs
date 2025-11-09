@@ -1,8 +1,7 @@
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
-use via::Payload;
-use via::response::{Finalize, Response};
+use via::{Finalize, Payload, Response};
 
 use crate::chat::{Event, EventContext};
 use crate::models::message::*;
@@ -11,8 +10,8 @@ use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let thread_id = request.head().param("thread-id").parse()?;
-    let cursor = request.head().query::<Cursor>()?;
+    let thread_id = request.envelope().param("thread-id").parse()?;
+    let cursor = request.envelope().query::<Cursor>()?;
 
     // Build the query from URI params.
     let query = Message::query()
@@ -38,12 +37,12 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 
 pub async fn create(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let current_user_id = request.head().current_user()?.id;
-    let thread_id = request.head().param("thread-id").parse()?;
+    let current_user_id = request.envelope().current_user()?.id;
+    let thread_id = request.envelope().param("thread-id").parse()?;
 
     // Deserialize the request body into message params.
-    let (state, body) = request.into_future();
-    let mut params = body.await?.serde_json::<NewMessage>()?;
+    let (body, state) = request.into_future();
+    let mut params = body.await?.json::<NewMessage>()?;
 
     // Source foreign keys from request metadata when possible.
     params.author_id = Some(current_user_id);
@@ -75,7 +74,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
 pub async fn show(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let id = request.head().param("message-id").parse()?;
+    let id = request.envelope().param("message-id").parse()?;
 
     // Build the query from URI params.
     let query = Message::query().filter(by_id(id));
@@ -96,12 +95,12 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 
 pub async fn update(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let current_user_id = request.head().current_user()?.id;
-    let message_id = request.head().param("message-id").parse()?;
+    let current_user_id = request.envelope().current_user()?.id;
+    let message_id = request.envelope().param("message-id").parse()?;
 
     // Deserialize the request body into message params.
-    let (state, body) = request.into_future();
-    let change_set = body.await?.serde_json::<ChangeSet>()?;
+    let (body, state) = request.into_future();
+    let change_set = body.await?.json::<ChangeSet>()?;
 
     // Build the update statement with the params from the body.
     let update = diesel::update(Message::TABLE)
@@ -126,8 +125,8 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 
 pub async fn destroy(request: Request, _: Next) -> via::Result {
     // Preconditions
-    let current_user_id = request.head().current_user()?.id;
-    let message_id = request.head().param("message-id").parse()?;
+    let current_user_id = request.envelope().current_user()?.id;
+    let message_id = request.envelope().param("message-id").parse()?;
 
     // Build the delete statement from URI params.
     let delete = diesel::delete(Message::TABLE).filter(

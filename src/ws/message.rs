@@ -9,7 +9,7 @@ use tokio_websockets::proto::ProtocolError;
 
 use super::error::ErrorKind;
 use crate::error::Error;
-use crate::payload::Payload;
+use crate::request::Payload;
 
 pub use tokio_websockets::CloseCode;
 
@@ -94,8 +94,8 @@ impl From<&'_ str> for Message {
 
 impl Payload for ByteString {
     #[inline]
-    fn copy_to_bytes(self) -> Bytes {
-        Payload::copy_to_bytes(self.into_bytes())
+    fn into_bytes(self) -> Bytes {
+        Payload::into_bytes(self.into_bytes())
     }
 
     #[inline]
@@ -104,11 +104,11 @@ impl Payload for ByteString {
     }
 
     #[inline]
-    fn serde_json_untagged<T>(self) -> Result<T, Error>
+    fn json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        Payload::serde_json_untagged(self.into_bytes())
+        Payload::json(self.into_bytes())
     }
 }
 

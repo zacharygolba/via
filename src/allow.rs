@@ -211,7 +211,7 @@ impl<State> Allow<State> {
 
 impl<State> Middleware<State> for Allow<State> {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
-        let method = request.head().method();
+        let method = request.envelope().method();
 
         if let Some(middleware) = self.respond_to(method) {
             middleware.call(request, next)

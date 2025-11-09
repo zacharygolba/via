@@ -5,7 +5,6 @@ use http::{StatusCode, header};
 use hyper_util::rt::TokioIo;
 use std::mem::swap;
 use std::ops::ControlFlow::{Break, Continue};
-use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::coop;
@@ -20,16 +19,20 @@ use ring::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 
 use super::error::{ErrorKind, try_rescue_ws};
 use super::message::{Channel, Message};
+use crate::app::Shared;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
 use crate::raise;
-use crate::request::Parts;
+use crate::request::Envelope;
 use crate::response::Response;
 
 const DEFAULT_FRAME_SIZE: usize = 16 * 1024; // 16KB
 
 #[derive(Debug)]
-pub struct Request<State = ()>(Arc<Parts<State>>);
+pub struct Request<State = ()> {
+    envelope: Arc<Envelope>,
+    state: Shared<State>,
+}
 
 pub struct Upgrade<F> {
     config: Config,
@@ -52,17 +55,21 @@ fn handle_error(error: &impl std::error::Error) {
     }
 }
 
-async fn start<State, F, R>(listen: Arc<F>, mut parts: Parts<State>, builder: Builder)
-where
+async fn start<State, F, R>(
+    state: Shared<State>,
+    listen: Arc<F>,
+    mut envelope: Box<Envelope>,
+    builder: Builder,
+) where
     F: Fn(Channel, Request<State>) -> R + Send + Sync + 'static,
     R: Future<Output = super::Result> + Send,
 {
     let stream = {
         let mut upgrade = http::Request::new(());
-        swap(upgrade.extensions_mut(), parts.head_mut().extensions_mut());
+        swap(envelope.extensions_mut(), upgrade.extensions_mut());
 
         let result = hyper::upgrade::on(&mut upgrade).await;
-        swap(upgrade.extensions_mut(), parts.head_mut().extensions_mut());
+        swap(envelope.extensions_mut(), upgrade.extensions_mut());
 
         match result {
             Ok(upgraded) => builder.serve(TokioIo::new(upgraded)),
@@ -70,15 +77,18 @@ where
         }
     };
 
+    let envelope = Arc::from(envelope);
     tokio::pin!(stream);
-    let parts = Arc::new(parts);
 
     'session: loop {
         let (sender, mut rx) = mpsc::channel(1);
         let (tx, receiver) = mpsc::channel(1);
         let mut listener = {
             let channel = Channel::new(sender, receiver);
-            let request = Request(Arc::clone(&parts));
+            let request = Request {
+                envelope: Arc::clone(&envelope),
+                state: state.clone(),
+            };
 
             Box::pin(listen(channel, request))
         };
@@ -150,12 +160,15 @@ where
     }
 }
 
-impl<State> Deref for Request<State> {
-    type Target = Parts<State>;
+impl<State> Request<State> {
+    #[inline]
+    pub fn envelope(&self) -> &Envelope {
+        &self.envelope
+    }
 
     #[inline]
-    fn deref(&self) -> &Self::Target {
-        Deref::deref(&self.0)
+    pub fn state(&self) -> &Shared<State> {
+        &self.state
     }
 }
 
@@ -213,7 +226,7 @@ where
     R: Future<Output = super::Result> + Send + 'static,
 {
     fn call(&self, request: crate::Request<State>, next: Next<State>) -> BoxFuture {
-        let headers = request.head().headers();
+        let headers = request.envelope().headers();
 
         if headers
             .get(header::UPGRADE)
@@ -241,11 +254,11 @@ where
         };
 
         tokio::spawn({
-            let (parts, _) = request.into_parts();
+            let (envelope, _, state) = request.into_parts();
             let builder = Builder::new().config(self.config).limits(self.limits);
             let listen = Arc::clone(&self.listen);
 
-            start(listen, parts, builder)
+            start(state, listen, envelope, builder)
         });
 
         Box::pin(async {

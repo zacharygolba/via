@@ -24,8 +24,8 @@ pub async fn index(_: Request, _: Next) -> via::Result {
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
-    let (state, body) = request.into_future();
-    let params = body.await?.serde_json::<NewUser>()?;
+    let (body, state) = request.into_future();
+    let params = body.await?.json::<NewUser>()?;
     let user = User::create(&mut state.pool().get().await?, params).await?;
 
     let mut response = Response::build().status(201).json(&user)?;
@@ -35,8 +35,8 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn login(request: Request, _: Next) -> via::Result {
-    let (state, body) = request.into_future();
-    let params = body.await?.serde_json::<LoginParams>()?;
+    let (body, state) = request.into_future();
+    let params = body.await?.json::<LoginParams>()?;
     let user = User::query()
         .filter(by_username(&params.username))
         .first(&mut state.pool().get().await?)

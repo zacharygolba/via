@@ -1,5 +1,5 @@
 use http::Extensions;
-use via::request::Head;
+use via::request::Envelope;
 use via::{Middleware, raise};
 
 use crate::chat::Chat;
@@ -37,7 +37,7 @@ impl Auth {
 impl Middleware<Chat> for Auth {
     fn call(&self, mut request: Request, next: Next) -> via::BoxFuture {
         let session = {
-            let envelope = request.head();
+            let envelope = request.envelope();
 
             envelope
                 .cookies()
@@ -52,14 +52,14 @@ impl Middleware<Chat> for Auth {
                 Ok(user) => Verify(user),
             };
 
-            request.head_mut().extensions_mut().insert(extension);
+            request.envelope_mut().extensions_mut().insert(extension);
         }
 
         next.call(request)
     }
 }
 
-impl Authenticate for Head {
+impl Authenticate for Envelope {
     fn current_user(&self) -> via::Result<&User> {
         try_from_extensions(self.extensions())
     }

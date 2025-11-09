@@ -11,25 +11,19 @@ use crate::error::Error;
 use crate::request::params::QueryParams;
 use crate::response::{Finalize, Response, ResponseBuilder};
 
-pub struct Head {
+pub struct Envelope {
     pub(crate) parts: http::request::Parts,
     pub(crate) params: Vec<PathParamEntry>,
     pub(crate) cookies: CookieJar,
 }
 
-#[derive(Debug)]
-pub struct Parts<State> {
-    head: Box<Head>,
-    state: Shared<State>,
-}
-
 pub struct Request<State = ()> {
-    head: Box<Head>,
+    envelope: Box<Envelope>,
     body: Limited<Body>,
     state: Shared<State>,
 }
 
-impl Head {
+impl Envelope {
     /// Returns a reference to the request's method.
     ///
     #[inline]
@@ -101,34 +95,20 @@ impl Head {
     }
 }
 
-impl Debug for Head {
+impl Debug for Envelope {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("Head")
+        #[derive(Debug)]
+        struct CookieJar;
+
+        f.debug_struct("Envelope")
             .field("method", self.method())
             .field("uri", self.uri())
             .field("params", &self.params)
             .field("version", &self.version())
             .field("headers", self.headers())
-            .field("cookies", self.cookies())
+            .field("cookies", &CookieJar)
             .field("extensions", self.extensions())
             .finish()
-    }
-}
-
-impl<State> Parts<State> {
-    #[inline]
-    pub fn head(&self) -> &Head {
-        &self.head
-    }
-
-    #[inline]
-    pub fn head_mut(&mut self) -> &mut Head {
-        &mut self.head
-    }
-
-    #[inline]
-    pub fn state(&self) -> &Shared<State> {
-        &self.state
     }
 }
 
@@ -139,23 +119,27 @@ impl<State> Request<State> {
         parts: http::request::Parts,
         body: Limited<Body>,
     ) -> Self {
-        let head = Box::new(Head {
+        let envelope = Box::new(Envelope {
             parts,
             params: Vec::with_capacity(8),
             cookies: CookieJar::new(),
         });
 
-        Self { state, head, body }
+        Self {
+            envelope,
+            body,
+            state,
+        }
     }
 
     #[inline]
-    pub fn head(&self) -> &Head {
-        &self.head
+    pub fn envelope(&self) -> &Envelope {
+        &self.envelope
     }
 
     #[inline]
-    pub fn head_mut(&mut self) -> &mut Head {
-        &mut self.head
+    pub fn envelope_mut(&mut self) -> &mut Envelope {
+        &mut self.envelope
     }
 
     #[inline]
@@ -163,28 +147,28 @@ impl<State> Request<State> {
         &self.state
     }
 
-    /// Consumes the request and returns a future that resolves with the data
-    /// in the body.
+    /// Consumes the request and returns a tuple containing a future that
+    /// resolves with the data and trailers of the body as well as a shared
+    /// copy of `State`.
     ///
     #[inline]
-    pub fn into_future(self) -> (Shared<State>, IntoFuture) {
+    pub fn into_future(self) -> (IntoFuture, Shared<State>) {
         let Self { body, state, .. } = self;
-        (state, IntoFuture::new(body))
+        (IntoFuture::new(body), state)
     }
 
-    /// Consumes the request and returns a tuple containing the head and body.
+    /// Consumes the request and returns a tuple containing it's parts.
     ///
     #[inline]
-    pub fn into_parts(self) -> (Parts<State>, Limited<Body>) {
-        let Self { head, body, state } = self;
-        (Parts { head, state }, body)
+    pub fn into_parts(self) -> (Box<Envelope>, Limited<Body>, Shared<State>) {
+        (self.envelope, self.body, self.state)
     }
 }
 
 impl<State> Debug for Request<State> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Request")
-            .field("head", self.head())
+            .field("envelope", self.envelope())
             .field("body", &self.body)
             .field("state", self.state())
             .finish()
@@ -196,7 +180,7 @@ impl<State> Finalize for Request<State> {
         use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
         use http_body_util::combinators::BoxBody;
 
-        let headers = self.head().headers();
+        let headers = self.envelope().headers();
 
         let mut response = match headers.get(CONTENT_LENGTH).cloned() {
             Some(content_length) => response.header(CONTENT_LENGTH, content_length),
