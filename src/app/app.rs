@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
 use super::router::{Route, Router};
+use super::shared::Shared;
 use crate::middleware::Middleware;
 
 /// Configure routes and define shared global state.
@@ -55,7 +54,7 @@ use crate::middleware::Middleware;
 /// ```
 ///
 pub struct App<State> {
-    pub(super) state: Arc<State>,
+    pub(super) state: Shared<State>,
     pub(super) router: Router<State>,
 }
 
@@ -82,7 +81,7 @@ impl<State> App<State> {
     ///
     pub fn new(state: State) -> Self {
         App {
-            state: Arc::new(state),
+            state: Shared::new(state),
             router: Router::new(),
         }
     }

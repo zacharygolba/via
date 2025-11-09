@@ -1,124 +1,96 @@
-use bytes::Bytes;
 use cookie::CookieJar;
-use http::request::Parts;
 use http::{Extensions, HeaderMap, Method, Uri, Version};
-use http_body::Body;
-use http_body_util::Either;
-use http_body_util::combinators::BoxBody;
+use http_body_util::Limited;
+use hyper::body::Incoming as Body;
 use std::fmt::{self, Debug, Formatter};
-use std::sync::Arc;
 
-use super::body::{IntoFuture, RequestBody};
+use super::body::IntoFuture;
 use super::params::{Param, PathParamEntry, PathParams};
-use crate::error::{BoxError, Error};
+use crate::app::Shared;
+use crate::error::Error;
 use crate::request::params::QueryParams;
-use crate::response::{Finalize, Response, ResponseBody, ResponseBuilder};
+use crate::response::{Finalize, Response, ResponseBuilder};
 
-pub struct Request<State = ()> {
-    head: RequestHead<State>,
-    body: RequestBody,
-}
-
-/// The component parts of a HTTP request.
-///
-pub struct RequestHead<State> {
-    envelope: Box<Envelope>,
-    state: Arc<State>,
-}
-
-#[derive(Debug)]
-pub(crate) struct Envelope {
-    pub(crate) parts: Parts,
+pub struct Head {
+    pub(crate) parts: http::request::Parts,
     pub(crate) params: Vec<PathParamEntry>,
     pub(crate) cookies: CookieJar,
 }
 
-impl<State> RequestHead<State> {
-    pub(crate) fn new(parts: Parts, state: Arc<State>) -> Self {
-        let envelope = Box::new(Envelope {
-            parts,
-            params: Vec::with_capacity(8),
-            cookies: CookieJar::new(),
-        });
+#[derive(Debug)]
+pub struct Parts<State> {
+    head: Box<Head>,
+    state: Shared<State>,
+}
 
-        Self { envelope, state }
-    }
+pub struct Request<State = ()> {
+    head: Box<Head>,
+    body: Limited<Body>,
+    state: Shared<State>,
+}
 
+impl Head {
     /// Returns a reference to the request's method.
     ///
     #[inline]
     pub fn method(&self) -> &Method {
-        &self.envelope.parts.method
+        &self.parts.method
     }
 
     /// Returns a reference to the request's URI.
     ///
     #[inline]
     pub fn uri(&self) -> &Uri {
-        &self.envelope.parts.uri
+        &self.parts.uri
     }
 
     /// Returns the HTTP version that was used to make the request.
     ///
     #[inline]
     pub fn version(&self) -> Version {
-        self.envelope.parts.version
+        self.parts.version
     }
 
     /// Returns a reference to the request's headers.
     ///
     #[inline]
     pub fn headers(&self) -> &HeaderMap {
-        &self.envelope.parts.headers
+        &self.parts.headers
     }
 
     /// Returns a reference to the associated extensions.
     ///
     #[inline]
     pub fn extensions(&self) -> &Extensions {
-        &self.envelope.parts.extensions
+        &self.parts.extensions
     }
 
     /// Returns a mutable reference to the associated extensions.
     ///
     #[inline]
     pub fn extensions_mut(&mut self) -> &mut Extensions {
-        &mut self.envelope.parts.extensions
+        &mut self.parts.extensions
     }
 
     /// Returns reference to the cookies associated with the request.
     ///
     #[inline]
     pub fn cookies(&self) -> &CookieJar {
-        &self.envelope.cookies
-    }
-
-    /// Returns a reference to an [`Arc`] that contains the state argument that
-    /// was passed as an argument to the [`App`](crate::App) constructor.
-    ///
-    #[inline]
-    pub fn state(&self) -> &State {
-        &self.state
+        &self.cookies
     }
 
     pub fn params<'a, T>(&'a self) -> crate::Result<T>
     where
         T: TryFrom<PathParams<'a>, Error = Error>,
     {
-        let envelope = &*self.envelope;
-        let params = PathParams::new(envelope.parts.uri.path(), &envelope.params);
-
-        T::try_from(params)
+        T::try_from(PathParams::new(self.uri().path(), &self.params))
     }
 
     /// Returns a convenient wrapper around an optional reference to the path
     /// parameter in the request's uri with the provided `name`.
     ///
     pub fn param<'b>(&self, name: &'b str) -> Param<'_, 'b> {
-        let envelope = &*self.envelope;
-        let params = PathParams::new(envelope.parts.uri.path(), &envelope.params);
-
-        params.get(name)
+        PathParams::new(self.uri().path(), &self.params).get(name)
     }
 
     pub fn query<'a, T>(&'a self) -> crate::Result<T>
@@ -129,83 +101,83 @@ impl<State> RequestHead<State> {
     }
 }
 
-impl<State> Debug for RequestHead<State> {
+impl Debug for Head {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        #[derive(Debug)]
-        pub struct State;
-
-        f.debug_struct("RequestHead")
-            .field("envelope", &*self.envelope)
-            .field("state", &State)
+        f.debug_struct("Head")
+            .field("method", self.method())
+            .field("uri", self.uri())
+            .field("params", &self.params)
+            .field("version", &self.version())
+            .field("headers", self.headers())
+            .field("cookies", self.cookies())
+            .field("extensions", self.extensions())
             .finish()
+    }
+}
+
+impl<State> Parts<State> {
+    #[inline]
+    pub fn head(&self) -> &Head {
+        &self.head
+    }
+
+    #[inline]
+    pub fn head_mut(&mut self) -> &mut Head {
+        &mut self.head
+    }
+
+    #[inline]
+    pub fn state(&self) -> &Shared<State> {
+        &self.state
     }
 }
 
 impl<State> Request<State> {
     #[inline]
-    pub(crate) fn new(head: RequestHead<State>, body: RequestBody) -> Self {
-        Self { head, body }
+    pub(crate) fn new(
+        state: Shared<State>,
+        parts: http::request::Parts,
+        body: Limited<Body>,
+    ) -> Self {
+        let head = Box::new(Head {
+            parts,
+            params: Vec::with_capacity(8),
+            cookies: CookieJar::new(),
+        });
+
+        Self { state, head, body }
     }
 
     #[inline]
-    pub(crate) fn envelope_mut(&mut self) -> &mut Envelope {
-        &mut self.head.envelope
-    }
-
-    #[inline]
-    pub fn head(&self) -> &RequestHead<State> {
+    pub fn head(&self) -> &Head {
         &self.head
     }
 
     #[inline]
-    pub fn body(&self) -> &RequestBody {
-        &self.body
+    pub fn head_mut(&mut self) -> &mut Head {
+        &mut self.head
     }
 
-    /// Returns a reference to an [`Arc`] that contains the state argument that
-    /// was passed as an argument to the [`App`](crate::App) constructor.
-    ///
     #[inline]
-    pub fn state(&self) -> &Arc<State> {
-        &self.head.state
-    }
-
-    /// Returns a mutable reference to the associated extensions.
-    ///
-    #[inline]
-    pub fn extensions_mut(&mut self) -> &mut Extensions {
-        self.head.extensions_mut()
+    pub fn state(&self) -> &Shared<State> {
+        &self.state
     }
 
     /// Consumes the request and returns a future that resolves with the data
     /// in the body.
     ///
     #[inline]
-    pub fn into_future(self) -> (RequestHead<State>, IntoFuture) {
-        (self.head, self.body.into_future())
+    pub fn into_future(self) -> (Shared<State>, IntoFuture) {
+        let Self { body, state, .. } = self;
+        (state, IntoFuture::new(body))
     }
 
     /// Consumes the request and returns a tuple containing the head and body.
     ///
     #[inline]
-    pub fn into_parts(self) -> (RequestHead<State>, RequestBody) {
-        (self.head, self.body)
-    }
-
-    /// Consumes the request returning a new request with body mapped to the
-    /// return type of the provided closure.
-    ///
-    pub fn map<R, F>(self, map: F) -> Self
-    where
-        R: Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
-        F: FnOnce(RequestBody) -> R,
-    {
-        Self {
-            head: self.head,
-            body: RequestBody {
-                kind: Either::Right(BoxBody::new(map(self.body))),
-            },
-        }
+    pub fn into_parts(self) -> (Parts<State>, Limited<Body>) {
+        let Self { head, body, state } = self;
+        (Parts { head, state }, body)
     }
 }
 
@@ -213,7 +185,8 @@ impl<State> Debug for Request<State> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Request")
             .field("head", self.head())
-            .field("body", self.body())
+            .field("body", &self.body)
+            .field("state", self.state())
             .finish()
     }
 }
@@ -221,9 +194,9 @@ impl<State> Debug for Request<State> {
 impl<State> Finalize for Request<State> {
     fn finalize(self, response: ResponseBuilder) -> Result<Response, Error> {
         use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
+        use http_body_util::combinators::BoxBody;
 
-        let Self { ref head, body } = self;
-        let headers = head.headers();
+        let headers = self.head().headers();
 
         let mut response = match headers.get(CONTENT_LENGTH).cloned() {
             Some(content_length) => response.header(CONTENT_LENGTH, content_length),
@@ -234,9 +207,6 @@ impl<State> Finalize for Request<State> {
             response = response.header(CONTENT_TYPE, content_type);
         }
 
-        response.body(ResponseBody::from(match body.kind {
-            Either::Left(inline) => BoxBody::new(inline),
-            Either::Right(boxed) => boxed,
-        }))
+        response.body(BoxBody::new(self.body).into())
     }
 }

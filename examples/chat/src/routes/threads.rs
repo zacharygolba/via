@@ -39,8 +39,8 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let current_user_id = request.head().current_user()?.id;
 
     // Deserialize the request body into message params.
-    let (head, future) = request.into_future();
-    let mut params = future.await?.serde_json::<NewThread>()?;
+    let (state, body) = request.into_future();
+    let mut params = body.await?.serde_json::<NewThread>()?;
 
     // Source foreign keys from request metadata when possible.
     params.owner_id = Some(current_user_id);
@@ -57,9 +57,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the insert.
     let thread = {
-        let pool = head.state().pool();
-        let mut conn = pool.get().await?;
-
+        let mut conn = state.pool().get().await?;
         insert.get_result(&mut conn).await?
     };
 

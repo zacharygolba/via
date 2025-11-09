@@ -1,8 +1,7 @@
 use bytes::{Bytes, BytesMut};
 use http::HeaderMap;
-use http_body::{Body, Frame, SizeHint};
-use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyStream, Either, LengthLimitError, Limited};
+use http_body::Body;
+use http_body_util::{LengthLimitError, Limited};
 use hyper::body::Incoming;
 use smallvec::SmallVec;
 use std::future::Future;
@@ -14,13 +13,8 @@ use crate::{Payload, raise};
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct IntoFuture {
-    body: RequestBody,
+    body: Limited<Incoming>,
     payload: Option<RequestPayload>,
-}
-
-#[derive(Debug)]
-pub struct RequestBody {
-    pub(super) kind: Either<Limited<Incoming>, BoxBody<Bytes, BoxError>>,
 }
 
 /// The data and trailers of a request body.
@@ -43,6 +37,18 @@ fn into_future_error<T>(error: BoxError) -> Result<T, Error> {
 
     // Bad Request
     raise!(400, boxed = error);
+}
+
+impl IntoFuture {
+    pub(super) fn new(body: Limited<Incoming>) -> Self {
+        Self {
+            body,
+            payload: Some(RequestPayload {
+                frames: SmallVec::new(),
+                trailers: None,
+            }),
+        }
+    }
 }
 
 impl Future for IntoFuture {
@@ -79,51 +85,6 @@ impl Future for IntoFuture {
     }
 }
 
-impl RequestBody {
-    #[inline]
-    pub(crate) fn new(body: Limited<Incoming>) -> Self {
-        Self {
-            kind: Either::Left(body),
-        }
-    }
-
-    #[inline]
-    pub fn into_stream(self) -> BodyStream<Self> {
-        BodyStream::new(self)
-    }
-
-    #[inline]
-    pub fn into_future(self) -> IntoFuture {
-        IntoFuture {
-            body: self,
-            payload: Some(RequestPayload {
-                frames: Default::default(),
-                trailers: None,
-            }),
-        }
-    }
-}
-
-impl Body for RequestBody {
-    type Data = Bytes;
-    type Error = BoxError;
-
-    fn poll_frame(
-        mut self: Pin<&mut Self>,
-        context: &mut Context,
-    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        Pin::new(&mut self.kind).poll_frame(context)
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.kind.is_end_stream()
-    }
-
-    fn size_hint(&self) -> SizeHint {
-        self.kind.size_hint()
-    }
-}
-
 impl RequestPayload {
     pub fn len(&self) -> usize {
         self.frames.iter().map(Bytes::len).sum()
@@ -140,21 +101,22 @@ impl RequestPayload {
 
 impl Payload for RequestPayload {
     fn copy_to_bytes(self) -> Bytes {
-        self.frames
-            .into_iter()
-            .fold(BytesMut::new(), |mut buf, mut frame| {
-                buf.extend_from_slice(&frame.split_to(frame.len()));
-                buf
-            })
-            .freeze()
+        let mut buf = BytesMut::new();
+
+        for frame in self.frames {
+            buf.extend_from_slice(&frame);
+        }
+
+        buf.freeze()
     }
 
     fn into_vec(self) -> Vec<u8> {
-        self.frames
-            .into_iter()
-            .fold(Vec::new(), |mut buf, mut frame| {
-                buf.extend_from_slice(&frame.split_to(frame.len()));
-                buf
-            })
+        let mut vec = Vec::new();
+
+        for frame in self.frames {
+            vec.extend_from_slice(&frame);
+        }
+
+        vec
     }
 }

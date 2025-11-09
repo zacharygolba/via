@@ -42,8 +42,8 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let thread_id = request.head().param("thread-id").parse()?;
 
     // Deserialize the request body into message params.
-    let (head, future) = request.into_future();
-    let mut params = future.await?.serde_json::<NewMessage>()?;
+    let (state, body) = request.into_future();
+    let mut params = body.await?.serde_json::<NewMessage>()?;
 
     // Source foreign keys from request metadata when possible.
     params.author_id = Some(current_user_id);
@@ -61,19 +61,16 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the insert.
     let message = {
-        let pool = head.state().pool();
-        let mut conn = pool.get().await?;
-
+        let mut conn = state.pool().get().await?;
         insert.get_result(&mut conn).await?
     };
 
-    let context = EventContext::new(Some(thread_id), current_user_id);
     let event = Event::Message(message);
+    let context = EventContext::new(Some(thread_id), current_user_id);
+    let response = Response::build().status(201);
 
     // Notify subscribers that a message has been created and respond.
-    head.state()
-        .publish(context, event)?
-        .finalize(Response::build().status(201))
+    state.publish(context, event)?.finalize(response)
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result {
@@ -90,9 +87,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the query.
     let message: MessageWithJoins = {
-        let pool = request.head().state().pool();
-        let mut conn = pool.get().await?;
-
+        let mut conn = request.state().pool().get().await?;
         query.first(&mut conn).await?
     };
 
@@ -105,8 +100,8 @@ pub async fn update(request: Request, _: Next) -> via::Result {
     let message_id = request.head().param("message-id").parse()?;
 
     // Deserialize the request body into message params.
-    let (head, future) = request.into_future();
-    let change_set = future.await?.serde_json::<ChangeSet>()?;
+    let (state, body) = request.into_future();
+    let change_set = body.await?.serde_json::<ChangeSet>()?;
 
     // Build the update statement with the params from the body.
     let update = diesel::update(Message::TABLE)
@@ -122,9 +117,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the update.
     let message = {
-        let pool = head.state().pool();
-        let mut conn = pool.get().await?;
-
+        let mut conn = state.pool().get().await?;
         update.get_result(&mut conn).await.found_or_forbidden()?
     };
 
