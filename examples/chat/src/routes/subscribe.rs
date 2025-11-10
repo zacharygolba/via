@@ -21,8 +21,18 @@ pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Resu
             Some(message) = channel.recv() => match message {
                 Message::Text(mut payload) => payload.json().or_continue()?,
                 Message::Close(close) => break on_close(close),
+                Message::Binary(_) => {
+                    if cfg!(debug_assertions) {
+                        eprintln!("warn(/api/subscribe): ignoring binary message");
+                    }
+
+                    continue;
+                }
                 ignored => {
-                    eprintln!("warn(/api/subscribe): ignoring {:?}", ignored);
+                    if cfg!(debug_assertions) {
+                        eprintln!("warn(/api/subscribe): ignoring {:?}", ignored);
+                    }
+
                     continue;
                 }
             },
