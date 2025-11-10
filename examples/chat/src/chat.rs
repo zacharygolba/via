@@ -122,11 +122,11 @@ impl EventContext {
         Self { thread_id, user_id }
     }
 
-    pub fn thread_id(&self) -> Option<&Id> {
-        self.thread_id.as_ref()
+    pub fn thread_id(&self) -> Option<Id> {
+        self.thread_id
     }
 
-    pub fn user_id(&self) -> &Id {
-        &self.user_id
+    pub fn user_id(&self) -> Id {
+        self.user_id
     }
 }
