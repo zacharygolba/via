@@ -24,7 +24,7 @@ impl<State> Next<State> {
     /// use via::{Request, Next};
     ///
     /// async fn logger(request: Request, next: Next) -> via::Result {
-    ///     let head = request.head();
+    ///     let head = request.envelope();
     ///
     ///     println!("{} -> {}", head.method(), head.uri().path());
     ///     next.call(request).await.inspect(|response| {

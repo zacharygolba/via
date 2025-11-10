@@ -29,10 +29,6 @@ async fn main() -> Result<ExitCode, Error> {
 
     app.uses(Cookies::new().allow(SESSION));
     app.uses(Auth::new(SESSION));
-    app.uses(async |request: Request, next: Next| {
-        println!("{:#?}", request);
-        next.call(request).await
-    });
 
     app.route("/").to(via::get(routes::home));
 

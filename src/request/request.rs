@@ -1,18 +1,19 @@
 use cookie::CookieJar;
+use http::request::Parts;
 use http::{Extensions, HeaderMap, Method, Uri, Version};
 use http_body_util::Limited;
 use hyper::body::Incoming as Body;
 use std::fmt::{self, Debug, Formatter};
 
-use super::body::IntoFuture;
 use super::params::{Param, PathParamEntry, PathParams};
+use super::payload::IntoFuture;
 use crate::app::Shared;
 use crate::error::Error;
 use crate::request::params::QueryParams;
 use crate::response::{Finalize, Response, ResponseBuilder};
 
 pub struct Envelope {
-    pub(crate) parts: http::request::Parts,
+    pub(crate) parts: Parts,
     pub(crate) params: Vec<PathParamEntry>,
     pub(crate) cookies: CookieJar,
 }
@@ -114,14 +115,10 @@ impl Debug for Envelope {
 
 impl<State> Request<State> {
     #[inline]
-    pub(crate) fn new(
-        state: Shared<State>,
-        parts: http::request::Parts,
-        body: Limited<Body>,
-    ) -> Self {
+    pub(crate) fn new(state: Shared<State>, parts: Parts, body: Limited<Body>) -> Self {
         let envelope = Box::new(Envelope {
             parts,
-            params: Vec::with_capacity(8),
+            params: Vec::new(),
             cookies: CookieJar::new(),
         });
 

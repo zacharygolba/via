@@ -11,6 +11,7 @@ use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::{self, Error as IoError};
+use std::str::Utf8Error;
 
 #[doc(hidden)]
 pub use http::StatusCode; // Required for the raise macro.
@@ -35,6 +36,7 @@ pub struct Error {
 
 #[derive(Debug)]
 enum ErrorKind {
+    InvalidUtf8(Utf8Error),
     Message(String),
     Other(BoxError),
 }
@@ -59,6 +61,13 @@ where
 }
 
 impl Error {
+    pub(crate) fn from_utf8_error(error: Utf8Error) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            kind: ErrorKind::InvalidUtf8(error),
+        }
+    }
+
     /// Returns a new error with the provided status and message.
     ///
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
@@ -148,8 +157,9 @@ impl Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match &self.kind {
-            ErrorKind::Other(source) => Display::fmt(&**source, f),
+            ErrorKind::InvalidUtf8(error) => Display::fmt(error, f),
             ErrorKind::Message(message) => Display::fmt(&**message, f),
+            ErrorKind::Other(source) => Display::fmt(&**source, f),
         }
     }
 }

@@ -188,7 +188,7 @@ impl<'a, State> Route<'a, State> {
     /// app.route("/admin").uses(async |request: Request, next: Next| {
     ///     // We suggest using signed cookies to prevent tampering.
     ///     // See the cookies example in our git repo for more information.
-    ///     if request.head().cookies().get("is-admin").is_none() {
+    ///     if request.envelope().cookies().get("is-admin").is_none() {
     ///         raise!(401);
     ///     }
     ///

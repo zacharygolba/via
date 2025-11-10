@@ -31,7 +31,7 @@ struct SetCookieError;
 /// async fn greet(request: Request, _: Next) -> via::Result {
 ///     use time::Duration;
 ///
-///     let head = request.head();
+///     let head = request.envelope();
 ///
 ///     // `should_set_name` indicates whether "name" was sourced from the
 ///     // request URI. When false, the "name" cookie should not be modified.
@@ -149,12 +149,12 @@ struct SetCookieError;
 /// async fn login(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
 ///     use time::Duration;
 ///
-///     let (head, future) = request.into_future();
-///     let Login { username, password } = future.await?.serde_json()?;
+///     let (body, state) = request.into_future();
+///     let params = body.await?.json::<Login>()?;
 ///
 ///     // Insert username and password verification here...
 ///     // For now, we'll just assert that the password is not empty.
-///     if password.is_empty() {
+///     if params.password.is_empty() {
 ///         via::raise!(401, message = "Invalid username or password.");
 ///     }
 ///
@@ -163,14 +163,13 @@ struct SetCookieError;
 ///     // If we were verifying that a user with the provided username and
 ///     // password exists in a database table, we'd probably respond with the
 ///     // matching row as JSON.
-///     let mut response = Response::build().status(StatusCode::NO_CONTENT).finish()?;
-///     let state = head.state();
+///     let mut response = Response::build().status(204).finish()?;
 ///
 ///     // Add our session cookie that contains the username of the active user
 ///     // to our private cookie jar. The value of the cookie will be signed
 ///     // and encrypted before it is included as a set-cookie header.
 ///     response.cookies_mut().private_mut(&state.secret).add(
-///         Cookie::build(("via-session", username))
+///         Cookie::build(("via-session", params.username))
 ///             .http_only(true)
 ///             .max_age(Duration::hours(1))
 ///             .path("/")

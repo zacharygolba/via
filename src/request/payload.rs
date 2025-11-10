@@ -1,4 +1,4 @@
-use bytes::{Bytes, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 use http::HeaderMap;
 use http_body::Body;
 use http_body_util::{LengthLimitError, Limited};
@@ -8,6 +8,7 @@ use serde::de::DeserializeOwned;
 use smallvec::SmallVec;
 use std::future::Future;
 use std::pin::Pin;
+use std::slice;
 use std::task::{Context, Poll, ready};
 
 use crate::error::{BoxError, Error};
@@ -15,10 +16,10 @@ use crate::raise;
 
 /// Interact with data received from a client.
 ///
-pub trait Payload: Sized {
+pub trait Payload {
     /// Copy the bytes in self into a unique, contiguous `Bytes` instance.
     ///
-    fn into_bytes(self) -> Bytes;
+    fn copy_to_unique(&mut self) -> Result<Bytes, Error>;
 
     /// Copy the bytes in self into an owned, contiguous `String`.
     ///
@@ -26,14 +27,18 @@ pub trait Payload: Sized {
     ///
     /// If the payload is not valid `UTF-8`.
     ///
-    fn into_utf8(self) -> Result<String, Error> {
-        String::from_utf8(self.into_vec()).or_else(|error| raise!(400, error))
+    fn copy_to_utf8(&mut self) -> Result<String, Error> {
+        let vec = self.copy_to_vec()?;
+        String::from_utf8(vec).map_err(|error| {
+            let error = error.utf8_error();
+            Error::from_utf8_error(error)
+        })
     }
 
     /// Copy the bytes in self into a contiguous `Vec<u8>`.
     ///
-    fn into_vec(self) -> Vec<u8> {
-        self.into_bytes().into()
+    fn copy_to_vec(&mut self) -> Result<Vec<u8>, Error> {
+        self.copy_to_unique().map(Vec::from)
     }
 
     /// Deserialize and extract `T` as JSON from the top-level data field of
@@ -58,17 +63,16 @@ pub trait Payload: Sized {
     /// // => Meow, Ciro!
     /// ```
     ///
-    fn json<T>(self) -> Result<T, Error>
+    fn json<T>(&mut self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        deserialize_json(&self.into_vec())
+        deserialize_json(&self.copy_to_unique()?)
     }
 }
 
 /// The data and trailers of a request body.
 ///
-#[derive(Debug)]
 pub struct DataAndTrailers {
     frames: SmallVec<[Bytes; 1]>,
     trailers: Option<HeaderMap>,
@@ -90,12 +94,12 @@ where
     T: DeserializeOwned,
 {
     #[derive(Deserialize)]
-    struct Json<D> {
+    struct Tagged<D> {
         data: D,
     }
 
     match serde_json::from_slice(slice) {
-        Ok(Json { data }) => Ok(data),
+        Ok(Tagged { data }) => Ok(data),
         Err(error) => raise!(400, error),
     }
 }
@@ -111,12 +115,21 @@ fn into_future_error<T>(error: BoxError) -> Result<T, Error> {
 }
 
 impl DataAndTrailers {
-    pub fn len(&self) -> usize {
-        self.frames.iter().map(Bytes::len).sum()
+    pub fn len(&self) -> Option<usize> {
+        self.iter()
+            .try_fold(0usize, |len, frame| len.checked_add(frame.len()))
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.len().is_some_and(|len| len == 0)
+    }
+
+    pub fn iter(&self) -> slice::Iter<'_, Bytes> {
+        self.frames.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, Bytes> {
+        self.frames.iter_mut()
     }
 
     pub fn trailers(&self) -> Option<&HeaderMap> {
@@ -125,24 +138,27 @@ impl DataAndTrailers {
 }
 
 impl Payload for DataAndTrailers {
-    fn into_bytes(self) -> Bytes {
-        let mut buf = BytesMut::new();
+    fn copy_to_unique(&mut self) -> Result<Bytes, Error> {
+        let Some(mut bytes) = self.len().map(BytesMut::with_capacity) else {
+            raise!(400, message = "payload len would overflow usize::MAX.");
+        };
 
-        for frame in self.frames {
-            buf.extend_from_slice(&frame);
+        for frame in self.iter_mut() {
+            bytes.extend_from_slice(&*frame);
+            frame.advance(frame.len());
         }
 
-        buf.freeze()
+        Ok(bytes.freeze())
     }
 
-    fn into_vec(self) -> Vec<u8> {
-        let mut vec = Vec::new();
-
-        for frame in self.frames {
-            vec.extend_from_slice(&frame);
+    fn json<T>(&mut self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        match &mut *self.frames {
+            [frame] => frame.json(),
+            _ => deserialize_json(&self.copy_to_unique()?),
         }
-
-        vec
     }
 }
 
@@ -172,47 +188,52 @@ impl Future for IntoFuture {
 
             let frame = result.or_else(into_future_error)?;
             let payload = payload.as_mut().map_or_else(already_read, Ok)?;
-
-            match frame.into_data() {
-                Ok(data) => payload.frames.push(data),
-                Err(frame) => {
-                    // If the frame isn't a data frame, it must be trailers.
-                    let Ok(trailers) = frame.into_trailers() else {
-                        unreachable!()
-                    };
-
-                    if let Some(existing) = payload.trailers.as_mut() {
-                        existing.extend(trailers);
-                    } else {
-                        payload.trailers = Some(trailers);
-                    }
+            let trailers = match frame.into_data() {
+                Ok(data) => {
+                    payload.frames.push(data);
+                    continue;
                 }
+                Err(frame) => match frame.into_trailers() {
+                    Ok(trailers) => trailers,
+                    Err(_) => unreachable!(),
+                },
             };
+
+            if let Some(existing) = payload.trailers.as_mut() {
+                existing.extend(trailers);
+            } else {
+                payload.trailers = Some(trailers);
+            }
         }
     }
 }
 
 impl Payload for Bytes {
-    fn into_bytes(mut self) -> Bytes {
-        let remaining = self.len();
-        let mut dest = BytesMut::with_capacity(remaining);
+    fn copy_to_unique(&mut self) -> Result<Bytes, Error> {
+        let bytes = Bytes::copy_from_slice(&*self);
 
-        dest.extend_from_slice(&self.split_to(remaining));
-        dest.freeze()
+        self.advance(self.len());
+
+        Ok(bytes)
     }
 
-    fn into_vec(mut self) -> Vec<u8> {
-        let remaining = self.len();
-        let mut dest = Vec::with_capacity(remaining);
+    fn copy_to_vec(&mut self) -> Result<Vec<u8>, Error> {
+        let vec = self.to_vec();
 
-        dest.extend_from_slice(&self.split_to(remaining));
-        dest
+        self.advance(self.len());
+
+        Ok(vec)
     }
 
-    fn json<T>(mut self) -> Result<T, Error>
+    fn json<T>(&mut self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        deserialize_json(&self.split_to(self.len()))
+        let remaining = self.len();
+        let result = deserialize_json(&*self);
+
+        self.advance(remaining);
+
+        result
     }
 }
