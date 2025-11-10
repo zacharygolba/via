@@ -6,12 +6,12 @@ use via::{Finalize, Payload, Response};
 
 use crate::chat::{Event, EventContext};
 use crate::models::reaction::*;
-use crate::util::{Authenticate, FoundOrForbidden, Id, LimitAndOffset};
+use crate::util::{self, FoundOrForbidden, LimitAndOffset, Session};
 use crate::{Next, Request};
 
 struct ReactionParams {
-    thread_id: Id,
-    message_id: Id,
+    thread_id: util::Id,
+    message_id: util::Id,
 }
 
 pub async fn index(request: Request, _: Next) -> via::Result {

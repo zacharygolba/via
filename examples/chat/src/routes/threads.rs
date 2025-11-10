@@ -5,7 +5,7 @@ use via::{Payload, Response};
 
 use crate::models::message::Message;
 use crate::models::thread::*;
-use crate::util::{Authenticate, LimitAndOffset};
+use crate::util::{LimitAndOffset, Session};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {

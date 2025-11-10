@@ -6,7 +6,7 @@ use crate::chat::Chat;
 use crate::models::user::User;
 use crate::{Next, Request};
 
-pub trait Authenticate {
+pub trait Session {
     fn current_user(&self) -> via::Result<&User>;
 }
 
@@ -36,30 +36,28 @@ impl Auth {
 
 impl Middleware<Chat> for Auth {
     fn call(&self, mut request: Request, next: Next) -> via::BoxFuture {
-        let session = {
-            let envelope = request.envelope();
-
-            envelope
-                .cookies()
-                .private(request.state().secret())
-                .get(&self.cookie)
-                .map(|cookie| serde_json::from_str(cookie.value()))
-        };
-
-        if let Some(result) = session {
-            let extension = match result {
+        if let Some(cookie) = request
+            .envelope()
+            .cookies()
+            .private(request.state().secret())
+            .get(&self.cookie)
+        {
+            let current_user = match serde_json::from_str(cookie.value()) {
                 Err(error) => return Box::pin(async { raise!(400, error) }),
-                Ok(user) => Verify(user),
+                Ok(user) => user,
             };
 
-            request.envelope_mut().extensions_mut().insert(extension);
+            request
+                .envelope_mut()
+                .extensions_mut()
+                .insert(Verify(current_user));
         }
 
         next.call(request)
     }
 }
 
-impl Authenticate for Envelope {
+impl Session for Envelope {
     fn current_user(&self) -> via::Result<&User> {
         try_from_extensions(self.extensions())
     }

@@ -6,7 +6,7 @@ use via::ws::{self, Channel, CloseCode, Message, Request, Retry};
 
 use crate::chat::{Chat, Event, EventContext};
 use crate::models::message::NewMessage;
-use crate::util::Authenticate;
+use crate::util::Session;
 
 pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Result {
     // The current user that opened the websocket.

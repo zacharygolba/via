@@ -5,7 +5,7 @@ use via::{Finalize, Payload, Response};
 
 use crate::chat::{Event, EventContext};
 use crate::models::message::*;
-use crate::util::{Authenticate, Cursor, FoundOrForbidden};
+use crate::util::{Cursor, FoundOrForbidden, Session};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
