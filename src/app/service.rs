@@ -77,7 +77,7 @@ where
 
         // Populate the middleware stack with the resolved routes.
         for (route, param) in self.app.router.traverse(uri.path()) {
-            // Extend the deque with the matching route's middleware.
+            // Extend the deque with the route's middleware stack.
             deque.extend(route.cloned());
 
             if let Some((name, range)) = param {

@@ -2,6 +2,7 @@ use bytes::{Buf, Bytes, TryGetError};
 use bytestring::ByteString;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::mem::take;
 use std::ops::ControlFlow;
 use tokio::sync::mpsc;
 use tokio::task::coop;
@@ -92,26 +93,6 @@ impl From<&'_ str> for Message {
     }
 }
 
-impl Payload for ByteString {
-    #[inline]
-    fn into_bytes(self) -> Bytes {
-        Payload::into_bytes(self.into_bytes())
-    }
-
-    #[inline]
-    fn into_vec(self) -> Vec<u8> {
-        Payload::into_vec(self.into_bytes())
-    }
-
-    #[inline]
-    fn json<T>(self) -> Result<T, Error>
-    where
-        T: DeserializeOwned,
-    {
-        Payload::json(self.into_bytes())
-    }
-}
-
 impl TryFrom<tokio_websockets::Message> for Message {
     type Error = tokio_websockets::Error;
 
@@ -149,6 +130,23 @@ impl TryFrom<tokio_websockets::Message> for Message {
                 }
             }
         }
+    }
+}
+
+impl Payload for ByteString {
+    fn copy_to_unique(&mut self) -> Result<Bytes, Error> {
+        take(self).into_bytes().copy_to_unique()
+    }
+
+    fn copy_to_vec(&mut self) -> Result<Vec<u8>, Error> {
+        take(self).into_bytes().copy_to_vec()
+    }
+
+    fn json<T>(&mut self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        take(self).into_bytes().json()
     }
 }
 

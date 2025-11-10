@@ -34,12 +34,7 @@ use crate::middleware::Middleware;
 ///     // We can access our database in middleware with `request.state()`.
 ///     app.uses(async |request: Request<Unicorn>, next: Next<Unicorn>| {
 ///         // Get a reference to the state argument passed to `App::new`.
-///         let state = request.state().as_ref();
-///         //                          ^^^^^^
-///         // Convert from &Arc<Unicorn> to &Unicorn. Not strictly necessary.
-///         //
-///         // If `state` must outlive `request`, we would instead call
-///         // `request.state().clone()`.
+///         let state = request.state();
 ///
 ///         // Print the debug output of our mock database pool to stdout.
 ///         println!("{:?}", &state.pool);
@@ -60,9 +55,6 @@ pub struct App<State> {
 
 impl<State> App<State> {
     /// Create a new app with the provided state argument.
-    ///
-    /// The state argument is stored in an [`Arc`] so ownership can be
-    /// [shared with each request](crate::Request::state).
     ///
     /// # Example
     ///

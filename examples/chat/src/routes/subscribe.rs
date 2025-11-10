@@ -19,7 +19,7 @@ pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Resu
         let mut params: NewMessage = tokio::select! {
             // Received a message from the websocket channel.
             Some(message) = channel.recv() => match message {
-                Message::Text(payload) => payload.json().or_continue()?,
+                Message::Text(mut payload) => payload.json().or_continue()?,
                 Message::Close(close) => break on_close(close),
                 ignored => {
                     eprintln!("warn(/api/subscribe): ignoring {:?}", ignored);

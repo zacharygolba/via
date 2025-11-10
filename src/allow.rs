@@ -121,7 +121,7 @@ impl<State> Allow<State> {
     /// # use via::{App, Next, Request, Response};
     /// #
     /// # async fn greet(request: Request, _: Next) -> via::Result {
-    /// #   let name = request.head().param("name").into_result()?;
+    /// #   let name = request.envelope().param("name").into_result()?;
     /// #   Response::build().text(format!("Hello, {}!", name))
     /// # }
     /// #
@@ -157,7 +157,7 @@ impl<State> Allow<State> {
     /// # use via::{App, Next, Request, Response};
     /// #
     /// # async fn greet(request: Request, _: Next) -> via::Result {
-    /// #    let name = request.head().param("name").into_result()?;
+    /// #    let name = request.envelope().param("name").into_result()?;
     /// #    Response::build().text(format!("Hello, {}!", name))
     /// # }
     /// #

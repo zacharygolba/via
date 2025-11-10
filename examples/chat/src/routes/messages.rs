@@ -141,9 +141,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
 
     // Acquire a database connection and execute the delete.
     {
-        let pool = request.state().pool();
-        let mut conn = pool.get().await?;
-
+        let mut conn = request.state().pool().get().await?;
         delete.execute(&mut conn).await.found_or_forbidden()?;
     }
 
