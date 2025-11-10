@@ -43,7 +43,7 @@ pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Resu
 
                 // If the event is relevant and not redundant for the current
                 // user, send the payload to them with the websocket channel.
-                if &user.id != context.user_id() {
+                if user.id != context.user_id() {
                     channel.send(message).await?;
                 }
 
