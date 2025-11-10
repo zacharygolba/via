@@ -140,7 +140,7 @@ impl DataAndTrailers {
 impl Payload for DataAndTrailers {
     fn copy_to_unique(&mut self) -> Result<Bytes, Error> {
         let Some(mut bytes) = self.len().map(BytesMut::with_capacity) else {
-            raise!(400, message = "payload len would overflow usize::MAX.");
+            raise!(400, message = "payload length would overflow usize::MAX.");
         };
 
         for frame in self.iter_mut() {
