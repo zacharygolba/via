@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod messages;
 pub mod reactions;
 pub mod threads;
