@@ -9,9 +9,7 @@ use via::error::{Error, Rescue};
 use via::{App, Cookies, Server, rest, ws};
 
 use chat::Chat;
-use util::Auth;
-
-const SESSION: &str = "via-chat-session";
+use util::auth::{self, RestoreSession};
 
 type Request = via::Request<Chat>;
 type Next = via::Next<Chat>;
@@ -27,8 +25,8 @@ async fn main() -> Result<ExitCode, Error> {
         App::new(Chat::new(pool, secret))
     };
 
-    app.uses(Cookies::new().allow(SESSION));
-    app.uses(Auth::new(SESSION));
+    app.uses(Cookies::new().allow(auth::SESSION));
+    app.uses(RestoreSession);
 
     app.route("/").to(via::get(routes::home));
 
@@ -37,10 +35,10 @@ async fn main() -> Result<ExitCode, Error> {
     api.uses(Rescue::with(util::error_sanitizer));
 
     api.route("/auth").scope(|auth| {
-        use routes::users::{login, logout};
+        use routes::auth::{login, logout, me};
 
-        auth.route("/login").to(via::post(login));
-        auth.route("/logout").to(via::post(logout));
+        auth.route("/").to(via::post(login).delete(logout));
+        auth.route("/_me").to(via::get(me));
     });
 
     // Perform a websocket upgrade and start chatting.

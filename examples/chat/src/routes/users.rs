@@ -1,55 +1,55 @@
-use cookie::{Cookie, SameSite};
-use diesel::QueryDsl;
+use diesel::pg::Pg;
+use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use via::{Payload, Response};
 
-use crate::models::user::*;
-use crate::{Chat, Next, Request, SESSION};
+use crate::models::user::{NewUser, User, created_at_desc};
+use crate::util::{Authenticate, LimitAndOffset};
+use crate::{Next, Request};
 
-fn set_current_user(response: &mut Response, state: &Chat, user: &User) -> via::Result<()> {
-    let mut jar = response.cookies_mut().private_mut(state.secret());
-    let cookie = Cookie::build((SESSION, serde_json::to_string(&user)?))
-        .http_only(true)
-        .path("/")
-        .same_site(SameSite::Strict)
-        .secure(true);
+pub async fn index(request: Request, _: Next) -> via::Result {
+    // Get pagination params from the URI query.
+    let LimitAndOffset(limit, offset) = request.envelope().query()?;
 
-    jar.add(cookie);
+    // Build the query from URI params.
+    let query = User::query()
+        .order(created_at_desc())
+        .limit(limit)
+        .offset(offset);
 
-    Ok(())
-}
+    // Print the query to stdout in debug mode.
+    if cfg!(debug_assertions) {
+        println!("\n{}", diesel::debug_query::<Pg, _>(&query));
+    }
 
-pub async fn index(_: Request, _: Next) -> via::Result {
-    todo!()
+    // Acquire a database connection and execute the query.
+    let users = query.load(&mut request.state().pool().get().await?).await?;
+
+    Response::build().json(&users)
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
     let (body, state) = request.into_future();
     let params = body.await?.json::<NewUser>()?;
-    let user = User::create(&mut state.pool().get().await?, params).await?;
 
+    // Build the insert statement with the params from the body.
+    let insert = diesel::insert_into(User::TABLE)
+        .values(params)
+        .returning(User::as_returning());
+
+    // Print the query to stdout in debug mode.
+    if cfg!(debug_assertions) {
+        println!("\n{}", diesel::debug_query::<Pg, _>(&insert));
+    }
+
+    // Acquire a database connection and execute the insert.
+    let user = insert.get_result(&mut state.pool().get().await?).await?;
+
+    // Build the response and update the session cookie.
     let mut response = Response::build().status(201).json(&user)?;
-    set_current_user(&mut response, &state, &user)?;
+    response.set_current_user(state.secret(), Some(&user))?;
 
     Ok(response)
-}
-
-pub async fn login(request: Request, _: Next) -> via::Result {
-    let (body, state) = request.into_future();
-    let params = body.await?.json::<LoginParams>()?;
-    let user = User::query()
-        .filter(by_username(&params.username))
-        .first(&mut state.pool().get().await?)
-        .await?;
-
-    let mut response = Response::build().json(&user)?;
-    set_current_user(&mut response, &state, &user)?;
-
-    Ok(response)
-}
-
-pub async fn logout(_: Request, _: Next) -> via::Result {
-    todo!()
 }
 
 pub async fn show(_: Request, _: Next) -> via::Result {

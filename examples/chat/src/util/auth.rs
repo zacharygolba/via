@@ -1,46 +1,41 @@
-use http::Extensions;
+use cookie::{Cookie, Key, SameSite};
+use time::{Duration, OffsetDateTime};
 use via::request::Envelope;
-use via::{Middleware, raise};
+use via::{Middleware, Response, raise};
 
 use crate::chat::Chat;
 use crate::models::user::User;
 use crate::{Next, Request};
 
+pub const SESSION: &str = "via-chat-session";
+
+pub trait Authenticate {
+    fn set_current_user(&mut self, secret: &Key, user: Option<&User>) -> via::Result<()>;
+}
+
 pub trait Session {
     fn current_user(&self) -> via::Result<&User>;
 }
 
-pub struct Auth {
-    cookie: String,
+pub struct RestoreSession;
+
+pub fn unauthorized<T>() -> via::Result<T> {
+    raise!(401, message = "authentication is required.");
 }
 
+/// Prevents the user type from being accessed in extensions outside this
+/// module.
+///
 #[derive(Clone)]
 struct Verify(User);
 
-#[inline]
-fn try_from_extensions(extensions: &Extensions) -> via::Result<&User> {
-    let Some(Verify(user)) = extensions.get() else {
-        raise!(401);
-    };
-
-    Ok(user)
-}
-
-impl Auth {
-    pub fn new(cookie: impl Into<String>) -> Self {
-        Self {
-            cookie: cookie.into(),
-        }
-    }
-}
-
-impl Middleware<Chat> for Auth {
+impl Middleware<Chat> for RestoreSession {
     fn call(&self, mut request: Request, next: Next) -> via::BoxFuture {
         if let Some(cookie) = request
             .envelope()
             .cookies()
             .private(request.state().secret())
-            .get(&self.cookie)
+            .get(SESSION)
         {
             let current_user = match serde_json::from_str(cookie.value()) {
                 Err(error) => return Box::pin(async { raise!(400, error) }),
@@ -57,8 +52,37 @@ impl Middleware<Chat> for Auth {
     }
 }
 
+impl Authenticate for Response {
+    fn set_current_user(&mut self, secret: &Key, user: Option<&User>) -> via::Result<()> {
+        // Build an empty session cookie.
+        let mut session = Cookie::build(SESSION)
+            .http_only(true)
+            .same_site(SameSite::Strict)
+            .expires(OffsetDateTime::now_utc() + Duration::weeks(2))
+            .secure(true)
+            .path("/")
+            .build();
+
+        if let Some(value) = user {
+            // Set the value of the cookie to the user as JSON.
+            session.set_value(serde_json::to_string(value)?);
+        } else {
+            // Indicates to the client that the cookie should be removed.
+            session.make_removal();
+        };
+
+        // Add the session cookie.
+        self.cookies_mut().private_mut(secret).add(session);
+
+        Ok(())
+    }
+}
+
 impl Session for Envelope {
     fn current_user(&self) -> via::Result<&User> {
-        try_from_extensions(self.extensions())
+        match self.extensions().get() {
+            Some(Verify(user)) => Ok(user),
+            None => unauthorized(),
+        }
     }
 }

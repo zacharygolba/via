@@ -1,5 +1,5 @@
 use chrono::NaiveDateTime;
-use diesel::dsl;
+use diesel::dsl::{AsSelect, Desc, Eq, Select};
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel::result::Error;
@@ -10,8 +10,8 @@ use super::Connection;
 use crate::schema::users::{self, dsl as col};
 use crate::util::Id;
 
-pub type AsSelect = diesel::dsl::AsSelect<User, Pg>;
-pub type Select = diesel::helper_types::Select<users::table, AsSelect>;
+pub type TableWithJoins = users::table;
+pub type DefaultSelection = AsSelect<User, Pg>;
 
 #[derive(Clone, Deserialize, Queryable, Selectable, Serialize)]
 #[diesel(table_name = users)]
@@ -39,13 +39,23 @@ pub struct LoginParams {
     pub username: String,
 }
 
-pub fn by_username(username: &str) -> dsl::Eq<col::username, &str> {
+pub fn by_id(id: Id) -> Eq<col::id, Id> {
+    col::id.eq(id)
+}
+
+pub fn by_username(username: &str) -> Eq<col::username, &str> {
     col::username.eq(username)
 }
 
+pub fn created_at_desc() -> (Desc<col::created_at>, Desc<col::id>) {
+    (col::created_at.desc(), col::id.desc())
+}
+
 impl User {
-    pub fn query() -> Select {
-        users::table.select(Self::as_select())
+    pub const TABLE: users::table = users::table;
+
+    pub fn query() -> Select<TableWithJoins, DefaultSelection> {
+        Self::TABLE.select(Self::as_select())
     }
 
     pub async fn create(connection: &mut Connection<'_>, new_user: NewUser) -> Result<Self, Error> {
