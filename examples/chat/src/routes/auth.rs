@@ -1,11 +1,17 @@
 use diesel::pg::Pg;
 use diesel::{OptionalExtension, QueryDsl};
 use diesel_async::RunQueryDsl;
+use serde::Deserialize;
 use via::{Payload, Response};
 
 use crate::models::user::*;
 use crate::util::auth::{Authenticate, Session, unauthorized};
 use crate::{Next, Request};
+
+#[derive(Deserialize)]
+struct LoginParams {
+    username: String,
+}
 
 pub async fn me(request: Request, _: Next) -> via::Result {
     // Preconditions

@@ -2,18 +2,15 @@ use chrono::NaiveDateTime;
 use diesel::dsl::{AsSelect, Desc, Eq, Select};
 use diesel::pg::Pg;
 use diesel::prelude::*;
-use diesel::result::Error;
-use diesel_async::RunQueryDsl;
 use serde::{Deserialize, Serialize};
 
-use super::Connection;
 use crate::schema::users::{self, dsl as col};
 use crate::util::Id;
 
 pub type TableWithJoins = users::table;
 pub type DefaultSelection = AsSelect<User, Pg>;
 
-#[derive(Clone, Deserialize, Queryable, Selectable, Serialize)]
+#[derive(Clone, Deserialize, Identifiable, Queryable, Selectable, Serialize)]
 #[diesel(table_name = users)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
@@ -34,11 +31,6 @@ pub struct NewUser {
     pub username: String,
 }
 
-#[derive(Deserialize)]
-pub struct LoginParams {
-    pub username: String,
-}
-
 pub fn by_id(id: Id) -> Eq<col::id, Id> {
     col::id.eq(id)
 }
@@ -56,13 +48,5 @@ impl User {
 
     pub fn query() -> Select<TableWithJoins, DefaultSelection> {
         Self::TABLE.select(Self::as_select())
-    }
-
-    pub async fn create(connection: &mut Connection<'_>, new_user: NewUser) -> Result<Self, Error> {
-        diesel::insert_into(users::table)
-            .values(new_user)
-            .returning(Self::as_returning())
-            .get_result(connection)
-            .await
     }
 }

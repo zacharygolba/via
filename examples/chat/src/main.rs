@@ -6,9 +6,10 @@ mod util;
 
 use std::process::ExitCode;
 use via::error::{Error, Rescue};
-use via::{App, Cookies, Server, rest, ws};
+use via::{App, Cookies, Guard, Server, rest, ws};
 
 use chat::Chat;
+use routes::homepage;
 use util::auth::{self, RestoreSession};
 
 type Request = via::Request<Chat>;
@@ -26,64 +27,100 @@ async fn main() -> Result<ExitCode, Error> {
     };
 
     app.uses(Cookies::new().allow(auth::SESSION));
-    app.uses(RestoreSession);
+    app.uses(RestoreSession::new());
 
-    app.route("/").to(via::get(routes::home));
+    app.route("/").to(via::get(homepage));
 
     let mut api = app.route("/api");
 
     api.uses(Rescue::with(util::error_sanitizer));
 
-    api.route("/auth").scope(|auth| {
+    // The /api/auth resource.
+    api.route("/auth").scope(|resource| {
         use routes::auth::{login, logout, me};
 
-        auth.route("/").to(via::post(login).delete(logout));
-        auth.route("/_me").to(via::get(me));
+        // Login does not require authentication.
+        resource.route("/").to(via::post(login));
+
+        // Subsequent routes require authentication.
+        resource.uses(Guard::new(auth::required));
+
+        resource.route("/").to(via::delete(logout));
+        resource.route("/_me").to(via::get(me));
     });
 
     // Perform a websocket upgrade and start chatting.
-    api.route("/subscribe").to(ws::upgrade(routes::subscribe));
+    api.route("/chat").to(ws::upgrade(routes::chat));
 
-    api.route("/threads").scope(|threads| {
+    // The /api/threads resource.
+    api.route("/threads").scope(|resource| {
+        use routes::{messages, reactions, subscriptions, threads};
+
+        // Every route in /api/threads requires authentication.
+        resource.uses(Guard::new(auth::required));
+
+        // Setup the authorization middleware for routes nested in /:thread-id.
+        //
+        // This ensures that the authorization middleware runs before the
+        // destroy, show, and update functions for threads and each nested
+        // resource.
+        //
+        // If a user tries to perform an action on a thread or one of it's
+        // dependencies and they are not subscribed to the thread or have
+        // insufficent permission to perform the action, a 403 forbidden
+        // response is returned instead of calling the next middleware.
+        resource.route("/:thread-id").uses(threads::authorization);
+
+        // Define the CRUD operations for ./threads. Then, bind the thread
+        // route entry to `thread` and continue defining nested resources.
         let mut thread = {
-            let (collection, member) = rest!(routes::threads);
+            let (collection, member) = rest!(threads);
 
-            threads.route("/").to(collection);
-            threads.route("/:thread-id").to(member)
+            resource.route("/").to(collection);
+            resource.route("/:thread-id").to(member)
         };
 
-        // 403 when the current user is not in the thread.
-        // thread.uses(routes::threads::authorization);
-
-        thread.route("/messages").scope(|messages| {
+        thread.route("/messages").scope(|resource| {
             let mut message = {
-                let (collection, member) = rest!(routes::messages);
+                let (collection, member) = rest!(messages);
 
-                messages.route("/").to(collection);
-                messages.route("/:message-id").to(member)
+                resource.route("/").to(collection);
+                resource.route("/:message-id").to(member)
             };
 
-            message.route("/reactions").scope(|reactions| {
-                let (collection, member) = rest!(routes::reactions);
+            message.route("/reactions").scope(|resource| {
+                let (collection, member) = rest!(reactions);
 
-                reactions.route("/").to(collection);
-                reactions.route("/:reaction-id").to(member);
+                resource.route("/").to(collection);
+                resource.route("/:reaction-id").to(member);
             });
         });
 
-        // Access control is defined by the owner of the thread.
-        thread.route("/users").scope(|_| {
-            // use routes::threads::{add, remove};
-            // users.route("/").to(via::post(add).delete(remove));
+        thread.route("/subscriptions").scope(|resource| {
+            let (collection, member) = rest!(subscriptions);
+
+            resource.route("/").to(collection);
+            resource.route("/:subscription-id").to(member);
         });
     });
 
-    api.route("/users").scope(|users| {
-        let (collection, member) = rest!(routes::users);
+    // The /api/users resource.
+    api.route("/users").scope(|resource| {
+        use routes::users::{self, create, index};
 
-        users.route("/").to(collection);
-        users.route("/:user-id").to(member);
+        // Define collection routes separately.
+        let (_, member) = rest!(users);
+
+        // Signup does not require authentication.
+        resource.route("/").to(via::post(create));
+
+        // Subsequent routes require authentication.
+        resource.uses(Guard::new(auth::required));
+
+        resource.route("/").to(via::get(index));
+        resource.route("/:user-id").to(member);
     });
 
+    // Start listening at http://localhost:8080 for incoming requests.
     Server::new(app).listen(("127.0.0.1", 8080)).await
 }

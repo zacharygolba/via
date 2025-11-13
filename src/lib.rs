@@ -50,6 +50,7 @@ pub mod ws;
 mod allow;
 mod app;
 mod cookies;
+mod guard;
 mod middleware;
 mod next;
 mod server;
@@ -60,6 +61,7 @@ pub use allow::{Allow, connect, delete, get, head, options, patch, post, put, tr
 pub use app::{App, Route, Shared};
 pub use cookies::Cookies;
 pub use error::Error;
+pub use guard::Guard;
 pub use middleware::{BoxFuture, Middleware, Result};
 pub use next::Next;
 pub use request::{Payload, Request};

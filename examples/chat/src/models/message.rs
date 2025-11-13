@@ -1,11 +1,10 @@
 use chrono::NaiveDateTime;
 use diesel::deserialize::FromSqlRow;
-use diesel::dsl::{And, AsSelect, Desc, Eq, Lt};
+use diesel::dsl::{AsSelect, Desc, Eq, Lt};
 use diesel::helper_types::{InnerJoin, Select};
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel::row::Row;
-use diesel::sql_types::Bool;
 use serde::{Deserialize, Serialize};
 
 use super::thread::Thread;
@@ -29,6 +28,7 @@ pub struct Message {
 
     #[serde(skip)]
     author_id: Id,
+    #[serde(skip)]
     pub thread_id: Id,
 
     created_at: NaiveDateTime,
@@ -52,7 +52,7 @@ pub struct NewMessage {
 }
 
 #[derive(Serialize)]
-pub struct MessageWithJoins {
+pub struct MessageWithAuthor {
     #[serde(flatten)]
     message: Message,
     author: User,
@@ -62,8 +62,8 @@ pub fn by_author(id: Id) -> Eq<col::author_id, Id> {
     col::author_id.eq(id)
 }
 
-pub fn by_cursor(cursor: Cursor) -> And<Eq<col::created_at, NaiveDateTime>, Lt<col::id, Id>, Bool> {
-    col::created_at.eq(cursor.0).and(col::id.lt(cursor.1))
+pub fn by_cursor(cursor: Cursor) -> Lt<col::created_at, NaiveDateTime> {
+    col::created_at.lt(cursor.before)
 }
 
 pub fn by_id(id: Id) -> Eq<col::id, Id> {
@@ -88,10 +88,9 @@ impl Message {
     }
 }
 
-impl FromSqlRow<DefaultSelection, Pg> for MessageWithJoins {
+impl FromSqlRow<DefaultSelection, Pg> for MessageWithAuthor {
     fn build_from_row<'a>(row: &impl Row<'a, Pg>) -> diesel::deserialize::Result<Self> {
         let (message, author) = <_ as FromSqlRow<DefaultSelection, _>>::build_from_row(row)?;
-
-        Ok(MessageWithJoins { message, author })
+        Ok(MessageWithAuthor { message, author })
     }
 }
