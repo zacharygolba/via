@@ -1,19 +1,20 @@
 pub mod auth;
 pub mod messages;
 pub mod reactions;
+pub mod subscriptions;
 pub mod threads;
 pub mod users;
 
-mod subscribe;
+mod chat;
 
-pub use subscribe::subscribe;
+pub use chat::chat;
 
 use http::header::CONTENT_SECURITY_POLICY;
 use via::Response;
 
 use crate::{Next, Request};
 
-pub async fn home(_: Request, _: Next) -> via::Result {
+pub async fn homepage(_: Request, _: Next) -> via::Result {
     const CSP: &str = "default-src 'self'; connect-src 'self'";
 
     Response::build()

@@ -19,15 +19,30 @@ pub trait Session {
 
 pub struct RestoreSession;
 
-pub fn unauthorized<T>() -> via::Result<T> {
-    raise!(401, message = "authentication is required.");
-}
-
 /// Prevents the user type from being accessed in extensions outside this
 /// module.
 ///
 #[derive(Clone)]
 struct Verify(User);
+
+pub fn access_denied<T>() -> via::Result<T> {
+    raise!(403, message = "Access denied.");
+}
+
+pub fn unauthorized<T>() -> via::Result<T> {
+    raise!(401, message = "Authentication is required.");
+}
+
+pub fn required(request: &Request) -> via::Result<()> {
+    request.envelope().current_user()?;
+    Ok(())
+}
+
+impl RestoreSession {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 impl Middleware<Chat> for RestoreSession {
     fn call(&self, mut request: Request, next: Next) -> via::BoxFuture {

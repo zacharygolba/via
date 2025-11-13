@@ -24,10 +24,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    subscriptions (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        thread_id -> Uuid,
+        claims -> Int4,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     threads (id) {
         id -> Uuid,
         name -> Text,
-        owner_id -> Uuid,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -47,6 +57,7 @@ diesel::joinable!(messages -> threads (thread_id));
 diesel::joinable!(messages -> users (author_id));
 diesel::joinable!(reactions -> messages (message_id));
 diesel::joinable!(reactions -> users (user_id));
-diesel::joinable!(threads -> users (owner_id));
+diesel::joinable!(subscriptions -> threads (thread_id));
+diesel::joinable!(subscriptions -> users (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(messages, reactions, threads, users,);
+diesel::allow_tables_to_appear_in_same_query!(messages, reactions, subscriptions, threads, users,);

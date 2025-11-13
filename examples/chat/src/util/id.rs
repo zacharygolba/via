@@ -19,11 +19,9 @@ pub struct Id(Uuid);
 #[derive(Debug)]
 pub struct InvalidIdError;
 
-impl Error for InvalidIdError {}
-
-impl Display for InvalidIdError {
+impl Display for Id {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "invalid uuid")
+        Display::fmt(&self.0, f)
     }
 }
 
@@ -51,5 +49,13 @@ where
 {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, DB>) -> serialize::Result {
         self.0.to_sql(out)
+    }
+}
+
+impl Error for InvalidIdError {}
+
+impl Display for InvalidIdError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "invalid uuid")
     }
 }

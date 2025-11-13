@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bb8 = "0.9"
+bitflags = { version = "2", features = ["serde"] }
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 cookie = { version = "0.18", features = ["signed", "private"] }

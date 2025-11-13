@@ -1,16 +1,33 @@
 use bytestring::ByteString;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
+use std::collections::HashMap;
 use via::request::Payload;
 use via::ws::{self, Channel, CloseCode, Message, Request, Retry};
 
 use crate::chat::{Chat, Event, EventContext};
+use crate::models::Subscription;
 use crate::models::message::NewMessage;
+use crate::models::subscription::AuthClaims;
 use crate::util::Session;
 
-pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Result {
+pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
     // The current user that opened the websocket.
     let user = request.envelope().current_user().or_break()?.clone();
+
+    let subscriptions: HashMap<_, _> = {
+        let mut connection = request.state().pool().get().await.or_break()?;
+        let results = Subscription::belonging_to(&user)
+            .select(Subscription::as_select())
+            .get_results(&mut connection)
+            .await
+            .or_break()?;
+
+        results
+            .into_iter()
+            .map(|subscription| (subscription.id, subscription))
+            .collect()
+    };
 
     // Subscribe to event notifications from peers.
     let mut rx = request.state().subscribe();
@@ -39,11 +56,12 @@ pub async fn subscribe(mut channel: Channel, request: Request<Chat>) -> ws::Resu
 
             // Received an event notification from another async task.
             Ok((ref context, message)) = rx.recv() => {
-                let _ = context.thread_id();
+                let is_relevant = context
+                    .thread_id()
+                    .and_then(|id| Some(subscriptions.get(id)?.claims()))
+                    .is_some_and(|claims| claims.contains(AuthClaims::VIEW));
 
-                // If the event is relevant and not redundant for the current
-                // user, send the payload to them with the websocket channel.
-                if user.id != context.user_id() {
+                if is_relevant && user.id != context.user_id() {
                     channel.send(message).await?;
                 }
 

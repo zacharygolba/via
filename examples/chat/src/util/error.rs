@@ -1,7 +1,8 @@
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use http::StatusCode;
 use via::error::Sanitizer;
-use via::raise;
+
+use super::auth;
 
 pub trait FoundOrForbidden {
     type Output;
@@ -50,7 +51,7 @@ pub fn error_sanitizer(sanitizer: &mut Sanitizer) {
         }
     } else if error.is::<chrono::ParseError>() {
         sanitizer.set_status(StatusCode::BAD_REQUEST);
-        sanitizer.set_message("invalid timestamp");
+        sanitizer.set_message("Invalid timestamp.");
     }
 }
 
@@ -59,7 +60,7 @@ impl<T> FoundOrForbidden for Result<T, DieselError> {
 
     fn found_or_forbidden(self) -> via::Result<Self::Output> {
         self.or_else(|error| match error {
-            DieselError::NotFound => raise!(403),
+            DieselError::NotFound => auth::access_denied(),
             propagate => Err(propagate)?,
         })
     }
