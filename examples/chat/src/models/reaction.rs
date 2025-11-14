@@ -1,39 +1,43 @@
 use chrono::NaiveDateTime;
 use diesel::deserialize::FromSqlRow;
-use diesel::dsl::{AsSelect, Desc, Eq};
+use diesel::dsl::{AsSelect, Desc, Filter};
 use diesel::helper_types::{InnerJoin, Select};
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel::row::Row;
 use serde::{Deserialize, Serialize};
 
-use super::message::Message;
-use super::user::User;
-use crate::schema::reactions::{self, dsl as col};
-use crate::schema::users;
-use crate::util::Id;
+use super::{Message, User};
+use crate::schema::{reactions, users};
+use crate::util::sql::{self, Id};
 
-pub type TableWithJoins = InnerJoin<reactions::table, users::table>;
-pub type DefaultSelection = (AsSelect<Reaction, Pg>, AsSelect<User, Pg>);
+type Pk = reactions::id;
+type Table = reactions::table;
 
-#[derive(Associations, Queryable, Selectable, Serialize)]
+type CreatedAtDesc = (Desc<reactions::created_at>, Desc<Pk>);
+type ToMessage<'a, T> = Filter<T, sql::ById<'a, reactions::message_id>>;
+
+type SelectSelf = AsSelect<Reaction, Pg>;
+type SelectIncludes = (SelectSelf, AsSelect<User, Pg>);
+
+type Includes = InnerJoin<Table, users::table>;
+
+#[derive(Associations, Identifiable, Queryable, Selectable, Serialize)]
 #[diesel(belongs_to(Message))]
 #[diesel(belongs_to(User))]
 #[diesel(table_name = reactions)]
 #[serde(rename_all = "camelCase")]
 pub struct Reaction {
     id: Id,
-
     emoji: String,
+    created_at: NaiveDateTime,
+    updated_at: NaiveDateTime,
 
     #[serde(skip)]
     message_id: Id,
 
     #[serde(skip)]
     user_id: Id,
-
-    created_at: NaiveDateTime,
-    updated_at: NaiveDateTime,
 }
 
 #[derive(AsChangeset, Deserialize)]
@@ -47,48 +51,71 @@ pub struct ChangeSet {
 #[serde(rename_all = "camelCase")]
 pub struct NewReaction {
     pub emoji: String,
-
     pub message_id: Option<Id>,
     pub user_id: Option<Id>,
 }
 
 #[derive(Serialize)]
-pub struct ReactionWithJoins {
+pub struct ReactionIncludes {
     #[serde(flatten)]
-    reaction: Reaction,
-    user: User,
-}
-
-pub fn by_id(id: Id) -> Eq<col::id, Id> {
-    col::id.eq(id)
-}
-
-pub fn by_message(id: Id) -> Eq<col::message_id, Id> {
-    col::message_id.eq(id)
-}
-
-pub fn by_user(id: Id) -> Eq<col::user_id, Id> {
-    col::user_id.eq(id)
-}
-
-pub fn created_at_desc() -> (Desc<col::created_at>, Desc<col::id>) {
-    (col::created_at.desc(), col::id.desc())
+    pub reaction: Reaction,
+    pub user: User,
 }
 
 impl Reaction {
-    pub const TABLE: reactions::table = reactions::table;
+    pub fn as_delete() -> Pk {
+        reactions::id
+    }
 
-    pub fn query() -> Select<TableWithJoins, DefaultSelection> {
-        Self::TABLE
+    pub fn as_includes() -> SelectIncludes {
+        (Self::as_select(), User::as_select())
+    }
+
+    pub fn by_id(id: &Id) -> sql::ById<'_, Pk> {
+        reactions::id.eq(id)
+    }
+
+    pub fn by_user_id(id: &Id) -> sql::ById<'_, reactions::user_id> {
+        reactions::user_id.eq(id)
+    }
+
+    pub fn created_at_desc() -> CreatedAtDesc {
+        (reactions::created_at.desc(), reactions::id.desc())
+    }
+
+    pub fn create(values: NewReaction) -> sql::Insert<Table, NewReaction> {
+        diesel::insert_into(reactions::table).values(values)
+    }
+
+    pub fn update(id: &Id, changes: ChangeSet) -> sql::Update<'_, Table, Pk, ChangeSet> {
+        diesel::update(reactions::table)
+            .filter(Self::by_id(id))
+            .set(changes)
+    }
+
+    pub fn delete(id: &Id) -> sql::Delete<'_, Table, Pk> {
+        diesel::delete(reactions::table).filter(Self::by_id(id))
+    }
+
+    pub fn select() -> Select<Table, SelectSelf> {
+        reactions::table.select(Self::as_select())
+    }
+
+    pub fn includes() -> Select<Includes, SelectIncludes> {
+        reactions::table
             .inner_join(users::table)
-            .select((Self::as_select(), User::as_select()))
+            .select(Self::as_includes())
+    }
+
+    pub fn to_message(id: &Id) -> ToMessage<'_, Select<Includes, SelectIncludes>> {
+        Self::includes().filter(reactions::message_id.eq(id))
     }
 }
 
-impl FromSqlRow<DefaultSelection, Pg> for ReactionWithJoins {
+impl FromSqlRow<SelectIncludes, Pg> for ReactionIncludes {
     fn build_from_row<'a>(row: &impl Row<'a, Pg>) -> diesel::deserialize::Result<Self> {
-        let (reaction, user) = <_ as FromSqlRow<DefaultSelection, _>>::build_from_row(row)?;
+        let (reaction, user) = <_ as FromSqlRow<SelectIncludes, _>>::build_from_row(row)?;
 
-        Ok(ReactionWithJoins { reaction, user })
+        Ok(ReactionIncludes { reaction, user })
     }
 }

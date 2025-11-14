@@ -1,20 +1,26 @@
 use chrono::NaiveDateTime;
 use diesel::deserialize::FromSqlRow;
-use diesel::dsl::{AsSelect, Desc, Eq, Lt};
+use diesel::dsl::{self, AsSelect, Desc, Filter, Order};
 use diesel::helper_types::{InnerJoin, Select};
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel::row::Row;
 use serde::{Deserialize, Serialize};
 
-use super::thread::Thread;
-use super::user::User;
-use crate::schema::messages::{self, dsl as col};
-use crate::schema::users;
-use crate::util::{Cursor, Id};
+use super::{Thread, User};
+use crate::schema::{messages, users};
+use crate::util::sql::{self, Id};
 
-pub type TableWithJoins = InnerJoin<messages::table, users::table>;
-pub type DefaultSelection = (AsSelect<Message, Pg>, AsSelect<User, Pg>);
+type Pk = messages::id;
+type Table = messages::table;
+
+type CreatedAtDesc = (Desc<messages::created_at>, Desc<Pk>);
+type InThread<'a, T> = Order<Filter<T, sql::ById<'a, messages::thread_id>>, CreatedAtDesc>;
+
+type SelectSelf = AsSelect<Message, Pg>;
+type SelectIncludes = (SelectSelf, AsSelect<User, Pg>);
+
+type Includes = InnerJoin<Table, users::table>;
 
 #[derive(Associations, Identifiable, Queryable, Selectable, Serialize)]
 #[diesel(belongs_to(Thread))]
@@ -23,16 +29,15 @@ pub type DefaultSelection = (AsSelect<Message, Pg>, AsSelect<User, Pg>);
 #[serde(rename_all = "camelCase")]
 pub struct Message {
     id: Id,
-
     body: String,
+    created_at: NaiveDateTime,
+    updated_at: NaiveDateTime,
 
     #[serde(skip)]
     author_id: Id,
+
     #[serde(skip)]
     pub thread_id: Id,
-
-    created_at: NaiveDateTime,
-    updated_at: NaiveDateTime,
 }
 
 #[derive(AsChangeset, Deserialize)]
@@ -46,51 +51,76 @@ pub struct ChangeSet {
 #[serde(rename_all = "camelCase")]
 pub struct NewMessage {
     pub body: String,
-
     pub author_id: Option<Id>,
     pub thread_id: Option<Id>,
 }
 
 #[derive(Serialize)]
-pub struct MessageWithAuthor {
+pub struct MessageIncludes {
     #[serde(flatten)]
     message: Message,
     author: User,
 }
 
-pub fn by_author(id: Id) -> Eq<col::author_id, Id> {
-    col::author_id.eq(id)
-}
-
-pub fn by_cursor(cursor: Cursor) -> Lt<col::created_at, NaiveDateTime> {
-    col::created_at.lt(cursor.before)
-}
-
-pub fn by_id(id: Id) -> Eq<col::id, Id> {
-    col::id.eq(id)
-}
-
-pub fn by_thread(thread_id: Id) -> Eq<col::thread_id, Id> {
-    col::thread_id.eq(thread_id)
-}
-
-pub fn created_at_desc() -> (Desc<col::created_at>, Desc<col::id>) {
-    (col::created_at.desc(), col::id.desc())
-}
-
 impl Message {
-    pub const TABLE: messages::table = messages::table;
+    pub fn as_delete() -> Pk {
+        messages::id
+    }
 
-    pub fn query() -> Select<TableWithJoins, DefaultSelection> {
-        Self::TABLE
+    pub fn as_includes() -> SelectIncludes {
+        (Self::as_select(), User::as_select())
+    }
+
+    pub fn by_id(id: &Id) -> sql::ById<'_, Pk> {
+        messages::id.eq(id)
+    }
+
+    pub fn by_author_id(id: &Id) -> sql::ById<'_, messages::author_id> {
+        messages::author_id.eq(id)
+    }
+
+    pub fn created_at_desc() -> CreatedAtDesc {
+        (messages::created_at.desc(), messages::id.desc())
+    }
+
+    pub fn created_before(before: &NaiveDateTime) -> dsl::Gt<messages::created_at, &NaiveDateTime> {
+        messages::created_at.gt(before)
+    }
+
+    pub fn create(values: NewMessage) -> sql::Insert<Table, NewMessage> {
+        diesel::insert_into(messages::table).values(values)
+    }
+
+    pub fn update(id: &Id, changes: ChangeSet) -> sql::Update<'_, Table, Pk, ChangeSet> {
+        diesel::update(messages::table)
+            .filter(Self::by_id(id))
+            .set(changes)
+    }
+
+    pub fn delete(id: &Id) -> sql::Delete<'_, Table, Pk> {
+        diesel::delete(messages::table).filter(Self::by_id(id))
+    }
+
+    pub fn select() -> Select<Table, SelectSelf> {
+        messages::table.select(Self::as_select())
+    }
+
+    pub fn includes() -> Select<Includes, SelectIncludes> {
+        messages::table
             .inner_join(users::table)
-            .select((Self::as_select(), User::as_select()))
+            .select(Self::as_includes())
+    }
+
+    pub fn in_thread(id: &Id) -> InThread<'_, Select<Includes, SelectIncludes>> {
+        Self::includes()
+            .filter(messages::thread_id.eq(id))
+            .order(Self::created_at_desc())
     }
 }
 
-impl FromSqlRow<DefaultSelection, Pg> for MessageWithAuthor {
+impl FromSqlRow<SelectIncludes, Pg> for MessageIncludes {
     fn build_from_row<'a>(row: &impl Row<'a, Pg>) -> diesel::deserialize::Result<Self> {
-        let (message, author) = <_ as FromSqlRow<DefaultSelection, _>>::build_from_row(row)?;
-        Ok(MessageWithAuthor { message, author })
+        let (message, author) = <_ as FromSqlRow<SelectIncludes, _>>::build_from_row(row)?;
+        Ok(MessageIncludes { message, author })
     }
 }

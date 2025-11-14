@@ -1,7 +1,7 @@
 use cookie::{Cookie, Key, SameSite};
 use time::{Duration, OffsetDateTime};
 use via::request::Envelope;
-use via::{Middleware, Response, raise};
+use via::{Middleware, Response, raise, ws};
 
 use crate::chat::Chat;
 use crate::models::user::User;
@@ -15,6 +15,10 @@ pub trait Authenticate {
 
 pub trait Session {
     fn current_user(&self) -> via::Result<&User>;
+
+    fn is_authenticated(&self) -> via::Result<()> {
+        self.current_user().and(Ok(()))
+    }
 }
 
 pub struct RestoreSession;
@@ -31,11 +35,6 @@ pub fn access_denied<T>() -> via::Result<T> {
 
 pub fn unauthorized<T>() -> via::Result<T> {
     raise!(401, message = "Authentication is required.");
-}
-
-pub fn required(request: &Request) -> via::Result<()> {
-    request.envelope().current_user()?;
-    Ok(())
 }
 
 impl RestoreSession {
@@ -93,11 +92,21 @@ impl Authenticate for Response {
     }
 }
 
-impl Session for Envelope {
+fn get_current_user(envelope: &Envelope) -> via::Result<&User> {
+    match envelope.extensions().get() {
+        Some(Verify(user)) => Ok(user),
+        None => unauthorized(),
+    }
+}
+
+impl Session for Request {
     fn current_user(&self) -> via::Result<&User> {
-        match self.extensions().get() {
-            Some(Verify(user)) => Ok(user),
-            None => unauthorized(),
-        }
+        get_current_user(self.envelope())
+    }
+}
+
+impl Session for ws::Request<Chat> {
+    fn current_user(&self) -> via::Result<&User> {
+        get_current_user(self.envelope())
     }
 }

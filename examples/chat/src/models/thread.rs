@@ -1,72 +1,31 @@
 use chrono::NaiveDateTime;
-use diesel::dsl::{self, AsSelect, Filter, Order, Select, Update, Values};
+use diesel::dsl::{self, AsSelect, Desc, InnerJoinOn, Select};
 use diesel::pg::Pg;
 use diesel::prelude::*;
-use diesel::query_builder::{DeleteStatement, IncompleteInsertStatement, IntoUpdateTarget};
 use serde::{Deserialize, Serialize};
 
-use crate::models::subscription::{self, Subscription};
-use crate::schema::subscriptions;
-use crate::schema::threads::{self, dsl as col};
-use crate::util::Id;
+use crate::models::message::MessageIncludes;
+use crate::models::subscription::UserSubscription;
+use crate::schema::{subscriptions, threads};
+use crate::util::sql::{self, Id};
 
-/// The default ORDER expression used when querying the threads table.
-///
-type CreatedAtDesc = (dsl::Desc<col::created_at>, dsl::Desc<col::id>);
+type Pk = threads::id;
+type Table = threads::table;
 
-/// The default WHERE clause used when finding a thread by id.
-///
-type WhereIdEq<'a> = Filter<threads::table, dsl::Eq<threads::id, &'a Id>>;
+type CreatedAtDesc = (Desc<threads::created_at>, Desc<Pk>);
 
-/// The concrete return type of [`Thread::create`].
-///
-type CreateSelf = Values<IncompleteInsertStatement<threads::table>, NewThread>;
-
-/// The concrete return type of [`Thread::update`].
-///
-type UpdateSelf<'a> = Update<WhereIdEq<'a>, ChangeSet>;
-
-/// The concrete return type of [`Thread::delete`].
-///
-type DeleteSelf<'a> =
-    DeleteStatement<threads::table, <WhereIdEq<'a> as IntoUpdateTarget>::WhereClause>;
-
-/// The SELECT statement and FROM clause of a query to the threads table.
-///
-type SelectSelf = Select<
-    dsl::InnerJoinOn<
-        threads::table,
-        subscriptions::table,
-        dsl::Eq<subscriptions::thread_id, threads::id>,
-    >,
-    AsSelect<Thread, Pg>,
->;
-
-/// The concrete return type of [`Thread::by_participant`].
-///
-type ByParticipant<'a> =
-    Order<Filter<SelectSelf, dsl::Eq<subscriptions::user_id, &'a Id>>, CreatedAtDesc>;
-
-/// The concrete return type of [`Thread::by_subscription`].
-///
-type BySubscription<'a> = Order<Filter<SelectSelf, subscription::ByJoin<'a>>, CreatedAtDesc>;
+type SelectSelf = AsSelect<Thread, Pg>;
+type ThroughSubscriptions =
+    InnerJoinOn<Table, subscriptions::table, dsl::Eq<Pk, subscriptions::thread_id>>;
 
 #[derive(Clone, Identifiable, Queryable, Selectable, Serialize)]
-#[diesel(belongs_to(User, foreign_key = owner_id))]
 #[diesel(table_name = threads)]
-#[diesel(check_for_backend(Pg))]
 #[serde(rename_all = "camelCase")]
 pub struct Thread {
-    id: Id,
-    name: String,
-    created_at: NaiveDateTime,
-    updated_at: NaiveDateTime,
-}
-
-#[derive(AsChangeset, Deserialize)]
-#[diesel(table_name = threads)]
-pub struct ChangeSet {
-    name: String,
+    pub id: Id,
+    pub name: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Clone, Deserialize, Insertable)]
@@ -75,41 +34,56 @@ pub struct NewThread {
     name: String,
 }
 
+#[derive(AsChangeset, Deserialize)]
+#[diesel(table_name = threads)]
+pub struct ChangeSet {
+    name: String,
+}
+
+#[derive(Serialize)]
+pub struct ThreadIncludes {
+    #[serde(flatten)]
+    pub thread: Thread,
+    pub messages: Vec<MessageIncludes>,
+    pub subscriptions: Vec<UserSubscription>,
+}
+
 impl Thread {
-    pub fn create(new_thread: NewThread) -> CreateSelf {
-        diesel::insert_into(threads::table).values(new_thread)
+    pub fn as_delete() -> Pk {
+        threads::id
     }
 
-    pub fn delete(id: &Id) -> DeleteSelf<'_> {
-        diesel::delete(threads::table).filter(threads::id.eq(id))
+    pub fn by_id(id: &Id) -> sql::ById<'_, threads::id> {
+        threads::id.eq(id)
     }
 
-    pub fn update(id: &Id, change_set: ChangeSet) -> UpdateSelf<'_> {
+    pub fn created_at_desc() -> CreatedAtDesc {
+        (threads::created_at.desc(), threads::id.desc())
+    }
+
+    pub fn create(values: NewThread) -> sql::Insert<Table, NewThread> {
+        diesel::insert_into(threads::table).values(values)
+    }
+
+    pub fn update(id: &Id, changes: ChangeSet) -> sql::Update<'_, Table, Pk, ChangeSet> {
         diesel::update(threads::table)
-            .filter(threads::id.eq(id))
-            .set(change_set)
+            .filter(Self::by_id(id))
+            .set(changes)
     }
 
-    pub fn by_participant(user_id: &Id) -> ByParticipant<'_> {
+    pub fn delete(id: &Id) -> sql::Delete<'_, Table, Pk> {
+        diesel::delete(threads::table).filter(Self::by_id(id))
+    }
+
+    pub fn select() -> Select<Table, SelectSelf> {
+        threads::table.select(Self::as_select())
+    }
+
+    pub fn subscriptions() -> Select<ThroughSubscriptions, SelectSelf> {
+        let on = threads::id.eq(subscriptions::thread_id);
+
         threads::table
+            .inner_join(subscriptions::table.on(on))
             .select(Self::as_select())
-            .inner_join(subscriptions::table.on(subscriptions::thread_id.eq(threads::id)))
-            .filter(subscriptions::user_id.eq(user_id))
-            .order((col::created_at.desc(), col::id.desc()))
-    }
-
-    pub fn by_subscription(subscription: &Subscription) -> BySubscription<'_> {
-        let user_id = subscription.user_id();
-        let thread_id = subscription.thread_id();
-
-        threads::table
-            .select(Self::as_select())
-            .inner_join(subscriptions::table.on(subscriptions::thread_id.eq(threads::id)))
-            .filter(Subscription::by_join(user_id, thread_id))
-            .order((col::created_at.desc(), col::id.desc()))
-    }
-
-    pub fn id(&self) -> &Id {
-        &self.id
     }
 }

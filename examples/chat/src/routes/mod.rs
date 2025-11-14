@@ -1,7 +1,4 @@
 pub mod auth;
-pub mod messages;
-pub mod reactions;
-pub mod subscriptions;
 pub mod threads;
 pub mod users;
 
