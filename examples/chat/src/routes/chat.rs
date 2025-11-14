@@ -1,111 +1,105 @@
-use bytestring::ByteString;
 use diesel::prelude::*;
-use diesel_async::RunQueryDsl;
 use std::collections::HashMap;
 use via::request::Payload;
-use via::ws::{self, Channel, CloseCode, Message, Request, Retry};
+use via::ws::{self, Channel, Message, Request, Retry};
 
 use crate::chat::{Chat, Event, EventContext};
-use crate::models::Subscription;
 use crate::models::message::NewMessage;
-use crate::models::subscription::AuthClaims;
-use crate::util::Session;
+use crate::models::subscription::{AuthClaims, Subscription};
+use crate::schema::subscriptions;
+use crate::util::{DebugQueryDsl, Id, Session};
+
+/// Prints the format string to stderr in debug builds.
+///
+macro_rules! debug {
+    ($($args:tt)+) => { if cfg!(debug_assertions) { eprintln!($($args)+); } };
+}
 
 pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
     // The current user that opened the websocket.
-    let user = request.envelope().current_user().or_break()?.clone();
-
-    let subscriptions: HashMap<_, _> = {
-        let mut connection = request.state().pool().get().await.or_break()?;
-        let results = Subscription::belonging_to(&user)
-            .select(Subscription::as_select())
-            .get_results(&mut connection)
-            .await
-            .or_break()?;
-
-        results
-            .into_iter()
-            .map(|subscription| (subscription.id, subscription))
-            .collect()
-    };
+    let user = request.current_user().cloned().or_break()?;
 
     // Subscribe to event notifications from peers.
-    let mut rx = request.state().subscribe();
+    let mut pubsub = request.state().subscribe();
 
-    loop {
-        let mut params: NewMessage = tokio::select! {
-            // Received a message from the websocket channel.
-            Some(message) = channel.recv() => match message {
-                Message::Text(mut payload) => payload.json().or_continue()?,
-                Message::Close(close) => break on_close(close),
-                Message::Binary(_) => {
-                    if cfg!(debug_assertions) {
-                        eprintln!("warn(/api/subscribe): ignoring binary message");
+    // The current users thread subscription claims keyed by thread id.
+    let subscriptions: HashMap<Id, AuthClaims> = {
+        let acquire = request.state().pool().get().await;
+        let result = Subscription::belonging_to(&user)
+            .select((subscriptions::thread_id, subscriptions::claims))
+            .debug_load::<(Id, AuthClaims)>(&mut acquire.or_break()?)
+            .await;
+
+        result.or_break()?.into_iter().collect()
+    };
+
+    'recv: loop {
+        let new_message = 'send: {
+            tokio::select! {
+                // Received a message from the websocket channel.
+                Some(message) = channel.recv() => match message {
+                    Message::Text(mut payload) => {
+                        let mut new_message = payload.json::<NewMessage>().or_continue()?;
+
+                        // Confirm that the current user can write in the
+                        // thread before we proceed.
+                        if let Some(id) = &new_message.thread_id
+                            && let Some(claims) = subscriptions.get(id)
+                            && claims.contains(AuthClaims::WRITE)
+                        {
+                            new_message.author_id = Some(user.id);
+                            break 'send new_message;
+                        }
                     }
-
-                    continue;
-                }
-                ignored => {
-                    if cfg!(debug_assertions) {
-                        eprintln!("warn(/api/subscribe): ignoring {:?}", ignored);
+                    Message::Close(close) => {
+                        close.inspect(|context| debug!("{:?}", context));
+                        break 'recv Ok(());
                     }
+                    Message::Binary(_) => {
+                        debug!("warn(chat): ignoring binary message");
+                    }
+                    ignored => {
+                        debug!("warn(chat): ignoring {:?}", ignored);
+                    }
+                },
 
-                    continue;
+                // Received an event notification from another async task.
+                Ok((ref context, message)) = pubsub.recv() => {
+                    if user.id != context.user_id()
+                        && let Some(id) = context.thread_id()
+                        && let Some(claims) = subscriptions.get(id)
+                        && claims.contains(AuthClaims::VIEW)
+                    {
+                        channel.send(message).await?;
+                    }
                 }
-            },
-
-            // Received an event notification from another async task.
-            Ok((ref context, message)) = rx.recv() => {
-                let is_relevant = context
-                    .thread_id()
-                    .and_then(|id| Some(subscriptions.get(id)?.claims()))
-                    .is_some_and(|claims| claims.contains(AuthClaims::VIEW));
-
-                if is_relevant && user.id != context.user_id() {
-                    channel.send(message).await?;
-                }
-
-                continue;
             }
+
+            continue 'recv;
         };
 
         // Build the event context from the request and params. We use this to
         // determine if a message is for the current user in the second arm of
         // the select expression above.
-        let context = EventContext::new(params.thread_id, user.id);
+        let context = EventContext::new(new_message.thread_id, user.id);
 
         // Insert the message into the database and return a message event.
         let event = {
             // Import the message model as late as possible to prevent
             // confusion with the via::ws::Message enum.
-            use crate::models::message::Message;
+            use crate::models::Message;
 
-            // Set the author_id of the message to the current user's id.
-            params.author_id = Some(user.id);
-
-            // Acquire a database connection.
-            let mut conn = request.state().pool().get().await.or_continue()?;
-
-            // Perform the insert.
-            let result = diesel::insert_into(Message::TABLE)
-                .values(params)
+            // Acquire a database connection and create the message.
+            let acquire = request.state().pool().get().await;
+            let create = Message::create(new_message)
                 .returning(Message::as_returning())
-                .get_result(&mut conn)
+                .debug_result(&mut acquire.or_continue()?)
                 .await;
 
-            Event::Message(result.or_continue()?)
+            Event::Message(create.or_continue()?)
         };
 
         // Publish the event over the broadcast channel to notify peers.
         request.state().publish(context, event).or_continue()?;
     }
-}
-
-fn on_close(close: Option<(CloseCode, Option<ByteString>)>) -> ws::Result {
-    if let Some((code, reason)) = &close {
-        let reason = reason.as_deref().unwrap_or("reason not provided");
-        eprintln!("{:?}: {}", code, reason);
-    }
-
-    Ok(())
 }

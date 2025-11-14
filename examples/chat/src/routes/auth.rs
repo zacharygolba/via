@@ -1,10 +1,9 @@
-use diesel::pg::Pg;
-use diesel::{OptionalExtension, QueryDsl};
-use diesel_async::RunQueryDsl;
+use diesel::prelude::*;
 use serde::Deserialize;
 use via::{Payload, Response};
 
 use crate::models::user::*;
+use crate::util::DebugQueryDsl;
 use crate::util::auth::{Authenticate, Session, unauthorized};
 use crate::{Next, Request};
 
@@ -14,54 +13,35 @@ struct LoginParams {
 }
 
 pub async fn me(request: Request, _: Next) -> via::Result {
-    // Preconditions
-    let id = request.envelope().current_user()?.id;
+    let current_user_id = request.current_user()?.id;
+    let current_user = User::select()
+        .filter(User::by_id(&current_user_id))
+        .debug_first(&mut request.state().pool().get().await?)
+        .await
+        .optional()?;
 
-    // Build the query with the current user's id.
-    let query = User::query().filter(by_id(id));
+    let mut response = Response::build()
+        .status(if current_user.is_some() { 200 } else { 401 })
+        .json(&current_user)?;
 
-    // Print the query to stdout in debug mode.
-    if cfg!(debug_assertions) {
-        println!("\n{}", diesel::debug_query::<Pg, _>(&query));
-    }
-
-    // Acquire a database connection and execute the query.
-    let Some(user) = ({
-        let mut conn = request.state().pool().get().await?;
-        query.first(&mut conn).await.optional()?
-    }) else {
-        return unauthorized();
-    };
-
-    // Build the response and update the session cookie.
-    let mut response = Response::build().json(&user)?;
-    response.set_current_user(request.state().secret(), Some(&user))?;
+    response.set_current_user(request.state().secret(), current_user.as_ref())?;
 
     Ok(response)
 }
 
 pub async fn login(request: Request, _: Next) -> via::Result {
-    // Deserialize the JSON params in the request body.
     let (body, state) = request.into_future();
     let params = body.await?.json::<LoginParams>()?;
 
-    // Build the query from the params.
-    let query = User::query().filter(by_username(&params.username));
-
-    // Print the query to stdout in debug mode.
-    if cfg!(debug_assertions) {
-        println!("\n{}", diesel::debug_query::<Pg, _>(&query));
-    }
-
-    // Acquire a database connection and execute the query.
-    let Some(user) = ({
-        let mut conn = state.pool().get().await?;
-        query.first(&mut conn).await.optional()?
-    }) else {
+    let Some(user) = User::select()
+        .filter(User::by_username(&params.username))
+        .debug_first(&mut state.pool().get().await?)
+        .await
+        .optional()?
+    else {
         return unauthorized();
     };
 
-    // Build the response and update the session cookie.
     let mut response = Response::build().json(&user)?;
     response.set_current_user(state.secret(), Some(&user))?;
 
@@ -69,10 +49,6 @@ pub async fn login(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn logout(request: Request, _: Next) -> via::Result {
-    // Assert the request is authenticated.
-    request.envelope().current_user()?;
-
-    // Build the response and update the session cookie.
     let mut response = Response::build().status(204).finish()?;
     response.set_current_user(request.state().secret(), None)?;
 
