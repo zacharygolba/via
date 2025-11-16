@@ -3,9 +3,9 @@
 diesel::table! {
     messages (id) {
         id -> Uuid,
-        body -> Text,
         author_id -> Uuid,
         thread_id -> Uuid,
+        body -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }

@@ -1,16 +1,17 @@
 use diesel::prelude::*;
-use via::{Payload, Response, raise};
+use via::{Payload, Response};
 
 use super::authorization::{Ability, Subscriber};
 use crate::models::subscription::*;
-use crate::util::{DebugQueryDsl, Id, PageAndLimit, Paginate};
+use crate::util::error::forbidden;
+use crate::util::{DebugQueryDsl, Id, Page, Paginate};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the thread.
-    let thread_id = request.subscription()?.thread_id();
+    let thread_id = request.can(AuthClaims::participate())?;
 
-    let page = request.envelope().query::<PageAndLimit>()?;
+    let page = request.envelope().query::<Page>()?;
 
     // List subscriptions to the thread with id = :thread-id.
     let subscriptions = Subscription::users()
@@ -26,7 +27,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 
 pub async fn create(request: Request, _: Next) -> via::Result {
     // The current user can invite other users to the thread.
-    let thread_id = request.can(AuthClaims::INVITE)?.thread_id();
+    let thread_id = request.can(AuthClaims::INVITE)?;
 
     // Deserialize the request body into a new subscription.
     let (body, state) = request.into_future();
@@ -45,7 +46,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
 pub async fn show(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the thread.
-    let thread_id = request.subscription()?.thread_id();
+    let thread_id = request.can(AuthClaims::participate())?;
 
     // The id of the subscription.
     let id = request.envelope().param("subscription-id").parse()?;
@@ -71,11 +72,11 @@ fn is_owner_or_moderator(request: &Request) -> via::Result<Id> {
     // The id of the subscription that the user wants to mutate.
     let id = request.envelope().param("subscription-id").parse()?;
 
-    if subscription.id() != id {
-        subscription.can(AuthClaims::MODERATE)?;
+    if subscription.id() == id || subscription.can(AuthClaims::MODERATE).is_ok() {
+        Ok(id)
+    } else {
+        forbidden()
     }
-
-    Ok(id)
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result {
@@ -100,12 +101,9 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     let id = is_owner_or_moderator(&request)?;
 
     // Acquire a database connection and delete the subscription.
-    let 1.. = Subscription::delete(&id)
+    Subscription::delete(&id)
         .debug_execute(&mut request.state().pool().get().await?)
-        .await?
-    else {
-        raise!(message = format!("unable to delete subscription: {}", &id));
-    };
+        .await?;
 
     Response::build().status(204).finish()
 }

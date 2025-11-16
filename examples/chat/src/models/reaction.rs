@@ -1,10 +1,8 @@
 use chrono::NaiveDateTime;
-use diesel::deserialize::FromSqlRow;
-use diesel::dsl::{AsSelect, Desc, Filter};
-use diesel::helper_types::{InnerJoin, Select};
+use diesel::dsl::Desc;
+use diesel::helper_types::InnerJoin;
 use diesel::pg::Pg;
 use diesel::prelude::*;
-use diesel::row::Row;
 use serde::{Deserialize, Serialize};
 
 use super::{Message, User};
@@ -16,12 +14,6 @@ type Pk = reactions::id;
 type Table = reactions::table;
 
 type CreatedAtDesc = (Desc<reactions::created_at>, Desc<Pk>);
-type ToMessage<'a, T> = Filter<T, sql::ById<'a, reactions::message_id>>;
-
-type SelectSelf = AsSelect<Reaction, Pg>;
-type SelectIncludes = (SelectSelf, AsSelect<UserPreview, Pg>);
-
-type Includes = InnerJoin<Table, users::table>;
 
 #[derive(Associations, Identifiable, Queryable, Selectable, Serialize)]
 #[diesel(belongs_to(Message))]
@@ -56,67 +48,51 @@ pub struct NewReaction {
     pub user_id: Option<Id>,
 }
 
-#[derive(Serialize)]
+#[derive(Queryable, Selectable, Serialize)]
+#[diesel(check_for_backend(Pg))]
 pub struct ReactionIncludes {
+    #[diesel(embed)]
     #[serde(flatten)]
-    pub reaction: Reaction,
-    pub user: UserPreview,
+    reaction: Reaction,
+
+    #[diesel(embed)]
+    user: UserPreview,
+}
+
+pub fn by_id(id: &Id) -> sql::ById<'_, Pk> {
+    reactions::id.eq(id)
+}
+
+pub fn by_message(id: &Id) -> sql::ById<'_, reactions::message_id> {
+    reactions::message_id.eq(id)
+}
+
+pub fn by_user(id: &Id) -> sql::ById<'_, reactions::user_id> {
+    reactions::user_id.eq(id)
+}
+
+pub fn created_at_desc() -> CreatedAtDesc {
+    (reactions::created_at.desc(), reactions::id.desc())
 }
 
 impl Reaction {
-    pub fn as_delete() -> Pk {
-        reactions::id
-    }
-
-    pub fn as_includes() -> SelectIncludes {
-        (Self::as_select(), UserPreview::as_select())
-    }
-
-    pub fn by_id(id: &Id) -> sql::ById<'_, Pk> {
-        reactions::id.eq(id)
-    }
-
-    pub fn by_user_id(id: &Id) -> sql::ById<'_, reactions::user_id> {
-        reactions::user_id.eq(id)
-    }
-
-    pub fn created_at_desc() -> CreatedAtDesc {
-        (reactions::created_at.desc(), reactions::id.desc())
-    }
-
     pub fn create(values: NewReaction) -> sql::Insert<Table, NewReaction> {
-        diesel::insert_into(reactions::table).values(values)
+        diesel::insert_into(Self::table()).values(values)
     }
 
     pub fn update(id: &Id, changes: ChangeSet) -> sql::Update<'_, Table, Pk, ChangeSet> {
-        diesel::update(reactions::table)
-            .filter(Self::by_id(id))
-            .set(changes)
+        diesel::update(Self::table()).filter(by_id(id)).set(changes)
     }
 
     pub fn delete(id: &Id) -> sql::Delete<'_, Table, Pk> {
-        diesel::delete(reactions::table).filter(Self::by_id(id))
+        diesel::delete(Self::table()).filter(by_id(id))
     }
 
-    pub fn select() -> Select<Table, SelectSelf> {
-        reactions::table.select(Self::as_select())
-    }
-
-    pub fn includes() -> Select<Includes, SelectIncludes> {
+    pub fn table() -> Table {
         reactions::table
-            .inner_join(users::table)
-            .select(Self::as_includes())
     }
 
-    pub fn to_message(id: &Id) -> ToMessage<'_, Select<Includes, SelectIncludes>> {
-        Self::includes().filter(reactions::message_id.eq(id))
-    }
-}
-
-impl FromSqlRow<SelectIncludes, Pg> for ReactionIncludes {
-    fn build_from_row<'a>(row: &impl Row<'a, Pg>) -> diesel::deserialize::Result<Self> {
-        let (reaction, user) = <_ as FromSqlRow<SelectIncludes, _>>::build_from_row(row)?;
-
-        Ok(ReactionIncludes { reaction, user })
+    pub fn includes() -> InnerJoin<Table, users::table> {
+        Self::table().inner_join(User::table())
     }
 }

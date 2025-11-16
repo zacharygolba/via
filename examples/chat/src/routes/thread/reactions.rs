@@ -3,33 +3,31 @@ use via::{Finalize, Payload, Response};
 
 use super::authorization::Subscriber;
 use crate::chat::{Event, EventContext};
-use crate::models::reaction::{NewReaction, Reaction, ReactionIncludes};
+use crate::models::reaction::*;
 use crate::util::error::forbidden;
-use crate::util::{DebugQueryDsl, PageAndLimit, Paginate, Session};
+use crate::util::{DebugQueryDsl, Page, Paginate, Session};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     let message_id = request.envelope().param("message-id").parse()?;
 
     // Get pagination params from the URI query.
-    let page = request.envelope().query::<PageAndLimit>()?;
+    let page = request.envelope().query::<Page>()?;
 
     // Load the reactions for the message with id = :message-id.
-    let reactions: Vec<ReactionIncludes> = {
-        let mut connection = request.state().pool().get().await?;
-
-        Reaction::to_message(&message_id)
-            .order(Reaction::created_at_desc())
-            .paginate(page)
-            .debug_load(&mut connection)
-            .await?
-    };
+    let reactions = Reaction::includes()
+        .select(ReactionIncludes::as_select())
+        .filter(by_message(&message_id))
+        .order(created_at_desc())
+        .paginate(page)
+        .debug_load(&mut request.state().pool().get().await?)
+        .await?;
 
     Response::build().json(&reactions)
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
-    let (current_user_id, thread_id) = request.subscription()?.foreign_keys();
+    let (user_id, thread_id) = request.subscription()?.foreign_keys();
     let message_id = request.envelope().param("message-id").parse()?;
 
     // Deserialize a new reaction from the request body.
@@ -38,7 +36,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
     // Source foreign keys from request metadata when possible.
     new_reaction.message_id = Some(message_id);
-    new_reaction.user_id = Some(current_user_id);
+    new_reaction.user_id = Some(user_id);
 
     // Acquire a database connection and create the reaction.
     let reaction = Reaction::create(new_reaction)
@@ -47,7 +45,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
         .await?;
 
     let event = Event::Reaction(reaction);
-    let context = EventContext::new(Some(thread_id), current_user_id);
+    let context = EventContext::new(Some(thread_id), user_id);
     let response = Response::build().status(201);
 
     // Notify subscribers that a reaction has been created and respond.
@@ -59,8 +57,9 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let id = request.envelope().param("reaction-id").parse()?;
 
     // Acquire a database connection and find the reaction by id.
-    let reaction: ReactionIncludes = Reaction::includes()
-        .filter(Reaction::by_id(&id))
+    let reaction = Reaction::includes()
+        .select(ReactionIncludes::as_select())
+        .filter(by_id(&id))
         .debug_first(&mut request.state().pool().get().await?)
         .await?;
 
@@ -68,7 +67,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result {
-    let current_user_id = *request.user()?;
+    let user_id = *request.user()?;
     let id = request.envelope().param("reaction-id").parse()?;
 
     // Deserialize a reaction changeset from the request body.
@@ -78,7 +77,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
     // Acquire a database connection and update the reaction.
     let Some(reaction) = Reaction::update(&id, changes)
         // The reaction is owned by the current user.
-        .filter(Reaction::by_user_id(&current_user_id))
+        .filter(by_user(&user_id))
         .returning(Reaction::as_returning())
         .debug_result(&mut state.pool().get().await?)
         .await
@@ -91,13 +90,13 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn destroy(request: Request, _: Next) -> via::Result {
-    let current_user_id = *request.user()?;
+    let user_id = *request.user()?;
     let id = request.envelope().param("reaction-id").parse()?;
 
     // Acquire a database connection and delete the reaction.
     let 1.. = Reaction::delete(&id)
         // The reaction is owned by the current user.
-        .filter(Reaction::by_user_id(&current_user_id))
+        .filter(by_user(&user_id))
         .debug_execute(&mut request.state().pool().get().await?)
         .await?
     else {

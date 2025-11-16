@@ -1,6 +1,5 @@
 use chrono::NaiveDateTime;
-use diesel::dsl::{self, AsSelect, Desc, Filter, Select};
-use diesel::pg::Pg;
+use diesel::dsl::{self, Desc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -12,11 +11,7 @@ type Table = users::table;
 
 type CreatedAtDesc = (Desc<users::created_at>, Desc<Pk>);
 
-pub type SelectSelf = AsSelect<User, Pg>;
-pub type SelectPreview = AsSelect<UserPreview, Pg>;
-
 #[derive(Clone, Deserialize, Identifiable, Queryable, Selectable, Serialize)]
-#[diesel(table_name = users)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
     pub id: Id,
@@ -57,47 +52,21 @@ pub fn by_username(username: &str) -> dsl::Eq<users::username, &str> {
     users::username.eq(username)
 }
 
+pub fn created_at_desc() -> CreatedAtDesc {
+    (users::created_at.desc(), users::id.desc())
+}
+
 impl User {
-    pub fn as_delete() -> Pk {
-        users::id
-    }
-
-    pub fn by_id(id: &Id) -> sql::ById<'_, Pk> {
-        users::id.eq(id)
-    }
-
-    pub fn by_username(username: &str) -> dsl::Eq<users::username, &str> {
-        users::username.eq(username)
-    }
-
-    pub fn created_at_desc() -> CreatedAtDesc {
-        (users::created_at.desc(), users::id.desc())
-    }
-
     pub fn create(values: NewUser) -> sql::Insert<Table, NewUser> {
-        diesel::insert_into(users::table).values(values)
+        diesel::insert_into(Self::table()).values(values)
     }
 
     pub fn update(id: &Id, changes: ChangeSet) -> sql::Update<'_, Table, Pk, ChangeSet> {
-        diesel::update(users::table)
-            .filter(Self::by_id(id))
-            .set(changes)
+        diesel::update(Self::table()).filter(by_id(id)).set(changes)
     }
 
     pub fn delete(id: &Id) -> sql::Delete<'_, Table, Pk> {
-        diesel::delete(users::table).filter(Self::by_id(id))
-    }
-
-    pub fn select() -> Select<Table, SelectSelf> {
-        users::table.select(Self::as_select())
-    }
-
-    pub fn preview() -> Select<Table, SelectPreview> {
-        users::table.select(UserPreview::as_select())
-    }
-
-    pub fn exists(id: &Id) -> Filter<Select<Table, Pk>, sql::ById<'_, Pk>> {
-        users::table.select(users::id).filter(Self::by_id(id))
+        diesel::delete(Self::table()).filter(by_id(id))
     }
 
     pub fn table() -> Table {

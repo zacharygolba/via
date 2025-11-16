@@ -5,7 +5,6 @@ pub mod thread;
 pub mod user;
 
 pub use message::Message;
-pub use subscription::Subscription;
 pub use thread::Thread;
 pub use user::User;
 

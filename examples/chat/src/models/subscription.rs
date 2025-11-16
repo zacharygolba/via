@@ -1,12 +1,12 @@
 use bitflags::bitflags;
 use chrono::NaiveDateTime;
+use diesel::AsExpression;
 use diesel::deserialize::{self, FromSql, FromSqlRow};
 use diesel::dsl::{Desc, InnerJoin};
 use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
 use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_types::Integer;
-use diesel::{AsExpression, define_sql_function};
 use serde::{Deserialize, Serialize};
 
 use super::{Thread, User};
@@ -32,7 +32,7 @@ bitflags! {
     }
 }
 
-define_sql_function! {
+diesel::define_sql_function! {
     /// SQL: (lhs & rhs) = rhs
     fn has_flags(lhs: Integer, rhs: Integer) -> Bool;
 }
@@ -149,11 +149,11 @@ impl Subscription {
     }
 
     pub fn threads() -> InnerJoin<Table, threads::table> {
-        Self::table().inner_join(threads::table)
+        Self::table().inner_join(Thread::table())
     }
 
     pub fn users() -> InnerJoin<Table, users::table> {
-        Self::table().inner_join(users::table)
+        Self::table().inner_join(User::table())
     }
 }
 
@@ -170,11 +170,11 @@ impl ThreadSubscription {
         &self.thread
     }
 
-    pub fn thread_id(&self) -> Id {
-        self.thread.id
+    pub fn user_id(&self) -> &Id {
+        &self.subscription.user_id
     }
 
     pub fn foreign_keys(&self) -> (Id, Id) {
-        (self.subscription.user_id, self.thread.id)
+        (*self.user_id(), *self.thread.id())
     }
 }

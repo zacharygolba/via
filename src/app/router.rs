@@ -5,13 +5,26 @@ use crate::middleware::Middleware;
 
 #[macro_export]
 macro_rules! rest {
-    ($module:path) => {{
-        use $module::{create, destroy, index, show, update};
-
+    ($module:path) => {
         (
-            $crate::get(index).post(create),
-            $crate::get(show).patch(update).delete(destroy),
+            $crate::rest!($module as collection),
+            $crate::rest!($module as member),
         )
+    };
+    ($module:path as collection) => {{
+        use $module::{create, index};
+        $crate::get(index).post(create)
+    }};
+    ($module:path as member) => {{
+        use $module::{destroy, show, update};
+        $crate::get(show).patch(update).delete(destroy)
+    }};
+    ($module:path as $other:ident) => {{
+        compile_error!(concat!(
+            "incorrect rest! modifier \"",
+            stringify!($other),
+            "\"",
+        ));
     }};
 }
 
