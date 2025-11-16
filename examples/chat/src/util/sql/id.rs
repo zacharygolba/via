@@ -19,6 +19,12 @@ pub struct Id(Uuid);
 #[derive(Debug)]
 pub struct InvalidIdError;
 
+impl AsRef<[u8]> for Id {
+    fn as_ref(&self) -> &[u8] {
+        AsRef::as_ref(&self.0)
+    }
+}
+
 impl Display for Id {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(&self.0, f)
@@ -30,6 +36,18 @@ impl FromStr for Id {
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         if let Ok(uuid) = input.parse() {
+            Ok(Self(uuid))
+        } else {
+            Err(InvalidIdError)
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for Id {
+    type Error = InvalidIdError;
+
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        if let Ok(uuid) = Uuid::from_slice(value) {
             Ok(Self(uuid))
         } else {
             Err(InvalidIdError)

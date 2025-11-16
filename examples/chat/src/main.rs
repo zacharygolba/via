@@ -6,13 +6,16 @@ mod schema;
 #[macro_use]
 mod util;
 
+use http::StatusCode;
 use std::process::ExitCode;
 use via::error::{Error, Rescue};
 use via::{App, Cookies, Guard, Server, rest, ws};
 
 use chat::Chat;
 use routes::{auth, homepage, threads, users};
-use util::auth::{RestoreSession, SESSION, Session};
+use util::session::{self, Session};
+
+use crate::util::Authenticate;
 
 type Request = via::Request<Chat>;
 type Next = via::Next<Chat>;
@@ -28,32 +31,46 @@ async fn main() -> Result<ExitCode, Error> {
         App::new(Chat::new(pool, secret))
     };
 
-    app.uses(Cookies::new().allow(SESSION));
-    app.uses(RestoreSession::new());
+    app.uses(Cookies::new().allow(session::COOKIE));
 
     app.route("/").to(via::get(homepage));
 
     let mut api = app.route("/api");
 
+    api.uses(async |request: Request, next: Next| {
+        let state = request.state().clone();
+        let mut response = next.call(request).await?;
+
+        if response.status() == StatusCode::UNAUTHORIZED {
+            response.set_user(state.secret(), None)?;
+        }
+
+        Ok(response)
+    });
+
     api.uses(Rescue::with(util::error_sanitizer));
+    api.uses(session::restore);
 
     api.route("/auth").scope(|resource| {
         // Unauthenticated users can login.
         resource.route("/").to(via::post(auth::login));
 
         // Subsequent routes require authentication.
-        resource.uses(Guard::new(Request::is_authenticated));
+        resource.uses(Guard::new(Request::authenticate));
 
         resource.route("/").to(via::delete(auth::logout));
         resource.route("/_me").to(via::get(auth::me));
     });
 
     // Perform a websocket upgrade and start chatting.
-    api.route("/chat").to(ws::upgrade(routes::chat));
+    api.route("/chat").scope(|resource| {
+        resource.uses(Guard::new(Request::authenticate));
+        resource.route("/").to(ws::upgrade(routes::chat));
+    });
 
     api.route("/threads").scope(|resource| {
         // Any operation to threads requires authentication.
-        resource.uses(Guard::new(Request::is_authenticated));
+        resource.uses(Guard::new(Request::authenticate));
 
         // If a user tries to perform an action on a thread or one of it's
         // dependencies, they must be the owner of the resource or have
@@ -100,7 +117,7 @@ async fn main() -> Result<ExitCode, Error> {
         let (_, member) = rest!(users);
 
         // Subsequent routes require authentication.
-        resource.uses(Guard::new(Request::is_authenticated));
+        resource.uses(Guard::new(Request::authenticate));
 
         resource.route("/").to(via::get(users::index));
         resource.route("/:user-id").to(member);

@@ -8,6 +8,7 @@ use diesel::row::Row;
 use serde::{Deserialize, Serialize};
 
 use super::{Thread, User};
+use crate::models::user::UserPreview;
 use crate::schema::{messages, users};
 use crate::util::sql::{self, Id};
 
@@ -18,7 +19,7 @@ type CreatedAtDesc = (Desc<messages::created_at>, Desc<Pk>);
 type InThread<'a, T> = Order<Filter<T, sql::ById<'a, messages::thread_id>>, CreatedAtDesc>;
 
 type SelectSelf = AsSelect<Message, Pg>;
-type SelectIncludes = (SelectSelf, AsSelect<User, Pg>);
+type SelectIncludes = (SelectSelf, AsSelect<UserPreview, Pg>);
 
 type Includes = InnerJoin<Table, users::table>;
 
@@ -59,7 +60,7 @@ pub struct NewMessage {
 pub struct MessageIncludes {
     #[serde(flatten)]
     message: Message,
-    author: User,
+    author: UserPreview,
 }
 
 impl Message {
@@ -68,7 +69,7 @@ impl Message {
     }
 
     pub fn as_includes() -> SelectIncludes {
-        (Self::as_select(), User::as_select())
+        (Self::as_select(), UserPreview::as_select())
     }
 
     pub fn by_id(id: &Id) -> sql::ById<'_, Pk> {

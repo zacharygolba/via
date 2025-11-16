@@ -2,6 +2,8 @@ use std::borrow::Cow;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use http::StatusCode;
+
 use super::query::QueryParser;
 use crate::util::UriEncoding;
 use crate::{Error, raise};
@@ -118,13 +120,16 @@ impl<'a, 'b> Param<'a, 'b> {
         }
     }
 
-    pub fn optional(self) -> Option<Result<Cow<'a, str>, Error>> {
-        let source = self.source?;
+    pub fn optional(self) -> Result<Option<Cow<'a, str>>, Error> {
+        let Some(value) = self.source.and_then(|source| match self.at? {
+            (from, Some(to)) if from == to => None,
+            (from, Some(to)) => source.get(from..to),
+            (from, None) => source.get(from..),
+        }) else {
+            return Ok(None);
+        };
 
-        Some(self.encoding.decode(match self.at? {
-            (from, Some(to)) => source.get(from..to)?,
-            (from, None) => source.get(from..)?,
-        }))
+        self.encoding.decode(value).map(Some)
     }
 
     /// Calls [`str::parse`] on the parameter value if it exists and returns the
@@ -153,11 +158,14 @@ impl<'a, 'b> Param<'a, 'b> {
     #[inline]
     pub fn into_result(self) -> Result<Cow<'a, str>, Error> {
         let Self { name, .. } = self;
-        let Some(result) = self.optional() else {
-            let message = format!("missing required parameter \"{}\".", name);
-            raise!(400, message = message);
-        };
 
-        result
+        self.optional().and_then(|option| {
+            option.ok_or_else(|| {
+                Error::new(
+                    StatusCode::BAD_REQUEST,
+                    format!("missing required parameter \"{}\".", name),
+                )
+            })
+        })
     }
 }

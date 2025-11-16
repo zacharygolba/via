@@ -1,10 +1,10 @@
-pub mod auth;
+pub mod error;
+pub mod session;
 pub mod sql;
 
-mod error;
 mod paginate;
 
-pub use auth::{Authenticate, Session};
-pub use error::{FoundOrForbidden, error_sanitizer};
-pub use paginate::LimitAndOffset;
+pub use error::error_sanitizer;
+pub use paginate::{PageAndLimit, Paginate};
+pub use session::{Authenticate, Session};
 pub use sql::{DebugQueryDsl, Id};
