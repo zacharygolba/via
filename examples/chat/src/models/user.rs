@@ -1,5 +1,5 @@
 use chrono::NaiveDateTime;
-use diesel::dsl::{AsSelect, Desc, Eq, Select};
+use diesel::dsl::{self, AsSelect, Desc, Filter, Select};
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,8 @@ type Table = users::table;
 
 type CreatedAtDesc = (Desc<users::created_at>, Desc<Pk>);
 
-type SelectSelf = AsSelect<User, Pg>;
+pub type SelectSelf = AsSelect<User, Pg>;
+pub type SelectPreview = AsSelect<UserPreview, Pg>;
 
 #[derive(Clone, Deserialize, Identifiable, Queryable, Selectable, Serialize)]
 #[diesel(table_name = users)]
@@ -41,6 +42,21 @@ pub struct ChangeSet {
     pub username: Option<String>,
 }
 
+#[derive(Queryable, Selectable, Serialize)]
+#[diesel(table_name = users)]
+pub struct UserPreview {
+    pub id: Id,
+    pub username: String,
+}
+
+pub fn by_id(id: &Id) -> sql::ById<'_, Pk> {
+    users::id.eq(id)
+}
+
+pub fn by_username(username: &str) -> dsl::Eq<users::username, &str> {
+    users::username.eq(username)
+}
+
 impl User {
     pub fn as_delete() -> Pk {
         users::id
@@ -50,7 +66,7 @@ impl User {
         users::id.eq(id)
     }
 
-    pub fn by_username(username: &str) -> Eq<users::username, &str> {
+    pub fn by_username(username: &str) -> dsl::Eq<users::username, &str> {
         users::username.eq(username)
     }
 
@@ -74,5 +90,26 @@ impl User {
 
     pub fn select() -> Select<Table, SelectSelf> {
         users::table.select(Self::as_select())
+    }
+
+    pub fn preview() -> Select<Table, SelectPreview> {
+        users::table.select(UserPreview::as_select())
+    }
+
+    pub fn exists(id: &Id) -> Filter<Select<Table, Pk>, sql::ById<'_, Pk>> {
+        users::table.select(users::id).filter(Self::by_id(id))
+    }
+
+    pub fn table() -> Table {
+        users::table
+    }
+}
+
+impl From<&'_ User> for UserPreview {
+    fn from(user: &'_ User) -> Self {
+        Self {
+            id: user.id,
+            username: user.username.clone(),
+        }
     }
 }

@@ -2,18 +2,17 @@ use diesel::prelude::*;
 use via::{Payload, Response};
 
 use crate::models::User;
-use crate::util::{Authenticate, DebugQueryDsl, LimitAndOffset};
+use crate::util::{Authenticate, DebugQueryDsl, PageAndLimit, Paginate};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // Get pagination params from the URI query.
-    let LimitAndOffset(limit, offset) = request.envelope().query()?;
+    let page = request.envelope().query::<PageAndLimit>()?;
 
     // Acquire a database connection and execute the query.
     let users = User::select()
         .order(User::created_at_desc())
-        .limit(limit)
-        .offset(offset)
+        .paginate(page)
         .debug_load(&mut request.state().pool().get().await?)
         .await?;
 
@@ -33,7 +32,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
     // Build the response and update the session cookie.
     let mut response = Response::build().status(201).json(&user)?;
-    response.set_current_user(state.secret(), Some(&user))?;
+    response.set_user(state.secret(), Some(user.id))?;
 
     Ok(response)
 }

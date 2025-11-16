@@ -8,6 +8,7 @@ use diesel::row::Row;
 use serde::{Deserialize, Serialize};
 
 use super::{Message, User};
+use crate::models::user::UserPreview;
 use crate::schema::{reactions, users};
 use crate::util::sql::{self, Id};
 
@@ -18,7 +19,7 @@ type CreatedAtDesc = (Desc<reactions::created_at>, Desc<Pk>);
 type ToMessage<'a, T> = Filter<T, sql::ById<'a, reactions::message_id>>;
 
 type SelectSelf = AsSelect<Reaction, Pg>;
-type SelectIncludes = (SelectSelf, AsSelect<User, Pg>);
+type SelectIncludes = (SelectSelf, AsSelect<UserPreview, Pg>);
 
 type Includes = InnerJoin<Table, users::table>;
 
@@ -59,7 +60,7 @@ pub struct NewReaction {
 pub struct ReactionIncludes {
     #[serde(flatten)]
     pub reaction: Reaction,
-    pub user: User,
+    pub user: UserPreview,
 }
 
 impl Reaction {
@@ -68,7 +69,7 @@ impl Reaction {
     }
 
     pub fn as_includes() -> SelectIncludes {
-        (Self::as_select(), User::as_select())
+        (Self::as_select(), UserPreview::as_select())
     }
 
     pub fn by_id(id: &Id) -> sql::ById<'_, Pk> {

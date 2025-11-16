@@ -1,7 +1,8 @@
 use diesel::prelude::*;
 
-use crate::models::subscription::{AuthClaims, Subscription, ThreadSubscription};
-use crate::util::{DebugQueryDsl, Session, auth};
+use crate::models::subscription::*;
+use crate::util::error::forbidden;
+use crate::util::{DebugQueryDsl, Session};
 use crate::{Next, Request};
 
 #[derive(Clone)]
@@ -24,19 +25,19 @@ pub trait Subscriber {
 
 /// Confirm that the current user is subscribed to the thread.
 pub async fn authorization(mut request: Request, next: Next) -> via::Result {
-    let current_user_id = request.current_user()?.id;
+    let current_user_id = *request.user()?;
     let thread_id = request.envelope().param("thread-id").parse()?;
 
     // Acquire a database connection and execute the query.
-    let Some(subscription) = ThreadSubscription::select()
-        .filter(Subscription::by_user(&current_user_id))
-        .filter(Subscription::by_thread(&thread_id))
-        .filter(Subscription::can_participate())
+    let Some(subscription) = Subscription::threads()
+        .select(ThreadSubscription::as_select())
+        .filter(by_user(&current_user_id).and(by_thread(&thread_id)))
+        .filter(claims_can_participate())
         .debug_first(&mut request.state().pool().get().await?)
         .await
         .optional()?
     else {
-        return auth::access_denied();
+        return forbidden();
     };
 
     // Insert the subscription in request extensions so it can be used later.
@@ -56,7 +57,7 @@ impl Ability for ThreadSubscription {
         if self.claims().contains(claims) {
             Ok(self)
         } else {
-            auth::access_denied()
+            forbidden()
         }
     }
 }
@@ -76,7 +77,7 @@ impl Subscriber for Request {
     fn subscription(&self) -> via::Result<&ThreadSubscription> {
         match self.envelope().extensions().get() {
             Some(Verify(subscription)) => Ok(subscription),
-            None => auth::access_denied(),
+            None => forbidden(),
         }
     }
 }

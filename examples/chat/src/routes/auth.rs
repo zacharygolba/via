@@ -3,8 +3,8 @@ use serde::Deserialize;
 use via::{Payload, Response};
 
 use crate::models::user::*;
-use crate::util::DebugQueryDsl;
-use crate::util::auth::{Authenticate, Session, unauthorized};
+use crate::util::error::unauthorized;
+use crate::util::{Authenticate, DebugQueryDsl, Session};
 use crate::{Next, Request};
 
 #[derive(Deserialize)]
@@ -13,18 +13,18 @@ struct LoginParams {
 }
 
 pub async fn me(request: Request, _: Next) -> via::Result {
-    let current_user_id = request.current_user()?.id;
-    let current_user = User::select()
-        .filter(User::by_id(&current_user_id))
+    let user_opt = User::table()
+        .select(User::as_select())
+        .filter(by_id(request.user()?))
         .debug_first(&mut request.state().pool().get().await?)
         .await
         .optional()?;
 
     let mut response = Response::build()
-        .status(if current_user.is_some() { 200 } else { 401 })
-        .json(&current_user)?;
+        .status(if user_opt.is_some() { 200 } else { 401 })
+        .json(user_opt.as_ref())?;
 
-    response.set_current_user(request.state().secret(), current_user.as_ref())?;
+    response.set_user(request.state().secret(), user_opt.map(|user| user.id))?;
 
     Ok(response)
 }
@@ -33,8 +33,9 @@ pub async fn login(request: Request, _: Next) -> via::Result {
     let (body, state) = request.into_future();
     let params = body.await?.json::<LoginParams>()?;
 
-    let Some(user) = User::select()
-        .filter(User::by_username(&params.username))
+    let Some(user) = User::table()
+        .select(User::as_select())
+        .filter(by_username(&params.username))
         .debug_first(&mut state.pool().get().await?)
         .await
         .optional()?
@@ -42,15 +43,15 @@ pub async fn login(request: Request, _: Next) -> via::Result {
         return unauthorized();
     };
 
-    let mut response = Response::build().json(&user)?;
-    response.set_current_user(state.secret(), Some(&user))?;
+    let mut response = Response::build().json(Some(&user))?;
+    response.set_user(state.secret(), Some(user.id))?;
 
     Ok(response)
 }
 
 pub async fn logout(request: Request, _: Next) -> via::Result {
     let mut response = Response::build().status(204).finish()?;
-    response.set_current_user(request.state().secret(), None)?;
+    response.set_user(request.state().secret(), None)?;
 
     Ok(response)
 }

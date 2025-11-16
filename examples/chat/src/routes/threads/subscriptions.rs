@@ -1,22 +1,23 @@
 use diesel::prelude::*;
-use via::{Payload, Response};
+use via::{Payload, Response, raise};
 
 use super::authorization::{Ability, Subscriber};
-use crate::models::subscription::{AuthClaims, NewSubscription, Subscription, UserSubscription};
-use crate::util::{DebugQueryDsl, Id, LimitAndOffset};
+use crate::models::subscription::*;
+use crate::util::{DebugQueryDsl, Id, PageAndLimit, Paginate};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the thread.
-    let thread_id = request.subscription()?.thread.id;
+    let thread_id = request.subscription()?.thread_id();
 
-    let LimitAndOffset(limit, offset) = request.envelope().query()?;
+    let page = request.envelope().query::<PageAndLimit>()?;
 
     // List subscriptions to the thread with id = :thread-id.
-    let subscriptions: Vec<UserSubscription> = UserSubscription::select()
-        .filter(Subscription::by_thread(&thread_id))
-        .limit(limit)
-        .offset(offset)
+    let subscriptions = Subscription::users()
+        .select(UserSubscription::as_select())
+        .filter(by_thread(&thread_id))
+        .order(created_at_desc())
+        .paginate(page)
         .debug_load(&mut request.state().pool().get().await?)
         .await?;
 
@@ -25,7 +26,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 
 pub async fn create(request: Request, _: Next) -> via::Result {
     // The current user can invite other users to the thread.
-    let thread_id = request.can(AuthClaims::INVITE)?.thread.id;
+    let thread_id = request.can(AuthClaims::INVITE)?.thread_id();
 
     // Deserialize the request body into a new subscription.
     let (body, state) = request.into_future();
@@ -44,15 +45,15 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
 pub async fn show(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the thread.
-    let thread_id = request.subscription()?.thread.id;
+    let thread_id = request.subscription()?.thread_id();
 
     // The id of the subscription.
     let id = request.envelope().param("subscription-id").parse()?;
 
     // Acquire a database connection and find the subscription.
-    let subscription: UserSubscription = UserSubscription::select()
-        .filter(Subscription::by_id(&id))
-        .filter(Subscription::by_thread(&thread_id))
+    let subscription = Subscription::users()
+        .select(UserSubscription::as_select())
+        .filter(by_id(&id).and(by_thread(&thread_id)))
         .debug_first(&mut request.state().pool().get().await?)
         .await?;
 
@@ -70,7 +71,7 @@ fn is_owner_or_moderator(request: &Request) -> via::Result<Id> {
     // The id of the subscription that the user wants to mutate.
     let id = request.envelope().param("subscription-id").parse()?;
 
-    if subscription.id() != &id {
+    if subscription.id() != id {
         subscription.can(AuthClaims::MODERATE)?;
     }
 
@@ -83,10 +84,10 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 
     // Deserialize a subscription change set from the body.
     let (body, state) = request.into_future();
-    let change_set = body.await?.json()?;
+    let changes = body.await?.json()?;
 
     // Acquire a database connection and update the subscription.
-    let subscription = Subscription::update(&id, change_set)
+    let subscription = Subscription::update(&id, changes)
         .returning(Subscription::as_returning())
         .debug_result(&mut state.pool().get().await?)
         .await?;
@@ -99,12 +100,12 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     let id = is_owner_or_moderator(&request)?;
 
     // Acquire a database connection and delete the subscription.
-    let rows = Subscription::delete(&id)
+    let 1.. = Subscription::delete(&id)
         .debug_execute(&mut request.state().pool().get().await?)
-        .await?;
-
-    // In debug builds assert that the number of affected rows is not zero.
-    debug_assert!(rows > 0, "failed to delete subscription: {}", &id);
+        .await?
+    else {
+        raise!(message = format!("unable to delete subscription: {}", &id));
+    };
 
     Response::build().status(204).finish()
 }

@@ -23,8 +23,7 @@ async fn file_server(request: Request, _: Next) -> via::Result {
         .envelope()
         .param("path")
         .decode()
-        .optional()
-        .transpose()?
+        .optional()?
         .unwrap_or("index.html".into());
 
     let file_path = resolve_path(path_param.as_ref());

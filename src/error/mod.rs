@@ -133,6 +133,10 @@ impl Error {
         }
     }
 
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
     fn repr_json(&self, status_code: StatusCode) -> Errors<'_> {
         let mut errors = Errors::new(status_code);
 
@@ -189,6 +193,12 @@ impl From<Error> for Response {
         }
 
         response
+    }
+}
+
+impl Serialize for Error {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.repr_json(self.status).serialize(serializer)
     }
 }
 

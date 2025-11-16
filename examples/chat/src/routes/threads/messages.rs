@@ -3,10 +3,12 @@ use diesel::prelude::*;
 use via::request::QueryParams;
 use via::{Finalize, Payload, Response};
 
-use super::authorization::Subscriber;
+use super::authorization::{Ability, Subscriber};
 use crate::chat::{Event, EventContext};
-use crate::models::message::*;
-use crate::util::{DebugQueryDsl, Session, auth};
+use crate::models::message::{Message, MessageIncludes, NewMessage};
+use crate::models::subscription::AuthClaims;
+use crate::util::error::forbidden;
+use crate::util::{DebugQueryDsl, Session};
 use crate::{Next, Request};
 
 struct IndexQuery {
@@ -16,7 +18,7 @@ struct IndexQuery {
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the thread.
-    let thread_id = request.subscription()?.thread.id;
+    let thread_id = request.subscription()?.thread_id();
     let query = request.envelope().query::<IndexQuery>()?;
 
     // Acquire a database connection and execute the query.
@@ -30,8 +32,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
-    let current_user_id = request.current_user()?.id;
-    let thread_id = request.subscription()?.thread.id;
+    let (current_user_id, thread_id) = request.subscription()?.foreign_keys();
 
     // Deserialize a new message from the request body.
     let (body, state) = request.into_future();
@@ -40,7 +41,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     new_message.author_id = Some(current_user_id);
     new_message.thread_id = Some(thread_id);
 
-    // Acquire a database connection and execute the insert.
+    // Acquire a database connection and create the message.
     let message = Message::create(new_message)
         .returning(Message::as_returning())
         .debug_result(&mut state.pool().get().await?)
@@ -67,7 +68,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result {
-    let current_user_id = request.current_user()?.id;
+    let current_user_id = *request.user()?;
     let id = request.envelope().param("message-id").parse()?;
 
     // Deserialize the request body into message params.
@@ -82,30 +83,36 @@ pub async fn update(request: Request, _: Next) -> via::Result {
         .await
         .optional()?
     else {
-        return auth::access_denied();
+        return forbidden();
     };
 
     Response::build().json(&message)
 }
 
 pub async fn destroy(request: Request, _: Next) -> via::Result {
-    let current_user_id = request.current_user()?.id;
+    let current_user_id = *request.user()?;
     let id = request.envelope().param("message-id").parse()?;
 
-    // Acquire a database connection.
-    let mut connection = request.state().pool().get().await?;
+    let 1.. = ({
+        // Acquire a database connection.
+        let mut connection = request.state().pool().get().await?;
 
-    // Delete the message.
-    let rows = Message::delete(&id)
-        .filter(Message::by_author_id(&current_user_id))
-        .debug_execute(&mut connection)
-        .await?;
+        // Delete the message.
+        if request.can(AuthClaims::MODERATE).is_ok() {
+            // The current user is a moderator of the thread. Delete by id.
+            Message::delete(&id).debug_execute(&mut connection).await?
+        } else {
+            // The current user must own the message. Otherwise, 403.
+            Message::delete(&id)
+                .filter(Message::by_author_id(&current_user_id))
+                .debug_execute(&mut connection)
+                .await?
+        }
+    }) else {
+        return forbidden();
+    };
 
-    if rows > 0 {
-        Response::build().status(204).finish()
-    } else {
-        auth::access_denied()
-    }
+    Response::build().status(204).finish()
 }
 
 impl TryFrom<QueryParams<'_>> for IndexQuery {
