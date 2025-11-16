@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod thread;
 pub mod threads;
 pub mod users;
 

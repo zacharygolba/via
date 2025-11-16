@@ -2,20 +2,15 @@ mod chat;
 mod models;
 mod routes;
 mod schema;
-
-#[macro_use]
 mod util;
 
-use http::StatusCode;
 use std::process::ExitCode;
 use via::error::{Error, Rescue};
 use via::{App, Cookies, Guard, Server, rest, ws};
 
 use chat::Chat;
-use routes::{auth, homepage, threads, users};
+use routes::{chat, homepage, thread, threads, users};
 use util::session::{self, Session};
-
-use crate::util::Authenticate;
 
 type Request = via::Request<Chat>;
 type Next = via::Next<Chat>;
@@ -37,72 +32,74 @@ async fn main() -> Result<ExitCode, Error> {
 
     let mut api = app.route("/api");
 
-    api.uses(async |request: Request, next: Next| {
-        let state = request.state().clone();
-        let mut response = next.call(request).await?;
-
-        if response.status() == StatusCode::UNAUTHORIZED {
-            response.set_user(state.secret(), None)?;
-        }
-
-        Ok(response)
-    });
-
     api.uses(Rescue::with(util::error_sanitizer));
     api.uses(session::restore);
 
     api.route("/auth").scope(|resource| {
-        // Unauthenticated users can login.
-        resource.route("/").to(via::post(auth::login));
+        use routes::auth::{login, logout, me};
 
-        // Subsequent routes require authentication.
-        resource.uses(Guard::new(Request::authenticate));
-
-        resource.route("/").to(via::delete(auth::logout));
-        resource.route("/_me").to(via::get(auth::me));
+        resource.route("/").to(via::post(login).delete(logout));
+        resource.route("/_me").to(via::get(me));
     });
 
-    // Perform a websocket upgrade and start chatting.
     api.route("/chat").scope(|resource| {
+        // Any request to /api/chat requires authentication.
         resource.uses(Guard::new(Request::authenticate));
-        resource.route("/").to(ws::upgrade(routes::chat));
+
+        // Upgrade to a websocket and start chatting.
+        resource.route("/").to(ws::upgrade(chat));
     });
 
     api.route("/threads").scope(|resource| {
-        // Any operation to threads requires authentication.
+        // Any request to /api/threads requires authentication.
         resource.uses(Guard::new(Request::authenticate));
+
+        // Define the create and index routes for threads.
+        // These are commonly referred to as "collection" routes (`n`).
+        resource.route("/").to(rest!(threads as collection));
+
+        // Bind `resource` to /api/threads/:thread-id.
+        //
+        // We prefer shadowing the variable name `resource` to encourage
+        // a linear progression of route definitons.
+        let mut resource = resource.route("/:thread-id");
 
         // If a user tries to perform an action on a thread or one of it's
         // dependencies, they must be the owner of the resource or have
-        // sufficent permission to perform the requested operation.
-        resource.route("/:thread-id").uses(threads::authorization);
+        // sufficent permission to perform the requested action.
+        //
+        // Including this middleware before anything else in the thread module
+        // enforces that the `Ability` and `Subscriber` extension traits are
+        // valid as long as they are visible in the type system.
+        //
+        // This is where seperation of concerns intersects with the uri path
+        // and the API contract defined in `routes::thread::authorization`.
+        resource.uses(thread::authorization);
 
-        // Bind `thread` to the router entry at /api/threads/:thread-id.
-        let mut thread = {
-            let (collection, member) = rest!(threads);
+        // Define the show, update, and destroy routes for a thread.
+        // These are commonly referred to as "member" routes (`1`).
+        resource.route("/").to(rest!(thread as member));
 
-            resource.route("/").to(collection);
-            resource.route("/:thread-id").to(member)
-        };
+        // Continue defining the dependencies of a thread.
 
-        thread.route("/messages").scope(|resource| {
-            let mut message = {
-                let (collection, member) = rest!(threads::messages);
+        resource.route("/messages").scope(|resource| {
+            let mut resource = {
+                let (collection, member) = rest!(thread::messages);
 
                 resource.route("/").to(collection);
                 resource.route("/:message-id").to(member)
             };
 
-            message.route("/reactions").scope(|resource| {
-                let (collection, member) = rest!(threads::reactions);
+            resource.route("/reactions").scope(|resource| {
+                let (collection, member) = rest!(thread::reactions);
 
                 resource.route("/").to(collection);
                 resource.route("/:reaction-id").to(member);
             });
         });
 
-        thread.route("/subscriptions").scope(|resource| {
-            let (collection, member) = rest!(threads::subscriptions);
+        resource.route("/subscriptions").scope(|resource| {
+            let (collection, member) = rest!(thread::subscriptions);
 
             resource.route("/").to(collection);
             resource.route("/:subscription-id").to(member);
@@ -110,16 +107,12 @@ async fn main() -> Result<ExitCode, Error> {
     });
 
     api.route("/users").scope(|resource| {
-        // Unauthenticated users can create an account.
-        resource.route("/").to(via::post(users::create));
-
-        // Define collection routes for the users resource separately.
-        let (_, member) = rest!(users);
-
-        // Subsequent routes require authentication.
+        // Any request to /api/users requires authentication.
         resource.uses(Guard::new(Request::authenticate));
 
-        resource.route("/").to(via::get(users::index));
+        let (collection, member) = rest!(users);
+
+        resource.route("/").to(collection);
         resource.route("/:user-id").to(member);
     });
 

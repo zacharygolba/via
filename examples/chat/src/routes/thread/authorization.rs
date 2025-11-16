@@ -2,7 +2,7 @@ use diesel::prelude::*;
 
 use crate::models::subscription::*;
 use crate::util::error::forbidden;
-use crate::util::{DebugQueryDsl, Session};
+use crate::util::{DebugQueryDsl, Id, Session};
 use crate::{Next, Request};
 
 #[derive(Clone)]
@@ -11,10 +11,11 @@ struct Verify(ThreadSubscription);
 /// Granular permission guards for subscribers.
 pub trait Ability {
     type Output;
+    type Error;
 
     /// Returns a result containing the associated Output if the subscriber has
     /// the provided claims.
-    fn can(&self, claims: AuthClaims) -> via::Result<&Self::Output>;
+    fn can(&self, claims: AuthClaims) -> Result<Self::Output, Self::Error>;
 }
 
 /// Has a subscription to a thread.
@@ -25,13 +26,13 @@ pub trait Subscriber {
 
 /// Confirm that the current user is subscribed to the thread.
 pub async fn authorization(mut request: Request, next: Next) -> via::Result {
-    let current_user_id = *request.user()?;
+    let user_id = *request.user()?;
     let thread_id = request.envelope().param("thread-id").parse()?;
 
     // Acquire a database connection and execute the query.
     let Some(subscription) = Subscription::threads()
         .select(ThreadSubscription::as_select())
-        .filter(by_user(&current_user_id).and(by_thread(&thread_id)))
+        .filter(by_user(&user_id).and(by_thread(&thread_id)))
         .filter(claims_can_participate())
         .debug_first(&mut request.state().pool().get().await?)
         .await
@@ -51,25 +52,27 @@ pub async fn authorization(mut request: Request, next: Next) -> via::Result {
 }
 
 impl Ability for ThreadSubscription {
-    type Output = Self;
+    type Output = Id;
+    type Error = Id;
 
-    fn can(&self, claims: AuthClaims) -> via::Result<&Self::Output> {
+    fn can(&self, claims: AuthClaims) -> Result<Self::Output, Self::Error> {
         if self.claims().contains(claims) {
-            Ok(self)
+            Ok(*self.thread().id())
         } else {
-            forbidden()
+            Err(*self.user_id())
         }
     }
 }
 
 impl Ability for Request {
-    type Output = ThreadSubscription;
+    type Output = Id;
+    type Error = via::Error;
 
     /// Returns the current user's subscription to the thread if they have the
     /// provided claims.
     ///
-    fn can(&self, claims: AuthClaims) -> via::Result<&Self::Output> {
-        self.subscription()?.can(claims)
+    fn can(&self, claims: AuthClaims) -> via::Result<Self::Output> {
+        self.subscription()?.can(claims).or_else(|_| forbidden())
     }
 }
 

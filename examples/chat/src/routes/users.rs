@@ -1,17 +1,18 @@
 use diesel::prelude::*;
 use via::{Payload, Response};
 
-use crate::models::User;
-use crate::util::{Authenticate, DebugQueryDsl, PageAndLimit, Paginate};
+use crate::models::user::*;
+use crate::util::{Authenticate, DebugQueryDsl, Page, Paginate};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // Get pagination params from the URI query.
-    let page = request.envelope().query::<PageAndLimit>()?;
+    let page = request.envelope().query::<Page>()?;
 
     // Acquire a database connection and execute the query.
-    let users = User::select()
-        .order(User::created_at_desc())
+    let users = User::table()
+        .select(User::as_select())
+        .order(created_at_desc())
         .paginate(page)
         .debug_load(&mut request.state().pool().get().await?)
         .await?;
