@@ -13,6 +13,7 @@ use self::authorization::{Ability, Subscriber};
 use crate::models::message::{self, Message, MessageIncludes};
 use crate::models::subscription::*;
 use crate::models::thread::{Thread, ThreadIncludes};
+use crate::models::user::UserPreview;
 use crate::util::DebugQueryDsl;
 use crate::util::paginate::PER_PAGE;
 use crate::{Next, Request};
@@ -36,8 +37,8 @@ pub async fn show(request: Request, _: Next) -> via::Result {
         .await?;
 
     // Load the enough user subscriptions to make a face stack.
-    let subscriptions = Subscription::users()
-        .select(UserSubscription::as_select())
+    let users = Subscription::users()
+        .select(UserPreview::as_select())
         .filter(by_thread(thread.id()))
         .order(created_at_desc())
         .limit(MAX_FACE_STACK_SIZE)
@@ -47,7 +48,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     Response::build().json(&ThreadIncludes {
         thread,
         messages,
-        subscriptions,
+        users,
     })
 }
 

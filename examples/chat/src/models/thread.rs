@@ -3,7 +3,7 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::models::message::MessageIncludes;
-use crate::models::subscription::UserSubscription;
+use crate::models::user::UserPreview;
 use crate::schema::threads;
 use crate::util::sql::{self, Id};
 
@@ -35,7 +35,7 @@ pub struct ThreadIncludes {
     #[serde(flatten)]
     pub thread: Thread,
     pub messages: Vec<MessageIncludes>,
-    pub subscriptions: Vec<UserSubscription>,
+    pub users: Vec<UserPreview>,
 }
 
 pub fn by_id(id: &Id) -> sql::ById<'_, threads::id> {
