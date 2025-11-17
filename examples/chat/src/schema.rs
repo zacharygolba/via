@@ -6,8 +6,9 @@ diesel::table! {
         author_id -> Uuid,
         thread_id -> Uuid,
         body -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        reactions_count -> Int8,
     }
 }
 
@@ -18,8 +19,8 @@ diesel::table! {
         emoji -> Varchar,
         message_id -> Uuid,
         user_id -> Uuid,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 
@@ -29,8 +30,8 @@ diesel::table! {
         user_id -> Uuid,
         thread_id -> Uuid,
         claims -> Int4,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 
@@ -38,8 +39,8 @@ diesel::table! {
     threads (id) {
         id -> Uuid,
         name -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 
@@ -48,8 +49,8 @@ diesel::table! {
         id -> Uuid,
         email -> Text,
         username -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 

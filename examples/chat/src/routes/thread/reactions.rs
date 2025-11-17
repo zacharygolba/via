@@ -18,7 +18,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     let reactions = Reaction::includes()
         .select(ReactionIncludes::as_select())
         .filter(by_message(&message_id))
-        .order(created_at_desc())
+        .order(Reaction::created_at_desc())
         .paginate(page)
         .debug_load(&mut request.state().pool().get().await?)
         .await?;

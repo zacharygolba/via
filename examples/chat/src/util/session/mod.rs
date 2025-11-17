@@ -50,7 +50,7 @@ pub async fn restore(mut request: Request, next: Next) -> via::Result {
         .transpose()?
     {
         if identity.is_expired() {
-            if let ..1i64 = User::table()
+            if let ..1 = User::table()
                 .select(count(users::id))
                 .filter(by_id(identity.id()))
                 .debug_result(&mut state.pool().get().await?)

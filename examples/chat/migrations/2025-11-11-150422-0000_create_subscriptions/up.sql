@@ -4,8 +4,8 @@ CREATE TABLE subscriptions (
   thread_id UUID NOT NULL REFERENCES threads(id),
 
   claims INTEGER NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  updated_at TIMESTAMP NOT NULL DEFAULT current_timestamp
+  created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
 );
 
 -- Automated timestamp updates managed by diesel.
