@@ -88,7 +88,9 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let reactions = Reaction::belonging_to(&message)
         .inner_join(User::table())
         .select(ReactionPreview::as_select())
-        .order(Reaction::created_at_desc())
+        .distinct_on(reactions::emoji)
+        .order((reactions::emoji.asc(), reactions::id.asc()))
+        .limit(REACTIONS_PER_MESSAGE)
         .debug_load(&mut connection)
         .await?;
 
