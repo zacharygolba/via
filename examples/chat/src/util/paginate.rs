@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use diesel::Expression;
 use diesel::dsl::{Filter, Limit, Offset};
 use diesel::query_dsl::methods::{FilterDsl, LimitDsl, OffsetDsl};
-use diesel::sql_types::{Timestamp, Uuid};
+use diesel::sql_types::{Timestamptz, Uuid};
 use via::request::QueryParams;
 use via::{Error, raise};
 
@@ -44,7 +44,7 @@ pub struct Page {
 
 diesel::define_sql_function! {
     /// SQL: (lhs0, lhs1) < (rhs0, rhs1)
-    fn before_keyset(lhs0: Timestamp, lhs1: Uuid, rhs0: Timestamp, rhs1: Uuid) -> Bool;
+    fn before_keyset(lhs0: Timestamptz, lhs1: Uuid, rhs0: Timestamptz, rhs1: Uuid) -> Bool;
 }
 
 fn limit_from_query(query: &QueryParams) -> Result<i64, Error> {
@@ -61,7 +61,7 @@ impl<CreatedAt, Pk, T> Paginate<KeysetExpr<CreatedAt, Pk>> for T
 where
     T: LimitDsl,
     Pk: Expression<SqlType = Uuid>,
-    CreatedAt: Expression<SqlType = Timestamp>,
+    CreatedAt: Expression<SqlType = Timestamptz>,
     <T as LimitDsl>::Output: FilterDsl<BeforeExpr<CreatedAt, Pk>>,
 {
     type Output = Filter<Limit<T>, BeforeExpr<CreatedAt, Pk>>;

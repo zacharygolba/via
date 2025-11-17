@@ -1,8 +1,8 @@
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::models::message::MessageIncludes;
+use crate::models::message::MessageWithJoins;
 use crate::models::user::UserPreview;
 use crate::schema::threads;
 use crate::util::sql::{self, Id};
@@ -15,7 +15,7 @@ type Table = threads::table;
 pub struct Thread {
     id: Id,
     name: String,
-    created_at: NaiveDateTime,
+    created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Deserialize, Insertable)]
@@ -31,11 +31,11 @@ pub struct ChangeSet {
 }
 
 #[derive(Serialize)]
-pub struct ThreadIncludes {
+pub struct ThreadWithJoins {
     #[serde(flatten)]
     pub thread: Thread,
-    pub messages: Vec<MessageIncludes>,
     pub users: Vec<UserPreview>,
+    pub messages: Vec<MessageWithJoins>,
 }
 
 pub fn by_id(id: &Id) -> sql::ById<'_, threads::id> {

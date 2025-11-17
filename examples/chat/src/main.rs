@@ -107,13 +107,14 @@ async fn main() -> Result<ExitCode, Error> {
     });
 
     api.route("/users").scope(|resource| {
-        // Any request to /api/users requires authentication.
+        // Creating an account does not require authentication.
+        resource.route("/").to(via::post(users::create));
+
+        // Subsequent requests to /api/users requires authentication.
         resource.uses(Guard::new(Request::authenticate));
 
-        let (collection, member) = rest!(users);
-
-        resource.route("/").to(collection);
-        resource.route("/:user-id").to(member);
+        resource.route("/").to(via::get(users::index));
+        resource.route("/:user-id").to(rest!(users as member));
     });
 
     // Start listening at http://localhost:8080 for incoming requests.

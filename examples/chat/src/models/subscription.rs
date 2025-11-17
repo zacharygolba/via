@@ -1,5 +1,5 @@
 use bitflags::bitflags;
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
 use diesel::AsExpression;
 use diesel::deserialize::{self, FromSql, FromSqlRow};
 use diesel::dsl::{Desc, InnerJoin};
@@ -44,8 +44,8 @@ diesel::define_sql_function! {
 pub struct Subscription {
     id: Id,
     claims: AuthClaims,
-    created_at: NaiveDateTime,
-    updated_at: NaiveDateTime,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 
     #[serde(skip)]
     user_id: Id,

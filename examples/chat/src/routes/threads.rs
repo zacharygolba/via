@@ -10,15 +10,13 @@ use crate::util::{DebugQueryDsl, Session};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
-    let user_id = *request.user()?;
-
     // Get pagination params from the URI query.
     let page = request.envelope().query::<Page>()?;
 
     // Acquire a database connection and execute the query.
     let threads = Subscription::threads()
         .select(Thread::as_select())
-        .filter(by_user(&user_id))
+        .filter(by_user(request.user()?))
         .order(created_at_desc())
         .paginate(page)
         .debug_load(&mut request.state().pool().get().await?)

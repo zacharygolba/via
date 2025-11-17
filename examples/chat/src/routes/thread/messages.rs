@@ -4,26 +4,49 @@ use via::{Finalize, Payload, Response};
 use super::authorization::{Ability, Subscriber};
 use crate::chat::{Event, EventContext};
 use crate::models::message::*;
+use crate::models::reaction::{Reaction, ReactionPreview};
 use crate::models::subscription::AuthClaims;
+use crate::models::user::User;
+use crate::schema::reactions;
 use crate::util::error::forbidden;
 use crate::util::{DebugQueryDsl, Keyset, Paginate, Session};
 use crate::{Next, Request};
+
+pub const REACTIONS_PER_MESSAGE: i64 = 6;
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the thread.
     let thread_id = request.can(AuthClaims::participate())?;
     let keyset = request.envelope().query::<Keyset>()?;
 
-    // Acquire a database connection and execute the query.
+    // Acquire a database connection.
+    let mut connection = request.state().pool().get_owned().await?;
+
     let messages = Message::includes()
-        .select(MessageIncludes::as_select())
+        .select(MessageWithAuthor::as_select())
         .filter(by_thread(&thread_id))
-        .order(created_at_desc())
+        .order(Message::created_at_desc())
         .paginate(keyset.after(Message::as_keyset()))
-        .debug_load(&mut request.state().pool().get().await?)
+        .debug_load(&mut connection)
         .await?;
 
-    Response::build().json(&messages)
+    let reactions = Reaction::belonging_to(&messages)
+        .inner_join(User::table())
+        .select(ReactionPreview::as_select())
+        .distinct_on(reactions::emoji)
+        .order((reactions::emoji.asc(), reactions::id.asc()))
+        .limit(REACTIONS_PER_MESSAGE)
+        .debug_load(&mut connection)
+        .await?;
+
+    let messages_with_author_and_reactions: Vec<_> = reactions
+        .grouped_by(&messages)
+        .into_iter()
+        .zip(messages)
+        .map(|(reactions, message)| message.joins(reactions))
+        .collect();
+
+    Response::build().json(&messages_with_author_and_reactions)
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
@@ -53,14 +76,23 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 pub async fn show(request: Request, _: Next) -> via::Result {
     let id = request.envelope().param("message-id").parse()?;
 
+    let mut connection = request.state().pool().get_owned().await?;
+
     // Acquire a database connection and execute the query.
     let message = Message::includes()
-        .select(MessageIncludes::as_select())
+        .select(MessageWithAuthor::as_select())
         .filter(by_id(&id))
-        .debug_first(&mut request.state().pool().get().await?)
+        .debug_first(&mut connection)
         .await?;
 
-    Response::build().json(&message)
+    let reactions = Reaction::belonging_to(&message)
+        .inner_join(User::table())
+        .select(ReactionPreview::as_select())
+        .order(Reaction::created_at_desc())
+        .debug_load(&mut connection)
+        .await?;
+
+    Response::build().json(message.joins(reactions))
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result {
