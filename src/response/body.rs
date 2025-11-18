@@ -31,15 +31,15 @@ use crate::error::{BoxError, Error};
 /// }
 ///
 /// let ciro = Cat::new("Ciro".to_owned());
-/// let response = Response::build().json(ciro).unwrap();
+/// let response = Response::build().json(&ciro).unwrap();
 /// // body: { "data": { "name": "Ciro" } }
 ///
 /// let ciro = Cat::new("Ciro".to_owned());
-/// let response = Json(ciro).finalize(Response::build()).unwrap();
+/// let response = Json(&ciro).finalize(Response::build()).unwrap();
 /// // body: { "name": "Ciro" }
 /// ```
 ///
-pub struct Json<T>(pub T);
+pub struct Json<'a, T>(pub &'a T);
 
 pub struct ResponseBody {
     kind: Either<Full<Bytes>, BoxBody<Bytes, BoxError>>,
@@ -137,10 +137,10 @@ impl From<&'_ [u8]> for ResponseBody {
     }
 }
 
-impl<T: Serialize> Finalize for Json<T> {
+impl<T: Serialize> Finalize for Json<'_, T> {
     #[inline]
     fn finalize(self, response: ResponseBuilder) -> Result<Response, Error> {
-        let body = serde_json::to_string(&self.0)?;
+        let body = serde_json::to_string(self.0)?;
 
         response
             .header(header::CONTENT_LENGTH, body.len())

@@ -89,7 +89,7 @@ impl ResponseBuilder {
             data: &'a D,
         }
 
-        Json(Tagged { data: body }).finalize(self)
+        Json(&Tagged { data: body }).finalize(self)
     }
 
     #[inline]
