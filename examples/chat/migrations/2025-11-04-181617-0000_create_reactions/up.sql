@@ -59,46 +59,40 @@ CREATE FUNCTION top_reactions_for(
     total_count bigint
 ) AS $$
   WITH reaction_counts AS (
-    -- Compute total users per emoji per message
     SELECT
-      reactions.id,
-      reactions.message_id,
-      reactions.emoji,
-      COUNT(*) OVER (PARTITION BY reactions.message_id, reactions.emoji) AS total_count
+      message_id,
+      emoji,
+      COUNT(*) AS total_count
     FROM reactions
-    WHERE reactions.message_id = ANY(message_ids)
+    WHERE message_id = ANY(message_ids)
+    GROUP BY message_id, emoji
   ),
   ranked_reactions AS (
-    -- Assign a row number per message based on total_count descending
     SELECT
       message_id,
       emoji,
       total_count,
       ROW_NUMBER() OVER (
         PARTITION BY message_id
-        ORDER BY total_count DESC, id
+        ORDER BY total_count DESC, emoji
       ) AS rn
     FROM reaction_counts
   )
-
   SELECT
-    ranked_reactions.message_id,
-    ranked_reactions.emoji,
-    reaction_usernames.usernames,
-    ranked_reactions.total_count
-  FROM ranked_reactions
-  JOIN LATERAL (
-    SELECT
-      ARRAY_AGG(users.username ORDER BY users.username, users.id) AS usernames
-    FROM reactions
-    JOIN users ON users.id = reactions.user_id
-    WHERE
-      reactions.message_id = ranked_reactions.message_id
-      AND reactions.emoji = ranked_reactions.emoji
-    LIMIT max_usernames_per_emoji
-  ) AS reaction_usernames ON true
-  WHERE rn <= distinct_emoji_count
-  ORDER BY ranked_reactions.total_count DESC, ranked_reactions.message_id
+    rr.message_id,
+    rr.emoji,
+    (
+      SELECT ARRAY_AGG(u.username ORDER BY u.username, u.id)
+      FROM reactions r
+      JOIN users u ON u.id = r.user_id
+      WHERE r.message_id = rr.message_id
+        AND r.emoji = rr.emoji
+      LIMIT max_usernames_per_emoji
+    ) AS usernames,
+    rr.total_count
+  FROM ranked_reactions rr
+  WHERE rr.rn <= distinct_emoji_count
+  ORDER BY rr.total_count DESC, rr.message_id;
 $$ LANGUAGE SQL STABLE;
 
 CREATE TRIGGER reactions_counter_cache_trigger
