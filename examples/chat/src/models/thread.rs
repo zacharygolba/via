@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::models::message::MessageWithJoins;
 use crate::models::user::UserPreview;
 use crate::schema::threads;
-use crate::util::sql::{self, Id};
+use crate::util::{Id, sql};
 
 type Pk = threads::id;
 type Table = threads::table;

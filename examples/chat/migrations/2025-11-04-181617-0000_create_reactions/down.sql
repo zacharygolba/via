@@ -1,5 +1,6 @@
 DROP TRIGGER reactions_counter_cache_trigger ON reactions;
 
+DROP FUNCTION top_reactions_for;
 DROP FUNCTION reactions_counter_cache;
 
 DROP INDEX reactions_message_id_idx;

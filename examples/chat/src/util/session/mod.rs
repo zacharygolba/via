@@ -3,12 +3,12 @@ mod identity;
 use cookie::{Cookie, Key, SameSite};
 use diesel::dsl::count;
 use diesel::prelude::*;
-use http::Extensions;
+use http::{Extensions, StatusCode};
 use time::{Duration, OffsetDateTime};
 use via::{Response, ws};
 
 use self::identity::Identity;
-use super::error::unauthorized;
+use super::error;
 use crate::chat::Chat;
 use crate::models::user::*;
 use crate::schema::users;
@@ -38,39 +38,48 @@ pub trait Session {
 }
 
 pub async fn restore(mut request: Request, next: Next) -> via::Result {
-    let mut refresh = None;
     let state = request.state().clone();
-
-    if let Some(identity) = request
+    let persist = match request
         .envelope()
         .cookies()
-        .signed(state.secret())
+        .signed(request.state().secret())
         .get(COOKIE)
         .map(|cookie| cookie.value().parse::<Identity>())
-        .transpose()?
     {
-        if identity.is_expired() {
+        Some(Ok(identity)) if identity.is_expired() => {
             if let ..1 = User::table()
                 .select(count(users::id))
                 .filter(by_id(identity.id()))
                 .debug_result(&mut state.pool().get().await?)
                 .await?
             {
-                return unauthorized();
+                return unauthorized(state.secret());
             }
 
-            refresh = Some(*identity.id());
-        }
+            let session = Verify(identity.id().clone());
+            request.envelope_mut().extensions_mut().insert(session);
 
-        request
-            .envelope_mut()
-            .extensions_mut()
-            .insert(Verify(*identity.id()));
-    }
+            Some(identity.into())
+        }
+        Some(Ok(identity)) => {
+            let session = Verify(identity.into());
+            request.envelope_mut().extensions_mut().insert(session);
+
+            None
+        }
+        Some(Err(error)) => {
+            if cfg!(debug_assertions) {
+                eprintln!("error: {}", error);
+            }
+
+            return unauthorized(state.secret());
+        }
+        None => None,
+    };
 
     let mut response = next.call(request).await?;
 
-    if let Some(id) = refresh
+    if let Some(id) = persist
         && response.status().is_success()
     {
         response.set_user(state.secret(), Some(id))?;
@@ -79,11 +88,21 @@ pub async fn restore(mut request: Request, next: Next) -> via::Result {
     Ok(response)
 }
 
+fn unauthorized(secret: &Key) -> via::Result {
+    let mut response = Response::build()
+        .status(StatusCode::UNAUTHORIZED)
+        .json(&error::unauthorized::<()>())?;
+
+    response.set_user(secret, None)?;
+
+    Ok(response)
+}
+
 fn identify(extensions: &Extensions) -> via::Result<&Id> {
     if let Some(Verify(id)) = extensions.get() {
         Ok(id)
     } else {
-        unauthorized()
+        error::unauthorized()
     }
 }
 

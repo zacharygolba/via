@@ -23,10 +23,8 @@ pub async fn me(request: Request, _: Next) -> via::Result {
         return unauthorized();
     };
 
-    let identity = user.id;
-    let mut response = Response::build().json(user)?;
-
-    response.set_user(request.state().secret(), Some(identity))?;
+    let mut response = Response::build().json(&user)?;
+    response.set_user(request.state().secret(), Some(user.id))?;
 
     Ok(response)
 }
@@ -45,10 +43,8 @@ pub async fn login(request: Request, _: Next) -> via::Result {
         return unauthorized();
     };
 
-    let identity = user.id;
-    let mut response = Response::build().json(user)?;
-
-    response.set_user(state.secret(), Some(identity))?;
+    let mut response = Response::build().json(&user)?;
+    response.set_user(state.secret(), Some(user.id))?;
 
     Ok(response)
 }

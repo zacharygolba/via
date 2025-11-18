@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::{Thread, User};
 use crate::models::user::UserPreview;
 use crate::schema::{subscriptions, threads, users};
-use crate::util::sql::{self, Id};
+use crate::util::{Id, sql};
 
 type Pk = subscriptions::id;
 type Table = subscriptions::table;
@@ -158,8 +158,8 @@ impl Subscription {
 }
 
 impl ThreadSubscription {
-    pub fn id(&self) -> Id {
-        self.subscription.id
+    pub fn id(&self) -> &Id {
+        &self.subscription.id
     }
 
     pub fn claims(&self) -> &AuthClaims {
@@ -175,6 +175,6 @@ impl ThreadSubscription {
     }
 
     pub fn foreign_keys(&self) -> (Id, Id) {
-        (*self.user_id(), *self.thread.id())
+        (self.user_id().clone(), self.thread.id().clone())
     }
 }

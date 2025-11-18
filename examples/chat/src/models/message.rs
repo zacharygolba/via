@@ -10,7 +10,7 @@ use super::{Thread, User};
 use crate::models::reaction::ReactionPreview;
 use crate::models::user::UserPreview;
 use crate::schema::{messages, users};
-use crate::util::sql::{self, Id};
+use crate::util::{Id, sql};
 
 type Pk = messages::id;
 type Table = messages::table;
