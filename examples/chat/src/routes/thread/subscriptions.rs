@@ -16,7 +16,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     // List subscriptions to the thread with id = :thread-id.
     let subscriptions = Subscription::users()
         .select(UserSubscription::as_select())
-        .filter(by_thread(&thread_id))
+        .filter(by_thread(thread_id))
         .order(created_at_desc())
         .paginate(page)
         .debug_load(&mut request.state().pool().get().await?)
@@ -27,7 +27,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 
 pub async fn create(request: Request, _: Next) -> via::Result {
     // The current user can invite other users to the thread.
-    let thread_id = request.can(AuthClaims::INVITE)?;
+    let thread_id = request.can(AuthClaims::INVITE).cloned()?;
 
     // Deserialize the request body into a new subscription.
     let (body, state) = request.into_future();
@@ -54,7 +54,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     // Acquire a database connection and find the subscription.
     let subscription = Subscription::users()
         .select(UserSubscription::as_select())
-        .filter(by_id(&id).and(by_thread(&thread_id)))
+        .filter(by_id(&id).and(by_thread(thread_id)))
         .debug_first(&mut request.state().pool().get().await?)
         .await?;
 
@@ -72,7 +72,7 @@ fn is_owner_or_moderator(request: &Request) -> via::Result<Id> {
     // The id of the subscription that the user wants to mutate.
     let id = request.envelope().param("subscription-id").parse()?;
 
-    if subscription.id() == id || subscription.can(AuthClaims::MODERATE).is_ok() {
+    if subscription.id() == &id || subscription.can(AuthClaims::MODERATE).is_ok() {
         Ok(id)
     } else {
         forbidden()

@@ -4,7 +4,7 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::schema::users;
-use crate::util::sql::{self, Id};
+use crate::util::{Id, sql};
 
 type Pk = users::id;
 type Table = users::table;
@@ -71,14 +71,5 @@ impl User {
 
     pub fn table() -> Table {
         users::table
-    }
-}
-
-impl From<&'_ User> for UserPreview {
-    fn from(user: &'_ User) -> Self {
-        Self {
-            id: user.id,
-            username: user.username.clone(),
-        }
     }
 }

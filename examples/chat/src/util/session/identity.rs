@@ -12,7 +12,7 @@ const STR_LEN: usize = 32;
 #[derive(Clone)]
 pub struct Identity {
     uuid: Id,
-    expires_at: i64,
+    ttl: i64,
 }
 
 fn decode(input: &str) -> Result<Identity, BoxError> {
@@ -22,17 +22,17 @@ fn decode(input: &str) -> Result<Identity, BoxError> {
 
     Ok(Identity {
         uuid: Id::try_from(&buf[..16])?,
-        expires_at: i64::from_be_bytes(buf[16..BYTE_LEN].try_into()?),
+        ttl: i64::from_be_bytes(buf[16..BYTE_LEN].try_into()?),
     })
 }
 
 impl Identity {
     pub(super) fn new(uuid: Id) -> Self {
-        let expires_at = OffsetDateTime::now_utc() + Duration::days(1);
+        let ttl = OffsetDateTime::now_utc() + Duration::hours(1);
 
         Self {
             uuid,
-            expires_at: expires_at.unix_timestamp(),
+            ttl: ttl.unix_timestamp(),
         }
     }
 
@@ -40,7 +40,7 @@ impl Identity {
         let mut buf = [0u8; BYTE_LEN];
 
         buf[..16].copy_from_slice(self.uuid.as_ref());
-        buf[16..].copy_from_slice(&self.expires_at.to_be_bytes());
+        buf[16..].copy_from_slice(&self.ttl.to_be_bytes());
 
         URL_SAFE_NO_PAD.encode(buf)
     }
@@ -50,7 +50,13 @@ impl Identity {
     }
 
     pub fn is_expired(&self) -> bool {
-        OffsetDateTime::now_utc().unix_timestamp() > self.expires_at
+        OffsetDateTime::now_utc().unix_timestamp() > self.ttl
+    }
+}
+
+impl From<Identity> for Id {
+    fn from(identity: Identity) -> Self {
+        identity.uuid
     }
 }
 

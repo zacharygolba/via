@@ -1,7 +1,7 @@
 use diesel::dsl::{self, Filter, Values};
 use diesel::query_builder::{self, DeleteStatement, IntoUpdateTarget};
 
-use super::Id;
+use crate::util::Id;
 
 pub type Insert<T, New> = Values<query_builder::IncompleteInsertStatement<T>, New>;
 pub type Update<'a, T, Pk, Changes> = dsl::Update<Filter<T, ById<'a, Pk>>, Changes>;

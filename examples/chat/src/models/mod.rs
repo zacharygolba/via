@@ -4,6 +4,7 @@ pub mod subscription;
 pub mod thread;
 pub mod user;
 
+use bb8::PooledConnection;
 pub use message::Message;
 pub use thread::Thread;
 pub use user::User;
@@ -12,3 +13,4 @@ use diesel_async::AsyncPgConnection;
 use diesel_async::pooled_connection::AsyncDieselConnectionManager;
 
 pub type ConnectionManager = AsyncDieselConnectionManager<AsyncPgConnection>;
+pub type Connection<'a> = PooledConnection<'a, ConnectionManager>;

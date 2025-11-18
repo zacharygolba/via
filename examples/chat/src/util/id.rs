@@ -11,17 +11,7 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 #[derive(
-    AsExpression,
-    Clone,
-    Copy,
-    Debug,
-    Deserialize,
-    Eq,
-    FromSqlRow,
-    Hash,
-    PartialEq,
-    PartialOrd,
-    Serialize,
+    AsExpression, Clone, Debug, Deserialize, Eq, FromSqlRow, Hash, PartialEq, PartialOrd, Serialize,
 )]
 #[diesel(sql_type = sql_types::Uuid)]
 pub struct Id(Uuid);

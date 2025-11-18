@@ -10,12 +10,11 @@ use diesel::prelude::*;
 use via::{Payload, Response};
 
 use self::authorization::{Ability, Subscriber};
-use self::messages::REACTIONS_PER_MESSAGE;
 use crate::models::message::{self, Message, MessageWithAuthor};
-use crate::models::reaction::{Reaction, ReactionPreview};
+use crate::models::reaction::Reaction;
 use crate::models::subscription::*;
 use crate::models::thread::{Thread, ThreadWithJoins};
-use crate::models::user::{User, UserPreview};
+use crate::models::user::UserPreview;
 use crate::util::DebugQueryDsl;
 use crate::util::paginate::PER_PAGE;
 use crate::{Next, Request};
@@ -23,13 +22,11 @@ use crate::{Next, Request};
 const MAX_FACE_STACK_SIZE: i64 = 10;
 
 pub async fn show(request: Request, _: Next) -> via::Result {
-    use crate::schema::reactions;
-
     // Clone the thread that we eagerly loaded during authorization.
     let thread = request.subscription()?.thread().clone();
 
     // Acquire a database connection.
-    let mut connection = request.state().pool().get_owned().await?;
+    let mut connection = request.state().pool().get().await?;
 
     // Load the enough user subscriptions to make a face stack.
     let users = Subscription::users()
@@ -50,14 +47,10 @@ pub async fn show(request: Request, _: Next) -> via::Result {
         .await?;
 
     // Load the reactions for each message in the first page.
-    let reactions = Reaction::belonging_to(&messages)
-        .inner_join(User::table())
-        .select(ReactionPreview::as_select())
-        .distinct_on(reactions::emoji)
-        .order((reactions::emoji, reactions::id))
-        .limit(REACTIONS_PER_MESSAGE)
-        .debug_load(&mut connection)
-        .await?;
+    let reactions = {
+        let ids = messages.iter().map(Identifiable::id).collect();
+        Reaction::to_messages(&mut connection, ids).await?
+    };
 
     let joins = ThreadWithJoins {
         users,
@@ -74,7 +67,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result {
-    let id = request.can(AuthClaims::MODERATE)?;
+    let id = request.can(AuthClaims::MODERATE).cloned()?;
 
     // Deserialize the request body into a thread change set.
     let (body, state) = request.into_future();
@@ -93,7 +86,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     let id = request.can(AuthClaims::MODERATE)?;
 
     // Acquire a database connection and delete the thread.
-    Thread::delete(&id)
+    Thread::delete(id)
         .debug_execute(&mut request.state().pool().get().await?)
         .await?;
 

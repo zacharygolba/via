@@ -80,13 +80,13 @@ impl ResponseBuilder {
     }
 
     #[inline]
-    pub fn json<T>(self, body: T) -> Result<Response, Error>
+    pub fn json<T>(self, body: &T) -> Result<Response, Error>
     where
         T: Serialize,
     {
         #[derive(Serialize)]
-        struct Tagged<D> {
-            data: D,
+        struct Tagged<'a, D> {
+            data: &'a D,
         }
 
         Json(Tagged { data: body }).finalize(self)

@@ -26,14 +26,14 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
-    let user_id = *request.user()?;
+    let user_id = request.user().cloned()?;
 
     // Deserialize the request body into thread params.
     let (body, state) = request.into_future();
     let new_thread = body.await?.json()?;
 
     let thread = {
-        let mut connection = state.pool().get_owned().await?;
+        let mut connection = state.pool().get().await?;
         let future = connection.transaction(|trx| {
             Box::pin(async move {
                 // Insert the thread into the threads table.
@@ -46,7 +46,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
                 let association = Subscription::create(NewSubscription {
                     user_id,
                     claims: AuthClaims::all(),
-                    thread_id: Some(*thread.id()),
+                    thread_id: Some(thread.id().clone()),
                 });
 
                 // Associate the current user to the thread as an admin.
