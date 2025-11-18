@@ -15,10 +15,10 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     let page = request.envelope().query::<Page>()?;
 
     // Load the reactions for the message with id = :message-id.
-    let reactions = Reaction::includes()
-        .select(ReactionIncludes::as_select())
+    let reactions = Reaction::with_user()
+        .select(ReactionWithUser::as_select())
         .filter(by_message(&message_id))
-        .order(Reaction::created_at_desc())
+        .order(by_recent())
         .paginate(page)
         .debug_load(&mut request.state().pool().get().await?)
         .await?;
@@ -39,7 +39,8 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     new_reaction.user_id = Some(user_id.clone());
 
     // Acquire a database connection and create the reaction.
-    let reaction = Reaction::create(new_reaction)
+    let reaction = diesel::insert_into(reactions::table)
+        .values(new_reaction)
         .returning(Reaction::as_returning())
         .debug_result(&mut state.pool().get().await?)
         .await?;
@@ -57,8 +58,8 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let id = request.envelope().param("reaction-id").parse()?;
 
     // Acquire a database connection and find the reaction by id.
-    let reaction = Reaction::includes()
-        .select(ReactionIncludes::as_select())
+    let reaction = Reaction::with_user()
+        .select(ReactionWithUser::as_select())
         .filter(by_id(&id))
         .debug_first(&mut request.state().pool().get().await?)
         .await?;
@@ -72,12 +73,13 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 
     // Deserialize a reaction changeset from the request body.
     let (body, state) = request.into_future();
-    let changes = body.await?.json()?;
+    let changes = body.await?.json::<ChangeSet>()?;
 
     // Acquire a database connection and update the reaction.
-    let Some(reaction) = Reaction::update(&id, changes)
-        // The reaction is owned by the current user.
-        .filter(by_user(&user_id))
+    let Some(reaction) = diesel::update(reactions::table)
+        // The reaction belongs to the current user.
+        .filter(by_id(&id).and(by_user(&user_id)))
+        .set(changes)
         .returning(Reaction::as_returning())
         .debug_result(&mut state.pool().get().await?)
         .await
@@ -94,9 +96,9 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     let id = request.envelope().param("reaction-id").parse()?;
 
     // Acquire a database connection and delete the reaction.
-    let 1.. = Reaction::delete(&id)
-        // The reaction is owned by the current user.
-        .filter(by_user(&user_id))
+    let 1.. = diesel::delete(reactions::table)
+        // The reaction belongs to the current user.
+        .filter(by_id(&id).and(by_user(&user_id)))
         .debug_execute(&mut request.state().pool().get().await?)
         .await?
     else {

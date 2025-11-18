@@ -1,23 +1,23 @@
+pub use crate::schema::subscriptions;
+
 use bitflags::bitflags;
 use chrono::{DateTime, Utc};
 use diesel::AsExpression;
 use diesel::deserialize::{self, FromSql, FromSqlRow};
-use diesel::dsl::{Desc, InnerJoin};
+use diesel::dsl::InnerJoin;
 use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
 use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_types::Integer;
 use serde::{Deserialize, Serialize};
 
-use super::{Thread, User};
-use crate::models::user::UserPreview;
-use crate::schema::{subscriptions, threads, users};
+use crate::models::thread::{Thread, threads};
+use crate::models::user::{User, UserPreview, users};
 use crate::util::{Id, sql};
 
 type Pk = subscriptions::id;
 type Table = subscriptions::table;
 
-type CreatedAtDesc = (Desc<subscriptions::created_at>, Desc<Pk>);
 type CanParticipate = has_flags<subscriptions::claims, i32>;
 
 bitflags! {
@@ -93,24 +93,16 @@ pub struct UserSubscription {
     pub user: UserPreview,
 }
 
-pub fn by_id(id: &Id) -> sql::ById<'_, Pk> {
-    subscriptions::id.eq(id)
-}
+sorts!(subscriptions);
 
-pub fn by_thread(id: &Id) -> sql::ById<'_, subscriptions::thread_id> {
-    subscriptions::thread_id.eq(id)
-}
-
-pub fn by_user(id: &Id) -> sql::ById<'_, subscriptions::user_id> {
-    subscriptions::user_id.eq(id)
+filters! {
+    by_id(id == &Id) on subscriptions,
+    by_user(user_id == &Id) on subscriptions,
+    by_thread(thread_id == &Id) on subscriptions,
 }
 
 pub fn claims_can_participate() -> CanParticipate {
     has_flags(subscriptions::claims, AuthClaims::participate().bits())
-}
-
-pub fn created_at_desc() -> CreatedAtDesc {
-    (subscriptions::created_at.desc(), subscriptions::id.desc())
 }
 
 impl AuthClaims {
@@ -133,27 +125,27 @@ impl ToSql<Integer, Pg> for AuthClaims {
 
 impl Subscription {
     pub fn create(values: NewSubscription) -> sql::Insert<Table, NewSubscription> {
-        diesel::insert_into(Self::table()).values(values)
+        diesel::insert_into(Self::query()).values(values)
     }
 
     pub fn update(id: &Id, changes: ChangeSet) -> sql::Update<'_, Table, Pk, ChangeSet> {
-        diesel::update(Self::table()).filter(by_id(id)).set(changes)
+        diesel::update(Self::query()).filter(by_id(id)).set(changes)
     }
 
     pub fn delete(id: &Id) -> sql::Delete<'_, Table, Pk> {
-        diesel::delete(Self::table()).filter(by_id(id))
+        diesel::delete(Self::query()).filter(by_id(id))
     }
 
-    pub fn table() -> Table {
+    pub fn query() -> Table {
         subscriptions::table
     }
 
     pub fn threads() -> InnerJoin<Table, threads::table> {
-        Self::table().inner_join(Thread::table())
+        Self::query().inner_join(threads::table)
     }
 
     pub fn users() -> InnerJoin<Table, users::table> {
-        Self::table().inner_join(User::table())
+        Self::query().inner_join(User::table())
     }
 }
 

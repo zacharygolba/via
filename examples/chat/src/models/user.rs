@@ -1,9 +1,10 @@
+pub use crate::schema::users;
+
 use chrono::{DateTime, Utc};
 use diesel::dsl::{self, Desc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::schema::users;
 use crate::util::{Id, sql};
 
 type Pk = users::id;
