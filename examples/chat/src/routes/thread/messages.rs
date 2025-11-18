@@ -7,7 +7,7 @@ use crate::models::message::*;
 use crate::models::reaction::Reaction;
 use crate::models::subscription::AuthClaims;
 use crate::util::error::forbidden;
-use crate::util::{DebugQueryDsl, Keyset, Paginate, Session};
+use crate::util::{DebugQueryDsl, Keyset, Session};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
@@ -15,14 +15,13 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     let thread_id = request.can(AuthClaims::participate())?;
     let keyset = request.envelope().query::<Keyset>()?;
 
-    // Acquire a database connection.
     let mut connection = request.state().pool().get().await?;
 
-    let messages = Message::includes()
+    let messages = Message::with_author()
         .select(MessageWithAuthor::as_select())
-        .filter(by_thread(thread_id))
-        .order(Message::created_at_desc())
-        .paginate(keyset.after(Message::as_keyset()))
+        .filter(by_thread(thread_id).and(keyset.after(by_recent::columns)))
+        .order(by_recent())
+        .limit(keyset.limit)
         .debug_load(&mut connection)
         .await?;
 
@@ -31,14 +30,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
         Reaction::to_messages(&mut connection, ids).await?
     };
 
-    let messages_with_author_and_reactions: Vec<_> = reactions
-        .grouped_by(&messages)
-        .into_iter()
-        .zip(messages)
-        .map(|(reactions, message)| message.joins(reactions))
-        .collect();
-
-    Response::build().json(&messages_with_author_and_reactions)
+    Response::build().json(&group_by_message(messages, reactions))
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
@@ -52,7 +44,8 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     new_message.thread_id = Some(thread_id.clone());
 
     // Acquire a database connection and create the message.
-    let message = Message::create(new_message)
+    let message = diesel::insert_into(messages::table)
+        .values(new_message)
         .returning(Message::as_returning())
         .debug_result(&mut state.pool().get().await?)
         .await?;
@@ -71,13 +64,16 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let mut connection = request.state().pool().get().await?;
 
     // Acquire a database connection and execute the query.
-    let message = Message::includes()
+    let message = Message::with_author()
         .select(MessageWithAuthor::as_select())
         .filter(by_id(&id))
         .debug_first(&mut connection)
         .await?;
 
-    let reactions = Reaction::to_messages(&mut connection, vec![message.id()]).await?;
+    let reactions = {
+        let ids = vec![&id];
+        Reaction::to_messages(&mut connection, ids).await?
+    };
 
     Response::build().json(&message.joins(reactions))
 }
@@ -88,11 +84,12 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 
     // Deserialize the request body into message params.
     let (body, state) = request.into_future();
-    let changes = body.await?.json()?;
+    let changes = body.await?.json::<ChangeSet>()?;
 
     // Acquire a database connection and execute the update.
-    let Some(message) = Message::update(&id, changes)
-        .filter(by_author(&user_id))
+    let Some(message) = diesel::update(messages::table)
+        .filter(by_id(&id).and(by_author(&user_id)))
+        .set(changes)
         .returning(Message::as_returning())
         .debug_result(&mut state.pool().get().await?)
         .await
@@ -113,8 +110,8 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     if let Err(user_id) = request.subscription()?.can(AuthClaims::MODERATE) {
         // The user that made the request is not a moderator.
         // 403 unless they are the author of the message.
-        if let ..1 = Message::delete(&id)
-            .filter(by_author(&user_id))
+        if let ..1 = diesel::delete(messages::table)
+            .filter(by_id(&id).and(by_author(&user_id)))
             .debug_execute(&mut connection)
             .await?
         {
@@ -122,8 +119,10 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
         }
     } else {
         // The user that made the request is a moderator.
-        // Delete by id.
-        Message::delete(&id).debug_execute(&mut connection).await?;
+        diesel::delete(messages::table)
+            .filter(by_id(&id))
+            .debug_execute(&mut connection)
+            .await?;
     }
 
     Response::build().status(204).finish()

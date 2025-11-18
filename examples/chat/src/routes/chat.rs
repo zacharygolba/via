@@ -4,7 +4,7 @@ use via::request::Payload;
 use via::ws::{self, Channel, Message, Request, Retry};
 
 use crate::chat::{Chat, Event, EventContext};
-use crate::models::message::NewMessage;
+use crate::models::message::{NewMessage, messages};
 use crate::models::subscription::{AuthClaims, Subscription, by_user};
 use crate::schema::subscriptions;
 use crate::util::{DebugQueryDsl, Id, Session};
@@ -25,7 +25,7 @@ pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
     // The current users thread subscription claims keyed by thread id.
     let subscriptions: HashMap<Id, AuthClaims> = {
         let acquire = request.state().pool().get().await;
-        let result = Subscription::table()
+        let result = Subscription::query()
             .select((subscriptions::thread_id, subscriptions::claims))
             .filter(by_user(&user_id))
             .debug_load::<(Id, AuthClaims)>(&mut acquire.or_break()?)
@@ -92,7 +92,8 @@ pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
 
             // Acquire a database connection and create the message.
             let acquire = request.state().pool().get().await;
-            let create = Message::create(new_message)
+            let create = diesel::insert_into(messages::table)
+                .values(new_message)
                 .returning(Message::as_returning())
                 .debug_result(&mut acquire.or_continue()?)
                 .await;

@@ -1,6 +1,7 @@
+pub use crate::schema::messages;
+
 use chrono::{DateTime, Utc};
 use diesel::associations::HasTable;
-use diesel::dsl::Desc;
 use diesel::helper_types::InnerJoin;
 use diesel::pg::Pg;
 use diesel::prelude::*;
@@ -8,14 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{Thread, User};
 use crate::models::reaction::ReactionPreview;
-use crate::models::user::UserPreview;
-use crate::schema::{messages, users};
-use crate::util::{Id, sql};
-
-type Pk = messages::id;
-type Table = messages::table;
-
-type CreatedAtDesc = (Desc<messages::created_at>, Desc<Pk>);
+use crate::models::user::{UserPreview, users};
+use crate::util::Id;
 
 #[derive(Associations, Identifiable, Queryable, Selectable, Serialize)]
 #[diesel(belongs_to(Thread))]
@@ -32,22 +27,23 @@ pub struct Message {
     author_id: Id,
 
     #[serde(skip)]
-    pub thread_id: Id,
+    thread_id: Id,
 }
 
 #[derive(AsChangeset, Deserialize)]
 #[diesel(table_name = messages)]
 pub struct ChangeSet {
-    pub body: String,
+    body: String,
 }
 
 #[derive(Deserialize, Insertable)]
 #[diesel(table_name = messages)]
 #[serde(rename_all = "camelCase")]
 pub struct NewMessage {
-    pub body: String,
     pub author_id: Option<Id>,
     pub thread_id: Option<Id>,
+
+    body: String,
 }
 
 #[derive(Queryable, Selectable, Serialize)]
@@ -56,7 +52,7 @@ pub struct NewMessage {
 pub struct MessageWithAuthor {
     #[diesel(embed)]
     #[serde(flatten)]
-    pub message: Message,
+    message: Message,
 
     #[diesel(embed)]
     author: UserPreview,
@@ -65,50 +61,37 @@ pub struct MessageWithAuthor {
 #[derive(Serialize)]
 pub struct MessageWithJoins {
     #[serde(flatten)]
-    pub message: Message,
-    pub author: UserPreview,
-    pub reactions: Vec<ReactionPreview>,
+    message: Message,
+    author: UserPreview,
+    reactions: Vec<ReactionPreview>,
 }
 
-pub fn by_id(id: &Id) -> sql::ById<'_, Pk> {
-    messages::id.eq(id)
+sorts!(messages);
+
+filters! {
+    by_id(id == &Id) on messages,
+    by_author(author_id == &Id) on messages,
+    by_thread(thread_id == &Id) on messages,
 }
 
-pub fn by_author(id: &Id) -> sql::ById<'_, messages::author_id> {
-    messages::author_id.eq(id)
-}
+pub fn group_by_message(
+    messages: Vec<MessageWithAuthor>,
+    reactions: Vec<ReactionPreview>,
+) -> Vec<MessageWithJoins> {
+    let iter = reactions.grouped_by(&messages).into_iter();
 
-pub fn by_thread(id: &Id) -> sql::ById<'_, messages::thread_id> {
-    messages::thread_id.eq(id)
+    iter.zip(messages)
+        .map(|(reactions, message)| message.joins(reactions))
+        .collect()
 }
 
 impl Message {
-    pub fn as_keyset() -> (messages::created_at, Pk) {
-        (messages::created_at, messages::id)
-    }
-
-    pub fn created_at_desc() -> CreatedAtDesc {
-        (messages::created_at.desc(), messages::id.desc())
-    }
-
-    pub fn create(values: NewMessage) -> sql::Insert<Table, NewMessage> {
-        diesel::insert_into(Self::table()).values(values)
-    }
-
-    pub fn update(id: &Id, changes: ChangeSet) -> sql::Update<'_, Table, Pk, ChangeSet> {
-        diesel::update(Self::table()).filter(by_id(id)).set(changes)
-    }
-
-    pub fn delete(id: &Id) -> sql::Delete<'_, Table, Pk> {
-        diesel::delete(Self::table()).filter(by_id(id))
-    }
-
-    pub fn table() -> Table {
+    pub fn query() -> messages::table {
         messages::table
     }
 
-    pub fn includes() -> InnerJoin<Table, users::table> {
-        Self::table().inner_join(User::table())
+    pub fn with_author() -> InnerJoin<messages::table, users::table> {
+        Self::query().inner_join(users::table)
     }
 }
 

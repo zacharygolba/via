@@ -1,7 +1,7 @@
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
 use diesel::Expression;
-use diesel::dsl::{Filter, Limit, Offset};
-use diesel::query_dsl::methods::{FilterDsl, LimitDsl, OffsetDsl};
+use diesel::dsl::Offset;
+use diesel::query_dsl::methods::{LimitDsl, OffsetDsl};
 use diesel::sql_types::{Timestamptz, Uuid};
 use via::request::QueryParams;
 use via::{Error, raise};
@@ -17,7 +17,7 @@ const MAX_PER_PAGE: i64 = 50;
 
 pub const PER_PAGE: i64 = 25;
 
-type BeforeExpr<Lhs0, Lhs1> = before_keyset<Lhs0, Lhs1, NaiveDateTime, Id>;
+type KeysetExpr<Lhs0, Lhs1> = before_keyset<Lhs0, Lhs1, DateTime<Utc>, Id>;
 
 pub trait Paginate<Arg> {
     type Output;
@@ -25,15 +25,9 @@ pub trait Paginate<Arg> {
 }
 
 #[derive(Debug)]
-pub struct KeysetExpr<CreatedAt, Pk> {
-    lhs: (CreatedAt, Pk),
-    rhs: Keyset,
-}
-
-#[derive(Debug)]
 pub struct Keyset {
     pub limit: i64,
-    pub value: (NaiveDateTime, Id),
+    pub value: (DateTime<Utc>, Id),
 }
 
 #[derive(Debug)]
@@ -57,31 +51,22 @@ fn limit_from_query(query: &QueryParams) -> Result<i64, Error> {
     Ok(limit)
 }
 
-impl<CreatedAt, Pk, T> Paginate<KeysetExpr<CreatedAt, Pk>> for T
-where
-    T: LimitDsl,
-    Pk: Expression<SqlType = Uuid>,
-    CreatedAt: Expression<SqlType = Timestamptz>,
-    <T as LimitDsl>::Output: FilterDsl<BeforeExpr<CreatedAt, Pk>>,
-{
-    type Output = Filter<Limit<T>, BeforeExpr<CreatedAt, Pk>>;
-
-    fn paginate(self, page: KeysetExpr<CreatedAt, Pk>) -> Self::Output {
-        let KeysetExpr { lhs, .. } = page;
-        let Keyset { limit, value: rhs } = page.rhs;
-
-        self.limit(limit)
-            .filter(before_keyset(lhs.0, lhs.1, rhs.0, rhs.1))
-    }
-}
-
 impl Keyset {
-    pub fn after<CreatedAt, Pk>(self, lhs: (CreatedAt, Pk)) -> KeysetExpr<CreatedAt, Pk> {
+    pub fn after<CreatedAt, Pk>(&self, lhs: (CreatedAt, Pk)) -> KeysetExpr<CreatedAt, Pk>
+    where
+        Pk: Expression<SqlType = Uuid>,
+        CreatedAt: Expression<SqlType = Timestamptz>,
+    {
         self.before(lhs)
     }
 
-    pub fn before<CreatedAt, Pk>(self, lhs: (CreatedAt, Pk)) -> KeysetExpr<CreatedAt, Pk> {
-        KeysetExpr { lhs, rhs: self }
+    pub fn before<CreatedAt, Pk>(&self, lhs: (CreatedAt, Pk)) -> KeysetExpr<CreatedAt, Pk>
+    where
+        Pk: Expression<SqlType = Uuid>,
+        CreatedAt: Expression<SqlType = Timestamptz>,
+    {
+        let (created_at, ref pk) = self.value;
+        before_keyset(lhs.0, lhs.1, created_at, pk.clone())
     }
 }
 

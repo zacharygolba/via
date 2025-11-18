@@ -3,8 +3,8 @@ use diesel::result::Error as DieselError;
 use diesel_async::AsyncConnection;
 use via::{Payload, Response};
 
-use crate::models::subscription::*;
-use crate::models::thread::Thread;
+use crate::models::subscription::{self, AuthClaims, NewSubscription, Subscription, subscriptions};
+use crate::models::thread::{NewThread, Thread, threads};
 use crate::util::paginate::{Page, Paginate};
 use crate::util::{DebugQueryDsl, Session};
 use crate::{Next, Request};
@@ -16,8 +16,8 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     // Acquire a database connection and execute the query.
     let threads = Subscription::threads()
         .select(Thread::as_select())
-        .filter(by_user(request.user()?))
-        .order(created_at_desc())
+        .filter(subscription::by_user(request.user()?))
+        .order(subscription::by_recent())
         .paginate(page)
         .debug_load(&mut request.state().pool().get().await?)
         .await?;
@@ -30,27 +30,28 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
     // Deserialize the request body into thread params.
     let (body, state) = request.into_future();
-    let new_thread = body.await?.json()?;
+    let new_thread = body.await?.json::<NewThread>()?;
 
     let thread = {
         let mut connection = state.pool().get().await?;
         let future = connection.transaction(|trx| {
             Box::pin(async move {
                 // Insert the thread into the threads table.
-                let thread = Thread::create(new_thread)
+                let thread = diesel::insert_into(threads::table)
+                    .values(new_thread)
                     .returning(Thread::as_returning())
                     .debug_result(trx)
                     .await?;
 
-                // The owner of the thread has all auth claims.
-                let association = Subscription::create(NewSubscription {
-                    user_id,
-                    claims: AuthClaims::all(),
-                    thread_id: Some(thread.id().clone()),
-                });
-
                 // Associate the current user to the thread as an admin.
-                association.debug_execute(trx).await?;
+                diesel::insert_into(subscriptions::table)
+                    .values(NewSubscription {
+                        user_id,
+                        claims: AuthClaims::all(),
+                        thread_id: Some(thread.id().clone()),
+                    })
+                    .debug_execute(trx)
+                    .await?;
 
                 Ok::<_, DieselError>(thread)
             })

@@ -10,10 +10,10 @@ use diesel::prelude::*;
 use via::{Payload, Response};
 
 use self::authorization::{Ability, Subscriber};
-use crate::models::message::{self, Message, MessageWithAuthor};
+use crate::models::message::{self, Message, MessageWithAuthor, group_by_message};
 use crate::models::reaction::Reaction;
-use crate::models::subscription::*;
-use crate::models::thread::{Thread, ThreadWithJoins};
+use crate::models::subscription::{self, AuthClaims, Subscription};
+use crate::models::thread::*;
 use crate::models::user::UserPreview;
 use crate::util::DebugQueryDsl;
 use crate::util::paginate::PER_PAGE;
@@ -31,17 +31,17 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     // Load the enough user subscriptions to make a face stack.
     let users = Subscription::users()
         .select(UserPreview::as_select())
-        .filter(by_thread(thread.id()))
-        .order(created_at_desc())
+        .filter(subscription::by_thread(thread.id()))
+        .order(subscription::by_recent())
         .limit(MAX_FACE_STACK_SIZE)
         .debug_load(&mut connection)
         .await?;
 
     // Load the first page of recent messages in the thread.
-    let messages = Message::includes()
+    let messages = Message::with_author()
         .select(MessageWithAuthor::as_select())
         .filter(message::by_thread(thread.id()))
-        .order(Message::created_at_desc())
+        .order(message::by_recent())
         .limit(PER_PAGE)
         .debug_load(&mut connection)
         .await?;
@@ -52,18 +52,9 @@ pub async fn show(request: Request, _: Next) -> via::Result {
         Reaction::to_messages(&mut connection, ids).await?
     };
 
-    let joins = ThreadWithJoins {
-        users,
-        thread,
-        messages: reactions
-            .grouped_by(&messages)
-            .into_iter()
-            .zip(messages)
-            .map(|(reactions, message)| message.joins(reactions))
-            .collect(),
-    };
+    let thread = thread.joins(users, group_by_message(messages, reactions));
 
-    Response::build().json(&joins)
+    Response::build().json(&thread)
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result {
@@ -71,10 +62,12 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 
     // Deserialize the request body into a thread change set.
     let (body, state) = request.into_future();
-    let changes = body.await?.json()?;
+    let changes = body.await?.json::<ChangeSet>()?;
 
     // Acquire a database connection and update the thread.
-    let thread = Thread::update(&id, changes)
+    let thread = diesel::update(threads::table)
+        .filter(by_id(&id))
+        .set(changes)
         .returning(Thread::as_returning())
         .debug_result(&mut state.pool().get().await?)
         .await?;
@@ -86,7 +79,8 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     let id = request.can(AuthClaims::MODERATE)?;
 
     // Acquire a database connection and delete the thread.
-    Thread::delete(id)
+    diesel::delete(threads::table)
+        .filter(by_id(id))
         .debug_execute(&mut request.state().pool().get().await?)
         .await?;
 
