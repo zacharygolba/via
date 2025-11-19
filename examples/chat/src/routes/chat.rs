@@ -48,7 +48,7 @@ pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
                             && let Some(claims) = subscriptions.get(id)
                             && claims.contains(AuthClaims::WRITE)
                         {
-                            new_message.author_id = Some(user_id.clone());
+                            new_message.author_id = Some(user_id);
                             break 'send new_message;
                         }
                     }
@@ -82,7 +82,7 @@ pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
         // Build the event context from the request and params. We use this to
         // determine if a message is for the current user in the second arm of
         // the select expression above.
-        let context = EventContext::new(new_message.thread_id.clone(), user_id.clone());
+        let context = EventContext::new(new_message.thread_id, user_id);
 
         // Insert the message into the database and return a message event.
         let event = {

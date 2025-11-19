@@ -59,7 +59,7 @@ impl Ability for ThreadSubscription {
         if self.claims().contains(claims) {
             Ok(self.thread().id())
         } else {
-            Err(self.user_id().clone())
+            Err(*self.user_id())
         }
     }
 }

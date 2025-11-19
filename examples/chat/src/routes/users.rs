@@ -11,7 +11,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     let page = request.envelope().query::<Page>()?;
 
     // Acquire a database connection and execute the query.
-    let users = User::table()
+    let users = User::query()
         .select(User::as_select())
         .order(recent())
         .paginate(page)
@@ -24,17 +24,18 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 pub async fn create(request: Request, _: Next) -> via::Result {
     // Deserialize a new user from the request body.
     let (body, state) = request.into_future();
-    let new_user = body.await?.json()?;
+    let new_user = body.await?.json::<NewUser>()?;
 
     // Acquire a database connection and execute the insert.
-    let user = User::create(new_user)
+    let user = diesel::insert_into(users::table)
+        .values(new_user)
         .returning(User::as_returning())
         .debug_result(&mut state.pool().get().await?)
         .await?;
 
     // Build the response and update the session cookie.
     let mut response = Response::build().status(201).json(&user)?;
-    response.set_user(state.secret(), Some(user.id))?;
+    response.set_user(state.secret(), Some(*user.id()))?;
 
     Ok(response)
 }
@@ -43,7 +44,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let id = request.envelope().param("user-id").parse()?;
 
     // Acquire a database connection and find the user.
-    let user = User::table()
+    let user = User::query()
         .select(User::as_select())
         .filter(by_id(&id))
         .debug_first(&mut request.state().pool().get().await?)
@@ -55,16 +56,18 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 pub async fn update(request: Request, _: Next) -> via::Result {
     let id = request.envelope().param("user-id").parse()?;
 
-    if &id != request.user()? {
+    if id != *request.user()? {
         return forbidden();
     }
 
     // Deserialize a reaction changeset from the request body.
     let (body, state) = request.into_future();
-    let changes = body.await?.json()?;
+    let changes = body.await?.json::<ChangeSet>()?;
 
     // Acquire a database connection and update the user.
-    let user = User::update(&id, changes)
+    let user = diesel::update(users::table)
+        .filter(by_id(&id))
+        .set(changes)
         .returning(User::as_returning())
         .debug_result(&mut state.pool().get().await?)
         .await?;
@@ -75,12 +78,13 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 pub async fn destroy(request: Request, _: Next) -> via::Result {
     let id = request.envelope().param("user-id").parse()?;
 
-    if &id != request.user()? {
+    if id != *request.user()? {
         return forbidden();
     }
 
     // Acquire a database connection and delete the user.
-    User::delete(&id)
+    diesel::delete(users::table)
+        .filter(by_id(&id))
         .debug_execute(&mut request.state().pool().get().await?)
         .await?;
 

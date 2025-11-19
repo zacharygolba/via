@@ -91,18 +91,18 @@ impl Reaction {
     }
 
     pub fn with_user() -> InnerJoin<reactions::table, users::table> {
-        Self::query().inner_join(User::table())
+        Self::query().inner_join(User::query())
     }
 
-    pub fn to_messages(
+    pub fn to_messages<'a>(
         connection: &mut Connection<'_>,
-        ids: Vec<&Id>,
+        ids: impl IntoIterator<Item = &'a Id>,
     ) -> impl Future<Output = QueryResult<Vec<ReactionPreview>>> {
         const UNIQUE_REACTIONS_PER_MESSAGE: i32 = 12;
         const USERNAMES_PER_REACTION: i32 = 6;
 
         diesel::sql_query("SELECT * FROM top_reactions_for($1, $2, $3)")
-            .bind::<Array<Uuid>, _>(ids)
+            .bind::<Array<Uuid>, Vec<_>>(ids.into_iter().collect())
             .bind::<Integer, _>(UNIQUE_REACTIONS_PER_MESSAGE)
             .bind::<Integer, _>(USERNAMES_PER_REACTION)
             .debug_load(connection)

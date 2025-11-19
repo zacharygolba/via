@@ -1,9 +1,10 @@
 use diesel::prelude::*;
 use via::{Finalize, Payload, Response};
 
-use super::authorization::Subscriber;
+use super::authorization::Ability;
 use crate::chat::{Event, EventContext};
 use crate::models::reaction::*;
+use crate::models::subscription::AuthClaims;
 use crate::util::error::forbidden;
 use crate::util::{DebugQueryDsl, Page, Paginate, Session};
 use crate::{Next, Request};
@@ -27,7 +28,8 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
-    let (user_id, thread_id) = request.subscription()?.foreign_keys();
+    let user_id = *request.user()?;
+    let thread_id = *request.can(AuthClaims::REACT)?;
     let message_id = request.envelope().param("message-id").parse()?;
 
     // Deserialize a new reaction from the request body.
@@ -36,7 +38,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
     // Source foreign keys from request metadata when possible.
     new_reaction.message_id = Some(message_id);
-    new_reaction.user_id = Some(user_id.clone());
+    new_reaction.user_id = Some(user_id);
 
     // Acquire a database connection and create the reaction.
     let reaction = diesel::insert_into(reactions::table)

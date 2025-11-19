@@ -12,7 +12,7 @@ use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the thread.
-    let thread_id = request.can(AuthClaims::participate())?;
+    let thread_id = request.can(AuthClaims::VIEW)?;
     let keyset = request.envelope().query::<Keyset>()?;
 
     let mut connection = request.state().pool().get().await?;
@@ -26,7 +26,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
         .await?;
 
     let reactions = {
-        let ids = messages.iter().map(Identifiable::id).collect();
+        let ids = messages.iter().map(Identifiable::id);
         Reaction::to_messages(&mut connection, ids).await?
     };
 
@@ -34,14 +34,15 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
-    let (user_id, thread_id) = request.subscription()?.foreign_keys();
+    let user_id = *request.user()?;
+    let thread_id = *request.can(AuthClaims::WRITE)?;
 
     // Deserialize a new message from the request body.
     let (body, state) = request.into_future();
     let mut new_message = body.await?.json::<NewMessage>()?;
 
-    new_message.author_id = Some(user_id.clone());
-    new_message.thread_id = Some(thread_id.clone());
+    new_message.author_id = Some(user_id);
+    new_message.thread_id = Some(thread_id);
 
     // Acquire a database connection and create the message.
     let message = diesel::insert_into(messages::table)
@@ -70,16 +71,13 @@ pub async fn show(request: Request, _: Next) -> via::Result {
         .debug_first(&mut connection)
         .await?;
 
-    let reactions = {
-        let ids = vec![&id];
-        Reaction::to_messages(&mut connection, ids).await?
-    };
+    let reactions = Reaction::to_messages(&mut connection, Some(&id)).await?;
 
     Response::build().json(&message.joins(reactions))
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result {
-    let user_id = request.user().cloned()?;
+    let user_id = *request.user()?;
     let id = request.envelope().param("message-id").parse()?;
 
     // Deserialize the request body into message params.

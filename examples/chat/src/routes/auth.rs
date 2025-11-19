@@ -13,7 +13,7 @@ struct LoginParams {
 }
 
 pub async fn me(request: Request, _: Next) -> via::Result {
-    let Some(user) = User::table()
+    let Some(user) = User::query()
         .select(User::as_select())
         .filter(by_id(request.user()?))
         .debug_first(&mut request.state().pool().get().await?)
@@ -24,7 +24,7 @@ pub async fn me(request: Request, _: Next) -> via::Result {
     };
 
     let mut response = Response::build().json(&user)?;
-    response.set_user(request.state().secret(), Some(user.id))?;
+    response.set_user(request.state().secret(), Some(*user.id()))?;
 
     Ok(response)
 }
@@ -33,7 +33,7 @@ pub async fn login(request: Request, _: Next) -> via::Result {
     let (body, state) = request.into_future();
     let params = body.await?.json::<LoginParams>()?;
 
-    let Some(user) = User::table()
+    let Some(user) = User::query()
         .select(User::as_select())
         .filter(by_username(&params.username))
         .debug_first(&mut state.pool().get().await?)
@@ -44,7 +44,7 @@ pub async fn login(request: Request, _: Next) -> via::Result {
     };
 
     let mut response = Response::build().json(&user)?;
-    response.set_user(state.secret(), Some(user.id))?;
+    response.set_user(state.secret(), Some(*user.id()))?;
 
     Ok(response)
 }

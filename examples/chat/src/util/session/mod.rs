@@ -47,7 +47,7 @@ pub async fn restore(mut request: Request, next: Next) -> via::Result {
         .map(|cookie| cookie.value().parse::<Identity>())
     {
         Some(Ok(identity)) if identity.is_expired() => {
-            if let ..1 = User::table()
+            if let ..1 = User::query()
                 .select(count(users::id))
                 .filter(by_id(identity.id()))
                 .debug_result(&mut state.pool().get().await?)
@@ -56,7 +56,7 @@ pub async fn restore(mut request: Request, next: Next) -> via::Result {
                 return unauthorized(state.secret());
             }
 
-            let session = Verify(identity.id().clone());
+            let session = Verify(*identity.id());
             request.envelope_mut().extensions_mut().insert(session);
 
             Some(identity.into())

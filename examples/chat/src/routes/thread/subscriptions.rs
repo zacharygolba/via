@@ -9,7 +9,7 @@ use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the thread.
-    let thread_id = request.can(AuthClaims::participate())?;
+    let thread_id = request.can(AuthClaims::VIEW)?;
 
     let page = request.envelope().query::<Page>()?;
 
@@ -36,7 +36,8 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     new_subscription.thread_id = Some(thread_id);
 
     // Acquire a database connection and create the subscription.
-    let subscription = Subscription::create(new_subscription)
+    let subscription = diesel::insert_into(subscriptions::table)
+        .values(new_subscription)
         .returning(Subscription::as_select())
         .debug_result(&mut state.pool().get().await?)
         .await?;
@@ -46,7 +47,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
 pub async fn show(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the thread.
-    let thread_id = request.can(AuthClaims::participate())?;
+    let thread_id = request.can(AuthClaims::VIEW)?;
 
     // The id of the subscription.
     let id = request.envelope().param("subscription-id").parse()?;
@@ -85,10 +86,12 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 
     // Deserialize a subscription change set from the body.
     let (body, state) = request.into_future();
-    let changes = body.await?.json()?;
+    let changes = body.await?.json::<ChangeSet>()?;
 
     // Acquire a database connection and update the subscription.
-    let subscription = Subscription::update(&id, changes)
+    let subscription = diesel::update(subscriptions::table)
+        .filter(by_id(&id))
+        .set(changes)
         .returning(Subscription::as_returning())
         .debug_result(&mut state.pool().get().await?)
         .await?;
@@ -101,7 +104,8 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     let id = is_owner_or_moderator(&request)?;
 
     // Acquire a database connection and delete the subscription.
-    Subscription::delete(&id)
+    diesel::delete(subscriptions::table)
+        .filter(by_id(&id))
         .debug_execute(&mut request.state().pool().get().await?)
         .await?;
 

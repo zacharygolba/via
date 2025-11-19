@@ -3,7 +3,7 @@ use diesel::result::Error as DieselError;
 use diesel_async::AsyncConnection;
 use via::{Payload, Response};
 
-use crate::models::subscription::{self, AuthClaims, NewSubscription, Subscription, subscriptions};
+use crate::models::subscription::{self, NewSubscription, Subscription};
 use crate::models::thread::{NewThread, Thread, threads};
 use crate::util::paginate::{Page, Paginate};
 use crate::util::{DebugQueryDsl, Session};
@@ -44,12 +44,8 @@ pub async fn create(request: Request, _: Next) -> via::Result {
                     .await?;
 
                 // Associate the current user to the thread as an admin.
-                diesel::insert_into(subscriptions::table)
-                    .values(NewSubscription {
-                        user_id,
-                        claims: AuthClaims::all(),
-                        thread_id: Some(thread.id().clone()),
-                    })
+                diesel::insert_into(subscription::subscriptions::table)
+                    .values(NewSubscription::admin(user_id, *thread.id()))
                     .debug_execute(trx)
                     .await?;
 
