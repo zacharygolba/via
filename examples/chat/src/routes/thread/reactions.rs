@@ -18,7 +18,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     let reactions = Reaction::with_user()
         .select(ReactionWithUser::as_select())
         .filter(by_message(&message_id))
-        .order(by_recent())
+        .order(recent())
         .paginate(page)
         .debug_load(&mut request.state().pool().get().await?)
         .await?;

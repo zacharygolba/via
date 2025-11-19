@@ -1,7 +1,6 @@
 pub use crate::schema::users;
 
 use chrono::{DateTime, Utc};
-use diesel::dsl::{self, Desc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -9,8 +8,6 @@ use crate::util::{Id, sql};
 
 type Pk = users::id;
 type Table = users::table;
-
-type CreatedAtDesc = (Desc<users::created_at>, Desc<Pk>);
 
 #[derive(Clone, Deserialize, Identifiable, Queryable, Selectable, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,16 +42,13 @@ pub struct UserPreview {
     pub username: String,
 }
 
-pub fn by_id(id: &Id) -> sql::ById<'_, Pk> {
-    users::id.eq(id)
+filters! {
+    pub fn users::by_id(id == &Id);
+    pub fn users::by_username(username == &str);
 }
 
-pub fn by_username(username: &str) -> dsl::Eq<users::username, &str> {
-    users::username.eq(username)
-}
-
-pub fn created_at_desc() -> CreatedAtDesc {
-    (users::created_at.desc(), users::id.desc())
+sorts! {
+    pub fn users::recent(#[desc] created_at, id);
 }
 
 impl User {

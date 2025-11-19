@@ -76,12 +76,14 @@ pub struct ReactionWithUser {
 }
 
 filters! {
-    by_id(id == &Id) on reactions,
-    by_user(id == &Id) on reactions,
-    by_message(id == &Id) on reactions,
+    pub fn reactions::by_id(id == &Id);
+    pub fn reactions::by_user(id == &Id);
+    pub fn reactions::by_message(id == &Id);
 }
 
-sorts!(reactions);
+sorts! {
+    pub fn reactions::recent(#[desc] created_at, id);
+}
 
 impl Reaction {
     pub fn query() -> reactions::table {

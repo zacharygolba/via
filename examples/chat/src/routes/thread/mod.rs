@@ -32,7 +32,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let users = Subscription::users()
         .select(UserPreview::as_select())
         .filter(subscription::by_thread(thread.id()))
-        .order(subscription::by_recent())
+        .order(subscription::recent())
         .limit(MAX_FACE_STACK_SIZE)
         .debug_load(&mut connection)
         .await?;
@@ -41,7 +41,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let messages = Message::with_author()
         .select(MessageWithAuthor::as_select())
         .filter(message::by_thread(thread.id()))
-        .order(message::by_recent())
+        .order(message::recent())
         .limit(PER_PAGE)
         .debug_load(&mut connection)
         .await?;
