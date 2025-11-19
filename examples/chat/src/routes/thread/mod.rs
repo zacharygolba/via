@@ -48,7 +48,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 
     // Load the reactions for each message in the first page.
     let reactions = {
-        let ids = messages.iter().map(Identifiable::id).collect();
+        let ids = messages.iter().map(Identifiable::id);
         Reaction::to_messages(&mut connection, ids).await?
     };
 

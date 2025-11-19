@@ -65,8 +65,7 @@ impl Keyset {
         Pk: Expression<SqlType = Uuid>,
         CreatedAt: Expression<SqlType = Timestamptz>,
     {
-        let (created_at, ref pk) = self.value;
-        before_keyset(lhs.0, lhs.1, created_at, pk.clone())
+        before_keyset(lhs.0, lhs.1, self.value.0, self.value.1)
     }
 }
 

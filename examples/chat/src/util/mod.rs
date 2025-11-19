@@ -2,9 +2,9 @@ pub mod emoji;
 pub mod error;
 pub mod paginate;
 pub mod session;
-pub mod sql;
 
 mod id;
+mod sql;
 
 pub use emoji::Emoji;
 pub use error::error_sanitizer;
