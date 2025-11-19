@@ -66,12 +66,14 @@ pub struct MessageWithJoins {
     reactions: Vec<ReactionPreview>,
 }
 
-sorts!(messages);
-
 filters! {
-    by_id(id == &Id) on messages,
-    by_author(author_id == &Id) on messages,
-    by_thread(thread_id == &Id) on messages,
+    pub fn messages::by_id(id == &Id);
+    pub fn messages::by_author(author_id == &Id);
+    pub fn messages::by_thread(thread_id == &Id);
+}
+
+sorts! {
+    pub fn messages::recent(#[desc] created_at, id);
 }
 
 pub fn group_by_message(

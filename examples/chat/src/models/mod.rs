@@ -1,29 +1,64 @@
-// This macro is intended to be the starting point of a declarative way of
-// specifying filter expressions that use or partially use an index on a table.
+/// Generate filters scopes from binary expressions that work with the diesel
+/// query dsl.
+///
+/// Scopes should correspond to an index in the database.
+///
 macro_rules! filters {
-    (#[expr] $by:ident($column:ident == $ty:ty) on $table:ident) => {
-        pub fn $by(value: $ty) -> diesel::dsl::Eq<$table::$column, $ty> {
-            $table::$column.eq(value)
-        }
-    };
+    (#[output] ==, $lhs:ty, $rhs:ty) => { diesel::dsl::Eq<$lhs, $rhs> };
+    (#[expr] ==, $lhs:expr, $rhs:expr) => { $lhs.eq($rhs) };
 
-    ($($by:ident($($expr:tt)+) on $table:ident),+ $(,)?) => {
-        $(filters! { #[expr] $by($($expr)+) on $table })+
+    (#[output] !=, $lhs:ty, $rhs:ty) => { diesel::dsl::Ne<$lhs, $rhs> };
+    (#[expr] !=, $lhs:expr, $rhs:expr) => { $lhs.ne($rhs) };
+
+    (#[output] >,  $lhs:ty,   $rhs:ty) => { diesel::dsl::Gt<$lhs, $rhs> };
+    (#[expr] >,   $lhs:expr, $rhs:expr) => { $lhs.gt($rhs) };
+
+    (#[output] >=, $lhs:ty,   $rhs:ty) => { diesel::dsl::GtEq<$lhs, $rhs> };
+    (#[expr] >=,  $lhs:expr, $rhs:expr) => { $lhs.ge($rhs) };
+
+    (#[output] <,  $lhs:ty,   $rhs:ty) => { diesel::dsl::Lt<$lhs, $rhs> };
+    (#[expr] <,   $lhs:expr, $rhs:expr) => { $lhs.lt($rhs) };
+
+    (#[output] <=, $lhs:ty,   $rhs:ty) => { diesel::dsl::LtEq<$lhs, $rhs> };
+    (#[expr] <=,  $lhs:expr, $rhs:expr) => { $lhs.le($rhs) };
+
+    ($($vis:vis fn $table:ident::$by:ident($column:ident $op:tt $ty:ty));+ $(;)?) => {
+        $($vis fn $by(value: $ty) -> filters!(#[output] $op, $table::$column, $ty) {
+            filters!(#[expr] $op, $table::$column, value)
+        })+
     };
 }
 
+/// Generate sort scopes from a tuple of columns that can be used to order
+/// results returned from the diesel query dsl.
+///
+/// Scopes should correspond to an index in the database.
+///
+/// For each scope defined, we generate a function that returns the tuple of
+/// sort expressions and a module with the same name as the function. The
+/// module exports a `columns` constant that can be used to reference the
+/// columns returned from the sort scope when grouping results or filtering
+/// before or after a keyset.
+///
 macro_rules! sorts {
-    ($table:ident) => {
-        pub fn by_recent() -> (diesel::dsl::Desc<$table::created_at>, $table::id) {
-            ($table::created_at.desc(), $table::id)
-        }
+    (#[output(desc)] $column:ty) => { diesel::dsl::Desc<$column> };
+    (#[expr(desc)] $column:expr) => { $column.desc() };
 
-        pub mod by_recent {
-            use super::$table::{created_at, id};
+    (#[output($(asc)?)] $column:ty) => { $column };
+    (#[expr($(asc)?)] $column:expr) => { $column };
 
-            #[allow(dead_code, non_upper_case_globals)]
-            pub const columns: (created_at, id) = (created_at, id);
-        }
+    ($($vis:vis fn $table:ident::$by:ident($($(#[$order:tt])? $column:ident),+));+ $(;)?) => {
+        $(
+            $vis fn $by() -> ($(sorts!(#[output($($order)?)] $table::$column)),+) {
+                ($(sorts!(#[expr($($order)?)] $table::$column)),+)
+            }
+
+            $vis mod $by {
+                use super::$table::{$($column),+};
+                #[allow(dead_code, non_upper_case_globals)]
+                pub const columns: ($($column),+) = ($($column),+);
+            }
+        )+
     };
 }
 
@@ -33,11 +68,11 @@ pub mod subscription;
 pub mod thread;
 pub mod user;
 
-use bb8::PooledConnection;
 pub use message::Message;
 pub use thread::Thread;
 pub use user::User;
 
+use bb8::PooledConnection;
 use diesel_async::AsyncPgConnection;
 use diesel_async::pooled_connection::AsyncDieselConnectionManager;
 

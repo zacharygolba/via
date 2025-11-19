@@ -19,8 +19,8 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 
     let messages = Message::with_author()
         .select(MessageWithAuthor::as_select())
-        .filter(by_thread(thread_id).and(keyset.after(by_recent::columns)))
-        .order(by_recent())
+        .filter(by_thread(thread_id).and(keyset.after(recent::columns)))
+        .order(recent())
         .limit(keyset.limit)
         .debug_load(&mut connection)
         .await?;

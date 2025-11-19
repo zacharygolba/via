@@ -13,7 +13,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     // Acquire a database connection and execute the query.
     let users = User::table()
         .select(User::as_select())
-        .order(created_at_desc())
+        .order(recent())
         .paginate(page)
         .debug_load(&mut request.state().pool().get().await?)
         .await?;

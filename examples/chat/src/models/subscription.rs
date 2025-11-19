@@ -93,12 +93,14 @@ pub struct UserSubscription {
     pub user: UserPreview,
 }
 
-sorts!(subscriptions);
-
 filters! {
-    by_id(id == &Id) on subscriptions,
-    by_user(user_id == &Id) on subscriptions,
-    by_thread(thread_id == &Id) on subscriptions,
+    pub fn subscriptions::by_id(id == &Id);
+    pub fn subscriptions::by_user(user_id == &Id);
+    pub fn subscriptions::by_thread(thread_id == &Id);
+}
+
+sorts! {
+    pub fn subscriptions::recent(#[desc] created_at, id);
 }
 
 pub fn claims_can_participate() -> CanParticipate {

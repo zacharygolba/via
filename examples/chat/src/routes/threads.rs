@@ -17,7 +17,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     let threads = Subscription::threads()
         .select(Thread::as_select())
         .filter(subscription::by_user(request.user()?))
-        .order(subscription::by_recent())
+        .order(subscription::recent())
         .paginate(page)
         .debug_load(&mut request.state().pool().get().await?)
         .await?;
