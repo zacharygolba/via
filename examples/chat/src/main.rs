@@ -35,34 +35,33 @@ async fn main() -> Result<ExitCode, Error> {
     api.uses(Rescue::with(util::error_sanitizer));
     api.uses(session::restore);
 
-    api.route("/auth").scope(|resource| {
+    api.route("/auth").scope(|path| {
         use routes::auth::{login, logout, me};
 
-        resource.route("/").to(via::post(login).delete(logout));
-        resource.route("/_me").to(via::get(me));
+        path.route("/").to(via::post(login).delete(logout));
+        path.route("/_me").to(via::get(me));
     });
 
-    api.route("/chat").scope(|resource| {
+    api.route("/chat").scope(|path| {
         // Any request to /api/chat requires authentication.
-        resource.uses(Guard::new(Request::authenticate));
+        path.uses(Guard::new(Request::authenticate));
 
         // Upgrade to a websocket and start chatting.
-        resource.route("/").to(ws::upgrade(chat));
+        path.route("/").to(ws::upgrade(chat));
     });
 
-    api.route("/threads").scope(|resource| {
+    api.route("/threads").scope(|path| {
         // Any request to /api/threads requires authentication.
-        resource.uses(Guard::new(Request::authenticate));
+        path.uses(Guard::new(Request::authenticate));
 
-        // Define the create and index routes for threads.
-        // These are commonly referred to as "collection" routes (`n`).
-        resource.route("/").to(rest!(threads as collection));
-
-        // Bind `resource` to /api/threads/:thread-id.
+        // Define create and index on /api/threads.
         //
-        // We prefer shadowing the variable name `resource` to encourage
-        // a linear progression of route definitons.
-        let mut resource = resource.route("/:thread-id");
+        // These are commonly referred to as "collection" routes because they
+        // operate on a collection of a resource.
+        path.route("/").to(rest!(threads as collection));
+
+        // Bind `path` to /api/threads/:thread-id.
+        let mut path = path.route("/:thread-id");
 
         // If a user tries to perform an action on a thread or one of it's
         // dependencies, they must be the owner of the resource or have
@@ -74,47 +73,49 @@ async fn main() -> Result<ExitCode, Error> {
         //
         // This is where seperation of concerns intersects with the uri path
         // and the API contract defined in `routes::thread::authorization`.
-        resource.uses(thread::authorization);
+        path.uses(thread::authorization);
 
-        // Define the show, update, and destroy routes for a thread.
-        // These are commonly referred to as "member" routes (`1`).
-        resource.route("/").to(rest!(thread as member));
+        // Define show, update, and destroy on /api/threads/:thread-id.
+        //
+        // These are commonly referred to as "member" actions because they
+        // operate on a single existing resource.
+        path.route("/").to(rest!(thread as member));
 
         // Continue defining the dependencies of a thread.
 
-        resource.route("/messages").scope(|resource| {
-            let mut resource = {
+        path.route("/messages").scope(|messages| {
+            let mut messages = {
                 let (collection, member) = rest!(thread::messages);
 
-                resource.route("/").to(collection);
-                resource.route("/:message-id").to(member)
+                messages.route("/").to(collection);
+                messages.route("/:message-id").to(member)
             };
 
-            resource.route("/reactions").scope(|resource| {
+            messages.route("/reactions").scope(|reactions| {
                 let (collection, member) = rest!(thread::reactions);
 
-                resource.route("/").to(collection);
-                resource.route("/:reaction-id").to(member);
+                reactions.route("/").to(collection);
+                reactions.route("/:reaction-id").to(member);
             });
         });
 
-        resource.route("/subscriptions").scope(|resource| {
+        path.route("/subscriptions").scope(|subscriptions| {
             let (collection, member) = rest!(thread::subscriptions);
 
-            resource.route("/").to(collection);
-            resource.route("/:subscription-id").to(member);
+            subscriptions.route("/").to(collection);
+            subscriptions.route("/:subscription-id").to(member);
         });
     });
 
-    api.route("/users").scope(|resource| {
+    api.route("/users").scope(|path| {
         // Creating an account does not require authentication.
-        resource.route("/").to(via::post(users::create));
+        path.route("/").to(via::post(users::create));
 
         // Subsequent requests to /api/users requires authentication.
-        resource.uses(Guard::new(Request::authenticate));
+        path.uses(Guard::new(Request::authenticate));
 
-        resource.route("/").to(via::get(users::index));
-        resource.route("/:user-id").to(rest!(users as member));
+        path.route("/").to(via::get(users::index));
+        path.route("/:user-id").to(rest!(users as member));
     });
 
     // Start listening at http://localhost:8080 for incoming requests.
