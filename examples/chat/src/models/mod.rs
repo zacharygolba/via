@@ -22,7 +22,7 @@ macro_rules! filters {
     (#[output] <=, $lhs:ty,   $rhs:ty) => { diesel::dsl::LtEq<$lhs, $rhs> };
     (#[expr] <=,  $lhs:expr, $rhs:expr) => { $lhs.le($rhs) };
 
-    ($($vis:vis fn $table:ident::$by:ident($column:ident $op:tt $ty:ty));+ $(;)?) => {
+    ($($vis:vis fn $by:ident($column:ident $op:tt $ty:ty) on $table:ident);+ $(;)?) => {
         $($vis fn $by(value: $ty) -> filters!(#[output] $op, $table::$column, $ty) {
             filters!(#[expr] $op, $table::$column, value)
         })+
@@ -47,10 +47,13 @@ macro_rules! sorts {
     (#[output($(asc)?)] $column:ty) => { $column };
     (#[expr($(asc)?)] $column:expr) => { $column };
 
-    ($($vis:vis fn $table:ident::$by:ident($($(#[$order:tt])? $column:ident),+));+ $(;)?) => {
+    (
+        $($vis:vis fn $by:ident($($(#[$direction:tt])? $column:ident),+) on $table:ident);+
+        $(;)?
+    ) => {
         $(
-            $vis fn $by() -> ($(sorts!(#[output($($order)?)] $table::$column)),+) {
-                ($(sorts!(#[expr($($order)?)] $table::$column)),+)
+            $vis fn $by() -> ($(sorts!(#[output($($direction)?)] $table::$column)),+) {
+                ($(sorts!(#[expr($($direction)?)] $table::$column)),+)
             }
 
             $vis mod $by {

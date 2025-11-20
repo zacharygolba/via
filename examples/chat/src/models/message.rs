@@ -67,13 +67,13 @@ pub struct MessageWithJoins {
 }
 
 filters! {
-    pub fn messages::by_id(id == &Id);
-    pub fn messages::by_author(author_id == &Id);
-    pub fn messages::by_thread(thread_id == &Id);
+    pub fn by_id(id == &Id) on messages;
+    pub fn by_author(author_id == &Id) on messages;
+    pub fn by_thread(thread_id == &Id) on messages;
 }
 
 sorts! {
-    pub fn messages::recent(#[desc] created_at, id);
+    pub fn recent(#[desc] created_at, id) on messages;
 }
 
 pub fn group_by_message(
