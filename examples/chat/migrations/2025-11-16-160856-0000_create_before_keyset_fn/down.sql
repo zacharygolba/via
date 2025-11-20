@@ -1,1 +1,1 @@
-DROP FUNCTION before_keyset;
+DROP FUNCTION after_keyset;

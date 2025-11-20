@@ -17,11 +17,12 @@ const MAX_PER_PAGE: i64 = 50;
 
 pub const PER_PAGE: i64 = 25;
 
-type KeysetExpr<Lhs0, Lhs1> = before_keyset<Lhs0, Lhs1, DateTime<Utc>, Id>;
+// type KeysetAfter<'a, A, B> = after_keyset<&'a DateTime<Utc>, &'a Id, A, B>;
+type KeysetBefore<'a, A, B> = after_keyset<A, B, &'a DateTime<Utc>, &'a Id>;
 
-pub trait Paginate<Arg> {
+pub trait Paginate<T> {
     type Output;
-    fn paginate(self, arg: Arg) -> Self::Output;
+    fn paginate(self, page: T) -> Self::Output;
 }
 
 #[derive(Debug)]
@@ -37,8 +38,8 @@ pub struct Page {
 }
 
 diesel::define_sql_function! {
-    /// SQL: (lhs0, lhs1) < (rhs0, rhs1)
-    fn before_keyset(lhs0: Timestamptz, lhs1: Uuid, rhs0: Timestamptz, rhs1: Uuid) -> Bool;
+    /// SQL: (lhs0, lhs1) > (rhs0, rhs1)
+    fn after_keyset(lhs0: Timestamptz, lhs1: Uuid, rhs0: Timestamptz, rhs1: Uuid) -> Bool;
 }
 
 fn limit_from_query(query: &QueryParams) -> Result<i64, Error> {
@@ -52,20 +53,21 @@ fn limit_from_query(query: &QueryParams) -> Result<i64, Error> {
 }
 
 impl Keyset {
-    pub fn after<CreatedAt, Pk>(&self, lhs: (CreatedAt, Pk)) -> KeysetExpr<CreatedAt, Pk>
-    where
-        Pk: Expression<SqlType = Uuid>,
-        CreatedAt: Expression<SqlType = Timestamptz>,
-    {
-        self.before(lhs)
-    }
+    // pub fn after<A, B>(&self, pivot: (A, B)) -> KeysetAfter<'_, A, B>
+    // where
+    //     A: Expression<SqlType = Timestamptz>,
+    //     B: Expression<SqlType = Uuid>,
+    // {
+    //     keyset_expr(self.value.0, self.value.1, pivot.0, pivot.1)
+    // }
 
-    pub fn before<CreatedAt, Pk>(&self, lhs: (CreatedAt, Pk)) -> KeysetExpr<CreatedAt, Pk>
+    pub fn before<A, B>(&self, pivot: (A, B)) -> KeysetBefore<'_, A, B>
     where
-        Pk: Expression<SqlType = Uuid>,
-        CreatedAt: Expression<SqlType = Timestamptz>,
+        A: Expression<SqlType = Timestamptz>,
+        B: Expression<SqlType = Uuid>,
     {
-        before_keyset(lhs.0, lhs.1, self.value.0, self.value.1)
+        let (timestamp, pk) = &self.value;
+        after_keyset(pivot.0, pivot.1, timestamp, pk)
     }
 }
 
@@ -74,7 +76,7 @@ impl TryFrom<QueryParams<'_>> for Keyset {
 
     fn try_from(query: QueryParams<'_>) -> Result<Self, Self::Error> {
         let value = query
-            .first("before")
+            .first("after")
             .decode()
             .into_result()
             .and_then(|value| {
