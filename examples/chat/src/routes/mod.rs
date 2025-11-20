@@ -12,7 +12,7 @@ use via::Response;
 
 use crate::{Next, Request};
 
-pub async fn homepage(_: Request, _: Next) -> via::Result {
+pub async fn home(_: Request, _: Next) -> via::Result {
     const CSP: &str = "default-src 'self'; connect-src 'self'";
 
     Response::build()

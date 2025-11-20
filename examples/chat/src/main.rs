@@ -9,7 +9,7 @@ use via::error::{Error, Rescue};
 use via::{App, Cookies, Guard, Server, resources, ws};
 
 use chat::Chat;
-use routes::{chat, homepage, thread, threads, users};
+use routes::{chat, home, thread, threads, users};
 use util::session::{self, Session};
 
 type Request = via::Request<Chat>;
@@ -28,7 +28,7 @@ async fn main() -> Result<ExitCode, Error> {
 
     app.uses(Cookies::new().allow(session::COOKIE));
 
-    app.route("/").to(via::get(homepage));
+    app.route("/").to(via::get(home));
 
     let mut api = app.route("/api");
 
