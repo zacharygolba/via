@@ -4,11 +4,11 @@ use via_router::{RouteMut, Router as Tree, Traverse};
 use crate::middleware::Middleware;
 
 #[macro_export]
-macro_rules! rest {
+macro_rules! resources {
     ($module:path) => {
         (
-            $crate::rest!($module as collection),
-            $crate::rest!($module as member),
+            $crate::resources!($module as collection),
+            $crate::resources!($module as member),
         )
     };
     ($module:path as collection) => {{
