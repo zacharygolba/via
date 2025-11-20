@@ -60,7 +60,7 @@ async fn main() -> Result<ExitCode, Error> {
     api.route("/posts").scope(|posts| {
         use routes::posts::authorization;
 
-        let (collection, member) = via::rest!(routes::posts);
+        let (collection, member) = via::resources!(routes::posts);
         let comments = via::get(async |_, _| todo!());
 
         posts.uses(authorization);
@@ -73,7 +73,7 @@ async fn main() -> Result<ExitCode, Error> {
 
     // Define the /api/users resource.
     api.route("/users").scope(|users| {
-        let (collection, member) = via::rest!(routes::users);
+        let (collection, member) = via::resources!(routes::users);
 
         users.route("/").to(collection);
         users.route("/:id").to(member);
