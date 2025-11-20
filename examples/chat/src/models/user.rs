@@ -38,12 +38,12 @@ pub struct UserPreview {
 }
 
 filters! {
-    pub fn users::by_id(id == &Id);
-    pub fn users::by_username(username == &str);
+    pub fn by_id(id == &Id) on users;
+    pub fn by_username(username == &str) on users;
 }
 
 sorts! {
-    pub fn users::recent(#[desc] created_at, id);
+    pub fn recent(#[desc] created_at, id) on users;
 }
 
 impl User {

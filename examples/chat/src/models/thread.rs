@@ -37,7 +37,7 @@ pub struct ThreadWithJoins {
 }
 
 filters! {
-    pub fn threads::by_id(id == &Id);
+    pub fn by_id(id == &Id) on threads;
 }
 
 impl Thread {

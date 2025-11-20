@@ -81,13 +81,13 @@ bitflags! {
 }
 
 filters! {
-    pub fn subscriptions::by_id(id == &Id);
-    pub fn subscriptions::by_user(user_id == &Id);
-    pub fn subscriptions::by_thread(thread_id == &Id);
+    pub fn by_id(id == &Id) on subscriptions;
+    pub fn by_user(user_id == &Id) on subscriptions;
+    pub fn by_thread(thread_id == &Id) on subscriptions;
 }
 
 sorts! {
-    pub fn subscriptions::recent(#[desc] created_at, id);
+    pub fn recent(#[desc] created_at, id) on subscriptions;
 }
 
 diesel::define_sql_function! {
