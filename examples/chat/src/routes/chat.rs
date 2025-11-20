@@ -1,7 +1,7 @@
 use diesel::prelude::*;
 use std::collections::HashMap;
 use via::request::Payload;
-use via::ws::{self, Channel, Message, Request, Retry};
+use via::ws::{self, Channel, Message, Request, ResultExt};
 
 use crate::chat::{Chat, Event, EventContext};
 use crate::models::message::{NewMessage, messages};

@@ -2,7 +2,7 @@ mod error;
 mod message;
 mod upgrade;
 
-pub use error::{Result, Retry};
+pub use error::{Result, ResultExt};
 pub use message::{Channel, CloseCode, Message};
 pub use upgrade::{Request, Upgrade};
 
