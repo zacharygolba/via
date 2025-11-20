@@ -7,7 +7,7 @@ use crate::error::Error;
 type ControlFlow<T> = std::ops::ControlFlow<T, T>;
 pub type Result<T = ()> = std::result::Result<T, ControlFlow<Error>>;
 
-pub trait Retry {
+pub trait ResultExt {
     type Output;
     fn or_break(self) -> Result<Self::Output>;
     fn or_continue(self) -> Result<Self::Output>;
@@ -62,7 +62,7 @@ impl From<WebSocketError> for ErrorKind {
     }
 }
 
-impl<T, E> Retry for std::result::Result<T, E>
+impl<T, E> ResultExt for std::result::Result<T, E>
 where
     Error: From<E>,
 {
