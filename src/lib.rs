@@ -40,7 +40,6 @@
 
 #![allow(clippy::module_inception)]
 
-pub mod app;
 pub mod error;
 pub mod request;
 pub mod response;
@@ -49,7 +48,7 @@ pub mod router;
 #[cfg(feature = "ws")]
 pub mod ws;
 
-mod allow;
+mod app;
 mod cookies;
 mod guard;
 mod middleware;
@@ -58,8 +57,7 @@ mod server;
 mod timeout;
 mod util;
 
-pub use allow::{Allow, connect, delete, get, head, options, patch, post, put, trace};
-pub use app::App;
+pub use app::{App, Shared};
 pub use cookies::Cookies;
 pub use error::Error;
 pub use guard::Guard;
@@ -67,5 +65,7 @@ pub use middleware::{BoxFuture, Middleware, Result};
 pub use next::Next;
 pub use request::{Payload, Request};
 pub use response::{Finalize, Response};
+#[doc(inline)]
+pub use router::method::{connect, delete, get, head, options, patch, post, put, trace};
 pub use server::Server;
 pub use timeout::Timeout;

@@ -1,15 +1,38 @@
-pub use resource::{Collection, Member};
-pub use route::Route;
-
-pub(crate) use resource::MethodNotAllowed;
-
-mod resource;
+pub mod method;
 mod route;
+
+pub(crate) use method::MethodNotAllowed;
+pub use route::Route;
 
 use std::sync::Arc;
 use via_router::{Router as Tree, Traverse};
 
 use crate::middleware::Middleware;
+
+#[macro_export]
+macro_rules! resources {
+    ($module:path) => {
+        (
+            $crate::resources!($module as collection),
+            $crate::resources!($module as member),
+        )
+    };
+    ($module:path as collection) => {{
+        use $module::{create, index};
+        $crate::post(create).get(index)
+    }};
+    ($module:path as member) => {{
+        use $module::{destroy, show, update};
+        $crate::delete(destroy).patch(update).get(show)
+    }};
+    ($module:path as $other:ident) => {{
+        compile_error!(concat!(
+            "incorrect rest! modifier \"",
+            stringify!($other),
+            "\"",
+        ));
+    }};
+}
 
 pub(crate) struct Router<T> {
     tree: Tree<Arc<dyn Middleware<T>>>,

@@ -38,7 +38,7 @@ async fn main() -> Result<ExitCode, Error> {
     api.route("/auth").scope(|path| {
         use routes::auth::{login, logout, me};
 
-        path.route("/").to(via::post(login).delete(logout));
+        path.route("/").to(via::delete(logout).post(login));
         path.route("/_me").to(via::get(me));
     });
 
