@@ -128,15 +128,22 @@ impl Error {
     /// Returns a reference to the error source.
     ///
     pub fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        if let ErrorKind::Other(source) = &self.kind {
-            Some(&**source)
-        } else {
-            None
+        match &self.kind {
+            ErrorKind::MethodNotAllowed(source) => Some(&**source),
+            ErrorKind::Other(source) => Some(&**source),
+            _ => None,
         }
     }
 
     pub fn status(&self) -> StatusCode {
         self.status
+    }
+
+    pub(crate) fn method_not_allowed(error: MethodNotAllowed) -> Self {
+        Self {
+            status: StatusCode::METHOD_NOT_ALLOWED,
+            kind: ErrorKind::MethodNotAllowed(Box::new(error)),
+        }
     }
 
     fn repr_json(&self, status_code: StatusCode) -> Errors<'_> {
@@ -165,19 +172,8 @@ impl Display for Error {
         match &self.kind {
             ErrorKind::InvalidUtf8(error) => Display::fmt(error, f),
             ErrorKind::Message(message) => Display::fmt(&**message, f),
-            ErrorKind::MethodNotAllowed(error) => {
-                write!(f, "method not allowed: \"{}\"", error.method())
-            }
+            ErrorKind::MethodNotAllowed(error) => Display::fmt(&**error, f),
             ErrorKind::Other(source) => Display::fmt(&**source, f),
-        }
-    }
-}
-
-impl From<Box<MethodNotAllowed>> for Error {
-    fn from(error: Box<MethodNotAllowed>) -> Self {
-        Self {
-            status: StatusCode::METHOD_NOT_ALLOWED,
-            kind: ErrorKind::MethodNotAllowed(error),
         }
     }
 }

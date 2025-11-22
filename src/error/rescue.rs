@@ -135,7 +135,7 @@ impl Finalize for Sanitizer<'_> {
         let mut builder = builder.status(status);
 
         if let ErrorKind::MethodNotAllowed(error) = &self.error.kind {
-            builder = builder.header(header::ALLOW, error.allow());
+            builder = builder.header(header::ALLOW, error.allows());
         }
 
         if self.json {
