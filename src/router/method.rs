@@ -8,7 +8,7 @@ use crate::{Error, Next, Request};
 ///
 pub struct Continue;
 
-pub struct And<T, U = NotAllowed> {
+pub struct And<T, U> {
     middleware: T,
     or_else: U,
     mask: Mask,
@@ -37,12 +37,12 @@ macro_rules! methods {
                 stringify!($method),
                 "` requests to the provided middleware."
             )]
-            $vis fn $name<T>(middleware: T) -> And<Method<T>> {
+            $vis fn $name<T>(middleware: T) -> And<Method<T>, Continue> {
                 let mask = Mask::$method;
 
                 And {
                     middleware: Method { middleware, mask },
-                    or_else: NotAllowed { allow: mask },
+                    or_else: Continue,
                     mask,
                 }
             }
@@ -99,10 +99,28 @@ impl<T, U> And<T, U> {
         pub fn trace(self, TRACE);
     }
 
-    /// Call the next middleware in the stack instead of returning a `405`
-    /// Method Not Allowed response if no methods match the request method.
+    /// Returns a `405 Method Not Allowed` response if the request method is
+    /// not supported.
     ///
-    pub fn or_next(self) -> And<Self, Continue> {
+    /// # Example
+    ///
+    /// ```
+    /// # use via::{App, Next, Request, Response};
+    /// #
+    /// # async fn greet(request: Request, _: Next) -> via::Result {
+    /// #   let name = request.param("name").into_result()?;
+    /// #   Response::build().text(format!("Hello, {}!", name))
+    /// # }
+    /// #
+    /// # fn main() {
+    /// # let mut app = App::new(());
+    /// app.route("/hello/:name").to(via::get(greet).or_not_allowed());
+    /// // curl -XPOST http://localhost:8080/hello/world
+    /// // => Method Not Allowed: POST
+    /// # }
+    /// ```
+    ///
+    pub fn or_not_allowed(self) -> And<Self, Continue> {
         let allow = self.mask;
 
         And {
@@ -154,13 +172,6 @@ impl MethodNotAllowed {
     }
 }
 
-impl<T> Predicate for Method<T> {
-    #[inline]
-    fn matches(&self, other: Mask) -> bool {
-        self.mask.contains(other)
-    }
-}
-
 impl<T, U> Predicate for And<T, U> {
     #[inline]
     fn matches(&self, other: Mask) -> bool {
@@ -168,18 +179,10 @@ impl<T, U> Predicate for And<T, U> {
     }
 }
 
-impl<State> Middleware<State> for Continue {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
-        next.call(request)
-    }
-}
-
-impl<State, T> Middleware<State> for Method<T>
-where
-    T: Middleware<State>,
-{
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
-        self.middleware.call(request, next)
+impl<T> Predicate for Method<T> {
+    #[inline]
+    fn matches(&self, other: Mask) -> bool {
+        self.mask.contains(other)
     }
 }
 
@@ -198,6 +201,21 @@ where
         } else {
             self.or_else.call(request, next)
         }
+    }
+}
+
+impl<State> Middleware<State> for Continue {
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
+        next.call(request)
+    }
+}
+
+impl<State, T> Middleware<State> for Method<T>
+where
+    T: Middleware<State>,
+{
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
+        self.middleware.call(request, next)
     }
 }
 
