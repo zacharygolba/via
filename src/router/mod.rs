@@ -11,21 +11,21 @@ use crate::middleware::Middleware;
 
 #[macro_export]
 macro_rules! resources {
-    ($module:path) => {
+    ($mod:path) => {
         (
-            $crate::resources!($module as collection),
-            $crate::resources!($module as member),
+            $crate::resources!($mod as collection),
+            $crate::resources!($mod as member),
         )
     };
-    ($module:path as collection) => {{
-        use $module::{create, index};
+    ($mod:path as collection) => {{
+        use $mod::{create, index};
         $crate::post(create).get(index)
     }};
-    ($module:path as member) => {{
-        use $module::{destroy, show, update};
+    ($mod:path as member) => {{
+        use $mod::{destroy, show, update};
         $crate::delete(destroy).patch(update).get(show)
     }};
-    ($module:path as $other:ident) => {{
+    ($mod:path as $other:ident) => {{
         compile_error!(concat!(
             "incorrect rest! modifier \"",
             stringify!($other),
