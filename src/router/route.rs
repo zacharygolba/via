@@ -1,36 +1,7 @@
 use std::sync::Arc;
-use via_router::{RouteMut, Router as Tree, Traverse};
+use via_router::RouteMut;
 
 use crate::middleware::Middleware;
-
-#[macro_export]
-macro_rules! resources {
-    ($module:path) => {
-        (
-            $crate::resources!($module as collection),
-            $crate::resources!($module as member),
-        )
-    };
-    ($module:path as collection) => {{
-        use $module::{create, index};
-        $crate::get(index).post(create)
-    }};
-    ($module:path as member) => {{
-        use $module::{destroy, show, update};
-        $crate::get(show).patch(update).delete(destroy)
-    }};
-    ($module:path as $other:ident) => {{
-        compile_error!(concat!(
-            "incorrect rest! modifier \"",
-            stringify!($other),
-            "\"",
-        ));
-    }};
-}
-
-pub(super) struct Router<State> {
-    tree: Tree<Arc<dyn Middleware<State>>>,
-}
 
 /// An entry in the route tree associated with a path segment pattern.
 ///
@@ -92,36 +63,11 @@ pub(super) struct Router<State> {
 ///
 /// ```
 ///
-pub struct Route<'a, State> {
-    pub(super) entry: RouteMut<'a, Arc<dyn Middleware<State>>>,
+pub struct Route<'a, App> {
+    pub(super) entry: RouteMut<'a, Arc<dyn Middleware<App>>>,
 }
 
-impl<State> Router<State> {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
-        Route {
-            entry: self.tree.route(path),
-        }
-    }
-
-    #[inline(always)]
-    pub fn traverse<'b>(&self, path: &'b str) -> Traverse<'_, 'b, Arc<dyn Middleware<State>>> {
-        self.tree.traverse(path)
-    }
-}
-
-impl<State> Default for Router<State> {
-    fn default() -> Self {
-        Self {
-            tree: Default::default(),
-        }
-    }
-}
-
-impl<'a, State> Route<'a, State> {
+impl<'a, App> Route<'a, App> {
     /// Returns a new child route by appending the provided path to the current
     /// route.
     ///
@@ -176,7 +122,7 @@ impl<'a, State> Route<'a, State> {
     /// # }
     /// ```
     ///
-    pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
+    pub fn route(&mut self, path: &'static str) -> Route<'_, App> {
         Route {
             entry: self.entry.route(path),
         }
@@ -211,7 +157,7 @@ impl<'a, State> Route<'a, State> {
     ///
     pub fn uses<T>(&mut self, middleware: T)
     where
-        T: Middleware<State> + 'static,
+        T: Middleware<App> + 'static,
     {
         self.entry.middleware(Arc::new(middleware));
     }
@@ -245,7 +191,7 @@ impl<'a, State> Route<'a, State> {
     ///
     pub fn to<T>(self, middleware: T) -> Self
     where
-        T: Middleware<State> + 'static,
+        T: Middleware<App> + 'static,
     {
         Self {
             entry: self.entry.to(Arc::new(middleware)),

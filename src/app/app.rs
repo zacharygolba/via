@@ -1,6 +1,6 @@
-use super::router::{Route, Router};
 use super::shared::Shared;
 use crate::middleware::Middleware;
+use crate::router::{Route, Router};
 
 /// Configure routes and define shared global state.
 ///
