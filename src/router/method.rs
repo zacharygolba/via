@@ -191,8 +191,9 @@ where
     #[inline(always)]
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
         let method = request.envelope().method();
+        let mask = Mask::from(method);
 
-        if self.middleware.matches(method.into()) {
+        if self.middleware.matches(mask) {
             self.middleware.call(request, next)
         } else {
             self.or_else.call(request, next)
