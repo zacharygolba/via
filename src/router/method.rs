@@ -108,7 +108,7 @@ impl<T, U> And<T, U> {
     /// # use via::{App, Next, Request, Response};
     /// #
     /// # async fn greet(request: Request, _: Next) -> via::Result {
-    /// #   let name = request.param("name").into_result()?;
+    /// #   let name = request.envelope().param("name").into_result()?;
     /// #   Response::build().text(format!("Hello, {}!", name))
     /// # }
     /// #
@@ -120,12 +120,12 @@ impl<T, U> And<T, U> {
     /// # }
     /// ```
     ///
-    pub fn or_not_allowed(self) -> And<Self, Continue> {
+    pub fn or_not_allowed(self) -> And<Self, NotAllowed> {
         let allow = self.mask;
 
         And {
             middleware: self,
-            or_else: Continue,
+            or_else: NotAllowed { allow },
             mask: allow,
         }
     }
