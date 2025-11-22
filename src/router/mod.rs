@@ -40,9 +40,7 @@ pub(crate) struct Router<T> {
 
 impl<T> Router<T> {
     pub fn new() -> Self {
-        Self {
-            tree: Default::default(),
-        }
+        Default::default()
     }
 
     pub fn route(&mut self, path: &'static str) -> Route<'_, T> {
