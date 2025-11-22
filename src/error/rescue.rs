@@ -1,9 +1,9 @@
-use http::StatusCode;
+use http::{StatusCode, header};
 use std::borrow::Cow;
 use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
 
-use crate::error::{Error, Errors};
+use super::{Error, ErrorKind, Errors};
 use crate::middleware::{BoxFuture, Middleware};
 use crate::response::{Finalize, Json, Response, ResponseBuilder};
 use crate::{Next, Request};
@@ -132,7 +132,11 @@ impl Display for Sanitizer<'_> {
 impl Finalize for Sanitizer<'_> {
     fn finalize(self, builder: ResponseBuilder) -> Result<Response, Error> {
         let status = self.status();
-        let builder = builder.status(status);
+        let mut builder = builder.status(status);
+
+        if let ErrorKind::MethodNotAllowed(error) = &self.error.kind {
+            builder = builder.header(header::ALLOW, error.allow());
+        }
 
         if self.json {
             Json(&self.repr_json(status)).finalize(builder)

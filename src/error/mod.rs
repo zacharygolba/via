@@ -20,6 +20,7 @@ pub use rescue::{Rescue, Sanitizer};
 pub(crate) use server::ServerError;
 
 use crate::response::Response;
+use crate::router::MethodNotAllowed;
 
 /// A type alias for `Box<dyn Error + Send + Sync>`.
 ///
@@ -38,6 +39,7 @@ pub struct Error {
 enum ErrorKind {
     InvalidUtf8(Utf8Error),
     Message(String),
+    MethodNotAllowed(Box<MethodNotAllowed>),
     Other(BoxError),
 }
 
@@ -163,7 +165,19 @@ impl Display for Error {
         match &self.kind {
             ErrorKind::InvalidUtf8(error) => Display::fmt(error, f),
             ErrorKind::Message(message) => Display::fmt(&**message, f),
+            ErrorKind::MethodNotAllowed(error) => {
+                write!(f, "method not allowed: \"{}\"", error.method())
+            }
             ErrorKind::Other(source) => Display::fmt(&**source, f),
+        }
+    }
+}
+
+impl From<Box<MethodNotAllowed>> for Error {
+    fn from(error: Box<MethodNotAllowed>) -> Self {
+        Self {
+            status: StatusCode::METHOD_NOT_ALLOWED,
+            kind: ErrorKind::MethodNotAllowed(error),
         }
     }
 }
