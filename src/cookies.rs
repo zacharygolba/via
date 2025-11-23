@@ -149,7 +149,7 @@ struct SetCookieError;
 /// async fn login(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
 ///     use time::Duration;
 ///
-///     let (body, state) = request.into_future();
+///     let (body, app) = request.into_future();
 ///     let params = body.await?.json::<Login>()?;
 ///
 ///     // Insert username and password verification here...

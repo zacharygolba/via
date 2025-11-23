@@ -29,9 +29,9 @@ use crate::response::Response;
 const DEFAULT_FRAME_SIZE: usize = 16 * 1024; // 16KB
 
 #[derive(Debug)]
-pub struct Request<State = ()> {
+pub struct Request<App = ()> {
     envelope: Arc<Envelope>,
-    state: Shared<State>,
+    app: Shared<App>,
 }
 
 pub struct Upgrade<F> {
@@ -55,13 +55,13 @@ fn handle_error(error: &impl std::error::Error) {
     }
 }
 
-async fn start<State, F, R>(
-    state: Shared<State>,
+async fn start<App, F, R>(
+    app: Shared<App>,
     listen: Arc<F>,
     mut envelope: Box<Envelope>,
     builder: Builder,
 ) where
-    F: Fn(Channel, Request<State>) -> R + Send + Sync + 'static,
+    F: Fn(Channel, Request<App>) -> R + Send + Sync + 'static,
     R: Future<Output = super::Result> + Send,
 {
     let stream = {
@@ -87,7 +87,7 @@ async fn start<State, F, R>(
             let channel = Channel::new(sender, receiver);
             let request = Request {
                 envelope: Arc::clone(&envelope),
-                state: state.clone(),
+                app: app.clone(),
             };
 
             Box::pin(listen(channel, request))
@@ -162,13 +162,13 @@ async fn start<State, F, R>(
 
 impl<State> Request<State> {
     #[inline]
-    pub fn envelope(&self) -> &Envelope {
-        &self.envelope
+    pub fn app(&self) -> &Shared<State> {
+        &self.app
     }
 
     #[inline]
-    pub fn state(&self) -> &Shared<State> {
-        &self.state
+    pub fn envelope(&self) -> &Envelope {
+        &self.envelope
     }
 }
 
@@ -219,13 +219,13 @@ impl<F> Upgrade<F> {
     }
 }
 
-impl<State, F, R> Middleware<State> for Upgrade<F>
+impl<App, Await, F> Middleware<App> for Upgrade<F>
 where
-    State: Send + Sync + 'static,
-    F: Fn(Channel, Request<State>) -> R + Send + Sync + 'static,
-    R: Future<Output = super::Result> + Send + 'static,
+    F: Fn(Channel, Request<App>) -> Await + Send + Sync + 'static,
+    App: Send + Sync + 'static,
+    Await: Future<Output = super::Result> + Send + 'static,
 {
-    fn call(&self, request: crate::Request<State>, next: Next<State>) -> BoxFuture {
+    fn call(&self, request: crate::Request<App>, next: Next<App>) -> BoxFuture {
         let headers = request.envelope().headers();
 
         if headers

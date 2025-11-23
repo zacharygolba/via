@@ -4,7 +4,7 @@ mod util;
 
 use std::process::ExitCode;
 use via::error::{Error, Rescue};
-use via::{App, Server, Timeout};
+use via::{Server, Timeout};
 
 use database::Pool;
 
@@ -25,7 +25,7 @@ impl BlogApi {
 async fn main() -> Result<ExitCode, Error> {
     dotenvy::dotenv()?;
 
-    let mut app = App::new(BlogApi {
+    let mut app = via::app(BlogApi {
         pool: database::pool().await?,
     });
 

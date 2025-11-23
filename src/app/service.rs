@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use crate::app::App;
+use crate::app::Via;
 use crate::middleware::BoxFuture;
 use crate::next::Next;
 use crate::request::{Envelope, Request};
@@ -18,13 +18,13 @@ use crate::response::{Response, ResponseBody};
 pub struct ServeRequest(BoxFuture);
 
 pub struct AppService<State> {
-    app: Arc<App<State>>,
+    app: Arc<Via<State>>,
     max_request_size: usize,
 }
 
 impl<State> AppService<State> {
     #[inline]
-    pub(crate) fn new(app: Arc<App<State>>, max_request_size: usize) -> Self {
+    pub(crate) fn new(app: Arc<Via<State>>, max_request_size: usize) -> Self {
         Self {
             app,
             max_request_size,

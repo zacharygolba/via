@@ -38,11 +38,11 @@ pub trait Session {
 }
 
 pub async fn restore(mut request: Request, next: Next) -> via::Result {
-    let state = request.state().clone();
+    let app = request.app().clone();
     let persist = match request
         .envelope()
         .cookies()
-        .signed(request.state().secret())
+        .signed(request.app().secret())
         .get(COOKIE)
         .map(|cookie| cookie.value().parse::<Identity>())
     {
@@ -50,10 +50,10 @@ pub async fn restore(mut request: Request, next: Next) -> via::Result {
             if let ..1 = User::query()
                 .select(count(users::id))
                 .filter(by_id(identity.id()))
-                .debug_result(&mut state.pool().get().await?)
+                .debug_result(&mut app.pool().get().await?)
                 .await?
             {
-                return unauthorized(state.secret());
+                return unauthorized(app.secret());
             }
 
             let session = Verify(*identity.id());
@@ -72,7 +72,7 @@ pub async fn restore(mut request: Request, next: Next) -> via::Result {
                 eprintln!("error: {}", error);
             }
 
-            return unauthorized(state.secret());
+            return unauthorized(app.secret());
         }
         None => None,
     };
@@ -82,7 +82,7 @@ pub async fn restore(mut request: Request, next: Next) -> via::Result {
     if let Some(id) = persist
         && response.status().is_success()
     {
-        response.set_user(state.secret(), Some(id))?;
+        response.set_user(app.secret(), Some(id))?;
     }
 
     Ok(response)

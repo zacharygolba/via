@@ -18,10 +18,10 @@ pub struct Envelope {
     pub(crate) cookies: CookieJar,
 }
 
-pub struct Request<State = ()> {
+pub struct Request<App = ()> {
     envelope: Box<Envelope>,
     body: Limited<Body>,
-    state: Shared<State>,
+    app: Shared<App>,
 }
 
 impl Envelope {
@@ -113,9 +113,9 @@ impl Debug for Envelope {
     }
 }
 
-impl<State> Request<State> {
+impl<App> Request<App> {
     #[inline]
-    pub(crate) fn new(state: Shared<State>, parts: Parts, body: Limited<Body>) -> Self {
+    pub(crate) fn new(app: Shared<App>, parts: Parts, body: Limited<Body>) -> Self {
         let envelope = Box::new(Envelope {
             parts,
             params: Vec::new(),
@@ -125,8 +125,13 @@ impl<State> Request<State> {
         Self {
             envelope,
             body,
-            state,
+            app,
         }
+    }
+
+    #[inline]
+    pub fn app(&self) -> &Shared<App> {
+        &self.app
     }
 
     #[inline]
@@ -139,26 +144,21 @@ impl<State> Request<State> {
         &mut self.envelope
     }
 
-    #[inline]
-    pub fn state(&self) -> &Shared<State> {
-        &self.state
-    }
-
     /// Consumes the request and returns a tuple containing a future that
     /// resolves with the data and trailers of the body as well as a shared
     /// copy of `State`.
     ///
     #[inline]
-    pub fn into_future(self) -> (IntoFuture, Shared<State>) {
-        let Self { body, state, .. } = self;
-        (IntoFuture::new(body), state)
+    pub fn into_future(self) -> (IntoFuture, Shared<App>) {
+        let Self { app, body, .. } = self;
+        (IntoFuture::new(body), app)
     }
 
     /// Consumes the request and returns a tuple containing it's parts.
     ///
     #[inline]
-    pub fn into_parts(self) -> (Box<Envelope>, Limited<Body>, Shared<State>) {
-        (self.envelope, self.body, self.state)
+    pub fn into_parts(self) -> (Box<Envelope>, Limited<Body>, Shared<App>) {
+        (self.envelope, self.body, self.app)
     }
 }
 
@@ -167,7 +167,7 @@ impl<State> Debug for Request<State> {
         f.debug_struct("Request")
             .field("envelope", self.envelope())
             .field("body", &self.body)
-            .field("state", self.state())
+            .field("app", self.app())
             .finish()
     }
 }

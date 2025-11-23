@@ -20,11 +20,11 @@ pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
     let user_id = request.user().cloned().or_break()?;
 
     // Subscribe to event notifications from peers.
-    let mut pubsub = request.state().subscribe();
+    let mut pubsub = request.app().subscribe();
 
     // The current users thread subscription claims keyed by thread id.
     let subscriptions: HashMap<Id, AuthClaims> = {
-        let acquire = request.state().pool().get().await;
+        let acquire = request.app().pool().get().await;
         let result = Subscription::query()
             .select((subscriptions::thread_id, subscriptions::claims))
             .filter(by_user(&user_id))
@@ -91,7 +91,7 @@ pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
             use crate::models::Message;
 
             // Acquire a database connection and create the message.
-            let acquire = request.state().pool().get().await;
+            let acquire = request.app().pool().get().await;
             let create = diesel::insert_into(messages::table)
                 .values(new_message)
                 .returning(Message::as_returning())
@@ -102,6 +102,6 @@ pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
         };
 
         // Publish the event over the broadcast channel to notify peers.
-        request.state().publish(context, event).or_continue()?;
+        request.app().publish(context, event).or_continue()?;
     }
 }

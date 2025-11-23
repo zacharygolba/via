@@ -1,7 +1,7 @@
 use native_tls::Identity;
 use std::process::ExitCode;
 use std::{env, fs};
-use via::{App, Error, Next, Request, Response, Server};
+use via::{Error, Next, Request, Response, Server};
 
 fn load_pkcs12() -> Result<Identity, Error> {
     let identity = fs::read("localhost.p12").expect("failed to load pkcs#12 file");
@@ -25,7 +25,7 @@ async fn main() -> Result<ExitCode, Error> {
     // Make sure that our TLS config is present and valid before we proceed.
     let tls_config = load_pkcs12()?;
 
-    let mut app = App::new(());
+    let mut app = via::app(());
 
     // Add our hello responder to the endpoint /hello/:name.
     app.route("/hello/:name").to(via::get(hello));

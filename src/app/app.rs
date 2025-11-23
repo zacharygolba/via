@@ -48,36 +48,34 @@ use crate::router::{Route, Router};
 /// }
 /// ```
 ///
-pub struct App<State> {
-    pub(super) state: Shared<State>,
-    pub(super) router: Router<State>,
+pub struct Via<App> {
+    pub(super) state: Shared<App>,
+    pub(super) router: Router<App>,
 }
 
-impl<State> App<State> {
-    /// Create a new app with the provided state argument.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use via::App;
-    /// #
-    /// # struct DatabasePool { url: String }
-    /// # struct Unicorn { pool: DatabasePool }
-    /// #
-    /// let mut app = App::new(Unicorn {
-    ///     pool: DatabasePool {
-    ///         url: "postgres://unicorn@localhost/unicorn".to_owned(),
-    ///     },
-    /// });
-    /// ```
-    ///
-    pub fn new(state: State) -> Self {
-        App {
-            state: Shared::new(state),
-            router: Router::new(),
-        }
+/// Create a new app with the provided state argument.
+///
+/// # Example
+///
+/// ```
+/// # struct DatabasePool { url: String }
+/// # struct Unicorn { pool: DatabasePool }
+/// #
+/// let mut app = via::app(Unicorn {
+///     pool: DatabasePool {
+///         url: "postgres://unicorn@localhost/unicorn".to_owned(),
+///     },
+/// });
+/// ```
+///
+pub fn app<App>(app: App) -> Via<App> {
+    Via {
+        state: Shared::new(app),
+        router: Router::new(),
     }
+}
 
+impl<State> Via<State> {
     /// Returns a new route as a child of the root path `/`.
     ///
     /// See also the usage example in [`Route::route`].
