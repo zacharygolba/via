@@ -3,8 +3,8 @@ mod routes;
 mod util;
 
 use std::process::ExitCode;
+use via::Server;
 use via::error::{Error, Rescue};
-use via::{Server, Timeout};
 
 use database::Pool;
 
@@ -50,11 +50,6 @@ async fn main() -> Result<ExitCode, Error> {
     // convert them into json responses. Upstream middleware remains
     // unaffected and continues execution.
     api.uses(Rescue::with(util::error_sanitizer));
-
-    // Add a timeout middleware to the /api routes. This will prevent the
-    // server from waiting indefinitely if we lose connection to the
-    // database. For this example, we're using a 10 second timeout.
-    api.uses(Timeout::from_secs(10).or_service_unavailable());
 
     // Define the /api/posts resource.
     api.route("/posts").scope(|posts| {
