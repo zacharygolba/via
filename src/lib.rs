@@ -55,7 +55,6 @@ mod middleware;
 mod next;
 mod resources;
 mod server;
-mod timeout;
 mod util;
 
 pub use app::{Shared, Via, app};
@@ -68,4 +67,3 @@ pub use request::{Payload, Request};
 pub use response::{Finalize, Response};
 pub use router::{connect, delete, get, head, options, patch, post, put, trace};
 pub use server::Server;
-pub use timeout::Timeout;
