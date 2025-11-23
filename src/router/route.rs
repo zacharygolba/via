@@ -19,11 +19,11 @@ use crate::middleware::Middleware;
 /// ```no_run
 /// use std::process::ExitCode;
 /// use via::error::{Error, Rescue};
-/// use via::{App, Next, Request, Server, Timeout};
+/// use via::{Next, Request, Server, Timeout};
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<ExitCode, Error> {
-///     let mut app = App::new(());
+///     let mut app = via::app(());
 ///     let mut api = app.route("/api");
 ///
 ///     // If an error occurs on a descendant of /api, respond with json.
@@ -77,7 +77,7 @@ impl<'a, App> Route<'a, App> {
     /// # Example
     ///
     /// ```
-    /// # let mut app = via::App::new(());
+    /// # let mut app = via::app(());
     /// // The following routes reference the router entry at /hello/:name.
     /// app.route("/hello/:name");
     /// app.route("/hello").route("/:name");
@@ -106,8 +106,7 @@ impl<'a, App> Route<'a, App> {
     /// capturing `"trending"` as `id` and invoking `articles::show`.
     ///
     /// ```
-    /// # let mut app = via::App::new(());
-    /// #
+    /// # let mut app = via::app(());
     /// let mut resource = app.route("/posts");
     ///
     /// resource.route("/").to(via::get(posts::index));
@@ -136,8 +135,8 @@ impl<'a, App> Route<'a, App> {
     /// # Example
     ///
     /// ```
-    /// # use via::{App, Next, Cookies, Request, raise};
-    /// # let mut app = App::new(());
+    /// # use via::{Next, Cookies, Request, raise};
+    /// # let mut app = via::app(());
     /// #
     /// // Provides application-wide support for request and response cookies.
     /// app.uses(Cookies::new().allow("is-admin"));
@@ -180,7 +179,7 @@ impl<'a, App> Route<'a, App> {
     /// #     pub async fn show(_: Request, _: Next) -> via::Result { todo!() }
     /// # }
     /// #
-    /// # let mut app = via::App::new(());
+    /// # let mut app = via::app(());
     /// #
     /// // Called only when the request path is /users.
     /// let mut users = app.route("/users").to(via::get(users::show));

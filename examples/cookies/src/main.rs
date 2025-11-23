@@ -21,15 +21,13 @@ struct CookiesExample {
 async fn counter(request: Request, next: Next) -> via::Result {
     use time::Duration;
 
-    // Clone the state from the request so we can access the secret key after
-    // passing ownership of the request to the next middleware.
-    //
+    // Clone `request.app()` so we can use the secret key after ownership of
+    // request is passed to the next middleware.
     let app = request.app().clone();
 
     // Get the value of the "counter" cookie from the request before passing
     // ownership of the request to the next middleware. In this example, we are
     // using the signed cookie jar to store and retrieve the "counter" cookie.
-    //
     let mut counter = request
         .envelope()
         .cookies()

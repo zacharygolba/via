@@ -43,14 +43,14 @@ macro_rules! receive_ctrl_c {
 }
 
 #[inline(never)]
-pub async fn accept<State, Io, F>(
+pub async fn accept<App, Io, F>(
     config: ServerConfig,
     listener: TcpListener,
     acceptor: Box<dyn Fn(TcpStream) -> F + Send>,
-    service: AppService<State>,
+    service: AppService<App>,
 ) -> ExitCode
 where
-    State: Send + Sync + 'static,
+    App: Send + Sync + 'static,
     Io: AsyncRead + AsyncWrite + Send + Unpin + 'static,
     F: Future<Output = Result<Io, ServerError>> + Send + 'static,
 {

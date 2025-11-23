@@ -15,13 +15,13 @@ use crate::request::Request;
 pub struct Continue;
 
 /// The next middleware in the logical call stack of a request.
-pub struct Next<State = ()> {
-    deque: VecDeque<Arc<dyn Middleware<State>>>,
+pub struct Next<App = ()> {
+    deque: VecDeque<Arc<dyn Middleware<App>>>,
 }
 
-impl<State> Next<State> {
+impl<App> Next<App> {
     #[inline]
-    pub(crate) fn new(deque: VecDeque<Arc<dyn Middleware<State>>>) -> Self {
+    pub(crate) fn new(deque: VecDeque<Arc<dyn Middleware<App>>>) -> Self {
         Self { deque }
     }
 
@@ -41,7 +41,7 @@ impl<State> Next<State> {
     ///     })
     /// }
     /// ```
-    pub fn call(mut self, request: Request<State>) -> BoxFuture {
+    pub fn call(mut self, request: Request<App>) -> BoxFuture {
         match self.deque.pop_front() {
             Some(middleware) => middleware.call(request, self),
             None => Box::pin(async { crate::raise!(404) }),
@@ -49,8 +49,8 @@ impl<State> Next<State> {
     }
 }
 
-impl<State> Middleware<State> for Continue {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
+impl<App> Middleware<App> for Continue {
+    fn call(&self, request: Request<App>, next: Next<App>) -> BoxFuture {
         next.call(request)
     }
 }

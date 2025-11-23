@@ -16,7 +16,7 @@ pub struct Branch<T, U> {
     mask: Mask,
 }
 
-/// Stop processing the request and respond with `405 Method Not Allowed`.
+/// Stop processing the request and respond with `405` Method Not Allowed.
 ///
 pub struct Deny {
     allow: Mask,
@@ -79,31 +79,6 @@ macro_rules! methods {
     };
 }
 
-#[macro_export]
-macro_rules! resources {
-    ($mod:path) => {
-        (
-            $crate::resources!($mod as collection),
-            $crate::resources!($mod as member),
-        )
-    };
-    ($mod:path as collection) => {{
-        use $mod::{create, index};
-        $crate::post(create).get(index)
-    }};
-    ($mod:path as member) => {{
-        use $mod::{destroy, show, update};
-        $crate::delete(destroy).patch(update).get(show)
-    }};
-    ($mod:path as $other:ident) => {{
-        compile_error!(concat!(
-            "incorrect rest! modifier \"",
-            stringify!($other),
-            "\"",
-        ));
-    }};
-}
-
 methods! {
     pub fn connect(CONNECT);
     pub fn delete(DELETE);
@@ -135,7 +110,7 @@ impl<T, U> Branch<T, U> {
     /// # Example
     ///
     /// ```
-    /// # use via::{App, Next, Request, Response};
+    /// # use via::{Next, Request, Response};
     /// #
     /// # async fn greet(request: Request, _: Next) -> via::Result {
     /// #   let name = request.envelope().param("name").into_result()?;
@@ -143,7 +118,7 @@ impl<T, U> Branch<T, U> {
     /// # }
     /// #
     /// # fn main() {
-    /// # let mut app = App::new(());
+    /// # let mut app = via::app(());
     /// app.route("/hello/:name").to(via::get(greet).or_deny());
     /// // curl -XPOST http://localhost:8080/hello/world
     /// // => method not allowed: "POST"
@@ -208,22 +183,22 @@ impl<T, U> Predicate for Branch<T, U> {
     }
 }
 
-impl<State, T> Middleware<State> for Allow<T>
+impl<T, App> Middleware<App> for Allow<T>
 where
-    T: Middleware<State>,
+    T: Middleware<App>,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
+    fn call(&self, request: Request<App>, next: Next<App>) -> BoxFuture {
         self.middleware.call(request, next)
     }
 }
 
-impl<State, T, U> Middleware<State> for Branch<T, U>
+impl<T, OrElse, App> Middleware<App> for Branch<T, OrElse>
 where
-    T: Middleware<State> + Predicate,
-    U: Middleware<State>,
+    T: Middleware<App> + Predicate,
+    OrElse: Middleware<App>,
 {
     #[inline(always)]
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
+    fn call(&self, request: Request<App>, next: Next<App>) -> BoxFuture {
         let mask = Mask::from(request.envelope().method());
 
         if self.middleware.matches(mask) {
@@ -234,8 +209,8 @@ where
     }
 }
 
-impl<State> Middleware<State> for Deny {
-    fn call(&self, request: Request<State>, _: Next<State>) -> BoxFuture {
+impl<App> Middleware<App> for Deny {
+    fn call(&self, request: Request<App>, _: Next<App>) -> BoxFuture {
         let error = Error::method_not_allowed(MethodNotAllowed {
             allow: self.allow,
             method: request.envelope().method().into(),

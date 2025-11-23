@@ -26,7 +26,7 @@ struct SetCookieError;
 /// ```no_run
 /// use cookie::{Cookie, SameSite};
 /// use std::process::ExitCode;
-/// use via::{App, Cookies, Error, Next, Request, Response, Server};
+/// use via::{Cookies, Error, Next, Request, Response, Server};
 ///
 /// async fn greet(request: Request, _: Next) -> via::Result {
 ///     use time::Duration;
@@ -64,7 +64,7 @@ struct SetCookieError;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<ExitCode, Error> {
-///     let mut app = App::new(());
+///     let mut app = via::app(());
 ///
 ///     // Provide cookie support for downstream middleware.
 ///     app.uses(Cookies::new().allow("name").decode());
@@ -134,7 +134,7 @@ struct SetCookieError;
 /// use http::StatusCode;
 /// use serde::Deserialize;
 /// use std::process::ExitCode;
-/// use via::{App, Cookies, Error, Next, Payload, Request, Response, Server};
+/// use via::{Cookies, Error, Next, Payload, Request, Response, Server};
 ///
 /// #[derive(Deserialize)]
 /// struct Login {
@@ -168,7 +168,7 @@ struct SetCookieError;
 ///     // Add our session cookie that contains the username of the active user
 ///     // to our private cookie jar. The value of the cookie will be signed
 ///     // and encrypted before it is included as a set-cookie header.
-///     response.cookies_mut().private_mut(&state.secret).add(
+///     response.cookies_mut().private_mut(&app.secret).add(
 ///         Cookie::build(("via-session", params.username))
 ///             .http_only(true)
 ///             .max_age(Duration::hours(1))
@@ -182,7 +182,7 @@ struct SetCookieError;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<ExitCode, Error> {
-///     let mut app = App::new(Unicorn {
+///     let mut app = via::app(Unicorn {
 ///         secret: std::env::var("VIA_SECRET_KEY")
 ///             .map(|secret| secret.as_bytes().try_into())
 ///             .expect("missing required env var: VIA_SECRET_KEY")
@@ -224,8 +224,8 @@ impl Cookies {
     /// # Example
     ///
     /// ```
-    /// # use via::{App, Cookies};
-    /// # let mut app = App::new(());
+    /// # use via::{Cookies};
+    /// # let mut app = via::app(());
     /// app.uses(Cookies::new());
     /// ```
     ///
@@ -242,8 +242,8 @@ impl Cookies {
     /// # Example
     ///
     /// ```
-    /// # use via::{App, Cookies};
-    /// # let mut app = App::new(());
+    /// # use via::{Cookies};
+    /// # let mut app = via::app(());
     /// app.uses(Cookies::new().allow("via-session"));
     /// ```
     ///
@@ -258,8 +258,8 @@ impl Cookies {
     /// # Example
     ///
     /// ```
-    /// # use via::{App, Cookies};
-    /// # let mut app = App::new(());
+    /// # use via::{Cookies};
+    /// # let mut app = via::app(());
     /// app.uses(Cookies::new().allow("via-session").decode());
     /// ```
     ///
@@ -291,8 +291,8 @@ impl Default for Cookies {
     }
 }
 
-impl<State> Middleware<State> for Cookies {
-    fn call(&self, mut request: Request<State>, next: Next<State>) -> BoxFuture {
+impl<App> Middleware<App> for Cookies {
+    fn call(&self, mut request: Request<App>, next: Next<App>) -> BoxFuture {
         let mut existing = Vec::new();
         let Envelope {
             ref mut cookies,

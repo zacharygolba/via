@@ -146,7 +146,7 @@ impl<App> Request<App> {
 
     /// Consumes the request and returns a tuple containing a future that
     /// resolves with the data and trailers of the body as well as a shared
-    /// copy of `State`.
+    /// copy of `App`.
     ///
     #[inline]
     pub fn into_future(self) -> (IntoFuture, Shared<App>) {
@@ -162,7 +162,7 @@ impl<App> Request<App> {
     }
 }
 
-impl<State> Debug for Request<State> {
+impl<App> Debug for Request<App> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Request")
             .field("envelope", self.envelope())
@@ -172,7 +172,7 @@ impl<State> Debug for Request<State> {
     }
 }
 
-impl<State> Finalize for Request<State> {
+impl<App> Finalize for Request<App> {
     fn finalize(self, response: ResponseBuilder) -> Result<Response, Error> {
         use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
         use http_body_util::combinators::BoxBody;

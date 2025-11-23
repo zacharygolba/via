@@ -12,7 +12,7 @@ pub use upgrade::{Request, Upgrade};
 ///
 /// ```
 /// use via::ws::{self, Channel, Message, Request};
-/// use via::{App, Error, Payload};
+/// use via::{Error, Payload};
 ///
 /// async fn echo(mut channel: Channel, _: Request) -> ws::Result {
 ///     loop {
@@ -34,7 +34,7 @@ pub use upgrade::{Request, Upgrade};
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Error> {
-///     let mut app = App::new(());
+///     let mut app = via::app(());
 ///
 ///     // GET /echo ~> web socket upgrade.
 ///     app.route("/echo").to(ws::upgrade(echo));
@@ -43,9 +43,9 @@ pub use upgrade::{Request, Upgrade};
 /// }
 ///```
 ///
-pub fn upgrade<State, F, R>(upgraded: F) -> Upgrade<F>
+pub fn upgrade<App, F, R>(upgraded: F) -> Upgrade<F>
 where
-    F: Fn(Channel, Request<State>) -> R + Send + Sync + 'static,
+    F: Fn(Channel, Request<App>) -> R + Send + Sync + 'static,
     R: Future<Output = Result> + Send,
 {
     Upgrade::new(upgraded)

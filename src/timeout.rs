@@ -13,9 +13,9 @@ use crate::{Error, Next, Request};
 /// ```
 /// use std::time::Duration;
 /// use tokio::time::sleep;
-/// use via::{App, Response, Timeout};
+/// use via::{Response, Timeout};
 ///
-/// let mut app = App::new(());
+/// let mut app = via::app(());
 ///
 /// app.uses(Timeout::new(Duration::from_secs(10)));
 /// app.route("/").to(via::get(async |_, _| {
@@ -50,9 +50,9 @@ impl Timeout {
     ///
     /// ```
     /// use std::time::Duration;
-    /// use via::{App, Timeout};
+    /// use via::{Timeout};
     ///
-    /// let mut app = App::new(());
+    /// let mut app = via::app(());
     /// app.uses(Timeout::new(Duration::from_secs(10)));
     /// ```
     ///
@@ -68,9 +68,9 @@ impl Timeout {
     /// # Example
     ///
     /// ```
-    /// use via::{App, Timeout};
+    /// use via::{Timeout};
     ///
-    /// let mut app = App::new(());
+    /// let mut app = via::app(());
     /// app.uses(Timeout::from_secs(10));
     /// ```
     ///
@@ -84,9 +84,9 @@ impl Timeout {
     /// # Example
     ///
     /// ```
-    /// use via::{App, Response, Timeout};
+    /// use via::{Response, Timeout};
     ///
-    /// let mut app = App::new(());
+    /// let mut app = via::app(());
     /// let mut api = app.route("/api");
     ///
     /// api.uses(Timeout::from_secs(10).or_else(|| {
@@ -114,9 +114,9 @@ impl Timeout {
     /// # Example
     ///
     /// ```
-    /// use via::{App, Timeout};
+    /// use via::{Timeout};
     ///
-    /// let mut app = App::new(());
+    /// let mut app = via::app(());
     /// let mut api = app.route("/api");
     ///
     /// api.uses(Timeout::from_secs(10).or_gateway_timeout());
@@ -135,9 +135,9 @@ impl Timeout {
     /// # Example
     ///
     /// ```
-    /// use via::{App, Timeout};
+    /// use via::{Timeout};
     ///
-    /// let mut app = App::new(());
+    /// let mut app = via::app(());
     /// let mut api = app.route("/api");
     ///
     /// api.uses(Timeout::from_secs(10).or_service_unavailable());
@@ -155,8 +155,8 @@ impl Timeout {
     }
 }
 
-impl<State> Middleware<State> for Timeout {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
+impl<App> Middleware<App> for Timeout {
+    fn call(&self, request: Request<App>, next: Next<App>) -> BoxFuture {
         let duration = self.duration;
         let or_else = self.or_else.clone();
         let future = next.call(request);
