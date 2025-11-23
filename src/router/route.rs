@@ -19,7 +19,7 @@ use crate::middleware::Middleware;
 /// ```no_run
 /// use std::process::ExitCode;
 /// use via::error::{Error, Rescue};
-/// use via::{Next, Request, Server, Timeout};
+/// use via::{Next, Request, Server};
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<ExitCode, Error> {
@@ -29,19 +29,6 @@ use crate::middleware::Middleware;
 ///     // If an error occurs on a descendant of /api, respond with json.
 ///     // Siblings of /api must define their own error handling logic.
 ///     api.uses(Rescue::with(|sanitizer| sanitizer.use_json()));
-///
-///     // If a descendant of /api takes more 10 seconds to respond, return an
-///     // error. A practical solution to the common engineering task: Don't
-///     // wait indefinitely for a database connection.
-///     //
-///     // Since we defined our timeout middleware after the rescue middleware,
-///     // timeout errors will generate the following response:
-///     //
-///     // {
-///     //   "status": 503,
-///     //   "errors": [{ "message": "Service Unavailable" }]
-///     // }
-///     api.uses(Timeout::from_secs(10).or_service_unavailable());
 ///
 ///     // Define a /users resource as a child of /api so the rescue and timeout
 ///     // middleware run before any of the middleware or responders defined in
@@ -60,9 +47,7 @@ use crate::middleware::Middleware;
 ///     // Start serving our application from http://localhost:8080/.
 ///     Server::new(app).listen(("127.0.0.1", 8080)).await
 /// }
-///
 /// ```
-///
 pub struct Route<'a, App> {
     pub(super) entry: RouteMut<'a, Arc<dyn Middleware<App>>>,
 }
