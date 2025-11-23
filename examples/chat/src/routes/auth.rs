@@ -16,7 +16,7 @@ pub async fn me(request: Request, _: Next) -> via::Result {
     let Some(user) = User::query()
         .select(User::as_select())
         .filter(by_id(request.user()?))
-        .debug_first(&mut request.state().pool().get().await?)
+        .debug_first(&mut request.app().pool().get().await?)
         .await
         .optional()?
     else {
@@ -24,19 +24,19 @@ pub async fn me(request: Request, _: Next) -> via::Result {
     };
 
     let mut response = Response::build().json(&user)?;
-    response.set_user(request.state().secret(), Some(*user.id()))?;
+    response.set_user(request.app().secret(), Some(*user.id()))?;
 
     Ok(response)
 }
 
 pub async fn login(request: Request, _: Next) -> via::Result {
-    let (body, state) = request.into_future();
+    let (body, app) = request.into_future();
     let params = body.await?.json::<LoginParams>()?;
 
     let Some(user) = User::query()
         .select(User::as_select())
         .filter(by_username(&params.username))
-        .debug_first(&mut state.pool().get().await?)
+        .debug_first(&mut app.pool().get().await?)
         .await
         .optional()?
     else {
@@ -44,7 +44,7 @@ pub async fn login(request: Request, _: Next) -> via::Result {
     };
 
     let mut response = Response::build().json(&user)?;
-    response.set_user(state.secret(), Some(*user.id()))?;
+    response.set_user(app.secret(), Some(*user.id()))?;
 
     Ok(response)
 }
@@ -53,7 +53,7 @@ pub async fn logout(request: Request, _: Next) -> via::Result {
     request.user()?;
 
     let mut response = Response::build().status(204).finish()?;
-    response.set_user(request.state().secret(), None)?;
+    response.set_user(request.app().secret(), None)?;
 
     Ok(response)
 }

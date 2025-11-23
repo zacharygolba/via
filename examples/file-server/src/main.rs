@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 use via::response::File;
-use via::{App, Error, Next, Request, Server};
+use via::{Error, Next, Request, Server};
 
 /// The maximum amount of memory that will be allocated to serve a single file.
 ///
@@ -56,7 +56,7 @@ fn resolve_path(path_param: &str) -> PathBuf {
 
 #[tokio::main]
 async fn main() -> Result<ExitCode, Error> {
-    let mut app = App::new(());
+    let mut app = via::app(());
 
     // Serve any file located in the public dir.
     app.route("/*path").to(via::get(file_server));

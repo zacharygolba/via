@@ -19,7 +19,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
         .filter(subscription::by_user(request.user()?))
         .order(subscription::recent())
         .paginate(page)
-        .debug_load(&mut request.state().pool().get().await?)
+        .debug_load(&mut request.app().pool().get().await?)
         .await?;
 
     Response::build().json(&threads)
@@ -29,11 +29,11 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let user_id = request.user().cloned()?;
 
     // Deserialize the request body into thread params.
-    let (body, state) = request.into_future();
+    let (body, app) = request.into_future();
     let new_thread = body.await?.json::<NewThread>()?;
 
     let thread = {
-        let mut connection = state.pool().get().await?;
+        let mut connection = app.pool().get().await?;
         let future = connection.transaction(|trx| {
             Box::pin(async move {
                 // Insert the thread into the threads table.

@@ -1,7 +1,7 @@
 mod tls;
 
 use std::process::ExitCode;
-use via::{App, Error, Next, Request, Response, Server};
+use via::{Error, Next, Request, Response, Server};
 
 async fn hello(request: Request, _: Next) -> via::Result {
     // Get a reference to the path parameter `name` from the request uri.
@@ -16,7 +16,7 @@ async fn main() -> Result<ExitCode, Error> {
     // Make sure that our TLS config is present and valid before we proceed.
     let tls_config = tls::server_config().expect("tls config is invalid or missing");
 
-    let mut app = App::new(());
+    let mut app = via::app(());
 
     // Add our hello responder to the endpoint /hello/:name.
     app.route("/hello/:name").to(via::get(hello));

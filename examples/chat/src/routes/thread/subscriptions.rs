@@ -19,7 +19,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
         .filter(by_thread(thread_id))
         .order(recent())
         .paginate(page)
-        .debug_load(&mut request.state().pool().get().await?)
+        .debug_load(&mut request.app().pool().get().await?)
         .await?;
 
     Response::build().json(&subscriptions)
@@ -30,7 +30,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let thread_id = request.can(AuthClaims::INVITE).cloned()?;
 
     // Deserialize the request body into a new subscription.
-    let (body, state) = request.into_future();
+    let (body, app) = request.into_future();
     let mut new_subscription = body.await?.json::<NewSubscription>()?;
 
     new_subscription.thread_id = Some(thread_id);
@@ -39,7 +39,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let subscription = diesel::insert_into(subscriptions::table)
         .values(new_subscription)
         .returning(Subscription::as_select())
-        .debug_result(&mut state.pool().get().await?)
+        .debug_result(&mut app.pool().get().await?)
         .await?;
 
     Response::build().status(201).json(&subscription)
@@ -56,7 +56,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let subscription = Subscription::users()
         .select(UserSubscription::as_select())
         .filter(by_id(&id).and(by_thread(thread_id)))
-        .debug_first(&mut request.state().pool().get().await?)
+        .debug_first(&mut request.app().pool().get().await?)
         .await?;
 
     Response::build().json(&subscription)
@@ -85,7 +85,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
     let id = is_owner_or_moderator(&request)?;
 
     // Deserialize a subscription change set from the body.
-    let (body, state) = request.into_future();
+    let (body, app) = request.into_future();
     let changes = body.await?.json::<ChangeSet>()?;
 
     // Acquire a database connection and update the subscription.
@@ -93,7 +93,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
         .filter(by_id(&id))
         .set(changes)
         .returning(Subscription::as_returning())
-        .debug_result(&mut state.pool().get().await?)
+        .debug_result(&mut app.pool().get().await?)
         .await?;
 
     Response::build().json(&subscription)
@@ -106,7 +106,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     // Acquire a database connection and delete the subscription.
     diesel::delete(subscriptions::table)
         .filter(by_id(&id))
-        .debug_execute(&mut request.state().pool().get().await?)
+        .debug_execute(&mut request.app().pool().get().await?)
         .await?;
 
     Response::build().status(204).finish()

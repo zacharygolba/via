@@ -6,7 +6,7 @@ mod util;
 
 use std::process::ExitCode;
 use via::error::{Error, Rescue};
-use via::{App, Cookies, Guard, Server, resources, ws};
+use via::{Cookies, Guard, Server, resources, ws};
 
 use chat::Chat;
 use routes::{chat, home, thread, threads, users};
@@ -19,12 +19,12 @@ type Next = via::Next<Chat>;
 async fn main() -> Result<ExitCode, Error> {
     dotenvy::dotenv()?;
 
-    let mut app = {
+    let mut app = via::app({
         let pool = chat::establish_pg_connection().await;
         let secret = chat::load_session_secret();
 
-        App::new(Chat::new(pool, secret))
-    };
+        Chat::new(pool, secret)
+    });
 
     app.uses(Cookies::new().allow(session::COOKIE));
 

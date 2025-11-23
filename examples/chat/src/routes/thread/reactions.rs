@@ -21,7 +21,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
         .filter(by_message(&message_id))
         .order(recent())
         .paginate(page)
-        .debug_load(&mut request.state().pool().get().await?)
+        .debug_load(&mut request.app().pool().get().await?)
         .await?;
 
     Response::build().json(&reactions)
@@ -33,7 +33,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let message_id = request.envelope().param("message-id").parse()?;
 
     // Deserialize a new reaction from the request body.
-    let (body, state) = request.into_future();
+    let (body, app) = request.into_future();
     let mut new_reaction = body.await?.json::<NewReaction>()?;
 
     // Source foreign keys from request metadata when possible.
@@ -44,7 +44,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let reaction = diesel::insert_into(reactions::table)
         .values(new_reaction)
         .returning(Reaction::as_returning())
-        .debug_result(&mut state.pool().get().await?)
+        .debug_result(&mut app.pool().get().await?)
         .await?;
 
     let event = Event::Reaction(reaction);
@@ -52,7 +52,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let response = Response::build().status(201);
 
     // Notify subscribers that a reaction has been created and respond.
-    state.publish(context, event)?.finalize(response)
+    app.publish(context, event)?.finalize(response)
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result {
@@ -63,7 +63,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let reaction = Reaction::with_user()
         .select(ReactionWithUser::as_select())
         .filter(by_id(&id))
-        .debug_first(&mut request.state().pool().get().await?)
+        .debug_first(&mut request.app().pool().get().await?)
         .await?;
 
     Response::build().json(&reaction)
@@ -74,7 +74,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
     let id = request.envelope().param("reaction-id").parse()?;
 
     // Deserialize a reaction changeset from the request body.
-    let (body, state) = request.into_future();
+    let (body, app) = request.into_future();
     let changes = body.await?.json::<ChangeSet>()?;
 
     // Acquire a database connection and update the reaction.
@@ -83,7 +83,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
         .filter(by_id(&id).and(by_user(&user_id)))
         .set(changes)
         .returning(Reaction::as_returning())
-        .debug_result(&mut state.pool().get().await?)
+        .debug_result(&mut app.pool().get().await?)
         .await
         .optional()?
     else {
@@ -101,7 +101,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     let 1.. = diesel::delete(reactions::table)
         // The reaction belongs to the current user.
         .filter(by_id(&id).and(by_user(&user_id)))
-        .debug_execute(&mut request.state().pool().get().await?)
+        .debug_execute(&mut request.app().pool().get().await?)
         .await?
     else {
         return forbidden();

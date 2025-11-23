@@ -57,7 +57,7 @@ mod server;
 mod timeout;
 mod util;
 
-pub use app::{App, Shared};
+pub use app::{Shared, Via, app};
 pub use cookies::Cookies;
 pub use error::Error;
 pub use guard::Guard;

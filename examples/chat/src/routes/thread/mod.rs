@@ -26,7 +26,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let thread = request.subscription()?.thread().clone();
 
     // Acquire a database connection.
-    let mut connection = request.state().pool().get().await?;
+    let mut connection = request.app().pool().get().await?;
 
     // Load the enough user subscriptions to make a face stack.
     let users = Subscription::users()
@@ -61,7 +61,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
     let id = request.can(AuthClaims::MODERATE).cloned()?;
 
     // Deserialize the request body into a thread change set.
-    let (body, state) = request.into_future();
+    let (body, app) = request.into_future();
     let changes = body.await?.json::<ChangeSet>()?;
 
     // Acquire a database connection and update the thread.
@@ -69,7 +69,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
         .filter(by_id(&id))
         .set(changes)
         .returning(Thread::as_returning())
-        .debug_result(&mut state.pool().get().await?)
+        .debug_result(&mut app.pool().get().await?)
         .await?;
 
     Response::build().json(&thread)
@@ -81,7 +81,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     // Acquire a database connection and delete the thread.
     diesel::delete(threads::table)
         .filter(by_id(id))
-        .debug_execute(&mut request.state().pool().get().await?)
+        .debug_execute(&mut request.app().pool().get().await?)
         .await?;
 
     Response::build().status(204).finish()

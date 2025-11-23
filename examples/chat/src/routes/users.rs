@@ -15,7 +15,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
         .select(User::as_select())
         .order(recent())
         .paginate(page)
-        .debug_load(&mut request.state().pool().get().await?)
+        .debug_load(&mut request.app().pool().get().await?)
         .await?;
 
     Response::build().json(&users)
@@ -23,19 +23,19 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 
 pub async fn create(request: Request, _: Next) -> via::Result {
     // Deserialize a new user from the request body.
-    let (body, state) = request.into_future();
+    let (body, app) = request.into_future();
     let new_user = body.await?.json::<NewUser>()?;
 
     // Acquire a database connection and execute the insert.
     let user = diesel::insert_into(users::table)
         .values(new_user)
         .returning(User::as_returning())
-        .debug_result(&mut state.pool().get().await?)
+        .debug_result(&mut app.pool().get().await?)
         .await?;
 
     // Build the response and update the session cookie.
     let mut response = Response::build().status(201).json(&user)?;
-    response.set_user(state.secret(), Some(*user.id()))?;
+    response.set_user(app.secret(), Some(*user.id()))?;
 
     Ok(response)
 }
@@ -47,7 +47,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let user = User::query()
         .select(User::as_select())
         .filter(by_id(&id))
-        .debug_first(&mut request.state().pool().get().await?)
+        .debug_first(&mut request.app().pool().get().await?)
         .await?;
 
     Response::build().json(&user)
@@ -61,7 +61,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
     }
 
     // Deserialize a reaction changeset from the request body.
-    let (body, state) = request.into_future();
+    let (body, app) = request.into_future();
     let changes = body.await?.json::<ChangeSet>()?;
 
     // Acquire a database connection and update the user.
@@ -69,7 +69,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
         .filter(by_id(&id))
         .set(changes)
         .returning(User::as_returning())
-        .debug_result(&mut state.pool().get().await?)
+        .debug_result(&mut app.pool().get().await?)
         .await?;
 
     Response::build().json(&user)
@@ -85,7 +85,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     // Acquire a database connection and delete the user.
     diesel::delete(users::table)
         .filter(by_id(&id))
-        .debug_execute(&mut request.state().pool().get().await?)
+        .debug_execute(&mut request.app().pool().get().await?)
         .await?;
 
     Response::build().status(204).finish()

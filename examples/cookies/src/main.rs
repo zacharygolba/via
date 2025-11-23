@@ -1,12 +1,12 @@
 use cookie::{Cookie, Key, SameSite};
 use std::env;
 use std::process::ExitCode;
-use via::{App, Cookies, Error, Response, Server};
+use via::{Cookies, Error, Response, Server};
 
 type Request = via::Request<CookiesExample>;
 type Next = via::Next<CookiesExample>;
 
-/// A struct used to store application state.
+/// A struct used to store application app.
 ///
 struct CookiesExample {
     /// The secret key used to sign, verify, and optionally encrypt cookies. The
@@ -24,7 +24,7 @@ async fn counter(request: Request, next: Next) -> via::Result {
     // Clone the state from the request so we can access the secret key after
     // passing ownership of the request to the next middleware.
     //
-    let state = request.state().clone();
+    let app = request.app().clone();
 
     // Get the value of the "counter" cookie from the request before passing
     // ownership of the request to the next middleware. In this example, we are
@@ -33,7 +33,7 @@ async fn counter(request: Request, next: Next) -> via::Result {
     let mut counter = request
         .envelope()
         .cookies()
-        .private(&state.secret)
+        .private(&app.secret)
         .get("counter")
         .map_or(Ok(0i32), |cookie| cookie.value().parse())?;
 
@@ -48,7 +48,7 @@ async fn counter(request: Request, next: Next) -> via::Result {
 
     // If the response status code is in 200..=299, update the counter cookie.
     if response.status().is_success() {
-        response.cookies_mut().private_mut(&state.secret).add(
+        response.cookies_mut().private_mut(&app.secret).add(
             Cookie::build(("counter", counter.to_string()))
                 .http_only(true)
                 .max_age(Duration::hours(1))
@@ -84,7 +84,7 @@ async fn main() -> Result<ExitCode, Error> {
     dotenvy::dotenv()?;
 
     // Create a new application.
-    let mut app = App::new(CookiesExample {
+    let mut app = via::app(CookiesExample {
         secret: env::var("VIA_SECRET_KEY")
             .map(|secret| secret.as_bytes().try_into())
             .expect("missing required env var: VIA_SECRET_KEY")
