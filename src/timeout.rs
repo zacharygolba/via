@@ -155,10 +155,7 @@ impl Timeout {
     }
 }
 
-impl<State> Middleware<State> for Timeout
-where
-    State: Send + Sync + 'static,
-{
+impl<State> Middleware<State> for Timeout {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
         let duration = self.duration;
         let or_else = self.or_else.clone();

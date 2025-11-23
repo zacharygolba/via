@@ -21,10 +21,10 @@ pub trait Middleware<State>: Send + Sync {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture;
 }
 
-impl<State, F, R> Middleware<State> for F
+impl<State, Await, F> Middleware<State> for F
 where
-    F: Fn(Request<State>, Next<State>) -> R + Send + Sync,
-    R: Future<Output = Result> + Send + 'static,
+    F: Fn(Request<State>, Next<State>) -> Await + Send + Sync,
+    Await: Future<Output = Result> + Send + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
         Box::pin(self(request, next))

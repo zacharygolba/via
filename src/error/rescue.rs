@@ -36,7 +36,6 @@ where
 
 impl<State, F> Middleware<State> for Rescue<F>
 where
-    State: Send + Sync + 'static,
     F: Fn(&mut Sanitizer) + Send + Sync + 'static,
 {
     fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
