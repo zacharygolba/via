@@ -2,24 +2,23 @@ use bitflags::bitflags;
 use std::fmt::{self, Display, Formatter};
 
 use crate::middleware::{BoxFuture, Middleware};
-use crate::{Error, Next, Request};
+use crate::next::{Continue, Next};
+use crate::{Error, Request};
 
-/// Call the next middleware in the stack.
-///
-pub struct Continue;
+pub struct Allow<T> {
+    middleware: T,
+    mask: Mask,
+}
 
-pub struct And<T, U> {
+pub struct Branch<T, U> {
     middleware: T,
     or_else: U,
     mask: Mask,
 }
 
-pub struct Method<T> {
-    middleware: T,
-    mask: Mask,
-}
-
-pub struct NotAllowed {
+/// Stop processing the request and respond with `405 Method Not Allowed`.
+///
+pub struct Deny {
     allow: Mask,
 }
 
@@ -27,32 +26,6 @@ pub struct NotAllowed {
 pub(crate) struct MethodNotAllowed {
     allow: Mask,
     method: Mask,
-}
-
-macro_rules! methods {
-    ($($vis:vis fn $name:ident($method:ident));+ $(;)?) => {
-        $(
-            #[doc = concat!(
-                "Route `",
-                stringify!($method),
-                "` requests to the provided middleware."
-            )]
-            $vis fn $name<T>(middleware: T) -> And<Method<T>, Continue> {
-                let mask = Mask::$method;
-
-                And {
-                    middleware: Method { middleware, mask },
-                    or_else: Continue,
-                    mask,
-                }
-            }
-        )+
-    };
-    ($($vis:vis fn $name:ident($self:ident, $method:ident));+ $(;)?) => {
-        $($vis fn $name<F>($self, middleware: F) -> And<Method<F>, Self> {
-            $self.and(Mask::$method, middleware)
-        })+
-    };
 }
 
 trait Predicate {
@@ -74,6 +47,63 @@ bitflags! {
     }
 }
 
+macro_rules! methods {
+    ($($vis:vis fn $name:ident($method:ident));+ $(;)?) => {
+        $(
+            #[doc = concat!(
+                "Route `",
+                stringify!($method),
+                "` requests to the provided middleware."
+            )]
+            $vis fn $name<T>(middleware: T) -> Branch<Allow<T>, Continue> {
+                let mask = Mask::$method;
+
+                Branch {
+                    middleware: Allow { middleware, mask },
+                    or_else: Continue,
+                    mask,
+                }
+            }
+        )+
+    };
+    ($($vis:vis fn $name:ident($self:ident, $method:ident));+ $(;)?) => {
+        $($vis fn $name<F>($self, middleware: F) -> Branch<Allow<F>, Self> {
+            let mask = Mask::$method;
+
+            Branch {
+                mask: $self.mask | mask,
+                or_else: $self,
+                middleware: Allow { middleware, mask },
+            }
+        })+
+    };
+}
+
+#[macro_export]
+macro_rules! resources {
+    ($mod:path) => {
+        (
+            $crate::resources!($mod as collection),
+            $crate::resources!($mod as member),
+        )
+    };
+    ($mod:path as collection) => {{
+        use $mod::{create, index};
+        $crate::post(create).get(index)
+    }};
+    ($mod:path as member) => {{
+        use $mod::{destroy, show, update};
+        $crate::delete(destroy).patch(update).get(show)
+    }};
+    ($mod:path as $other:ident) => {{
+        compile_error!(concat!(
+            "incorrect rest! modifier \"",
+            stringify!($other),
+            "\"",
+        ));
+    }};
+}
+
 methods! {
     pub fn connect(CONNECT);
     pub fn delete(DELETE);
@@ -86,7 +116,7 @@ methods! {
     pub fn trace(TRACE);
 }
 
-impl<T, U> And<T, U> {
+impl<T, U> Branch<T, U> {
     methods! {
         pub fn connect(self, CONNECT);
         pub fn delete(self, DELETE);
@@ -114,27 +144,19 @@ impl<T, U> And<T, U> {
     /// #
     /// # fn main() {
     /// # let mut app = App::new(());
-    /// app.route("/hello/:name").to(via::get(greet).or_not_allowed());
+    /// app.route("/hello/:name").to(via::get(greet).or_deny());
     /// // curl -XPOST http://localhost:8080/hello/world
-    /// // => Method Not Allowed: POST
+    /// // => method not allowed: "POST"
     /// # }
     /// ```
     ///
-    pub fn or_not_allowed(self) -> And<Self, NotAllowed> {
+    pub fn or_deny(self) -> Branch<Self, Deny> {
         let allow = self.mask;
 
-        And {
+        Branch {
             middleware: self,
-            or_else: NotAllowed { allow },
+            or_else: Deny { allow },
             mask: allow,
-        }
-    }
-
-    fn and<F>(self, mask: Mask, middleware: F) -> And<Method<F>, Self> {
-        And {
-            mask: self.mask | mask,
-            or_else: self,
-            middleware: Method { middleware, mask },
         }
     }
 }
@@ -172,21 +194,30 @@ impl MethodNotAllowed {
     }
 }
 
-impl<T, U> Predicate for And<T, U> {
+impl<T> Predicate for Allow<T> {
     #[inline]
     fn matches(&self, other: Mask) -> bool {
         self.mask.contains(other)
     }
 }
 
-impl<T> Predicate for Method<T> {
+impl<T, U> Predicate for Branch<T, U> {
     #[inline]
     fn matches(&self, other: Mask) -> bool {
         self.mask.contains(other)
     }
 }
 
-impl<State, T, U> Middleware<State> for And<T, U>
+impl<State, T> Middleware<State> for Allow<T>
+where
+    T: Middleware<State>,
+{
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
+        self.middleware.call(request, next)
+    }
+}
+
+impl<State, T, U> Middleware<State> for Branch<T, U>
 where
     T: Middleware<State> + Predicate,
     U: Middleware<State>,
@@ -203,22 +234,7 @@ where
     }
 }
 
-impl<State> Middleware<State> for Continue {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
-        next.call(request)
-    }
-}
-
-impl<State, T> Middleware<State> for Method<T>
-where
-    T: Middleware<State>,
-{
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
-        self.middleware.call(request, next)
-    }
-}
-
-impl<State> Middleware<State> for NotAllowed {
+impl<State> Middleware<State> for Deny {
     fn call(&self, request: Request<State>, _: Next<State>) -> BoxFuture {
         let error = Error::method_not_allowed(MethodNotAllowed {
             allow: self.allow,
