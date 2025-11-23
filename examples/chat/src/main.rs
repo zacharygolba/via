@@ -47,7 +47,7 @@ async fn main() -> Result<ExitCode, Error> {
         path.uses(Guard::new(Request::authenticate));
 
         // Upgrade to a websocket and start chatting.
-        path.route("/").to(ws::upgrade(chat));
+        path.route("/").to(via::get(ws::upgrade(chat)));
     });
 
     api.route("/threads").scope(|path| {

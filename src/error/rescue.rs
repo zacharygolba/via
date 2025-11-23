@@ -34,11 +34,11 @@ where
     }
 }
 
-impl<State, F> Middleware<State> for Rescue<F>
+impl<App, F> Middleware<App> for Rescue<F>
 where
     F: Fn(&mut Sanitizer) + Send + Sync + 'static,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
+    fn call(&self, request: Request<App>, next: Next<App>) -> BoxFuture {
         let recover = Arc::clone(&self.recover);
         let future = next.call(request);
 

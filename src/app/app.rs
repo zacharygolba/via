@@ -8,7 +8,7 @@ use crate::router::{Route, Router};
 ///
 /// ```no_run
 /// use std::process::ExitCode;
-/// use via::{App, Error, Next, Request, Server};
+/// use via::{Error, Next, Request, Server, Shared};
 ///
 /// /// A mock database pool.
 /// #[derive(Debug)]
@@ -25,19 +25,18 @@ use crate::router::{Route, Router};
 /// async fn main() -> Result<ExitCode, Error> {
 ///     // Pass our shared state struct containing a database pool to the App
 ///     // constructor so it can be used to serve each request.
-///     let mut app = App::new(Unicorn {
+///     let mut app = via::app(Unicorn {
 ///         pool: DatabasePool {
 ///             url: std::env::var("DATABASE_URL")?,
 ///         },
 ///     });
 ///
-///     // We can access our database in middleware with `request.state()`.
+///     // We can access our database in middleware with `request.app()`.
 ///     app.uses(async |request: Request<Unicorn>, next: Next<Unicorn>| {
-///         // Get a reference to the state argument passed to `App::new`.
-///         let state = request.state();
+///         let unicorn: &Shared<Unicorn> = request.app();
 ///
 ///         // Print the debug output of our mock database pool to stdout.
-///         println!("{:?}", &state.pool);
+///         println!("{:?}", &unicorn.pool);
 ///
 ///         // Delegate to the next middleware to get a response.
 ///         next.call(request).await
@@ -49,7 +48,7 @@ use crate::router::{Route, Router};
 /// ```
 ///
 pub struct Via<App> {
-    pub(super) state: Shared<App>,
+    pub(super) app: Shared<App>,
     pub(super) router: Router<App>,
 }
 
@@ -70,17 +69,17 @@ pub struct Via<App> {
 ///
 pub fn app<App>(app: App) -> Via<App> {
     Via {
-        state: Shared::new(app),
+        app: Shared::new(app),
         router: Router::new(),
     }
 }
 
-impl<State> Via<State> {
+impl<App> Via<App> {
     /// Returns a new route as a child of the root path `/`.
     ///
     /// See also the usage example in [`Route::route`].
     ///
-    pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
+    pub fn route(&mut self, path: &'static str) -> Route<'_, App> {
         self.router.route(path)
     }
 
@@ -92,7 +91,7 @@ impl<State> Via<State> {
     ///
     pub fn uses<T>(&mut self, middleware: T)
     where
-        T: Middleware<State> + 'static,
+        T: Middleware<App> + 'static,
     {
         self.route("/").uses(middleware);
     }

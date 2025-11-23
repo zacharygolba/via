@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::ToSocketAddrs;
 
-use crate::app::{Via, AppService};
+use crate::app::{AppService, Via};
 use crate::error::Error;
 
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
@@ -11,8 +11,8 @@ use super::tls;
 
 /// Serve an app over HTTP.
 ///
-pub struct Server<State> {
-    app: Via<State>,
+pub struct Server<App> {
+    app: Via<App>,
     config: ServerConfig,
 }
 
@@ -23,13 +23,13 @@ pub(super) struct ServerConfig {
     pub(super) shutdown_timeout: Duration,
 }
 
-impl<State> Server<State>
+impl<App> Server<App>
 where
-    State: Send + Sync + 'static,
+    App: Send + Sync + 'static,
 {
     /// Creates a new server for the provided app.
     ///
-    pub fn new(app: Via<State>) -> Self {
+    pub fn new(app: Via<App>) -> Self {
         Self {
             app,
             config: Default::default(),

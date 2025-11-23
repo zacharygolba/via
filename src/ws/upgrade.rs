@@ -160,9 +160,9 @@ async fn start<App, F, R>(
     }
 }
 
-impl<State> Request<State> {
+impl<App> Request<App> {
     #[inline]
-    pub fn app(&self) -> &Shared<State> {
+    pub fn app(&self) -> &Shared<App> {
         &self.app
     }
 
@@ -219,11 +219,11 @@ impl<F> Upgrade<F> {
     }
 }
 
-impl<App, Await, F> Middleware<App> for Upgrade<F>
+impl<T, Await, App> Middleware<App> for Upgrade<T>
 where
-    F: Fn(Channel, Request<App>) -> Await + Send + Sync + 'static,
-    App: Send + Sync + 'static,
+    T: Fn(Channel, Request<App>) -> Await + Send + Sync + 'static,
     Await: Future<Output = super::Result> + Send + 'static,
+    App: Send + Sync + 'static,
 {
     fn call(&self, request: crate::Request<App>, next: Next<App>) -> BoxFuture {
         let headers = request.envelope().headers();
@@ -254,11 +254,11 @@ where
         };
 
         tokio::spawn({
-            let (envelope, _, state) = request.into_parts();
+            let (envelope, _, app) = request.into_parts();
             let builder = Builder::new().config(self.config).limits(self.limits);
             let listen = Arc::clone(&self.listen);
 
-            start(state, listen, envelope, builder)
+            start(app, listen, envelope, builder)
         });
 
         Box::pin(async {

@@ -16,7 +16,7 @@
 //!
 //! ```no_run
 //! use std::process::ExitCode;
-//! use via::{App, Error, Next, Request, Response, Server};
+//! use via::{Error, Next, Request, Response, Server};
 //!
 //! async fn hello(request: Request, _: Next) -> via::Result {
 //!     // Get a reference to the path parameter `name` from the request uri.
@@ -28,7 +28,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<ExitCode, Error> {
-//!     let mut app = App::new(());
+//!     let mut app = via::app(());
 //!
 //!     // Define a route that listens on /hello/:name.
 //!     app.route("/hello/:name").to(via::get(hello));
@@ -53,6 +53,7 @@ mod cookies;
 mod guard;
 mod middleware;
 mod next;
+mod resources;
 mod server;
 mod timeout;
 mod util;
@@ -65,7 +66,6 @@ pub use middleware::{BoxFuture, Middleware, Result};
 pub use next::{Continue, Next};
 pub use request::{Payload, Request};
 pub use response::{Finalize, Response};
-#[doc(inline)]
 pub use router::{connect, delete, get, head, options, patch, post, put, trace};
 pub use server::Server;
 pub use timeout::Timeout;

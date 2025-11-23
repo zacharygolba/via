@@ -17,14 +17,14 @@ use crate::response::{Response, ResponseBody};
 
 pub struct ServeRequest(BoxFuture);
 
-pub struct AppService<State> {
-    app: Arc<Via<State>>,
+pub struct AppService<App> {
+    app: Arc<Via<App>>,
     max_request_size: usize,
 }
 
-impl<State> AppService<State> {
+impl<App> AppService<App> {
     #[inline]
-    pub(crate) fn new(app: Arc<Via<State>>, max_request_size: usize) -> Self {
+    pub(crate) fn new(app: Arc<Via<App>>, max_request_size: usize) -> Self {
         Self {
             app,
             max_request_size,
@@ -32,7 +32,7 @@ impl<State> AppService<State> {
     }
 }
 
-impl<State> Clone for AppService<State> {
+impl<App> Clone for AppService<App> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
@@ -42,9 +42,9 @@ impl<State> Clone for AppService<State> {
     }
 }
 
-impl<State> Service<http::Request<Incoming>> for AppService<State>
+impl<App> Service<http::Request<Incoming>> for AppService<App>
 where
-    State: Send + Sync,
+    App: Send + Sync,
 {
     type Error = Infallible;
     type Future = ServeRequest;
@@ -59,13 +59,10 @@ where
             // Split the incoming request into it's component parts.
             let (parts, body) = request.into_parts();
 
-            // The request type owns an Arc to the application state.
-            let state = self.app.state.clone();
-
             // Limit the length of the request body to max_request_size.
             let body = Limited::new(body, self.max_request_size);
 
-            Request::new(state, parts, body)
+            Request::new(self.app.app.clone(), parts, body)
         };
 
         // Borrow the request params mutably and borrow the uri.
