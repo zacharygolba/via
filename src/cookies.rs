@@ -291,10 +291,7 @@ impl Default for Cookies {
     }
 }
 
-impl<State> Middleware<State> for Cookies
-where
-    State: Send + Sync + 'static,
-{
+impl<State> Middleware<State> for Cookies {
     fn call(&self, mut request: Request<State>, next: Next<State>) -> BoxFuture {
         let mut existing = Vec::new();
         let Envelope {
