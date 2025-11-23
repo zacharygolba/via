@@ -62,10 +62,10 @@ pub use cookies::Cookies;
 pub use error::Error;
 pub use guard::Guard;
 pub use middleware::{BoxFuture, Middleware, Result};
-pub use next::Next;
+pub use next::{Continue, Next};
 pub use request::{Payload, Request};
 pub use response::{Finalize, Response};
 #[doc(inline)]
-pub use router::method::{connect, delete, get, head, options, patch, post, put, trace};
+pub use router::{connect, delete, get, head, options, patch, post, put, trace};
 pub use server::Server;
 pub use timeout::Timeout;
