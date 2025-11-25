@@ -34,7 +34,7 @@ pub async fn authorization(mut request: Request, next: Next) -> via::Result {
         .select(ThreadSubscription::as_select())
         .filter(by_user(user_id).and(by_thread(&thread_id)))
         .filter(claims_can_participate())
-        .debug_first(&mut request.app().pool().get().await?)
+        .debug_first(&mut request.app().database().await?)
         .await
         .optional()?
     else {

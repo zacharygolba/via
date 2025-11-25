@@ -21,7 +21,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
         .filter(by_message(&message_id))
         .order(recent())
         .paginate(page)
-        .debug_load(&mut request.app().pool().get().await?)
+        .debug_load(&mut request.app().database().await?)
         .await?;
 
     Response::build().json(&reactions)
@@ -44,7 +44,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let reaction = diesel::insert_into(reactions::table)
         .values(new_reaction)
         .returning(Reaction::as_returning())
-        .debug_result(&mut app.pool().get().await?)
+        .debug_result(&mut app.database().await?)
         .await?;
 
     let event = Event::Reaction(reaction);
@@ -63,7 +63,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let reaction = Reaction::with_user()
         .select(ReactionWithUser::as_select())
         .filter(by_id(&id))
-        .debug_first(&mut request.app().pool().get().await?)
+        .debug_first(&mut request.app().database().await?)
         .await?;
 
     Response::build().json(&reaction)
@@ -83,7 +83,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
         .filter(by_id(&id).and(by_user(&user_id)))
         .set(changes)
         .returning(Reaction::as_returning())
-        .debug_result(&mut app.pool().get().await?)
+        .debug_result(&mut app.database().await?)
         .await
         .optional()?
     else {
@@ -101,7 +101,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     let 1.. = diesel::delete(reactions::table)
         // The reaction belongs to the current user.
         .filter(by_id(&id).and(by_user(&user_id)))
-        .debug_execute(&mut request.app().pool().get().await?)
+        .debug_execute(&mut request.app().database().await?)
         .await?
     else {
         return forbidden();

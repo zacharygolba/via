@@ -8,7 +8,7 @@ use diesel::sql_types::{Array, BigInt, Integer, Text, Uuid};
 use serde::{Deserialize, Serialize};
 
 use super::message::{Message, MessageWithAuthor};
-use crate::models::Connection;
+use crate::chat::Connection;
 use crate::models::user::{User, UserPreview, users};
 use crate::util::{DebugQueryDsl, Emoji, Id};
 

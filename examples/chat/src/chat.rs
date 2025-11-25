@@ -1,18 +1,25 @@
 use bb8::Pool;
+use bb8::{ManageConnection, PooledConnection, RunError};
 use bytes::Bytes;
 use bytestring::ByteString;
 use cookie::Key;
+use diesel_async::AsyncPgConnection;
+use diesel_async::pooled_connection::AsyncDieselConnectionManager;
 use http::header;
 use serde::Serialize;
 use std::env::{self, VarError};
 use tokio::sync::broadcast;
+use tokio::task::coop::unconstrained;
 use via::response::{Finalize, ResponseBuilder};
 use via::{raise, ws};
 
-use crate::models::ConnectionManager;
 use crate::models::message::Message;
 use crate::models::reaction::Reaction;
 use crate::util::Id;
+
+pub type Connection<'a> = PooledConnection<'a, ConnectionManager>;
+pub type ConnectionError = RunError<<ConnectionManager as ManageConnection>::Error>;
+pub type ConnectionManager = AsyncDieselConnectionManager<AsyncPgConnection>;
 
 type Sender = broadcast::Sender<(EventContext, EventPayload)>;
 type Receiver = broadcast::Receiver<(EventContext, EventPayload)>;
@@ -77,8 +84,15 @@ impl Chat {
         }
     }
 
-    pub fn pool(&self) -> &Pool<ConnectionManager> {
-        &self.database
+    pub fn database(&self) -> impl Future<Output = Result<Connection<'_>, ConnectionError>> {
+        // Acquire a database connection without consuming Tokio’s cooperative
+        // scheduling budget.
+        //
+        // We know that immediately after the future returned from this fn is
+        // ready, we will have to wait on network I/O from the database. The
+        // I/O performed over the connection will naturally yield back to the
+        // scheduler, giving other async tasks an opportunity to run.
+        unconstrained(self.database.get())
     }
 
     pub fn publish(&self, context: EventContext, event: Event) -> via::Result<EventPayload> {
