@@ -19,7 +19,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
         .filter(subscription::by_user(request.user()?))
         .order(subscription::recent())
         .paginate(page)
-        .debug_load(&mut request.app().pool().get().await?)
+        .debug_load(&mut request.app().database().await?)
         .await?;
 
     Response::build().json(&threads)
@@ -33,7 +33,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let new_thread = body.await?.json::<NewThread>()?;
 
     let thread = {
-        let mut connection = app.pool().get().await?;
+        let mut connection = app.database().await?;
         let future = connection.transaction(|trx| {
             Box::pin(async move {
                 // Insert the thread into the threads table.

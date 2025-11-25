@@ -15,7 +15,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
         .select(User::as_select())
         .order(recent())
         .paginate(page)
-        .debug_load(&mut request.app().pool().get().await?)
+        .debug_load(&mut request.app().database().await?)
         .await?;
 
     Response::build().json(&users)
@@ -30,7 +30,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let user = diesel::insert_into(users::table)
         .values(new_user)
         .returning(User::as_returning())
-        .debug_result(&mut app.pool().get().await?)
+        .debug_result(&mut app.database().await?)
         .await?;
 
     // Build the response and update the session cookie.
@@ -47,7 +47,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let user = User::query()
         .select(User::as_select())
         .filter(by_id(&id))
-        .debug_first(&mut request.app().pool().get().await?)
+        .debug_first(&mut request.app().database().await?)
         .await?;
 
     Response::build().json(&user)
@@ -69,7 +69,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
         .filter(by_id(&id))
         .set(changes)
         .returning(User::as_returning())
-        .debug_result(&mut app.pool().get().await?)
+        .debug_result(&mut app.database().await?)
         .await?;
 
     Response::build().json(&user)
@@ -85,7 +85,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     // Acquire a database connection and delete the user.
     diesel::delete(users::table)
         .filter(by_id(&id))
-        .debug_execute(&mut request.app().pool().get().await?)
+        .debug_execute(&mut request.app().database().await?)
         .await?;
 
     Response::build().status(204).finish()

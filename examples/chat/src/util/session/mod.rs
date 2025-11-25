@@ -50,7 +50,7 @@ pub async fn restore(mut request: Request, next: Next) -> via::Result {
             if let ..1 = User::query()
                 .select(count(users::id))
                 .filter(by_id(identity.id()))
-                .debug_result(&mut app.pool().get().await?)
+                .debug_result(&mut app.database().await?)
                 .await?
             {
                 return unauthorized(app.secret());

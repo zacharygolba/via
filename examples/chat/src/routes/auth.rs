@@ -16,7 +16,7 @@ pub async fn me(request: Request, _: Next) -> via::Result {
     let Some(user) = User::query()
         .select(User::as_select())
         .filter(by_id(request.user()?))
-        .debug_first(&mut request.app().pool().get().await?)
+        .debug_first(&mut request.app().database().await?)
         .await
         .optional()?
     else {
@@ -36,7 +36,7 @@ pub async fn login(request: Request, _: Next) -> via::Result {
     let Some(user) = User::query()
         .select(User::as_select())
         .filter(by_username(&params.username))
-        .debug_first(&mut app.pool().get().await?)
+        .debug_first(&mut app.database().await?)
         .await
         .optional()?
     else {

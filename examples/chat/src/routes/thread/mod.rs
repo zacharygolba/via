@@ -26,7 +26,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let thread = request.subscription()?.thread().clone();
 
     // Acquire a database connection.
-    let mut connection = request.app().pool().get().await?;
+    let mut connection = request.app().database().await?;
 
     // Load the enough user subscriptions to make a face stack.
     let users = Subscription::users()
@@ -69,7 +69,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
         .filter(by_id(&id))
         .set(changes)
         .returning(Thread::as_returning())
-        .debug_result(&mut app.pool().get().await?)
+        .debug_result(&mut app.database().await?)
         .await?;
 
     Response::build().json(&thread)
@@ -81,7 +81,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     // Acquire a database connection and delete the thread.
     diesel::delete(threads::table)
         .filter(by_id(id))
-        .debug_execute(&mut request.app().pool().get().await?)
+        .debug_execute(&mut request.app().database().await?)
         .await?;
 
     Response::build().status(204).finish()

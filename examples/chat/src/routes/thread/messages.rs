@@ -15,7 +15,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
     let thread_id = request.can(AuthClaims::VIEW)?;
     let keyset = request.envelope().query::<Keyset>()?;
 
-    let mut connection = request.app().pool().get().await?;
+    let mut connection = request.app().database().await?;
 
     let messages = Message::with_author()
         .select(MessageWithAuthor::as_select())
@@ -48,7 +48,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
     let message = diesel::insert_into(messages::table)
         .values(new_message)
         .returning(Message::as_returning())
-        .debug_result(&mut app.pool().get().await?)
+        .debug_result(&mut app.database().await?)
         .await?;
 
     let event = Event::Message(message);
@@ -62,7 +62,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 pub async fn show(request: Request, _: Next) -> via::Result {
     let id = request.envelope().param("message-id").parse()?;
 
-    let mut connection = request.app().pool().get().await?;
+    let mut connection = request.app().database().await?;
 
     // Acquire a database connection and execute the query.
     let message = Message::with_author()
@@ -89,7 +89,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
         .filter(by_id(&id).and(by_author(&user_id)))
         .set(changes)
         .returning(Message::as_returning())
-        .debug_result(&mut app.pool().get().await?)
+        .debug_result(&mut app.database().await?)
         .await
         .optional()?
     else {
@@ -103,7 +103,7 @@ pub async fn destroy(request: Request, _: Next) -> via::Result {
     let id = request.envelope().param("message-id").parse()?;
 
     // Acquire a database connection.
-    let mut connection = request.app().pool().get().await?;
+    let mut connection = request.app().database().await?;
 
     if let Err(user_id) = request.subscription()?.can(AuthClaims::MODERATE) {
         // The user that made the request is not a moderator.
