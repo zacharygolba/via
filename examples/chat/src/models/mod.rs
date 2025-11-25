@@ -65,12 +65,11 @@ macro_rules! sorts {
     };
 }
 
-pub mod message;
+pub mod channel;
+pub mod conversation;
 pub mod reaction;
 pub mod subscription;
-pub mod thread;
 pub mod user;
 
-pub use message::Message;
-pub use thread::Thread;
-pub use user::User;
+pub use reaction::Reaction;
+pub use subscription::AuthClaims;

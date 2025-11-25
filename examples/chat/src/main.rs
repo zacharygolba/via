@@ -9,7 +9,7 @@ use via::error::{Error, Rescue};
 use via::{Cookies, Guard, Server, resources, ws};
 
 use chat::Chat;
-use routes::{chat, home, thread, threads, users};
+use routes::{channel, channels, chat, home, users};
 use util::session::{self, Session};
 
 type Request = via::Request<Chat>;
@@ -42,69 +42,81 @@ async fn main() -> Result<ExitCode, Error> {
         path.route("/_me").to(via::get(me));
     });
 
+    api.route("/channels").scope(|path| {
+        // Any request to /api/channels requires authentication.
+        path.uses(Guard::new(Request::authenticate));
+
+        // Define create and index on /api/channels.
+        //
+        // These are commonly referred to as "collection" routes because they
+        // operate on a collection of a resource.
+        path.route("/").to(resources!(channels as collection));
+
+        // Bind `path` to /api/channels/:channel-id.
+        let mut path = path.route("/:channel-id");
+
+        // If a user tries to perform an action on a channel or one of it's
+        // dependencies, they must be the owner of the resource or have
+        // sufficent permission to perform the requested action.
+        //
+        // Including this middleware before anything else in the channel module
+        // enforces that the `Ability` and `Subscriber` extension traits are
+        // valid as long as they are visible in the type system.
+        //
+        // This is where seperation of concerns intersects with the uri path
+        // and the API contract defined in `channel::authorization`.
+        path.uses(channel::authorization);
+
+        // Define show, update, and destroy on /api/channels/:channel-id.
+        //
+        // These are commonly referred to as "member" actions because they
+        // operate on a single existing resource.
+        path.route("/").to(resources!(channel as member));
+
+        // Continue defining the dependencies of a channel.
+
+        path.route("/reactions").scope(|reactions| {
+            let (collection, member) = resources!(channel::reactions);
+
+            reactions.route("/").to(collection);
+            reactions.route("/:reaction-id").to(member);
+        });
+
+        path.route("/subscriptions").scope(|subscriptions| {
+            let (collection, member) = resources!(channel::subscriptions);
+
+            subscriptions.route("/").to(collection);
+            subscriptions.route("/:subscription-id").to(member);
+        });
+
+        path.route("/threads").scope(|threads| {
+            use channel::reactions::create as react;
+
+            let mut thread = {
+                let (collection, member) = resources!(channel::threads);
+
+                threads.route("/").to(collection);
+                threads.route("/:thread-id").to(member)
+            };
+
+            thread.route("/reactions").to(via::post(react));
+
+            thread.route("/replies").scope(|replies| {
+                let (collection, member) = resources!(channel::threads);
+                replies.route("/").to(collection);
+
+                let mut reply = replies.route("/:reply-id").to(member);
+                reply.route("/reactions").to(via::post(react));
+            });
+        });
+    });
+
     api.route("/chat").scope(|path| {
         // Any request to /api/chat requires authentication.
         path.uses(Guard::new(Request::authenticate));
 
         // Upgrade to a websocket and start chatting.
         path.route("/").to(via::get(ws::upgrade(chat)));
-    });
-
-    api.route("/threads").scope(|path| {
-        // Any request to /api/threads requires authentication.
-        path.uses(Guard::new(Request::authenticate));
-
-        // Define create and index on /api/threads.
-        //
-        // These are commonly referred to as "collection" routes because they
-        // operate on a collection of a resource.
-        path.route("/").to(resources!(threads as collection));
-
-        // Bind `path` to /api/threads/:thread-id.
-        let mut path = path.route("/:thread-id");
-
-        // If a user tries to perform an action on a thread or one of it's
-        // dependencies, they must be the owner of the resource or have
-        // sufficent permission to perform the requested action.
-        //
-        // Including this middleware before anything else in the thread module
-        // enforces that the `Ability` and `Subscriber` extension traits are
-        // valid as long as they are visible in the type system.
-        //
-        // This is where seperation of concerns intersects with the uri path
-        // and the API contract defined in `routes::thread::authorization`.
-        path.uses(thread::authorization);
-
-        // Define show, update, and destroy on /api/threads/:thread-id.
-        //
-        // These are commonly referred to as "member" actions because they
-        // operate on a single existing resource.
-        path.route("/").to(resources!(thread as member));
-
-        // Continue defining the dependencies of a thread.
-
-        path.route("/messages").scope(|messages| {
-            let mut messages = {
-                let (collection, member) = resources!(thread::messages);
-
-                messages.route("/").to(collection);
-                messages.route("/:message-id").to(member)
-            };
-
-            messages.route("/reactions").scope(|reactions| {
-                let (collection, member) = resources!(thread::reactions);
-
-                reactions.route("/").to(collection);
-                reactions.route("/:reaction-id").to(member);
-            });
-        });
-
-        path.route("/subscriptions").scope(|subscriptions| {
-            let (collection, member) = resources!(thread::subscriptions);
-
-            subscriptions.route("/").to(collection);
-            subscriptions.route("/:subscription-id").to(member);
-        });
     });
 
     api.route("/users").scope(|path| {

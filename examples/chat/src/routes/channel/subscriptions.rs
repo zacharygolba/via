@@ -3,20 +3,21 @@ use via::{Payload, Response};
 
 use super::authorization::{Ability, Subscriber};
 use crate::models::subscription::*;
+use crate::schema::subscriptions;
 use crate::util::error::forbidden;
 use crate::util::{DebugQueryDsl, Id, Page, Paginate};
 use crate::{Next, Request};
 
 pub async fn index(request: Request, _: Next) -> via::Result {
-    // The current user is subscribed to the thread.
-    let thread_id = request.can(AuthClaims::VIEW)?;
+    // The current user is subscribed to the channel.
+    let channel_id = request.can(AuthClaims::VIEW)?;
 
     let page = request.envelope().query::<Page>()?;
 
-    // List subscriptions to the thread with id = :thread-id.
+    // List subscriptions to the channel with id = :channel-id.
     let subscriptions = Subscription::users()
         .select(UserSubscription::as_select())
-        .filter(by_thread(thread_id))
+        .filter(by_channel(channel_id))
         .order(recent())
         .paginate(page)
         .debug_load(&mut request.app().database().await?)
@@ -26,14 +27,14 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn create(request: Request, _: Next) -> via::Result {
-    // The current user can invite other users to the thread.
-    let thread_id = request.can(AuthClaims::INVITE).cloned()?;
+    // The current user can invite other users to the channel.
+    let channel_id = request.can(AuthClaims::INVITE).copied()?;
+    let (body, app) = request.into_future();
 
     // Deserialize the request body into a new subscription.
-    let (body, app) = request.into_future();
     let mut new_subscription = body.await?.json::<NewSubscription>()?;
 
-    new_subscription.thread_id = Some(thread_id);
+    new_subscription.channel_id = Some(channel_id);
 
     // Acquire a database connection and create the subscription.
     let subscription = diesel::insert_into(subscriptions::table)
@@ -46,8 +47,8 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result {
-    // The current user is subscribed to the thread.
-    let thread_id = request.can(AuthClaims::VIEW)?;
+    // The current user is subscribed to the channel.
+    let channel_id = request.can(AuthClaims::VIEW)?;
 
     // The id of the subscription.
     let id = request.envelope().param("subscription-id").parse()?;
@@ -55,7 +56,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     // Acquire a database connection and find the subscription.
     let subscription = Subscription::users()
         .select(UserSubscription::as_select())
-        .filter(by_id(&id).and(by_thread(thread_id)))
+        .filter(by_id(&id).and(by_channel(channel_id)))
         .debug_first(&mut request.app().database().await?)
         .await?;
 
@@ -67,7 +68,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 /// [`AuthClaims::MODERATE`].
 ///
 fn is_owner_or_moderator(request: &Request) -> via::Result<Id> {
-    // The current user's subscription to the thread.
+    // The current user's subscription to the channel.
     let subscription = request.subscription()?;
 
     // The id of the subscription that the user wants to mutate.

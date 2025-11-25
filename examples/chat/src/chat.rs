@@ -13,7 +13,7 @@ use tokio::task::coop::unconstrained;
 use via::response::{Finalize, ResponseBuilder};
 use via::{raise, ws};
 
-use crate::models::message::Message;
+use crate::models::conversation::Conversation;
 use crate::models::reaction::Reaction;
 use crate::util::Id;
 
@@ -30,7 +30,7 @@ pub struct EventPayload(ByteString);
 #[derive(Serialize)]
 #[serde(content = "data", rename_all = "lowercase", tag = "type")]
 pub enum Event {
-    Message(Message),
+    Message(Conversation),
     Reaction(Reaction),
 }
 
@@ -42,7 +42,7 @@ pub struct Chat {
 
 #[derive(Clone, Debug)]
 pub struct EventContext {
-    thread_id: Option<Id>,
+    channel_id: Option<Id>,
     user_id: Id,
 }
 
@@ -132,12 +132,15 @@ impl From<EventPayload> for ws::Message {
 }
 
 impl EventContext {
-    pub fn new(thread_id: Option<Id>, user_id: Id) -> Self {
-        Self { thread_id, user_id }
+    pub fn new(channel_id: Option<Id>, user_id: Id) -> Self {
+        Self {
+            channel_id,
+            user_id,
+        }
     }
 
-    pub fn thread_id(&self) -> Option<&Id> {
-        self.thread_id.as_ref()
+    pub fn channel_id(&self) -> Option<&Id> {
+        self.channel_id.as_ref()
     }
 
     pub fn user_id(&self) -> &Id {

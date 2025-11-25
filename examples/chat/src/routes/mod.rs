@@ -1,6 +1,6 @@
 pub mod auth;
-pub mod thread;
-pub mod threads;
+pub mod channel;
+pub mod channels;
 pub mod users;
 
 mod chat;

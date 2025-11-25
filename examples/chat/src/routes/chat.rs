@@ -4,9 +4,9 @@ use via::request::Payload;
 use via::ws::{self, Channel, Message, Request, ResultExt};
 
 use crate::chat::{Chat, Event, EventContext};
-use crate::models::message::{NewMessage, messages};
+use crate::models::conversation::{Conversation, NewConversation};
 use crate::models::subscription::{AuthClaims, Subscription, by_user};
-use crate::schema::subscriptions;
+use crate::schema::{conversations, subscriptions};
 use crate::util::{DebugQueryDsl, Id, Session};
 
 /// Prints the format string to stderr in debug builds.
@@ -15,18 +15,18 @@ macro_rules! debug {
     ($($args:tt)+) => { if cfg!(debug_assertions) { eprintln!($($args)+); } };
 }
 
-pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
+pub async fn chat(mut socket: Channel, request: Request<Chat>) -> ws::Result {
     // The current user that opened the websocket.
     let user_id = request.user().cloned().or_break()?;
 
     // Subscribe to event notifications from peers.
     let mut pubsub = request.app().subscribe();
 
-    // The current users thread subscription claims keyed by thread id.
+    // The current users channel subscription claims keyed by channel id.
     let subscriptions: HashMap<Id, AuthClaims> = {
         let acquire = request.app().database().await;
         let result = Subscription::query()
-            .select((subscriptions::thread_id, subscriptions::claims))
+            .select((subscriptions::channel_id, subscriptions::claims))
             .filter(by_user(&user_id))
             .debug_load::<(Id, AuthClaims)>(&mut acquire.or_break()?)
             .await;
@@ -35,21 +35,21 @@ pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
     };
 
     'recv: loop {
-        let new_message = 'send: {
+        let new_convo = 'send: {
             tokio::select! {
                 // Received a message from the websocket channel.
-                Some(message) = channel.recv() => match message {
+                Some(message) = socket.recv() => match message {
                     Message::Text(mut payload) => {
-                        let mut new_message = payload.json::<NewMessage>().or_continue()?;
+                        let mut new_convo = payload.json::<NewConversation>().or_continue()?;
 
                         // Confirm that the current user can write in the
-                        // thread before we proceed.
-                        if let Some(id) = &new_message.thread_id
+                        // channel before we proceed.
+                        if let Some(id) = &new_convo.channel_id
                             && let Some(claims) = subscriptions.get(id)
                             && claims.contains(AuthClaims::WRITE)
                         {
-                            new_message.author_id = Some(user_id);
-                            break 'send new_message;
+                            new_convo.user_id = Some(user_id);
+                            break 'send new_convo;
                         }
                     }
                     Message::Close(close) => {
@@ -67,11 +67,11 @@ pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
                 // Received an event notification from another async task.
                 Ok((ref context, message)) = pubsub.recv() => {
                     if user_id != *context.user_id()
-                        && let Some(id) = context.thread_id()
+                        && let Some(id) = context.channel_id()
                         && let Some(claims) = subscriptions.get(id)
                         && claims.contains(AuthClaims::VIEW)
                     {
-                        channel.send(message).await?;
+                        socket.send(message).await?;
                     }
                 }
             }
@@ -82,19 +82,15 @@ pub async fn chat(mut channel: Channel, request: Request<Chat>) -> ws::Result {
         // Build the event context from the request and params. We use this to
         // determine if a message is for the current user in the second arm of
         // the select expression above.
-        let context = EventContext::new(new_message.thread_id, user_id);
+        let context = EventContext::new(new_convo.channel_id, user_id);
 
         // Insert the message into the database and return a message event.
         let event = {
-            // Import the message model as late as possible to prevent
-            // confusion with the via::ws::Message enum.
-            use crate::models::Message;
-
             // Acquire a database connection and create the message.
             let acquire = request.app().database().await;
-            let create = diesel::insert_into(messages::table)
-                .values(new_message)
-                .returning(Message::as_returning())
+            let create = diesel::insert_into(conversations::table)
+                .values(new_convo)
+                .returning(Conversation::as_returning())
                 .debug_result(&mut acquire.or_continue()?)
                 .await;
 

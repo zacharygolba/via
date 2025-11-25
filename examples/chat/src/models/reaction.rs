@@ -1,5 +1,3 @@
-pub use crate::schema::reactions;
-
 use chrono::{DateTime, Utc};
 use diesel::helper_types::InnerJoin;
 use diesel::pg::Pg;
@@ -7,14 +5,14 @@ use diesel::prelude::*;
 use diesel::sql_types::{Array, BigInt, Integer, Text, Uuid};
 use serde::{Deserialize, Serialize};
 
-use super::message::{Message, MessageWithAuthor};
+use super::conversation::ConversationWithUser;
+use super::user::{User, UserPreview, users};
 use crate::chat::Connection;
-use crate::models::user::{User, UserPreview, users};
+use crate::schema::reactions;
 use crate::util::{DebugQueryDsl, Emoji, Id};
 
 #[derive(Associations, Identifiable, Queryable, Selectable, Serialize)]
-#[diesel(belongs_to(MessageWithAuthor, foreign_key = message_id))]
-#[diesel(belongs_to(Message))]
+#[diesel(belongs_to(ConversationWithUser, foreign_key = conversation_id))]
 #[diesel(belongs_to(User))]
 #[diesel(table_name = reactions)]
 #[serde(rename_all = "camelCase")]
@@ -25,7 +23,7 @@ pub struct Reaction {
     updated_at: DateTime<Utc>,
 
     #[serde(skip)]
-    message_id: Id,
+    conversation_id: Id,
 
     #[serde(skip)]
     user_id: Id,
@@ -41,13 +39,13 @@ pub struct ChangeSet {
 #[diesel(table_name = reactions)]
 #[serde(rename_all = "camelCase")]
 pub struct NewReaction {
-    pub message_id: Option<Id>,
+    pub conversation_id: Option<Id>,
     pub user_id: Option<Id>,
     emoji: Emoji,
 }
 
-#[derive(Associations, QueryableByName, Serialize)]
-#[diesel(belongs_to(MessageWithAuthor, foreign_key = message_id))]
+#[derive(Associations, Clone, QueryableByName, Serialize)]
+#[diesel(belongs_to(ConversationWithUser, foreign_key = conversation_id))]
 #[diesel(table_name = reactions)]
 #[diesel(check_for_backend(Pg))]
 #[serde(rename_all = "camelCase")]
@@ -61,7 +59,7 @@ pub struct ReactionPreview {
     total_count: i64,
 
     #[serde(skip)]
-    message_id: Id,
+    conversation_id: Id,
 }
 
 #[derive(Queryable, Selectable, Serialize)]
@@ -77,8 +75,7 @@ pub struct ReactionWithUser {
 
 filters! {
     pub fn by_id(id == &Id) on reactions;
-    pub fn by_user(id == &Id) on reactions;
-    pub fn by_message(id == &Id) on reactions;
+    pub fn by_user(user_id == &Id) on reactions;
 }
 
 sorts! {
@@ -94,17 +91,23 @@ impl Reaction {
         Self::query().inner_join(User::query())
     }
 
-    pub fn to_messages<'a>(
+    pub fn to_conversations<'a>(
         connection: &mut Connection<'_>,
         ids: impl IntoIterator<Item = &'a Id>,
     ) -> impl Future<Output = QueryResult<Vec<ReactionPreview>>> {
-        const UNIQUE_REACTIONS_PER_MESSAGE: i32 = 12;
+        const UNIQUE_REACTIONS_PER_CONVERSATION: i32 = 12;
         const USERNAMES_PER_REACTION: i32 = 6;
 
         diesel::sql_query("SELECT * FROM top_reactions_for($1, $2, $3)")
             .bind::<Array<Uuid>, Vec<_>>(ids.into_iter().collect())
-            .bind::<Integer, _>(UNIQUE_REACTIONS_PER_MESSAGE)
+            .bind::<Integer, _>(UNIQUE_REACTIONS_PER_CONVERSATION)
             .bind::<Integer, _>(USERNAMES_PER_REACTION)
             .debug_load(connection)
+    }
+}
+
+impl ReactionPreview {
+    pub fn to_id(&self) -> Id {
+        self.conversation_id
     }
 }
