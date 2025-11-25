@@ -1,55 +1,54 @@
-pub use crate::schema::threads;
-
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::models::message::MessageWithJoins;
+use crate::models::conversation::ConversationDetails;
 use crate::models::user::UserPreview;
+use crate::schema::channels;
 use crate::util::Id;
 
 #[derive(Clone, Identifiable, Queryable, Selectable, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Thread {
+pub struct Channel {
     id: Id,
     name: String,
     created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Deserialize, Insertable)]
-#[diesel(table_name = threads)]
-pub struct NewThread {
+#[diesel(table_name = channels)]
+pub struct NewChannel {
     name: String,
 }
 
 #[derive(AsChangeset, Deserialize)]
-#[diesel(table_name = threads)]
+#[diesel(table_name = channels)]
 pub struct ChangeSet {
     name: String,
 }
 
 #[derive(Serialize)]
-pub struct ThreadWithJoins {
+pub struct ChannelWithJoins {
     #[serde(flatten)]
-    thread: Thread,
+    channel: Channel,
     users: Vec<UserPreview>,
-    messages: Vec<MessageWithJoins>,
+    threads: Vec<ConversationDetails>,
 }
 
 filters! {
-    pub fn by_id(id == &Id) on threads;
+    pub fn by_id(id == &Id) on channels;
 }
 
-impl Thread {
+impl Channel {
     pub fn joins(
         self,
         users: Vec<UserPreview>,
-        messages: Vec<MessageWithJoins>,
-    ) -> ThreadWithJoins {
-        ThreadWithJoins {
-            thread: self,
+        threads: Vec<ConversationDetails>,
+    ) -> ChannelWithJoins {
+        ChannelWithJoins {
+            channel: self,
+            threads,
             users,
-            messages,
         }
     }
 }

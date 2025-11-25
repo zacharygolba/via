@@ -146,6 +146,10 @@ impl Error {
         }
     }
 
+    pub(crate) fn status_mut(&mut self) -> &mut StatusCode {
+        &mut self.status
+    }
+
     fn repr_json(&self, status_code: StatusCode) -> Errors<'_> {
         let mut errors = Errors::new(status_code);
 

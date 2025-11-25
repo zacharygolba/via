@@ -91,7 +91,7 @@ pub async fn restore(mut request: Request, next: Next) -> via::Result {
 fn unauthorized(secret: &Key) -> via::Result {
     let mut response = Response::build()
         .status(StatusCode::UNAUTHORIZED)
-        .json(&error::unauthorized::<()>())?;
+        .json(&error::unauthorized::<()>().err())?;
 
     response.set_user(secret, None)?;
 

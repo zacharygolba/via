@@ -18,7 +18,7 @@ const MAX_PER_PAGE: i64 = 50;
 pub const PER_PAGE: i64 = 25;
 
 // type KeysetAfter<'a, A, B> = after_keyset<&'a DateTime<Utc>, &'a Id, A, B>;
-type KeysetBefore<'a, A, B> = after_keyset<A, B, &'a DateTime<Utc>, &'a Id>;
+type KeysetBefore<A, B> = after_keyset<A, B, DateTime<Utc>, Id>;
 
 pub trait Paginate<T> {
     type Output;
@@ -53,7 +53,7 @@ fn limit_from_query(query: &QueryParams) -> Result<i64, Error> {
 }
 
 impl Keyset {
-    // pub fn after<A, B>(&self, pivot: (A, B)) -> KeysetAfter<'_, A, B>
+    // pub fn after<A, B>(&self, pivot: (A, B)) -> KeysetAfter<A, B>
     // where
     //     A: Expression<SqlType = Timestamptz>,
     //     B: Expression<SqlType = Uuid>,
@@ -61,12 +61,12 @@ impl Keyset {
     //     keyset_expr(self.value.0, self.value.1, pivot.0, pivot.1)
     // }
 
-    pub fn before<A, B>(&self, pivot: (A, B)) -> KeysetBefore<'_, A, B>
+    pub fn before<A, B>(&self, pivot: (A, B)) -> KeysetBefore<A, B>
     where
         A: Expression<SqlType = Timestamptz>,
         B: Expression<SqlType = Uuid>,
     {
-        let (timestamp, pk) = &self.value;
+        let (timestamp, pk) = self.value;
         after_keyset(pivot.0, pivot.1, timestamp, pk)
     }
 }

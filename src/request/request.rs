@@ -1,6 +1,6 @@
 use cookie::CookieJar;
 use http::request::Parts;
-use http::{Extensions, HeaderMap, Method, Uri, Version};
+use http::{Extensions, HeaderMap, Method, StatusCode, Uri, Version};
 use http_body_util::Limited;
 use hyper::body::Incoming as Body;
 use std::fmt::{self, Debug, Formatter};
@@ -76,9 +76,16 @@ impl Envelope {
 
     pub fn params<'a, T>(&'a self) -> crate::Result<T>
     where
-        T: TryFrom<PathParams<'a>, Error = Error>,
+        T: TryFrom<PathParams<'a>>,
+        Error: From<T::Error>,
     {
-        T::try_from(PathParams::new(self.uri().path(), &self.params))
+        let params = PathParams::new(self.uri().path(), &self.params);
+
+        T::try_from(params).map_err(|error| {
+            let mut error = Error::from(error);
+            *error.status_mut() = StatusCode::BAD_REQUEST;
+            error
+        })
     }
 
     /// Returns a convenient wrapper around an optional reference to the path

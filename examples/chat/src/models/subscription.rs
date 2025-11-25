@@ -1,5 +1,3 @@
-pub use crate::schema::subscriptions;
-
 use bitflags::bitflags;
 use chrono::{DateTime, Utc};
 use diesel::AsExpression;
@@ -11,8 +9,9 @@ use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_types::Integer;
 use serde::{Deserialize, Serialize};
 
-use crate::models::thread::{Thread, threads};
+use crate::models::channel::Channel;
 use crate::models::user::{UserPreview, users};
+use crate::schema::subscriptions;
 use crate::util::Id;
 
 #[derive(Clone, Debug, Identifiable, Queryable, Selectable, Serialize)]
@@ -31,8 +30,8 @@ pub struct Subscription {
 #[diesel(table_name = subscriptions)]
 #[serde(rename_all = "camelCase")]
 pub struct NewSubscription {
+    pub channel_id: Option<Id>,
     pub user_id: Id,
-    pub thread_id: Option<Id>,
     pub claims: AuthClaims,
 }
 
@@ -47,13 +46,13 @@ pub struct ChangeSet {
 #[derive(Clone, Queryable, Selectable, Serialize)]
 #[diesel(table_name = subscriptions)]
 #[diesel(check_for_backend(Pg))]
-pub struct ThreadSubscription {
+pub struct ChannelSubscription {
     #[diesel(embed)]
     #[serde(flatten)]
     subscription: Subscription,
 
     #[diesel(embed)]
-    thread: Thread,
+    channel: Channel,
 }
 
 #[derive(Queryable, Selectable, Serialize)]
@@ -83,7 +82,7 @@ bitflags! {
 filters! {
     pub fn by_id(id == &Id) on subscriptions;
     pub fn by_user(user_id == &Id) on subscriptions;
-    pub fn by_thread(thread_id == &Id) on subscriptions;
+    pub fn by_channel(channel_id == &Id) on subscriptions;
 }
 
 sorts! {
@@ -117,38 +116,34 @@ impl Subscription {
         subscriptions::table
     }
 
-    pub fn threads() -> InnerJoin<subscriptions::table, threads::table> {
-        Self::query().inner_join(threads::table)
-    }
-
     pub fn users() -> InnerJoin<subscriptions::table, users::table> {
         Self::query().inner_join(users::table)
     }
 }
 
 impl NewSubscription {
-    /// Subscribe user_id to thread_id with all auth claims.
+    /// Subscribe user_id to channel_id with all auth claims.
     ///
-    pub fn admin(user_id: Id, thread_id: Id) -> Self {
+    pub fn admin(user_id: Id, channel_id: Id) -> Self {
         Self {
             user_id,
-            thread_id: Some(thread_id),
+            channel_id: Some(channel_id),
             claims: AuthClaims::all(),
         }
     }
 }
 
-impl ThreadSubscription {
+impl ChannelSubscription {
     pub fn id(&self) -> &Id {
         &self.subscription.id
     }
 
-    pub fn claims(&self) -> &AuthClaims {
-        &self.subscription.claims
+    pub fn channel(&self) -> &Channel {
+        &self.channel
     }
 
-    pub fn thread(&self) -> &Thread {
-        &self.thread
+    pub fn claims(&self) -> &AuthClaims {
+        &self.subscription.claims
     }
 
     pub fn user_id(&self) -> &Id {
