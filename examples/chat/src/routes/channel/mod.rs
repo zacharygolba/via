@@ -41,7 +41,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     // Load the first page of recent messages in the channel.
     let messages = Conversation::with_author()
         .select(ConversationWithUser::as_select())
-        .filter(conversation::by_channel(channel.id()))
+        .filter(conversation::by_channel(channel.id()).and(conversation::is_thread()))
         .order(conversation::recent())
         .limit(PER_PAGE)
         .debug_load(&mut connection)

@@ -89,8 +89,9 @@ filters! {
     pub fn by_id(id == &Id) on conversations;
     pub fn by_user(user_id == &Id) on conversations;
     pub fn by_thread(thread_id == &Id) on conversations;
-
     pub fn by_channel(channel_id == &Id) on conversations;
+
+    pub fn is_thread(thread_id is_null) on conversations;
 }
 
 sorts! {
