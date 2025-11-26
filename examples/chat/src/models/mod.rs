@@ -1,8 +1,4 @@
-/// Generate filters scopes from binary expressions that work with the diesel
-/// query dsl.
-///
-/// Scopes should correspond to an index in the database.
-///
+/// Generate filters from expressions that work with the diesel query dsl.
 macro_rules! filters {
     (#[output] ==, $lhs:ty, $rhs:ty) => { diesel::dsl::Eq<$lhs, $rhs> };
     (#[expr] ==, $lhs:expr, $rhs:expr) => { $lhs.eq($rhs) };
@@ -22,9 +18,15 @@ macro_rules! filters {
     (#[output] <=, $lhs:ty,   $rhs:ty) => { diesel::dsl::LtEq<$lhs, $rhs> };
     (#[expr] <=,  $lhs:expr, $rhs:expr) => { $lhs.le($rhs) };
 
-    ($($vis:vis fn $by:ident($column:ident $op:tt $ty:ty) on $table:ident);+ $(;)?) => {
-        $($vis fn $by(value: $ty) -> filters!(#[output] $op, $table::$column, $ty) {
-            filters!(#[expr] $op, $table::$column, value)
+    (#[output] <=, $lhs:ty,   $rhs:ty) => { diesel::dsl::LtEq<$lhs, $rhs> };
+    (#[expr] <=,  $lhs:expr, $rhs:expr) => { $lhs.le($rhs) };
+
+    (#[output] is_null, $lhs:ty) => { diesel::dsl::IsNull<$lhs> };
+    (#[expr] is_null,  $lhs:expr) => { $lhs.is_null() };
+
+    ($($vis:vis fn $by:ident($column:ident $op:tt $($ty:ty)?) on $table:ident);+ $(;)?) => {
+        $($vis fn $by($(value: $ty)?) -> filters!(#[output] $op, $table::$column $(, $ty)?) {
+            filters!(#[expr] $op, $table::$column $(, value as $ty)?)
         })+
     };
 }

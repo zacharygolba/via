@@ -35,7 +35,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
         if let Some(id) = &params.thread_id {
             query.filter(by_thread(id)).into_boxed()
         } else {
-            query.into_boxed()
+            query.filter(is_thread()).into_boxed()
         }
     };
 
