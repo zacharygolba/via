@@ -1,8 +1,8 @@
-use std::any::Any;
-
 use bytes::Bytes;
+use cookie::CookieJar;
 use futures_core::Stream;
-use http::{HeaderName, HeaderValue, StatusCode, Version, header};
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
+use http::{HeaderName, HeaderValue, StatusCode, Version};
 use http_body::Frame;
 use http_body_util::StreamBody;
 use http_body_util::combinators::BoxBody;
@@ -29,93 +29,7 @@ pub trait Finalize {
 
 #[derive(Debug, Default)]
 pub struct ResponseBuilder {
-    response: http::response::Builder,
-}
-
-impl ResponseBuilder {
-    #[inline]
-    pub fn status<T>(self, status: T) -> Self
-    where
-        StatusCode: TryFrom<T>,
-        <StatusCode as TryFrom<T>>::Error: Into<http::Error>,
-    {
-        Self {
-            response: self.response.status(status),
-        }
-    }
-
-    #[inline]
-    pub fn version(self, version: Version) -> Self {
-        Self {
-            response: self.response.version(version),
-        }
-    }
-
-    #[inline]
-    pub fn header<K, V>(self, key: K, value: V) -> Self
-    where
-        HeaderName: TryFrom<K>,
-        <HeaderName as TryFrom<K>>::Error: Into<http::Error>,
-        HeaderValue: TryFrom<V>,
-        <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
-    {
-        Self {
-            response: self.response.header(key, value),
-        }
-    }
-
-    #[inline]
-    pub fn extension<T>(self, extension: T) -> Self
-    where
-        T: Clone + Any + Send + Sync + 'static,
-    {
-        Self {
-            response: self.response.extension(extension),
-        }
-    }
-
-    #[inline]
-    pub fn body(self, body: ResponseBody) -> Result<Response, Error> {
-        Ok(self.response.body(body)?.into())
-    }
-
-    #[inline]
-    pub fn json<T>(self, body: &T) -> Result<Response, Error>
-    where
-        T: Serialize,
-    {
-        #[derive(Serialize)]
-        struct Tagged<'a, D> {
-            data: &'a D,
-        }
-
-        Json(&Tagged { data: body }).finalize(self)
-    }
-
-    #[inline]
-    pub fn html(self, body: impl Into<String>) -> Result<Response, Error> {
-        let string = body.into();
-
-        self.header(header::CONTENT_LENGTH, string.len())
-            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-            .body(string.into())
-    }
-
-    #[inline]
-    pub fn text(self, body: impl Into<String>) -> Result<Response, Error> {
-        let string = body.into();
-
-        self.header(header::CONTENT_LENGTH, string.len())
-            .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-            .body(string.into())
-    }
-
-    /// Convert self into a [Response] with an empty payload.
-    ///
-    #[inline]
-    pub fn finish(self) -> Result<Response, Error> {
-        self.body(ResponseBody::default())
-    }
+    inner: http::response::Builder,
 }
 
 impl<T> Finalize for T
@@ -125,7 +39,86 @@ where
     #[inline]
     fn finalize(self, builder: ResponseBuilder) -> Result<Response, Error> {
         builder
-            .header(header::TRANSFER_ENCODING, "chunked")
-            .body(BoxBody::new(StreamBody::new(self)).into())
+            .header(TRANSFER_ENCODING, "chunked")
+            .body(BoxBody::new(StreamBody::new(self)))
+    }
+}
+
+impl ResponseBuilder {
+    #[inline]
+    pub fn header<K, V>(self, key: K, value: V) -> Self
+    where
+        HeaderName: TryFrom<K>,
+        <HeaderName as TryFrom<K>>::Error: Into<http::Error>,
+        HeaderValue: TryFrom<V>,
+        <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+    {
+        Self {
+            inner: self.inner.header(key, value),
+        }
+    }
+
+    #[inline]
+    pub fn status<T>(self, status: T) -> Self
+    where
+        StatusCode: TryFrom<T>,
+        <StatusCode as TryFrom<T>>::Error: Into<http::Error>,
+    {
+        Self {
+            inner: self.inner.status(status),
+        }
+    }
+
+    #[inline]
+    pub fn version(self, version: Version) -> Self {
+        Self {
+            inner: self.inner.version(version),
+        }
+    }
+
+    #[inline]
+    pub fn body<T>(self, body: T) -> Result<Response, Error>
+    where
+        ResponseBody: From<T>,
+    {
+        Ok(Response {
+            cookies: CookieJar::new(),
+            inner: self.inner.body(body.into())?,
+        })
+    }
+
+    #[inline]
+    pub fn json(self, data: &impl Serialize) -> Result<Response, Error> {
+        #[derive(Serialize)]
+        struct Tagged<'a, T> {
+            data: &'a T,
+        }
+
+        Json(&Tagged { data }).finalize(self)
+    }
+
+    #[inline]
+    pub fn html(self, data: impl Into<String>) -> Result<Response, Error> {
+        let string = data.into();
+
+        self.header(CONTENT_TYPE, "text/html; charset=utf-8")
+            .header(CONTENT_LENGTH, string.len())
+            .body(string)
+    }
+
+    #[inline]
+    pub fn text(self, data: impl Into<String>) -> Result<Response, Error> {
+        let string = data.into();
+
+        self.header(CONTENT_TYPE, "text/plain; charset=utf-8")
+            .header(CONTENT_LENGTH, string.len())
+            .body(string)
+    }
+
+    /// Convert self into a [Response] with an empty payload.
+    ///
+    #[inline]
+    pub fn finish(self) -> Result<Response, Error> {
+        self.body(ResponseBody::default())
     }
 }

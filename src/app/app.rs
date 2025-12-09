@@ -1,6 +1,7 @@
-use super::shared::Shared;
+use std::sync::Arc;
+
+use super::router::{Route, Router};
 use crate::middleware::Middleware;
-use crate::router::{Route, Router};
 
 /// Configure routes and define shared global state.
 ///
@@ -8,7 +9,7 @@ use crate::router::{Route, Router};
 ///
 /// ```no_run
 /// use std::process::ExitCode;
-/// use via::{Error, Next, Request, Server, Shared};
+/// use via::{App, Error, Next, Request, Server};
 ///
 /// /// A mock database pool.
 /// #[derive(Debug)]
@@ -25,18 +26,24 @@ use crate::router::{Route, Router};
 /// async fn main() -> Result<ExitCode, Error> {
 ///     // Pass our shared state struct containing a database pool to the App
 ///     // constructor so it can be used to serve each request.
-///     let mut app = via::app(Unicorn {
+///     let mut app = App::new(Unicorn {
 ///         pool: DatabasePool {
 ///             url: std::env::var("DATABASE_URL")?,
 ///         },
 ///     });
 ///
-///     // We can access our database in middleware with `request.app()`.
-///     app.uses(async |request: Request<Unicorn>, next: Next<Unicorn>| {
-///         let unicorn: &Shared<Unicorn> = request.app();
+///     // We can access our database in middleware with `request.state()`.
+///     app.middleware(async |request: Request<Unicorn>, next: Next<Unicorn>| {
+///         // Get a reference to the state argument passed to `App::new`.
+///         let state = request.state().as_ref();
+///         //                          ^^^^^^
+///         // Convert from &Arc<Unicorn> to &Unicorn. Not strictly necessary.
+///         //
+///         // If `state` must outlive `request`, we would instead call
+///         // `request.state().clone()`.
 ///
 ///         // Print the debug output of our mock database pool to stdout.
-///         println!("{:?}", &unicorn.pool);
+///         println!("{:?}", &state.pool);
 ///
 ///         // Delegate to the next middleware to get a response.
 ///         next.call(request).await
@@ -47,52 +54,59 @@ use crate::router::{Route, Router};
 /// }
 /// ```
 ///
-pub struct Via<App> {
-    pub(super) app: Shared<App>,
-    pub(super) router: Router<App>,
+pub struct App<State> {
+    pub(super) state: Arc<State>,
+    pub(super) router: Router<State>,
 }
 
-/// Create a new app with the provided state argument.
-///
-/// # Example
-///
-/// ```
-/// # struct DatabasePool { url: String }
-/// # struct Unicorn { pool: DatabasePool }
-/// #
-/// let mut app = via::app(Unicorn {
-///     pool: DatabasePool {
-///         url: "postgres://unicorn@localhost/unicorn".to_owned(),
-///     },
-/// });
-/// ```
-///
-pub fn app<App>(app: App) -> Via<App> {
-    Via {
-        app: Shared::new(app),
-        router: Router::new(),
-    }
-}
-
-impl<App> Via<App> {
-    /// Returns a new route as a child of the root path `/`.
+impl<State> App<State> {
+    /// Create a new app with the provided state argument.
     ///
-    /// See also the usage example in [`Route::route`].
+    /// The state argument is stored in an [`Arc`] so ownership can be
+    /// [shared with each request](crate::Request::state).
     ///
-    pub fn route(&mut self, path: &'static str) -> Route<'_, App> {
-        self.router.route(path)
+    /// # Example
+    ///
+    /// ```
+    /// # use via::App;
+    /// #
+    /// # struct DatabasePool { url: String }
+    /// # struct Unicorn { pool: DatabasePool }
+    /// #
+    /// let mut app = App::new(Unicorn {
+    ///     pool: DatabasePool {
+    ///         url: "postgres://unicorn@localhost/unicorn".to_owned(),
+    ///     },
+    /// });
+    /// ```
+    ///
+    pub fn new(state: State) -> Self {
+        App {
+            state: Arc::new(state),
+            router: Router::new(),
+        }
     }
 
     /// Append the provided middleware to applications call stack.
     ///
     /// Middleware attached with this method runs for every request.
     ///
-    /// See also the usage example in [`Route::uses`].
+    /// See also the usage example in [`Route::middleware`].
     ///
-    pub fn uses<T>(&mut self, middleware: T)
+    pub fn middleware<T>(&mut self, middleware: T)
     where
-        T: Middleware<App> + 'static,
+        T: Middleware<State> + 'static,
     {
-        self.route("/").uses(middleware);
+        self.route("/").middleware(middleware);
+    }
+
+    /// Returns a new route as a child of the root path `/`.
+    ///
+    /// See also the usage example in [`Route::route`].
+    ///
+    pub fn route(&mut self, path: &'static str) -> Route<'_, State> {
+        Route {
+            inner: self.router.route(path),
+        }
     }
 }
