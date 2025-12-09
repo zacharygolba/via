@@ -3,10 +3,10 @@ use via::{Finalize, Payload, Response};
 
 use super::authorization::Ability;
 use crate::chat::{Event, EventContext};
+use crate::database::query::ConversationParams;
 use crate::models::conversation::by_channel;
 use crate::models::reaction::*;
 use crate::models::subscription::AuthClaims;
-use crate::routes::channel::threads::ThreadArgs;
 use crate::schema::{conversations, reactions};
 use crate::util::error::forbidden;
 use crate::util::{DebugQueryDsl, Page, Paginate, Session};
@@ -34,8 +34,8 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 pub async fn create(request: Request, _: Next) -> via::Result {
     let conversation_id = request
         .envelope()
-        .params::<ThreadArgs>()
-        .and_then(|args| args.try_into())
+        .params::<ConversationParams>()
+        .map(|params| *params.id())
         .ok();
 
     let channel_id = request.can(AuthClaims::REACT).copied()?;
