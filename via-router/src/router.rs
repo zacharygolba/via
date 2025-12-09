@@ -1,6 +1,4 @@
 use smallvec::{SmallVec, smallvec};
-use std::marker::PhantomData;
-use std::rc::Rc;
 use std::slice;
 use std::sync::Arc;
 
@@ -10,10 +8,7 @@ use crate::path::{self, Param, Pattern, Split};
 ///
 pub struct Route<'a, T>(MatchCond<slice::Iter<'a, MatchCond<T>>>);
 
-pub struct RouteMut<'a, T> {
-    node: &'a mut Node<T>,
-    _rc: PhantomData<Rc<()>>,
-}
+pub struct RouteMut<'a, T>(&'a mut Node<T>);
 
 #[derive(Debug)]
 pub struct Router<T>(Node<T>);
@@ -138,21 +133,21 @@ impl<T> Node<T> {
     }
 }
 
-impl<'a, T> RouteMut<'a, T> {
+impl<T> RouteMut<'_, T> {
     pub fn middleware(&mut self, middleware: T) {
-        self.node.route.push(MatchCond::Partial(middleware));
+        self.0.route.push(MatchCond::Partial(middleware));
+    }
+
+    pub fn respond(&mut self, middleware: T) {
+        self.0.route.push(MatchCond::Final(middleware));
     }
 
     pub fn route(&mut self, path: &'static str) -> RouteMut<'_, T> {
-        RouteMut {
-            node: insert(self.node, path::patterns(path)),
-            _rc: PhantomData,
-        }
+        RouteMut(insert(self.0, path::patterns(path)))
     }
 
-    pub fn to(self, middleware: T) -> Self {
-        self.node.route.push(MatchCond::Final(middleware));
-        self
+    pub fn scope(mut self, scope: impl FnOnce(&mut Self)) {
+        scope(&mut self);
     }
 }
 
@@ -162,10 +157,7 @@ impl<T> Router<T> {
     }
 
     pub fn route(&mut self, path: &'static str) -> RouteMut<'_, T> {
-        RouteMut {
-            node: insert(&mut self.0, path::patterns(path)),
-            _rc: PhantomData,
-        }
+        RouteMut(insert(&mut self.0, path::patterns(path)))
     }
 
     /// Match the path argument against nodes in the route tree.

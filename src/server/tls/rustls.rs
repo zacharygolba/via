@@ -18,15 +18,15 @@ enum Negotiate {
     Pending(Accept<TcpStream>),
 }
 
-pub fn listen_rustls<App, A>(
+pub fn listen_rustls<State, A>(
     config: ServerConfig,
     address: A,
     tls_config: rustls::ServerConfig,
-    service: AppService<App>,
+    service: AppService<State>,
 ) -> impl Future<Output = Result<ExitCode, Error>>
 where
     A: ToSocketAddrs,
-    App: Send + Sync + 'static,
+    State: Send + Sync + 'static,
 {
     let handshake = {
         let acceptor = TlsAcceptor::from(Arc::new(tls_config));

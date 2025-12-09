@@ -5,22 +5,22 @@ mod raise;
 mod rescue;
 mod server;
 
-use http::header;
+use http::HeaderValue;
+use http::header::CONTENT_TYPE;
+use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::{self, Error as IoError};
-use std::str::Utf8Error;
 
 #[doc(hidden)]
 pub use http::StatusCode; // Required for the raise macro.
 
+use crate::response::{Response, ResponseBody};
+
 pub use rescue::{Rescue, Sanitizer};
 pub(crate) use server::ServerError;
-
-use crate::response::Response;
-use crate::router::MethodNotAllowed;
 
 /// A type alias for `Box<dyn Error + Send + Sync>`.
 ///
@@ -37,15 +37,11 @@ pub struct Error {
 
 #[derive(Debug)]
 enum ErrorKind {
-    InvalidUtf8(Utf8Error),
     Message(String),
-    MethodNotAllowed(Box<MethodNotAllowed>),
     Other(BoxError),
 }
 
-#[derive(Serialize)]
 struct Errors<'a> {
-    #[serde(serialize_with = "serialize_status_code")]
     status: StatusCode,
     errors: SmallVec<[ErrorMessage<'a>; 1]>,
 }
@@ -55,21 +51,7 @@ struct ErrorMessage<'a> {
     message: Cow<'a, str>,
 }
 
-fn serialize_status_code<S>(status: &StatusCode, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_u16(status.as_u16())
-}
-
 impl Error {
-    pub(crate) fn from_utf8_error(error: Utf8Error) -> Self {
-        Self {
-            status: StatusCode::BAD_REQUEST,
-            kind: ErrorKind::InvalidUtf8(error),
-        }
-    }
-
     /// Returns a new error with the provided status and message.
     ///
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
@@ -128,28 +110,15 @@ impl Error {
     /// Returns a reference to the error source.
     ///
     pub fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match &self.kind {
-            ErrorKind::MethodNotAllowed(source) => Some(&**source),
-            ErrorKind::Other(source) => Some(&**source),
-            _ => None,
+        if let ErrorKind::Other(source) = &self.kind {
+            Some(&**source)
+        } else {
+            None
         }
     }
+}
 
-    pub fn status(&self) -> StatusCode {
-        self.status
-    }
-
-    pub(crate) fn method_not_allowed(error: MethodNotAllowed) -> Self {
-        Self {
-            status: StatusCode::METHOD_NOT_ALLOWED,
-            kind: ErrorKind::MethodNotAllowed(Box::new(error)),
-        }
-    }
-
-    pub(crate) fn status_mut(&mut self) -> &mut StatusCode {
-        &mut self.status
-    }
-
+impl Error {
     fn repr_json(&self, status_code: StatusCode) -> Errors<'_> {
         let mut errors = Errors::new(status_code);
 
@@ -174,10 +143,8 @@ impl Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match &self.kind {
-            ErrorKind::InvalidUtf8(error) => Display::fmt(error, f),
-            ErrorKind::Message(message) => Display::fmt(&**message, f),
-            ErrorKind::MethodNotAllowed(error) => Display::fmt(&**error, f),
             ErrorKind::Other(source) => Display::fmt(&**source, f),
+            ErrorKind::Message(message) => Display::fmt(&**message, f),
         }
     }
 }
@@ -193,26 +160,19 @@ where
 
 impl From<Error> for Response {
     fn from(error: Error) -> Self {
-        let message = error.to_string();
-        let content_len = message.len().into();
-
-        let mut response = Self::new(message.into());
+        let mut response = Self::new(error.to_string().into());
         *response.status_mut() = error.status;
 
         let headers = response.headers_mut();
-
-        headers.insert(header::CONTENT_LENGTH, content_len);
-        if let Ok(content_type) = "text/plain; charset=utf-8".try_into() {
-            headers.insert(header::CONTENT_TYPE, content_type);
-        }
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/plain"));
 
         response
     }
 }
 
-impl Serialize for Error {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.repr_json(self.status).serialize(serializer)
+impl From<Error> for http::Response<ResponseBody> {
+    fn from(error: Error) -> Self {
+        Response::from(error).into()
     }
 }
 
@@ -231,5 +191,16 @@ impl<'a> Errors<'a> {
 
     fn reverse(&mut self) {
         self.errors.reverse();
+    }
+}
+
+impl Serialize for Errors<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("Errors", 2)?;
+
+        state.serialize_field("status", &self.status.as_u16())?;
+        state.serialize_field("errors", &*self.errors)?;
+
+        state.end()
     }
 }

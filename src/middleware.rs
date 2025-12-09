@@ -17,16 +17,16 @@ pub type BoxFuture<T = Result> = Pin<Box<dyn Future<Output = T> + Send>>;
 ///
 pub type Result<T = Response> = std::result::Result<T, Error>;
 
-pub trait Middleware<App>: Send + Sync {
-    fn call(&self, request: Request<App>, next: Next<App>) -> BoxFuture;
+pub trait Middleware<State>: Send + Sync {
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture;
 }
 
-impl<T, Await, App> Middleware<App> for T
+impl<State, F, R> Middleware<State> for F
 where
-    T: Fn(Request<App>, Next<App>) -> Await + Send + Sync,
-    Await: Future<Output = Result> + Send + 'static,
+    F: Fn(Request<State>, Next<State>) -> R + Send + Sync,
+    R: Future<Output = Result> + Send + 'static,
 {
-    fn call(&self, request: Request<App>, next: Next<App>) -> BoxFuture {
+    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
         Box::pin(self(request, next))
     }
 }
