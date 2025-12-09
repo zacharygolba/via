@@ -5,10 +5,11 @@ use diesel::pg::Pg;
 use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_types;
 use serde::{Deserialize, Serialize};
-use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 use uuid::Uuid;
+
+use super::error::InvalidIdError;
 
 #[derive(
     AsExpression,
@@ -25,9 +26,6 @@ use uuid::Uuid;
 )]
 #[diesel(sql_type = sql_types::Uuid)]
 pub struct Id(Uuid);
-
-#[derive(Debug)]
-pub struct InvalidIdError;
 
 impl AsRef<[u8]> for Id {
     fn as_ref(&self) -> &[u8] {
@@ -77,13 +75,5 @@ where
 {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, DB>) -> serialize::Result {
         self.0.to_sql(out)
-    }
-}
-
-impl Error for InvalidIdError {}
-
-impl Display for InvalidIdError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "invalid uuid")
     }
 }

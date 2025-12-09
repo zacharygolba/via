@@ -12,3 +12,17 @@ pub use id::Id;
 pub use paginate::{Keyset, Page, Paginate};
 pub use session::{Authenticate, Session};
 pub use sql::DebugQueryDsl;
+
+pub fn require_env(name: &str) -> String {
+    use std::env::{self, VarError};
+
+    match env::var(name) {
+        Ok(value) => value,
+        Err(VarError::NotPresent) => {
+            panic!("missing required env variable: {}", name);
+        }
+        Err(VarError::NotUnicode(_)) => {
+            panic!("env variable \"{}\" is not valid UTF-8", name);
+        }
+    }
+}
