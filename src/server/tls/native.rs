@@ -11,15 +11,15 @@ use crate::error::Error;
 
 const MIN_PROTOCOL_VERSION: Protocol = Protocol::Tlsv12;
 
-pub fn listen_native_tls<State, A>(
+pub fn listen_native_tls<App, A>(
     config: ServerConfig,
     address: A,
     identity: Identity,
-    service: AppService<State>,
+    service: AppService<App>,
 ) -> impl Future<Output = Result<ExitCode, Error>>
 where
     A: ToSocketAddrs,
-    State: Send + Sync + 'static,
+    App: Send + Sync + 'static,
 {
     let handshake = {
         let acceptor = TlsAcceptor::from(

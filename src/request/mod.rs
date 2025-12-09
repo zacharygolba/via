@@ -1,12 +1,9 @@
-mod body;
-mod param;
+pub mod params;
+
+mod payload;
+mod query;
 mod request;
 
-pub use body::{DataAndTrailers, RequestBody};
-pub use param::{PathParam, QueryParam};
-pub use request::{Request, RequestHead};
-
-pub(crate) use param::PathParams;
-
-#[cfg(feature = "ws")]
-pub(crate) use param::OwnedPathParams;
+pub use params::{PathParams, QueryParams};
+pub use payload::{DataAndTrailers, IntoFuture, Payload};
+pub use request::{Envelope, Request};

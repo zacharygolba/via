@@ -1,9 +1,9 @@
-use http::StatusCode;
+use http::{StatusCode, header};
 use std::borrow::Cow;
 use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
 
-use crate::error::{Error, Errors};
+use super::{Error, ErrorKind, Errors};
 use crate::middleware::{BoxFuture, Middleware};
 use crate::response::{Finalize, Json, Response, ResponseBuilder};
 use crate::{Next, Request};
@@ -34,12 +34,11 @@ where
     }
 }
 
-impl<State, F> Middleware<State> for Rescue<F>
+impl<App, F> Middleware<App> for Rescue<F>
 where
-    State: Send + Sync + 'static,
     F: Fn(&mut Sanitizer) + Send + Sync + 'static,
 {
-    fn call(&self, request: Request<State>, next: Next<State>) -> BoxFuture {
+    fn call(&self, request: Request<App>, next: Next<App>) -> BoxFuture {
         let recover = Arc::clone(&self.recover);
         let future = next.call(request);
 
@@ -81,14 +80,14 @@ impl<'a> Sanitizer<'a> {
 
     /// Overrides the HTTP status code of the error.
     ///
-    pub fn set_status_code(&mut self, status: StatusCode) {
+    pub fn set_status(&mut self, status: StatusCode) {
         self.status = Some(status);
     }
 
     /// Use the canonical reason of the status code as the error message.
     ///
     pub fn use_canonical_reason(&mut self) {
-        self.message = self.status_code().canonical_reason().map(Cow::Borrowed);
+        self.message = self.status().canonical_reason().map(Cow::Borrowed);
     }
 
     /// Generate a json response for the error.
@@ -108,8 +107,18 @@ impl<'a> Sanitizer<'a> {
         }
     }
 
-    fn status_code(&self) -> StatusCode {
+    fn status(&self) -> StatusCode {
         self.status.unwrap_or(self.error.status)
+    }
+
+    fn repr_json(self, status: StatusCode) -> Errors<'a> {
+        if let Some(message) = self.message {
+            let mut errors = Errors::new(status);
+            errors.push(message);
+            errors
+        } else {
+            self.error.repr_json(status)
+        }
     }
 }
 
@@ -120,25 +129,20 @@ impl Display for Sanitizer<'_> {
 }
 
 impl Finalize for Sanitizer<'_> {
-    fn finalize(self, response: ResponseBuilder) -> Result<Response, Error> {
-        let status_code = self.status_code();
-        let message = self.message;
+    fn finalize(self, builder: ResponseBuilder) -> Result<Response, Error> {
+        let status = self.status();
+        let mut builder = builder.status(status);
+
+        if let ErrorKind::MethodNotAllowed(error) = &self.error.kind {
+            builder = builder.header(header::ALLOW, error.allows());
+        }
 
         if self.json {
-            let payload = message.map_or_else(
-                || self.error.repr_json(status_code),
-                |message| {
-                    let mut errors = Errors::new(status_code);
-                    errors.push(message);
-                    errors
-                },
-            );
-
-            Json(&payload).finalize(response.status(status_code))
+            Json(&self.repr_json(status)).finalize(builder)
+        } else if let Some(message) = self.message {
+            builder.text(message.into_owned())
         } else {
-            response
-                .status(status_code)
-                .text(message.map_or_else(|| self.error.to_string(), Cow::into_owned))
+            builder.text(self.error.to_string())
         }
     }
 }

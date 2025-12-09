@@ -1,8 +1,8 @@
 use bytes::Bytes;
-use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
+use http::header;
 use http_body::{Body, Frame, SizeHint};
-use http_body_util::Either;
 use http_body_util::combinators::BoxBody;
+use http_body_util::{Either, Full};
 use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 use std::pin::Pin;
@@ -11,8 +11,6 @@ use std::task::{Context, Poll};
 use super::builder::{Finalize, ResponseBuilder};
 use super::response::Response;
 use crate::error::{BoxError, Error};
-
-pub(super) const MAX_FRAME_SIZE: usize = 16 * 1024; // 16KB
 
 /// Serialize the contained type as an untagged JSON response.
 ///
@@ -26,149 +24,36 @@ pub(super) const MAX_FRAME_SIZE: usize = 16 * 1024; // 16KB
 ///     name: String,
 /// }
 ///
-/// let ciro = Cat {
-///     name: "Ciro".to_owned(),
-/// };
+/// impl Cat {
+///     fn new(name: String) -> Self {
+///         Self { name }
+///     }
+/// }
 ///
-/// let tagged = Response::build().json(&ciro).unwrap();
-/// // => { "data": { "name": "Ciro" } }
+/// let ciro = Cat::new("Ciro".to_owned());
+/// let response = Response::build().json(&ciro).unwrap();
+/// // body: { "data": { "name": "Ciro" } }
 ///
-/// let untagged = Json(&ciro).finalize(Response::build()).unwrap();
-/// // => { "name": "Ciro" }
+/// let ciro = Cat::new("Ciro".to_owned());
+/// let response = Json(&ciro).finalize(Response::build()).unwrap();
+/// // body: { "name": "Ciro" }
 /// ```
 ///
-#[derive(Debug)]
 pub struct Json<'a, T>(pub &'a T);
 
-/// A buffered `impl Body` that is written in `16 KB` chunks.
-///
-#[derive(Default)]
-pub struct BufferBody {
-    buf: Bytes,
-}
-
-#[derive(Debug)]
 pub struct ResponseBody {
-    kind: Either<BufferBody, BoxBody<Bytes, BoxError>>,
+    kind: Either<Full<Bytes>, BoxBody<Bytes, BoxError>>,
 }
 
-impl Body for BufferBody {
+impl Body for ResponseBody {
     type Data = Bytes;
     type Error = BoxError;
 
     fn poll_frame(
-        self: Pin<&mut Self>,
-        _: &mut Context,
-    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let Self { buf } = self.get_mut();
-        let len = buf.len().min(MAX_FRAME_SIZE);
-
-        Poll::Ready((len > 0).then(|| Ok(Frame::data(buf.split_to(len)))))
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.buf.is_empty()
-    }
-
-    fn size_hint(&self) -> SizeHint {
-        self.buf
-            .len()
-            .try_into()
-            .map(SizeHint::with_exact)
-            .unwrap_or_default()
-    }
-}
-
-impl Debug for BufferBody {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("BufferBody").finish()
-    }
-}
-
-impl From<Bytes> for BufferBody {
-    #[inline]
-    fn from(buf: Bytes) -> Self {
-        Self { buf }
-    }
-}
-
-impl From<String> for BufferBody {
-    #[inline]
-    fn from(data: String) -> Self {
-        Self::from(data.into_bytes())
-    }
-}
-
-impl From<&'_ str> for BufferBody {
-    #[inline]
-    fn from(data: &str) -> Self {
-        Self::from(data.as_bytes())
-    }
-}
-
-impl From<Vec<u8>> for BufferBody {
-    #[inline]
-    fn from(data: Vec<u8>) -> Self {
-        Self::from(Bytes::from(data))
-    }
-}
-
-impl From<&'_ [u8]> for BufferBody {
-    #[inline]
-    fn from(slice: &'_ [u8]) -> Self {
-        Self::from(Bytes::copy_from_slice(slice))
-    }
-}
-
-impl<'a, T: Serialize> Finalize for Json<'a, T> {
-    #[inline]
-    fn finalize(self, response: ResponseBuilder) -> Result<Response, Error> {
-        let Self(json) = self;
-        let payload = serde_json::to_vec(json)?;
-
-        response
-            .header(CONTENT_TYPE, "application/json; charset=utf-8")
-            .header(CONTENT_LENGTH, payload.len())
-            .body(payload)
-    }
-}
-
-impl ResponseBody {
-    pub(crate) fn map<U, F>(self, map: F) -> Self
-    where
-        F: FnOnce(ResponseBody) -> U,
-        U: http_body::Body<Data = Bytes, Error = BoxError> + Send + Sync + 'static,
-    {
-        Self {
-            kind: Either::Right(BoxBody::new(map(self))),
-        }
-    }
-
-    /// Consume the response body and return a dynamically-dispatched
-    /// [`BoxBody`] that is allocated on the heap.
-    ///
-    pub fn boxed(self) -> BoxBody<Bytes, BoxError> {
-        match self.kind {
-            Either::Left(inline) => BoxBody::new(inline),
-            Either::Right(boxed) => boxed,
-        }
-    }
-}
-
-impl http_body::Body for ResponseBody {
-    type Data = Bytes;
-    type Error = BoxError;
-
-    fn poll_frame(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: &mut Context,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let Self { kind } = self.get_mut();
-
-        match kind {
-            Either::Left(inline) => Pin::new(inline).poll_frame(context),
-            Either::Right(boxed) => Pin::new(boxed).poll_frame(context),
-        }
+        Pin::new(&mut self.kind).poll_frame(context)
     }
 
     fn is_end_stream(&self) -> bool {
@@ -180,10 +65,37 @@ impl http_body::Body for ResponseBody {
     }
 }
 
+impl Debug for ResponseBody {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        #[derive(Debug)]
+        struct BoxBody;
+
+        #[derive(Debug)]
+        struct Full;
+
+        let kind = match &self.kind {
+            Either::Left(_) => Either::Left(Full),
+            Either::Right(_) => Either::Right(BoxBody),
+        };
+
+        f.debug_struct("ResponseBody").field("kind", &kind).finish()
+    }
+}
+
 impl Default for ResponseBody {
+    #[inline]
     fn default() -> Self {
         Self {
             kind: Either::Left(Default::default()),
+        }
+    }
+}
+
+impl From<Bytes> for ResponseBody {
+    #[inline]
+    fn from(buf: Bytes) -> Self {
+        Self {
+            kind: Either::Left(Full::new(buf)),
         }
     }
 }
@@ -197,82 +109,42 @@ impl From<BoxBody<Bytes, BoxError>> for ResponseBody {
     }
 }
 
-impl<T> From<T> for ResponseBody
-where
-    BufferBody: From<T>,
-{
+impl From<String> for ResponseBody {
     #[inline]
-    fn from(body: T) -> Self {
-        Self {
-            kind: Either::Left(body.into()),
-        }
+    fn from(data: String) -> Self {
+        Self::from(data.into_bytes())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use bytes::Bytes;
-    use http_body::Body;
-    use http_body_util::BodyExt;
-
-    use super::{BufferBody, MAX_FRAME_SIZE};
-
-    #[tokio::test]
-    async fn test_is_end_stream() {
-        assert!(
-            BufferBody::default().is_end_stream(),
-            "is_end_stream should be true for an empty response"
-        );
-
-        let mut body = BufferBody::from(format!("Hello,{}world", " ".repeat(MAX_FRAME_SIZE - 6)));
-
-        assert!(
-            !body.is_end_stream(),
-            "is_end_stream should be false when there is a remaining data frame."
-        );
-
-        while body.frame().await.is_some() {}
-
-        assert!(
-            body.is_end_stream(),
-            "is_end_stream should be true after each frame is polled."
-        );
+impl From<&'_ str> for ResponseBody {
+    #[inline]
+    fn from(data: &str) -> Self {
+        Self::from(data.as_bytes())
     }
+}
 
-    #[test]
-    fn test_size_hint() {
-        let hint = Body::size_hint(&BufferBody::from("Hello, world!"));
-        assert_eq!(hint.exact(), Some("Hello, world!".len() as u64));
+impl From<Vec<u8>> for ResponseBody {
+    #[inline]
+    fn from(data: Vec<u8>) -> Self {
+        Self::from(Bytes::from(data))
     }
+}
 
-    #[tokio::test]
-    async fn test_poll_frame_empty() {
-        assert!(BufferBody::default().frame().await.is_none());
+impl From<&'_ [u8]> for ResponseBody {
+    #[inline]
+    fn from(slice: &'_ [u8]) -> Self {
+        Self::from(Bytes::copy_from_slice(slice))
     }
+}
 
-    #[tokio::test]
-    async fn test_poll_frame_one() {
-        let mut body = BufferBody::from("Hello, world!");
-        let hello_world = body.frame().await.unwrap().unwrap().into_data().unwrap();
+impl<T: Serialize> Finalize for Json<'_, T> {
+    #[inline]
+    fn finalize(self, response: ResponseBuilder) -> Result<Response, Error> {
+        let body = serde_json::to_string(self.0)?;
 
-        assert_eq!(hello_world, Bytes::copy_from_slice(b"Hello, world!"));
-        assert!(body.frame().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_poll_frame() {
-        let frames = [
-            format!("hello{}", " ".repeat(MAX_FRAME_SIZE - 5)),
-            "world".to_owned(),
-        ];
-
-        let mut body = BufferBody::from(frames.concat());
-
-        for part in &frames {
-            let next = body.frame().await.unwrap().unwrap().into_data().unwrap();
-            assert_eq!(next, Bytes::copy_from_slice(part.as_bytes()));
-        }
-
-        assert!(body.frame().await.is_none());
+        response
+            .header(header::CONTENT_LENGTH, body.len())
+            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .body(body.into())
     }
 }

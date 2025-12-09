@@ -10,7 +10,7 @@
 /// use via::{Next, Request};
 ///
 /// async fn authenticate(request: Request, next: Next) -> via::Result {
-///     let Some(jwt) = request.header(AUTHORIZATION)? else {
+///     let Some(jwt) = request.envelope().headers().get(AUTHORIZATION) else {
 ///         via::raise!(401, message = "Missing required header: Authorization.");
 ///     };
 ///
@@ -86,6 +86,8 @@ macro_rules! raise {
         let message = status.canonical_reason().unwrap_or_default().to_owned();
         return Err($crate::Error::new(status, message))
     }};
+
+    (|| $($args:tt)*) => { (|| { $crate::raise!($($args)*) })() };
 
     (boxed = $source:expr $(,)?) => { $crate::raise!(500, boxed = $source) };
     (message = $message:expr $(,)?) => { $crate::raise!(500, message = $message) };

@@ -1,8 +1,8 @@
+use std::any::Any;
+
 use bytes::Bytes;
-use cookie::CookieJar;
 use futures_core::Stream;
-use http::header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
-use http::{HeaderName, HeaderValue, StatusCode, Version};
+use http::{HeaderName, HeaderValue, StatusCode, Version, header};
 use http_body::Frame;
 use http_body_util::StreamBody;
 use http_body_util::combinators::BoxBody;
@@ -29,22 +29,28 @@ pub trait Finalize {
 
 #[derive(Debug, Default)]
 pub struct ResponseBuilder {
-    inner: http::response::Builder,
-}
-
-impl<T> Finalize for T
-where
-    T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static,
-{
-    #[inline]
-    fn finalize(self, builder: ResponseBuilder) -> Result<Response, Error> {
-        builder
-            .header(TRANSFER_ENCODING, "chunked")
-            .body(BoxBody::new(StreamBody::new(self)))
-    }
+    response: http::response::Builder,
 }
 
 impl ResponseBuilder {
+    #[inline]
+    pub fn status<T>(self, status: T) -> Self
+    where
+        StatusCode: TryFrom<T>,
+        <StatusCode as TryFrom<T>>::Error: Into<http::Error>,
+    {
+        Self {
+            response: self.response.status(status),
+        }
+    }
+
+    #[inline]
+    pub fn version(self, version: Version) -> Self {
+        Self {
+            response: self.response.version(version),
+        }
+    }
+
     #[inline]
     pub fn header<K, V>(self, key: K, value: V) -> Self
     where
@@ -54,65 +60,54 @@ impl ResponseBuilder {
         <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
     {
         Self {
-            inner: self.inner.header(key, value),
+            response: self.response.header(key, value),
         }
     }
 
     #[inline]
-    pub fn status<T>(self, status: T) -> Self
+    pub fn extension<T>(self, extension: T) -> Self
     where
-        StatusCode: TryFrom<T>,
-        <StatusCode as TryFrom<T>>::Error: Into<http::Error>,
+        T: Clone + Any + Send + Sync + 'static,
     {
         Self {
-            inner: self.inner.status(status),
+            response: self.response.extension(extension),
         }
     }
 
     #[inline]
-    pub fn version(self, version: Version) -> Self {
-        Self {
-            inner: self.inner.version(version),
-        }
+    pub fn body(self, body: ResponseBody) -> Result<Response, Error> {
+        Ok(self.response.body(body)?.into())
     }
 
     #[inline]
-    pub fn body<T>(self, body: T) -> Result<Response, Error>
+    pub fn json<T>(self, body: &T) -> Result<Response, Error>
     where
-        ResponseBody: From<T>,
+        T: Serialize,
     {
-        Ok(Response {
-            cookies: CookieJar::new(),
-            inner: self.inner.body(body.into())?,
-        })
-    }
-
-    #[inline]
-    pub fn json(self, data: &impl Serialize) -> Result<Response, Error> {
         #[derive(Serialize)]
-        struct Tagged<'a, T> {
-            data: &'a T,
+        struct Tagged<'a, D> {
+            data: &'a D,
         }
 
-        Json(&Tagged { data }).finalize(self)
+        Json(&Tagged { data: body }).finalize(self)
     }
 
     #[inline]
-    pub fn html(self, data: impl Into<String>) -> Result<Response, Error> {
-        let string = data.into();
+    pub fn html(self, body: impl Into<String>) -> Result<Response, Error> {
+        let string = body.into();
 
-        self.header(CONTENT_TYPE, "text/html; charset=utf-8")
-            .header(CONTENT_LENGTH, string.len())
-            .body(string)
+        self.header(header::CONTENT_LENGTH, string.len())
+            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+            .body(string.into())
     }
 
     #[inline]
-    pub fn text(self, data: impl Into<String>) -> Result<Response, Error> {
-        let string = data.into();
+    pub fn text(self, body: impl Into<String>) -> Result<Response, Error> {
+        let string = body.into();
 
-        self.header(CONTENT_TYPE, "text/plain; charset=utf-8")
-            .header(CONTENT_LENGTH, string.len())
-            .body(string)
+        self.header(header::CONTENT_LENGTH, string.len())
+            .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+            .body(string.into())
     }
 
     /// Convert self into a [Response] with an empty payload.
@@ -120,5 +115,17 @@ impl ResponseBuilder {
     #[inline]
     pub fn finish(self) -> Result<Response, Error> {
         self.body(ResponseBody::default())
+    }
+}
+
+impl<T> Finalize for T
+where
+    T: Stream<Item = Result<Frame<Bytes>, BoxError>> + Send + Sync + 'static,
+{
+    #[inline]
+    fn finalize(self, builder: ResponseBuilder) -> Result<Response, Error> {
+        builder
+            .header(header::TRANSFER_ENCODING, "chunked")
+            .body(BoxBody::new(StreamBody::new(self)).into())
     }
 }

@@ -16,11 +16,11 @@
 //!
 //! ```no_run
 //! use std::process::ExitCode;
-//! use via::{App, Error, Next, Request, Response, Server};
+//! use via::{Error, Next, Request, Response, Server};
 //!
 //! async fn hello(request: Request, _: Next) -> via::Result {
 //!     // Get a reference to the path parameter `name` from the request uri.
-//!     let name = request.param("name").percent_decode().into_result()?;
+//!     let name = request.envelope().param("name").decode().into_result()?;
 //!
 //!     // Send a plain text response with our greeting message.
 //!     Response::build().text(format!("Hello, {}!", name))
@@ -28,10 +28,10 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<ExitCode, Error> {
-//!     let mut app = App::new(());
+//!     let mut app = via::app(());
 //!
 //!     // Define a route that listens on /hello/:name.
-//!     app.route("/hello/:name").respond(via::get(hello));
+//!     app.route("/hello/:name").to(via::get(hello));
 //!
 //!     Server::new(app).listen(("127.0.0.1", 8080)).await
 //! }
@@ -43,32 +43,27 @@
 pub mod error;
 pub mod request;
 pub mod response;
+pub mod router;
 
 #[cfg(feature = "ws")]
 pub mod ws;
 
-mod allow;
 mod app;
 mod cookies;
+mod guard;
 mod middleware;
 mod next;
-mod payload;
+mod resources;
 mod server;
-mod timeout;
 mod util;
 
-pub use allow::{Allow, connect, delete, get, head, options, patch, post, put, trace};
-pub use app::{App, Route};
+pub use app::{Shared, Via, app};
 pub use cookies::Cookies;
 pub use error::Error;
+pub use guard::Guard;
 pub use middleware::{BoxFuture, Middleware, Result};
-pub use next::Next;
-pub use payload::Payload;
-pub use request::Request;
-pub use response::Response;
+pub use next::{Continue, Next};
+pub use request::{Payload, Request};
+pub use response::{Finalize, Response};
+pub use router::{connect, delete, get, head, options, patch, post, put, trace};
 pub use server::Server;
-pub use timeout::Timeout;
-
-#[cfg(feature = "ws")]
-#[doc(inline)]
-pub use ws::ws;
