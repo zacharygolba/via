@@ -52,4 +52,4 @@ the same contact method.
 
 ---
 
-❤️ Thank you for helping keep Via and our community safe.
+:heart: Thank you for helping keep Via and our community safe.
