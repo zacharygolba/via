@@ -1,6 +1,10 @@
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use http::StatusCode;
+use std::fmt::{self, Display, Formatter};
 use via::error::Sanitizer;
+
+#[derive(Debug)]
+pub struct InvalidIdError;
 
 pub fn forbidden<T>() -> via::Result<T> {
     via::raise!(403, message = "access denied.");
@@ -53,5 +57,13 @@ pub fn error_sanitizer(sanitizer: &mut Sanitizer) {
     } else if error.is::<chrono::ParseError>() {
         sanitizer.set_status(StatusCode::BAD_REQUEST);
         sanitizer.set_message("Invalid timestamp.");
+    }
+}
+
+impl std::error::Error for InvalidIdError {}
+
+impl Display for InvalidIdError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "invalid uuid")
     }
 }

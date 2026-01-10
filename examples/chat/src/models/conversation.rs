@@ -3,15 +3,19 @@ use diesel::associations::HasTable;
 use diesel::helper_types::InnerJoin;
 use diesel::pg::Pg;
 use diesel::prelude::*;
+use diesel::result::Error as DieselError;
 use serde::{Deserialize, Serialize};
+use via::raise;
 
 use super::channel::Channel;
-use super::reaction::ReactionPreview;
 use super::user::{User, UserPreview};
+use crate::chat::Connection;
+use crate::models::reaction::{Reaction, ReactionPreview};
 use crate::schema::{conversations, users};
-use crate::util::Id;
+use crate::util::paginate::PER_PAGE;
+use crate::util::{DebugQueryDsl, Id};
 
-#[derive(Associations, Identifiable, Queryable, Selectable, Serialize)]
+#[derive(Associations, Deserialize, Identifiable, Queryable, Selectable, Serialize)]
 #[diesel(belongs_to(Conversation, foreign_key = thread_id))]
 #[diesel(belongs_to(Channel))]
 #[diesel(belongs_to(User))]
@@ -24,13 +28,8 @@ pub struct Conversation {
     total_reactions: i64,
     total_replies: i64,
 
-    #[serde(skip)]
     channel_id: Id,
-
-    #[serde(skip)]
     thread_id: Option<Id>,
-
-    #[serde(skip)]
     user_id: Id,
 }
 
@@ -50,7 +49,7 @@ pub struct ChangeSet {
     body: String,
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct ConversationDetails {
     #[serde(flatten)]
     conversation: Conversation,
@@ -58,6 +57,12 @@ pub struct ConversationDetails {
     reactions: Vec<ReactionPreview>,
 
     user: UserPreview,
+}
+
+#[derive(Clone)]
+pub struct ConversationParams {
+    pub thread_id: Id,
+    pub reply_id: Option<Id>,
 }
 
 #[derive(Queryable, Selectable, Serialize)]
@@ -72,15 +77,15 @@ pub struct ConversationWithUser {
     user: UserPreview,
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct ThreadDetails {
     #[serde(flatten)]
     conversation: Conversation,
 
     reactions: Vec<ReactionPreview>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    replies: Option<Vec<ConversationDetails>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    replies: Vec<ConversationDetails>,
 
     user: UserPreview,
 }
@@ -98,7 +103,52 @@ sorts! {
     pub fn recent(#[desc] created_at, id) on conversations;
 }
 
+fn split_own_reactions(reactions: &mut Vec<ReactionPreview>, id: &Id) -> Vec<ReactionPreview> {
+    // Sort the reactions vec so that our own reactions are last.
+    reactions.sort_by_key(|reaction| *id == reaction.to_id());
+
+    // Find the first index of a reaction that belongs to the id predicate.
+    let pivot = reactions
+        .iter()
+        .position(|reaction| *id == reaction.to_id())
+        .unwrap_or(reactions.len());
+
+    reactions.split_off(pivot)
+}
+
 impl Conversation {
+    pub async fn find(connection: &mut Connection<'_>, id: &Id) -> via::Result<ThreadDetails> {
+        // Load the conversation by id along with the first page of replies.
+        let mut conversations = Conversation::with_author()
+            .select(ConversationWithUser::as_select())
+            .filter(by_id(id).or(by_thread(id)))
+            .order(recent())
+            .limit(PER_PAGE + 1)
+            .debug_load(connection)
+            .await?;
+
+        // Aggregate the reactions for each conversation.
+        let mut reactions = {
+            let ids = conversations.iter().map(Identifiable::id);
+            Reaction::to_conversations(connection, ids).await?
+        };
+
+        // Take the last conversation from the vec of conversations. The query
+        // orders conversations by created_at DESC. Therefore, the last item in the
+        // vec is always the parent.
+        let Some(conversation) = conversations.pop() else {
+            raise!(404, DieselError::NotFound);
+        };
+
+        // Move the reactions to conversation into their own vec.
+        let own_reactions = split_own_reactions(&mut reactions, id);
+
+        // Group replies to the thread with with their reactions.
+        let replies = ConversationDetails::grouped_by(conversations, reactions);
+
+        Ok(conversation.into_thread(own_reactions, replies))
+    }
+
     pub fn query() -> conversations::table {
         conversations::table
     }
@@ -133,7 +183,7 @@ impl ConversationWithUser {
     pub fn into_thread(
         self,
         reactions: Vec<ReactionPreview>,
-        replies: Option<Vec<ConversationDetails>>,
+        replies: Vec<ConversationDetails>,
     ) -> ThreadDetails {
         ThreadDetails {
             conversation: self.conversation,

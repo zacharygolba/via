@@ -44,7 +44,7 @@ pub struct NewReaction {
     emoji: Emoji,
 }
 
-#[derive(Associations, Clone, QueryableByName, Serialize)]
+#[derive(Associations, Clone, Deserialize, QueryableByName, Serialize)]
 #[diesel(belongs_to(ConversationWithUser, foreign_key = conversation_id))]
 #[diesel(table_name = reactions)]
 #[diesel(check_for_backend(Pg))]
@@ -58,7 +58,6 @@ pub struct ReactionPreview {
     #[diesel(sql_type = BigInt)]
     total_count: i64,
 
-    #[serde(skip)]
     conversation_id: Id,
 }
 
