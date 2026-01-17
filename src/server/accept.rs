@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
-use tokio::task::{self, JoinSet, coop};
+use tokio::task::{JoinSet, coop};
 use tokio::{signal, time};
 
 #[cfg(feature = "http2")]
@@ -92,20 +92,13 @@ where
 
         // Acquire a permit from the semaphore.
         let permit = match semaphore.clone().try_acquire_owned() {
-            // We were able to acquire a permit without blocking accept.
+            // Permit acquired. Proceed with serving the connection.
             Ok(acquired) => acquired,
 
-            // The server is at capacity. Try to acquire a permit with the
-            // configured timeout.
-            Err(_) => {
-                task::yield_now().await;
-                match semaphore.clone().try_acquire_owned() {
-                    Ok(acquired) => acquired,
-                    // Close the connection. Upstream load balancers take
-                    // this as a hint that it is time to try another node.
-                    Err(_) => continue,
-                }
-            }
+            // The server is at capacity. Close the connection. Upstream load
+            // balancers take this as a hint that it is time to try another
+            // node.
+            Err(_) => continue,
         };
 
         let service = service.clone();
