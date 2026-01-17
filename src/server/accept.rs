@@ -4,6 +4,7 @@ use std::error::Error;
 use std::mem;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
@@ -46,7 +47,7 @@ macro_rules! receive_ctrl_c {
 pub async fn accept<App, Io, F>(
     config: ServerConfig,
     listener: TcpListener,
-    acceptor: Box<dyn Fn(TcpStream) -> F + Send>,
+    acceptor: Box<dyn Fn(Option<Duration>, TcpStream) -> F + Send>,
     service: AppService<App>,
 ) -> ExitCode
 where
@@ -102,7 +103,7 @@ where
         };
 
         let service = service.clone();
-        let handshake = acceptor(tcp_stream);
+        let handshake = acceptor(config.tls_handshake_timeout, tcp_stream);
         let mut shutdown_rx = shutdown_rx.clone();
 
         // Spawn a task to serve the connection.
@@ -174,6 +175,8 @@ fn handle_error(error: ServerError) {
                 log!("error(task): {}", http_error);
             }
         }
+
+        #[cfg(feature = "native-tls")]
         ServerError::Tls(tls_error) => {
             log!("error(task): {}", tls_error);
         }

@@ -8,5 +8,7 @@ mod server;
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
 mod tls;
 
-use accept::accept;
 pub use server::Server;
+
+use accept::accept;
+use server::ServerConfig;

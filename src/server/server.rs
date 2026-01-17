@@ -21,6 +21,7 @@ pub(super) struct ServerConfig {
     pub(super) max_connections: usize,
     pub(super) max_request_size: usize,
     pub(super) shutdown_timeout: Duration,
+    pub(super) tls_handshake_timeout: Option<Duration>,
 }
 
 impl<App> Server<App>
@@ -80,6 +81,21 @@ where
         }
     }
 
+    /// Set the amount of time in seconds that the server will wait for a TLS
+    /// handshake to complete before rejecting the connection.
+    ///
+    /// **Default:** `10s`
+    ///
+    pub fn tls_handshake_timeout(self, tls_handshake_timeout: Option<Duration>) -> Self {
+        Self {
+            config: ServerConfig {
+                tls_handshake_timeout,
+                ..self.config
+            },
+            ..self
+        }
+    }
+
     /// Listens for incoming connections at the provided address.
     ///
     /// Returns a future that resolves with a result containing an [`ExitCode`]
@@ -133,7 +149,7 @@ where
             let exit = super::accept(
                 config,
                 TcpListener::bind(address).await?,
-                Box::new(|stream| async { Ok(stream) }),
+                Box::new(|_, stream| async { Ok(stream) }),
                 service,
             );
 
@@ -178,6 +194,7 @@ impl Default for ServerConfig {
             max_connections: 1000,
             max_request_size: 104_857_600, // 100 MB
             shutdown_timeout: Duration::from_secs(30),
+            tls_handshake_timeout: Some(Duration::from_secs(10)),
         }
     }
 }
