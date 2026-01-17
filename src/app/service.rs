@@ -3,12 +3,17 @@ use http_body_util::Limited;
 use hyper::body::Incoming;
 use hyper::service::Service;
 use std::collections::VecDeque;
+use std::convert::Infallible;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use crate::middleware::BoxFuture;
 use crate::request::{Envelope, Request};
-use crate::response::Response;
-use crate::{Error, Next, Via};
+use crate::response::{Response, ResponseBody};
+use crate::{Next, Via};
+
+pub struct FutureResponse(BoxFuture);
 
 pub struct AppService<App> {
     app: Arc<Via<App>>,
@@ -36,9 +41,9 @@ impl<App> Clone for AppService<App> {
 }
 
 impl<App> Service<http::Request<Incoming>> for AppService<App> {
-    type Error = Error;
-    type Future = BoxFuture;
-    type Response = Response;
+    type Error = Infallible;
+    type Future = FutureResponse;
+    type Response = http::Response<ResponseBody>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
         // The middleware stack.
@@ -74,6 +79,17 @@ impl<App> Service<http::Request<Incoming>> for AppService<App> {
         }
 
         // Call the middleware stack to get a response.
-        Next::new(deque).call(request)
+        FutureResponse(Next::new(deque).call(request))
+    }
+}
+
+impl Future for FutureResponse {
+    type Output = Result<http::Response<ResponseBody>, Infallible>;
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        self.0
+            .as_mut()
+            .poll(context)
+            .map(|result| Ok(result.unwrap_or_else(Response::from).into()))
     }
 }

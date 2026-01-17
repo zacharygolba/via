@@ -1,7 +1,5 @@
 use hyper::server::conn;
-use hyper::service::{Service, service_fn};
 use hyper_util::rt::{TokioIo, TokioTimer};
-use std::convert::Infallible;
 use std::error::Error;
 use std::mem;
 use std::process::ExitCode;
@@ -17,7 +15,6 @@ use hyper_util::rt::TokioExecutor;
 
 use super::io::IoWithPermit;
 use super::server::ServerConfig;
-use crate::Response;
 use crate::app::AppService;
 use crate::error::ServerError;
 
@@ -118,13 +115,6 @@ where
         // Spawn a task to serve the connection.
         connections.spawn(async move {
             let io = IoWithPermit::new(TokioIo::new(handshake.await?), permit);
-            let service = service_fn(|request| {
-                let future = service.call(request);
-                async {
-                    let response = future.await.unwrap_or_else(Response::from);
-                    Ok::<_, Infallible>(response.into())
-                }
-            });
 
             // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
