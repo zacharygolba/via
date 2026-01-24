@@ -1,5 +1,4 @@
 use http::request::Parts;
-use http_body_util::Limited;
 use hyper::body::Incoming;
 use hyper::service::Service;
 use std::collections::VecDeque;
@@ -51,13 +50,13 @@ impl<App> Service<http::Request<Incoming>> for AppService<App> {
 
         // Wrap the raw HTTP request in our custom Request struct.
         let mut request = {
-            // Split the incoming request into it's component parts.
-            let (parts, body) = request.into_parts();
+            // Preallocate 240 bytes for path parameter ranges.
+            let params = Vec::with_capacity(6);
 
-            // Limit the length of the request body to max_request_size.
-            let body = Limited::new(body, self.max_request_size);
+            // Ownership of app is shared with Request.
+            let app = self.app.app.clone();
 
-            Request::new(self.app.app.clone(), parts, body)
+            Request::new(app, self.max_request_size, params, request)
         };
 
         // Borrow the request params mutably and borrow the uri.

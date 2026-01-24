@@ -103,6 +103,16 @@ impl Envelope {
     }
 }
 
+impl Envelope {
+    fn new(parts: Parts, params: Vec<PathParamEntry>) -> Self {
+        Self {
+            parts,
+            params,
+            cookies: CookieJar::new(),
+        }
+    }
+}
+
 impl Debug for Envelope {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         #[derive(Debug)]
@@ -121,17 +131,18 @@ impl Debug for Envelope {
 }
 
 impl<App> Request<App> {
-    #[inline]
-    pub(crate) fn new(app: Shared<App>, parts: Parts, body: Limited<Body>) -> Self {
-        let envelope = Envelope {
-            parts,
-            params: Vec::new(),
-            cookies: CookieJar::new(),
-        };
+    #[inline(always)]
+    pub(crate) fn new(
+        app: Shared<App>,
+        limit: usize,
+        params: Vec<PathParamEntry>,
+        request: http::Request<Body>,
+    ) -> Self {
+        let (parts, body) = request.into_parts();
 
         Self {
-            envelope,
-            body,
+            envelope: Envelope::new(parts, params),
+            body: Limited::new(body, limit),
             app,
         }
     }
