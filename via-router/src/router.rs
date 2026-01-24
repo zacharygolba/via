@@ -2,9 +2,8 @@ use smallvec::{SmallVec, smallvec};
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::slice;
-use std::sync::Arc;
 
-use crate::path::{self, Param, Pattern, Split};
+use crate::path::{self, Ident, Param, Pattern, Split};
 
 /// An iterator over the middleware for a matched route.
 ///
@@ -218,7 +217,7 @@ impl<'a, T> Binding<'a, T> {
 }
 
 impl<'a, T> Iterator for Binding<'a, T> {
-    type Item = (Route<'a, T>, Option<(&'a Arc<str>, Param)>);
+    type Item = (Route<'a, T>, Option<(&'a Ident, Param)>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.results.pop()?;
@@ -252,7 +251,7 @@ impl<'a, T> Iterator for Binding<'a, T> {
 }
 
 impl<'a, 'b, T> Iterator for Traverse<'a, 'b, T> {
-    type Item = (Route<'a, T>, Option<(&'a Arc<str>, Param)>);
+    type Item = (Route<'a, T>, Option<(&'a Ident, Param)>);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -316,10 +315,9 @@ where
 #[cfg(test)]
 mod tests {
     use std::iter::Map;
-    use std::sync::Arc;
 
     use super::{Route, Router};
-    use crate::path::Param;
+    use crate::path::{Ident, Param};
 
     const PATHS: [&str; 5] = [
         "/",
@@ -329,7 +327,7 @@ mod tests {
         "/*path",
     ];
 
-    type Match<'a, N = Arc<str>> = (
+    type Match<'a, N = Ident> = (
         Map<Route<'a, String>, fn(&'a String) -> &'a str>,
         Option<(&'a N, Param)>,
     );
@@ -347,7 +345,7 @@ mod tests {
 
     #[allow(clippy::type_complexity)]
     fn expect_match<'a>(
-        resolved: Option<(Route<'a, String>, Option<(&'a Arc<str>, Param)>)>,
+        resolved: Option<(Route<'a, String>, Option<(&'a Ident, Param)>)>,
     ) -> Match<'a, str> {
         if let Some((stack, param)) = resolved {
             (
@@ -376,7 +374,7 @@ mod tests {
 
         fn assert_matches_wildcard_at_root<'a, I, F>(results: &mut I, assert_param: F)
         where
-            I: Iterator<Item = (Route<'a, String>, Option<(&'a Arc<str>, Param)>)>,
+            I: Iterator<Item = (Route<'a, String>, Option<(&'a Ident, Param)>)>,
             F: FnOnce(&Option<(&'a str, (usize, Option<usize>))>),
         {
             let (mut stack, param) = expect_match(results.next());

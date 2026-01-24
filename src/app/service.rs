@@ -73,7 +73,7 @@ impl<App> Service<http::Request<Incoming>> for AppService<App> {
 
             if let Some((name, range)) = param {
                 // Include the route's dynamic parameter in params.
-                params.push((Arc::clone(name), range));
+                params.push((name.clone(), range));
             }
         }
 
