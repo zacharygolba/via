@@ -19,7 +19,7 @@ pub struct Envelope {
 }
 
 pub struct Request<App = ()> {
-    envelope: Box<Envelope>,
+    envelope: Envelope,
     body: Limited<Body>,
     app: Shared<App>,
 }
@@ -123,11 +123,11 @@ impl Debug for Envelope {
 impl<App> Request<App> {
     #[inline]
     pub(crate) fn new(app: Shared<App>, parts: Parts, body: Limited<Body>) -> Self {
-        let envelope = Box::new(Envelope {
+        let envelope = Envelope {
             parts,
             params: Vec::new(),
             cookies: CookieJar::new(),
-        });
+        };
 
         Self {
             envelope,
@@ -164,7 +164,7 @@ impl<App> Request<App> {
     /// Consumes the request and returns a tuple containing it's parts.
     ///
     #[inline]
-    pub fn into_parts(self) -> (Box<Envelope>, Limited<Body>, Shared<App>) {
+    pub fn into_parts(self) -> (Envelope, Limited<Body>, Shared<App>) {
         (self.envelope, self.body, self.app)
     }
 }
