@@ -58,7 +58,7 @@ fn handle_error(error: &impl std::error::Error) {
 async fn start<App, F, R>(
     app: Shared<App>,
     listen: Arc<F>,
-    mut envelope: Box<Envelope>,
+    mut envelope: Envelope,
     builder: Builder,
 ) where
     F: Fn(Channel, Request<App>) -> R + Send + Sync + 'static,
@@ -77,7 +77,7 @@ async fn start<App, F, R>(
         }
     };
 
-    let envelope = Arc::from(envelope);
+    let envelope = Arc::new(envelope);
     tokio::pin!(stream);
 
     'session: loop {
@@ -255,7 +255,6 @@ where
 
         tokio::spawn({
             let (envelope, _, app) = request.into_parts();
-            let envelope = Box::new(envelope);
             let builder = Builder::new().config(self.config).limits(self.limits);
             let listen = Arc::clone(&self.listen);
 
