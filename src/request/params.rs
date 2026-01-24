@@ -1,15 +1,14 @@
+use http::StatusCode;
 use std::borrow::Cow;
 use std::str::FromStr;
-use std::sync::Arc;
-
-use http::StatusCode;
+use via_router::Ident;
 
 use super::query::QueryParser;
 use crate::util::UriEncoding;
 use crate::{Error, raise};
 
 pub(super) type ParamRange = (usize, Option<usize>);
-pub(super) type PathParamEntry = (Arc<str>, ParamRange);
+pub(super) type PathParamEntry = (Ident, ParamRange);
 pub(super) type QueryParamEntry<'a> = (Cow<'a, str>, Option<ParamRange>);
 
 pub struct Param<'a, 'b> {

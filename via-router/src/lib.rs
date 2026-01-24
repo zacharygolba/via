@@ -3,5 +3,5 @@
 mod path;
 mod router;
 
-pub use path::Param;
+pub use path::{Ident, Param};
 pub use router::{Route, RouteMut, Router, Traverse};

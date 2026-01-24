@@ -123,7 +123,7 @@ fn find_matches_1(b: &mut Bencher) {
         for (stack, param) in router.traverse("/dashboard") {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
-                params.push((Arc::clone(name), range));
+                params.push((name.clone(), range));
             }
         }
     });
@@ -143,7 +143,7 @@ fn find_matches_2(b: &mut Bencher) {
         for (stack, param) in router.traverse("/dashboard/overview") {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
-                params.push((Arc::clone(name), range));
+                params.push((name.clone(), range));
             }
         }
     });
@@ -163,7 +163,7 @@ fn find_matches_3(b: &mut Bencher) {
         for (stack, param) in router.traverse("/help/article/12345678987654321") {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
-                params.push((Arc::clone(name), range));
+                params.push((name.clone(), range));
             }
         }
     });
@@ -183,7 +183,7 @@ fn find_matches_4(b: &mut Bencher) {
         for (stack, param) in router.traverse("/api/v1/products/12345678987654321") {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
-                params.push((Arc::clone(name), range));
+                params.push((name.clone(), range));
             }
         }
     });
@@ -205,7 +205,7 @@ fn find_matches_5(b: &mut Bencher) {
         {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
-                params.push((Arc::clone(name), range));
+                params.push((name.clone(), range));
             }
         }
     });
@@ -227,7 +227,7 @@ fn find_matches_6(b: &mut Bencher) {
         {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
-                params.push((Arc::clone(name), range));
+                params.push((name.clone(), range));
             }
         }
     });
@@ -249,7 +249,7 @@ fn find_matches_7(b: &mut Bencher) {
         {
             next.extend(stack.map(Arc::clone));
             if let Some((name, range)) = param {
-                params.push((Arc::clone(name), range));
+                params.push((name.clone(), range));
             }
         }
     });

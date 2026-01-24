@@ -1,6 +1,13 @@
+use std::fmt::{self, Debug, Formatter};
+use std::ops::Deref;
 use std::sync::Arc;
 
 pub type Param = (usize, Option<usize>);
+
+#[derive(Clone)]
+pub struct Ident {
+    value: Arc<str>,
+}
 
 #[derive(Clone)]
 pub struct Split<'a> {
@@ -12,8 +19,8 @@ pub struct Split<'a> {
 pub enum Pattern {
     Root,
     Static(String),
-    Dynamic(Arc<str>),
-    Wildcard(Arc<str>),
+    Dynamic(Ident),
+    Wildcard(Ident),
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
@@ -42,6 +49,41 @@ pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
             _ => Pattern::Static(segment.into()),
         }
     })
+}
+
+impl AsRef<str> for Ident {
+    fn as_ref(&self) -> &str {
+        self.value.as_ref()
+    }
+}
+
+impl Debug for Ident {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Debug::fmt(self.as_ref(), f)
+    }
+}
+
+impl Deref for Ident {
+    type Target = str;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl From<String> for Ident {
+    fn from(value: String) -> Self {
+        Self {
+            value: Arc::from(value),
+        }
+    }
+}
+
+impl PartialEq for Ident {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ref() == other.as_ref()
+    }
 }
 
 impl<'a> Split<'a> {
