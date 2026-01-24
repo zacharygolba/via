@@ -255,6 +255,7 @@ where
 
         tokio::spawn({
             let (envelope, _, app) = request.into_parts();
+            let envelope = Box::new(envelope);
             let builder = Builder::new().config(self.config).limits(self.limits);
             let listen = Arc::clone(&self.listen);
 
