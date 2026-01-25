@@ -54,12 +54,18 @@ where
     Io: AsyncRead + AsyncWrite + Send + Unpin + 'static,
     F: Future<Output = Result<Io, ServerError>> + Send + 'static,
 {
+    let ServerConfig {
+        max_connections,
+        shutdown_timeout,
+
+        #[cfg(any(feature = "native-tls", feature = "rustls"))]
+        tls_handshake_timeout,
+        ..
+    } = config;
+
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently.
-    //
-    // If the maximum number of connections is reached, we'll wait until
-    // `config.accept_timeout` before resetting the connection.
-    let semaphore = Arc::new(Semaphore::new(config.max_connections));
+    let semaphore = Arc::new(Semaphore::new(max_connections));
 
     // Notify the accept loop and connection tasks to initiate a graceful
     // shutdown when a "ctrl-c" notification is sent to the process.
@@ -107,7 +113,23 @@ where
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
+            #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
             let io = IoWithPermit::new(TokioIo::new(handshake.await?), permit);
+
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            let io = {
+                let stream = if let Some(duration) = tls_handshake_timeout {
+                    match time::timeout(duration, handshake).await {
+                        Ok(Ok(accepted)) => accepted,
+                        Ok(Err(error)) => return Err(error),
+                        Err(_) => return Err(ServerError::HandshakeTimeout),
+                    }
+                } else {
+                    handshake.await?
+                };
+
+                IoWithPermit::new(TokioIo::new(stream), permit)
+            };
 
             // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
@@ -144,10 +166,8 @@ where
         }
     };
 
-    // Try to drain each inflight connection before `config.shutdown_timeout`.
-    let drain = drain_connections(true, connections);
-
-    match time::timeout(config.shutdown_timeout, drain).await {
+    // Try to drain each inflight connection before `shutdown_timeout`.
+    match time::timeout(shutdown_timeout, drain_connections(true, connections)).await {
         Ok(_) => exit_code,
         Err(_) => ExitCode::FAILURE,
     }
@@ -174,8 +194,8 @@ fn handle_error(error: ServerError) {
                 log!("error(task): {}", http_error);
             }
         }
-        ServerError::Tls(tls_error) => {
-            log!("error(task): {}", tls_error);
+        other => {
+            log!("error(task): {}", other);
         }
     }
 }
