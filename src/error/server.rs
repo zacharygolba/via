@@ -14,6 +14,9 @@ pub(crate) enum ServerError {
     // This variant is only used when a tls backend is enabled.
     #[allow(dead_code)]
     Tls(BoxError),
+
+    #[allow(dead_code)]
+    HandshakeTimeout,
 }
 
 impl Display for ServerError {
@@ -23,6 +26,12 @@ impl Display for ServerError {
             Self::Join(error) => Display::fmt(error, f),
             Self::Http(error) => Display::fmt(error, f),
             Self::Tls(error) => Display::fmt(error, f),
+            Self::HandshakeTimeout => {
+                writeln!(
+                    f,
+                    "tls negotiation did not finish within the configured timeout",
+                )
+            }
         }
     }
 }
@@ -34,6 +43,7 @@ impl std::error::Error for ServerError {
             Self::Join(error) => error.source(),
             Self::Http(error) => error.source(),
             Self::Tls(error) => error.source(),
+            _ => None,
         }
     }
 }
