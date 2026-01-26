@@ -1,7 +1,6 @@
 use hyper::server::conn;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::error::Error;
-use std::io::ErrorKind;
 use std::mem;
 use std::process::ExitCode;
 use std::sync::Arc;
