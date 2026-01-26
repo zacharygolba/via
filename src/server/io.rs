@@ -16,11 +16,11 @@ impl<T> IoWithPermit<T> {
     }
 }
 
-impl<T: Unpin> IoWithPermit<T> {
+impl<T> IoWithPermit<T> {
     #[inline(always)]
     fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
-        let this = self.get_mut();
-        Pin::new(&mut this.io)
+        // Safety: A pin projection.
+        unsafe { Pin::map_unchecked_mut(self, |it| &mut it.io) }
     }
 }
 
