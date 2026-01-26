@@ -10,6 +10,13 @@ impl<App> Shared<App> {
     }
 }
 
+impl<App> AsRef<App> for Shared<App> {
+    #[inline]
+    fn as_ref(&self) -> &App {
+        &self.0
+    }
+}
+
 impl<App> Clone for Shared<App> {
     #[inline]
     fn clone(&self) -> Self {
@@ -28,6 +35,6 @@ impl<App> Deref for Shared<App> {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        Deref::deref(&self.0)
+        &self.0
     }
 }
