@@ -10,6 +10,9 @@ use tokio::sync::{Semaphore, watch};
 use tokio::task::{JoinSet, coop};
 use tokio::{signal, time};
 
+#[cfg(any(unix, windows))]
+use std::io::ErrorKind as IoErrorKind;
+
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
 
@@ -86,12 +89,16 @@ where
                 Ok(accepted) => accepted,
                 Err(error) => {
                     #[cfg(unix)]
-                    if let Some(12 | 23 | 24) = error.raw_os_error() {
+                    if let IoErrorKind::Other = error.kind()
+                        && let Some(12 | 23 | 24) = error.raw_os_error()
+                    {
                         return ExitCode::FAILURE;
                     }
 
                     #[cfg(windows)]
-                    if let Some(10024 | 10055) = error.raw_os_error() {
+                    if let IoErrorKind::Other = error.kind()
+                        && let Some(10024 | 10055) = error.raw_os_error()
+                    {
                         return ExitCode::FAILURE;
                     }
 
