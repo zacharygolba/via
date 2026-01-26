@@ -1,6 +1,7 @@
 use hyper::server::conn;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::error::Error;
+use std::io::ErrorKind;
 use std::mem;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -85,6 +86,16 @@ where
             result = listener.accept() => match result {
                 Ok(accepted) => accepted,
                 Err(error) => {
+                    #[cfg(unix)]
+                    if let Some(12 | 23 | 24) = error.raw_os_error() {
+                        return ExitCode::FAILURE;
+                    }
+
+                    #[cfg(windows)]
+                    if let Some(10024 | 10055) = error.raw_os_error() {
+                        return ExitCode::FAILURE;
+                    }
+
                     log!("error(accept): {}", error);
                     continue;
                 }
