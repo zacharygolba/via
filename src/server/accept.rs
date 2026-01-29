@@ -1,31 +1,29 @@
 use hyper::server::conn;
-use hyper_util::rt::{TokioIo, TokioTimer};
+use hyper_util::rt::TokioTimer;
 use std::error::Error;
+use std::io;
 use std::mem;
 use std::process::ExitCode;
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
 use tokio::task::{JoinSet, coop};
 use tokio::{signal, time};
-
-#[cfg(any(unix, windows))]
-use std::io::ErrorKind as IoErrorKind;
 
 #[cfg(feature = "http2")]
 use hyper_util::rt::TokioExecutor;
 
 use super::io::IoWithPermit;
 use super::server::ServerConfig;
+use super::tls::Acceptor;
 use crate::app::AppService;
 use crate::error::ServerError;
 
 macro_rules! joined {
     ($result:expr) => {
         match $result {
-            Ok(Err(error)) => handle_error(error),
-            Err(error) => handle_error(ServerError::Join(error)),
+            Ok(Err(error)) => handle_error(&error),
+            Err(error) => log!("error(join): {}", error),
             _ => {}
         }
     };
@@ -39,138 +37,93 @@ macro_rules! log {
     };
 }
 
-macro_rules! receive_ctrl_c {
-    ($shutdown_rx:ident) => {
-        Option::unwrap_or(*$shutdown_rx.borrow_and_update(), ExitCode::FAILURE)
-    };
-}
-
 #[inline(never)]
-pub async fn accept<App, Io, F>(
+pub async fn accept<App, TlsAcceptor>(
     config: ServerConfig,
-    listener: TcpListener,
-    acceptor: Box<dyn Fn(TcpStream) -> F + Send>,
+    acceptor: TlsAcceptor,
     service: AppService<App>,
+    listener: TcpListener,
 ) -> ExitCode
 where
     App: Send + Sync + 'static,
-    Io: AsyncRead + AsyncWrite + Send + Unpin + 'static,
-    F: Future<Output = Result<Io, ServerError>> + Send + 'static,
+    ServerError: From<TlsAcceptor::Error>,
+    TlsAcceptor: Acceptor,
+    TlsAcceptor::Io: Send + Unpin + 'static,
 {
-    let ServerConfig {
-        max_connections,
-        shutdown_timeout,
-
-        #[cfg(any(feature = "native-tls", feature = "rustls"))]
-        tls_handshake_timeout,
-        ..
-    } = config;
+    let tls_timeout_in_seconds = config.tls_handshake_timeout;
 
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently.
-    let semaphore = Arc::new(Semaphore::new(max_connections));
+    let semaphore = Arc::new(Semaphore::new(config.max_connections));
 
     // Notify the accept loop and connection tasks to initiate a graceful
     // shutdown when a "ctrl-c" notification is sent to the process.
-    let mut shutdown_rx = {
-        let (tx, rx) = watch::channel(None);
-        tokio::spawn(wait_for_ctrl_c(tx));
-        rx
-    };
+    let mut watcher = wait_for_ctrl_c();
 
     // A JoinSet to track and join active connections.
     let mut connections = JoinSet::new();
 
     // Start accepting incoming connections.
     let exit_code = loop {
-        let (tcp_stream, _) = tokio::select! {
+        let (io, _) = tokio::select! {
             // A new TCP stream was accepted from the listener.
             result = listener.accept() => match result {
+                Err(error) if is_fatal(&error) => return ExitCode::FAILURE,
                 Ok(accepted) => accepted,
                 Err(error) => {
-                    #[cfg(unix)]
-                    if let IoErrorKind::Other = error.kind()
-                        && let Some(12 | 23 | 24) = error.raw_os_error()
-                    {
-                        return ExitCode::FAILURE;
-                    }
-
-                    #[cfg(windows)]
-                    if let IoErrorKind::Other = error.kind()
-                        && let Some(10024 | 10055) = error.raw_os_error()
-                    {
-                        return ExitCode::FAILURE;
-                    }
-
                     log!("error(accept): {}", error);
                     continue;
                 }
             },
 
             // The process received a graceful shutdown signal.
-            _ = shutdown_rx.changed() => {
-                break receive_ctrl_c!(shutdown_rx);
+            _ = watcher.changed() => {
+                break Option::unwrap_or(*watcher.borrow_and_update(), ExitCode::FAILURE);
             }
         };
 
-        // Acquire a permit from the semaphore.
-        let permit = match semaphore.clone().try_acquire_owned() {
-            // Permit acquired. Proceed with serving the connection.
-            Ok(acquired) => acquired,
-
+        // Permit acquired. Proceed with serving the connection.
+        let Ok(permit) = semaphore.clone().try_acquire_owned() else {
             // The server is at capacity. Close the connection. Upstream load
             // balancers take this as a hint that it is time to try another
             // node.
-            Err(_) => continue,
+            continue;
         };
 
+        let handshake = acceptor.accept(io);
         let service = service.clone();
-        let handshake = acceptor(tcp_stream);
-        let mut shutdown_rx = shutdown_rx.clone();
+        let mut rx = watcher.clone();
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
-            let io = IoWithPermit::new(TokioIo::new(handshake.await?), permit);
-
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
-            let io = {
-                let stream = if let Some(duration) = tls_handshake_timeout {
-                    match time::timeout(duration, handshake).await {
-                        Ok(Ok(accepted)) => accepted,
-                        Ok(Err(error)) => return Err(error),
-                        Err(_) => return Err(ServerError::HandshakeTimeout),
-                    }
-                } else {
-                    handshake.await?
-                };
-
-                IoWithPermit::new(TokioIo::new(stream), permit)
+            let io = if let Some(duration) = tls_timeout_in_seconds {
+                match time::timeout(duration, handshake).await {
+                    Ok(result) => result?,
+                    Err(_) => return Err(ServerError::handshake_timeout()),
+                }
+            } else {
+                handshake.await?
             };
 
-            // Create a new HTTP/2 connection.
             #[cfg(feature = "http2")]
-            let mut connection = Box::pin(
-                conn::http2::Builder::new(TokioExecutor::new())
-                    .timer(TokioTimer::new())
-                    .serve_connection(io, service),
-            );
+            let connection = conn::http2::Builder::new(TokioExecutor::new())
+                .timer(TokioTimer::new())
+                .serve_connection(IoWithPermit::new(io, permit), service);
 
-            // Create a new HTTP/1.1 connection.
             #[cfg(all(feature = "http1", not(feature = "http2")))]
-            let mut connection = Box::pin(
-                conn::http1::Builder::new()
-                    .timer(TokioTimer::new())
-                    .serve_connection(io, service)
-                    .with_upgrades(),
-            );
+            let connection = conn::http1::Builder::new()
+                .timer(TokioTimer::new())
+                .serve_connection(IoWithPermit::new(io, permit), service)
+                .with_upgrades();
+
+            tokio::pin!(connection);
 
             // Serve the connection.
             tokio::select! {
-                result = connection.as_mut() => Ok(result?),
-                _ = shutdown_rx.changed() => {
+                result = &mut connection => Ok(result?),
+                _ = rx.changed() => {
                     connection.as_mut().graceful_shutdown();
-                    Ok(connection.as_mut().await?)
+                    Ok((&mut connection).await?)
                 }
             }
         });
@@ -183,37 +136,15 @@ where
         }
     };
 
-    // Try to drain each inflight connection before `shutdown_timeout`.
-    match time::timeout(shutdown_timeout, drain_connections(true, connections)).await {
+    // Try to drain each inflight connection before `config.shutdown_timeout`.
+    match time::timeout(
+        config.shutdown_timeout,
+        drain_connections(true, connections),
+    )
+    .await
+    {
         Ok(_) => exit_code,
         Err(_) => ExitCode::FAILURE,
-    }
-}
-
-fn handle_error(error: ServerError) {
-    match error {
-        ServerError::Io(io_error) => log!("error(task): {}", io_error),
-        ServerError::Join(join_error) => {
-            if join_error.is_panic() {
-                log!("panic(task): {}", join_error);
-            }
-        }
-        ServerError::Http(http_error) => {
-            let was_disconnect = http_error.is_canceled()
-                || http_error.is_incomplete_message()
-                || http_error.source().is_some_and(|source| {
-                    source
-                        .downcast_ref::<std::io::Error>()
-                        .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
-                });
-
-            if !was_disconnect {
-                log!("error(task): {}", http_error);
-            }
-        }
-        other => {
-            log!("error(task): {}", other);
-        }
     }
 }
 
@@ -224,17 +155,59 @@ async fn drain_connections(immediate: bool, mut connections: JoinSet<Result<(), 
 
     while let Some(result) = connections.join_next().await {
         joined!(result);
-
         if !immediate {
             coop::consume_budget().await;
         }
     }
 }
 
-async fn wait_for_ctrl_c(tx: watch::Sender<Option<ExitCode>>) {
-    if signal::ctrl_c().await.is_err() {
-        eprintln!("unable to register the 'ctrl-c' signal.");
-    } else if tx.send(Some(ExitCode::SUCCESS)).is_err() {
-        eprintln!("unable to notify connections to shutdown.");
+fn handle_error(error: &ServerError) {
+    if let ServerError::Http(error) = error {
+        if error.is_canceled()
+            || error.is_incomplete_message()
+            || error.source().is_some_and(|source| {
+                source
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
+            })
+        {
+            log!("warn(disconnect): {}", error);
+        } else {
+            log!("error(http): {}", error);
+        }
+    } else {
+        log!("error(task): {}", &error);
     }
+}
+
+#[cfg(unix)]
+fn is_fatal(error: &io::Error) -> bool {
+    if let std::io::ErrorKind::Other = error.kind() {
+        matches!(error.raw_os_error(), Some(12 | 23 | 24))
+    } else {
+        false
+    }
+}
+
+#[cfg(windows)]
+fn is_fatal(error: &io::Error) -> bool {
+    if let std::io::ErrorKind::Other = error.kind() {
+        matches!(error.raw_os_error(), Some(10024 | 10055))
+    } else {
+        false
+    }
+}
+
+fn wait_for_ctrl_c() -> watch::Receiver<Option<ExitCode>> {
+    let (tx, rx) = watch::channel(None);
+
+    tokio::spawn(async move {
+        if signal::ctrl_c().await.is_err() {
+            eprintln!("unable to register the 'ctrl-c' signal.");
+        } else if tx.send(Some(ExitCode::SUCCESS)).is_err() {
+            eprintln!("unable to notify connections to shutdown.");
+        }
+    });
+
+    rx
 }
