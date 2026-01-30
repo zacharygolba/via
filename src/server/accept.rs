@@ -23,8 +23,8 @@ struct InitializationToken(CancellationToken);
 macro_rules! joined {
     ($result:expr) => {
         match $result {
-            Ok(Err(error)) => handle_error(error),
-            Err(error) => log!("error(join): {}", error),
+            Ok(Err(error)) => handle_error(&error),
+            Err(error) => log!("error(join): {}", &error),
             _ => {}
         }
     };
@@ -115,7 +115,7 @@ where
         if connections.len() >= 1024 {
             let batch = mem::take(&mut connections);
             tokio::spawn(drain_connections(false, batch));
-        } else if let Some(ref result) = connections.try_join_next() {
+        } else if let Some(result) = connections.try_join_next() {
             joined!(result);
         }
     };
@@ -137,7 +137,7 @@ async fn drain_connections(immediate: bool, mut connections: JoinSet<Result<(), 
         println!("joining {} inflight connections...", connections.len());
     }
 
-    while let Some(ref result) = connections.join_next().await {
+    while let Some(result) = connections.join_next().await {
         joined!(result);
         if !immediate {
             coop::consume_budget().await;
