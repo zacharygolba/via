@@ -4,9 +4,7 @@
 mod accept;
 mod io;
 mod server;
-
-#[cfg(any(feature = "native-tls", feature = "rustls"))]
 mod tls;
 
-use accept::accept;
+pub(crate) use accept::accept;
 pub use server::Server;

@@ -1,7 +1,8 @@
 use hyper::rt::{Read, ReadBufCursor, Write};
 use std::io;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, ready};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::OwnedSemaphorePermit;
 
 pub(crate) struct IoWithPermit<T> {
@@ -20,21 +21,31 @@ impl<T> IoWithPermit<T> {
     #[inline(always)]
     fn project(self: Pin<&mut Self>) -> Pin<&mut T> {
         // Safety: A pin projection.
-        unsafe { Pin::map_unchecked_mut(self, |it| &mut it.io) }
+        unsafe { Pin::map_unchecked_mut(self, |this| &mut this.io) }
     }
 }
 
-impl<T: Read + Unpin> Read for IoWithPermit<T> {
+impl<T: AsyncRead> Read for IoWithPermit<T> {
     fn poll_read(
         self: Pin<&mut Self>,
         context: &mut Context,
-        buf: ReadBufCursor,
+        mut buf: ReadBufCursor,
     ) -> Poll<io::Result<()>> {
-        self.project().poll_read(context, buf)
+        let n = unsafe {
+            let mut dest = ReadBuf::uninit(buf.as_mut());
+            ready!(self.project().poll_read(context, &mut dest)?);
+            dest.filled().len()
+        };
+
+        unsafe {
+            buf.advance(n);
+        }
+
+        Poll::Ready(Ok(()))
     }
 }
 
-impl<T: Write + Unpin> Write for IoWithPermit<T> {
+impl<T: AsyncWrite> Write for IoWithPermit<T> {
     fn poll_write(
         self: Pin<&mut Self>,
         context: &mut Context<'_>,

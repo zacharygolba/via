@@ -1,13 +1,18 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::ToSocketAddrs;
+use tokio::net::{TcpListener, ToSocketAddrs};
 
+use super::accept;
+use super::tls::TcpAcceptor;
 use crate::app::{AppService, Via};
 use crate::error::Error;
 
-#[cfg(any(feature = "native-tls", feature = "rustls"))]
-use super::tls;
+#[cfg(feature = "native-tls")]
+use super::tls::NativeTlsAcceptor;
+
+#[cfg(feature = "rustls")]
+use super::tls::RustlsAcceptor;
 
 /// Serve an app over HTTP.
 ///
@@ -17,12 +22,10 @@ pub struct Server<App> {
 }
 
 #[derive(Debug)]
-pub(super) struct ServerConfig {
+pub struct ServerConfig {
     pub(super) max_connections: usize,
     pub(super) max_request_size: usize,
     pub(super) shutdown_timeout: Duration,
-
-    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub(super) tls_handshake_timeout: Option<Duration>,
 }
 
@@ -86,9 +89,10 @@ where
     /// The amount of time in seconds that an individual connection task will
     /// wait for the TLS handshake to complete before closing the connection.
     ///
+    /// This configuration is only used when a TLS backend is enabled.
+    ///
     /// **Default:** `10s`
     ///
-    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub fn tls_handshake_timeout(self, tls_handshake_timeout: Option<Duration>) -> Self {
         Self {
             config: ServerConfig {
@@ -143,20 +147,12 @@ where
     where
         A: ToSocketAddrs,
     {
-        use tokio::net::TcpListener;
+        let acceptor = TcpAcceptor::new();
+        let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
-        let Self { app, config } = self;
-        let service = AppService::new(Arc::new(app), config.max_request_size);
-
-        async {
-            let exit = super::accept(
-                config,
-                TcpListener::bind(address).await?,
-                Box::new(|stream| async { Ok(stream) }),
-                service,
-            );
-
-            Ok(exit.await)
+        async move {
+            let listener = TcpListener::bind(address).await?;
+            Ok(accept(self.config, acceptor, service, listener).await)
         }
     }
 
@@ -164,30 +160,36 @@ where
     pub fn listen_native_tls<A>(
         self,
         address: A,
-        tls_config: native_tls::Identity,
+        identity: native_tls::Identity,
     ) -> impl Future<Output = Result<ExitCode, Error>>
     where
         A: ToSocketAddrs,
     {
-        let Self { app, config, .. } = self;
-        let service = AppService::new(Arc::new(app), config.max_request_size);
+        let acceptor = NativeTlsAcceptor::new(identity);
+        let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
-        tls::listen_native_tls(config, address, tls_config, service)
+        async {
+            let listener = TcpListener::bind(address).await?;
+            Ok(accept(self.config, acceptor, service, listener).await)
+        }
     }
 
     #[cfg(feature = "rustls")]
     pub fn listen_rustls<A>(
         self,
         address: A,
-        tls_config: rustls::ServerConfig,
+        rustls_config: rustls::ServerConfig,
     ) -> impl Future<Output = Result<ExitCode, Error>>
     where
         A: ToSocketAddrs,
     {
-        let Self { app, config, .. } = self;
-        let service = AppService::new(Arc::new(app), config.max_request_size);
+        let acceptor = RustlsAcceptor::new(rustls_config);
+        let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
-        tls::listen_rustls(config, address, tls_config, service)
+        async {
+            let listener = TcpListener::bind(address).await?;
+            Ok(accept(self.config, acceptor, service, listener).await)
+        }
     }
 }
 
@@ -197,8 +199,6 @@ impl Default for ServerConfig {
             max_connections: 1000,
             max_request_size: 104_857_600, // 100 MB
             shutdown_timeout: Duration::from_secs(30),
-
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
             tls_handshake_timeout: Some(Duration::from_secs(10)),
         }
     }
