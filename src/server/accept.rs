@@ -4,14 +4,12 @@ use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::{io, mem};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::task::{JoinSet, coop};
 use tokio::{signal, time};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
-
-#[cfg(feature = "http2")]
-use hyper_util::rt::TokioExecutor;
 
 use super::io::IoWithPermit;
 use super::server::ServerConfig;
@@ -25,7 +23,7 @@ struct InitializationToken(CancellationToken);
 macro_rules! joined {
     ($result:expr) => {
         match $result {
-            Ok(Err(error)) => handle_error(&error),
+            Ok(Err(error)) => handle_error(error),
             Err(error) => log!("error(join): {}", error),
             _ => {}
         }
@@ -111,33 +109,13 @@ where
                 handshake.await?
             };
 
-            #[cfg(feature = "http2")]
-            let connection = conn::http2::Builder::new(TokioExecutor::new())
-                .timer(TokioTimer::new())
-                .serve_connection(IoWithPermit::new(io, permit), service);
-
-            #[cfg(all(feature = "http1", not(feature = "http2")))]
-            let connection = conn::http1::Builder::new()
-                .timer(TokioTimer::new())
-                .serve_connection(IoWithPermit::new(io, permit), service)
-                .with_upgrades();
-
-            tokio::pin!(connection);
-
-            // Serve the connection.
-            tokio::select! {
-                result = &mut connection => Ok(result?),
-                _ = shutdown.requested() => {
-                    connection.as_mut().graceful_shutdown();
-                    Ok((&mut connection).await?)
-                }
-            }
+            serve_connection(IoWithPermit::new(io, permit), service, shutdown).await
         });
 
         if connections.len() >= 1024 {
             let batch = mem::take(&mut connections);
             tokio::spawn(drain_connections(false, batch));
-        } else if let Some(result) = connections.try_join_next() {
+        } else if let Some(ref result) = connections.try_join_next() {
             joined!(result);
         }
     };
@@ -159,7 +137,7 @@ async fn drain_connections(immediate: bool, mut connections: JoinSet<Result<(), 
         println!("joining {} inflight connections...", connections.len());
     }
 
-    while let Some(result) = connections.join_next().await {
+    while let Some(ref result) = connections.join_next().await {
         joined!(result);
         if !immediate {
             coop::consume_budget().await;
@@ -201,6 +179,55 @@ fn is_fatal(error: &io::Error) -> bool {
         matches!(error.raw_os_error(), Some(10024 | 10055))
     } else {
         false
+    }
+}
+
+#[cfg(feature = "http2")]
+async fn serve_connection<App, Io>(
+    io: IoWithPermit<Io>,
+    service: AppService<App>,
+    shutdown: InitializationToken,
+) -> Result<(), ServerError>
+where
+    App: Send + Sync + 'static,
+    Io: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+{
+    let connection = conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+        .timer(TokioTimer::new())
+        .serve_connection(io, service);
+
+    tokio::pin!(connection);
+    tokio::select! {
+        result = &mut connection => Ok(result?),
+        _ = shutdown.requested() => {
+            connection.as_mut().graceful_shutdown();
+            Ok((&mut connection).await?)
+        }
+    }
+}
+
+#[cfg(all(feature = "http1", not(feature = "http2")))]
+async fn serve_connection<App, Io>(
+    io: IoWithPermit<Io>,
+    service: AppService<App>,
+    shutdown: InitializationToken,
+) -> Result<(), ServerError>
+where
+    App: Send + Sync + 'static,
+    Io: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+{
+    let connection = conn::http1::Builder::new()
+        .timer(TokioTimer::new())
+        .serve_connection(io, service)
+        .with_upgrades();
+
+    tokio::pin!(connection);
+    tokio::select! {
+        result = &mut connection => Ok(result?),
+        _ = shutdown.requested() => {
+            connection.as_mut().graceful_shutdown();
+            Ok((&mut connection).await?)
+        }
     }
 }
 
