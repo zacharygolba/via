@@ -115,8 +115,6 @@ where
         if connections.len() >= 1024 {
             let batch = mem::take(&mut connections);
             tokio::spawn(drain_connections(false, batch));
-        } else if let Some(result) = connections.try_join_next() {
-            joined!(result);
         }
     };
 
