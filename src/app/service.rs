@@ -1,4 +1,3 @@
-use http::request::Parts;
 use hyper::body::Incoming;
 use hyper::service::Service;
 use std::collections::VecDeque;
@@ -8,7 +7,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use crate::middleware::BoxFuture;
-use crate::request::{Envelope, Request};
+use crate::request::Request;
 use crate::response::{Response, ResponseBody};
 use crate::{Next, Via};
 
@@ -60,14 +59,12 @@ impl<App> Service<http::Request<Incoming>> for AppService<App> {
         };
 
         // Borrow the request params mutably and borrow the uri.
-        let Envelope {
-            ref mut params,
-            parts: Parts { ref uri, .. },
-            ..
-        } = *request.envelope_mut();
+        let Ok((params, path)) = request.params_mut_with_path() else {
+            return FutureResponse(Next::new(deque).call(request));
+        };
 
         // Populate the middleware stack with the resolved routes.
-        for (route, param) in self.app.router.traverse(uri.path()) {
+        for (route, param) in self.app.router.traverse(path) {
             // Extend the deque with the route's middleware stack.
             deque.extend(route.cloned());
 
