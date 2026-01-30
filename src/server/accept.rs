@@ -97,10 +97,10 @@ where
         // Spawn a task to serve the connection.
         connections.spawn(async move {
             let io = if let Some(duration) = tls_timeout_in_seconds {
-                match time::timeout(duration, handshake).await {
-                    Ok(result) => result?,
-                    Err(_) => return Err(ServerError::handshake_timeout()),
-                }
+                let Ok(result) = time::timeout(duration, handshake).await else {
+                    return Err(ServerError::handshake_timeout());
+                };
+                result?
             } else {
                 handshake.await?
             };
