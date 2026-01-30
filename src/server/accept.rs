@@ -1,17 +1,15 @@
 use hyper::server::conn;
 use hyper_util::rt::TokioTimer;
 use std::error::Error;
-use std::io;
-use std::mem;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::{io, mem};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
-use tokio::sync::{Semaphore, watch};
+use tokio::sync::Semaphore;
 use tokio::task::{JoinSet, coop};
 use tokio::{signal, time};
-
-#[cfg(feature = "http2")]
-use hyper_util::rt::TokioExecutor;
+use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 
 use super::io::IoWithPermit;
 use super::server::ServerConfig;
@@ -19,11 +17,14 @@ use super::tls::Acceptor;
 use crate::app::AppService;
 use crate::error::ServerError;
 
+#[derive(Clone)]
+struct InitializationToken(CancellationToken);
+
 macro_rules! joined {
     ($result:expr) => {
         match $result {
             Ok(Err(error)) => handle_error(&error),
-            Err(error) => log!("error(join): {}", error),
+            Err(error) => log!("error(join): {}", &error),
             _ => {}
         }
     };
@@ -56,12 +57,12 @@ where
     // of connections that the server can handle concurrently.
     let semaphore = Arc::new(Semaphore::new(config.max_connections));
 
-    // Notify the accept loop and connection tasks to initiate a graceful
-    // shutdown when a "ctrl-c" notification is sent to the process.
-    let mut watcher = wait_for_ctrl_c();
-
     // A JoinSet to track and join active connections.
     let mut connections = JoinSet::new();
+
+    // Notify the accept loop and connection tasks to initiate a graceful
+    // shutdown when a "ctrl-c" notification is sent to the process.
+    let shutdown = wait_for_ctrl_c();
 
     // Start accepting incoming connections.
     let exit_code = loop {
@@ -77,8 +78,8 @@ where
             },
 
             // The process received a graceful shutdown signal.
-            _ = watcher.changed() => {
-                break Option::unwrap_or(*watcher.borrow_and_update(), ExitCode::FAILURE);
+            _ = shutdown.requested() => {
+                break ExitCode::FAILURE;
             }
         };
 
@@ -92,7 +93,7 @@ where
 
         let handshake = acceptor.accept(io);
         let service = service.clone();
-        let mut rx = watcher.clone();
+        let shutdown = shutdown.clone();
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
@@ -108,27 +109,7 @@ where
                 handshake.await?
             };
 
-            #[cfg(feature = "http2")]
-            let connection = conn::http2::Builder::new(TokioExecutor::new())
-                .timer(TokioTimer::new())
-                .serve_connection(IoWithPermit::new(io, permit), service);
-
-            #[cfg(all(feature = "http1", not(feature = "http2")))]
-            let connection = conn::http1::Builder::new()
-                .timer(TokioTimer::new())
-                .serve_connection(IoWithPermit::new(io, permit), service)
-                .with_upgrades();
-
-            tokio::pin!(connection);
-
-            // Serve the connection.
-            tokio::select! {
-                result = &mut connection => Ok(result?),
-                _ = rx.changed() => {
-                    connection.as_mut().graceful_shutdown();
-                    Ok((&mut connection).await?)
-                }
-            }
+            serve_connection(IoWithPermit::new(io, permit), service, shutdown).await
         });
 
         if connections.len() >= 1024 {
@@ -185,7 +166,7 @@ fn handle_error(error: &ServerError) {
 
 #[cfg(unix)]
 fn is_fatal(error: &io::Error) -> bool {
-    if let std::io::ErrorKind::Other = error.kind() {
+    if let io::ErrorKind::Other = error.kind() {
         matches!(error.raw_os_error(), Some(12 | 23 | 24))
     } else {
         false
@@ -194,23 +175,87 @@ fn is_fatal(error: &io::Error) -> bool {
 
 #[cfg(windows)]
 fn is_fatal(error: &io::Error) -> bool {
-    if let std::io::ErrorKind::Other = error.kind() {
+    if let io::ErrorKind::Other = error.kind() {
         matches!(error.raw_os_error(), Some(10024 | 10055))
     } else {
         false
     }
 }
 
-fn wait_for_ctrl_c() -> watch::Receiver<Option<ExitCode>> {
-    let (tx, rx) = watch::channel(None);
+#[cfg(feature = "http2")]
+async fn serve_connection<App, Io>(
+    io: IoWithPermit<Io>,
+    service: AppService<App>,
+    shutdown: InitializationToken,
+) -> Result<(), ServerError>
+where
+    App: Send + Sync + 'static,
+    Io: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+{
+    let connection = conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+        .timer(TokioTimer::new())
+        .serve_connection(io, service);
+
+    tokio::pin!(connection);
+    tokio::select! {
+        result = &mut connection => Ok(result?),
+        _ = shutdown.requested() => {
+            connection.as_mut().graceful_shutdown();
+            Ok((&mut connection).await?)
+        }
+    }
+}
+
+#[cfg(all(feature = "http1", not(feature = "http2")))]
+async fn serve_connection<App, Io>(
+    io: IoWithPermit<Io>,
+    service: AppService<App>,
+    shutdown: InitializationToken,
+) -> Result<(), ServerError>
+where
+    App: Send + Sync + 'static,
+    Io: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+{
+    let connection = conn::http1::Builder::new()
+        .timer(TokioTimer::new())
+        .serve_connection(io, service)
+        .with_upgrades();
+
+    tokio::pin!(connection);
+    tokio::select! {
+        result = &mut connection => Ok(result?),
+        _ = shutdown.requested() => {
+            connection.as_mut().graceful_shutdown();
+            Ok((&mut connection).await?)
+        }
+    }
+}
+
+fn wait_for_ctrl_c() -> InitializationToken {
+    let token = InitializationToken::new();
+    let shutdown = token.clone();
 
     tokio::spawn(async move {
         if signal::ctrl_c().await.is_err() {
             eprintln!("unable to register the 'ctrl-c' signal.");
-        } else if tx.send(Some(ExitCode::SUCCESS)).is_err() {
-            eprintln!("unable to notify connections to shutdown.");
         }
+
+        shutdown.start();
     });
 
-    rx
+    token
+}
+
+impl InitializationToken {
+    pub fn new() -> Self {
+        Self(CancellationToken::new())
+    }
+
+    pub fn requested(&self) -> WaitForCancellationFuture<'_> {
+        self.0.cancelled()
+    }
+
+    pub fn start(&self) {
+        self.0.cancel();
+    }
 }
