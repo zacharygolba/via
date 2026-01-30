@@ -25,7 +25,6 @@ impl Display for HandshakeTimeoutError {
 }
 
 impl ServerError {
-    #[allow(dead_code)]
     pub fn handshake_timeout() -> Self {
         Self::Other(Box::new(HandshakeTimeoutError))
     }
