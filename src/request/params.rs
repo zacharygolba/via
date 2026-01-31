@@ -1,15 +1,14 @@
+use http::StatusCode;
 use std::borrow::Cow;
 use std::str::FromStr;
-use std::sync::Arc;
-
-use http::StatusCode;
+use via_router::Ident;
 
 use super::query::QueryParser;
 use crate::util::UriEncoding;
 use crate::{Error, raise};
 
 pub(super) type ParamRange = (usize, Option<usize>);
-pub(super) type PathParamEntry = (Arc<str>, ParamRange);
+pub(super) type PathParamEntry = (Ident, ParamRange);
 pub(super) type QueryParamEntry<'a> = (Cow<'a, str>, Option<ParamRange>);
 
 pub struct Param<'a, 'b> {
@@ -29,14 +28,8 @@ pub struct QueryParams<'a> {
     at: Vec<QueryParamEntry<'a>>,
 }
 
-fn match_query<'a>(predicate: &str, entry: &'a QueryParamEntry) -> Option<&'a ParamRange> {
-    let (name, at) = entry;
-
-    if name.as_ref() == predicate {
-        at.as_ref()
-    } else {
-        None
-    }
+fn query_pos_for_key(predicate: &str, key: &str, value: &Option<ParamRange>) -> Option<ParamRange> {
+    if key == predicate { *value } else { None }
 }
 
 impl<'a> PathParams<'a> {
@@ -45,16 +38,15 @@ impl<'a> PathParams<'a> {
     }
 
     pub fn get<'b>(&self, name: &'b str) -> Param<'a, 'b> {
-        Param {
-            encoding: UriEncoding::Unencoded,
-            source: Some(self.path),
-            name,
-            at: self
-                .at
-                .iter()
-                .find_map(|(k, v)| (&**k == name).then_some(v))
-                .copied(),
-        }
+        let at = self.at.iter().find_map(|(key, value)| {
+            if key.as_ref() == name {
+                Some(*value)
+            } else {
+                None
+            }
+        });
+
+        Param::new(Some(self.path), name, at)
     }
 }
 
@@ -68,9 +60,9 @@ impl<'a> QueryParams<'a> {
     }
 
     pub fn all<'b>(&self, name: &'b str) -> impl Iterator<Item = Param<'a, 'b>> {
-        self.at.iter().filter_map(move |(key, at)| {
+        self.at.iter().filter_map(move |(key, value)| {
             if key.as_ref() == name {
-                Some(self.param(name, at.as_ref()))
+                Some(Param::new(self.query, name, *value))
             } else {
                 None
             }
@@ -78,37 +70,39 @@ impl<'a> QueryParams<'a> {
     }
 
     pub fn contains(&self, name: &str) -> bool {
-        self.at.iter().any(|(k, _)| k.as_ref() == name)
+        self.at.iter().any(|(key, _)| key.as_ref() == name)
     }
 
     pub fn first<'b>(&self, name: &'b str) -> Param<'a, 'b> {
-        self.param(
-            name,
-            self.at.iter().find_map(|item| match_query(name, item)),
-        )
+        let at = self
+            .at
+            .iter()
+            .find_map(|(key, value)| query_pos_for_key(name, key, value));
+
+        Param::new(self.query, name, at)
     }
 
     pub fn last<'b>(&self, name: &'b str) -> Param<'a, 'b> {
-        self.param(
-            name,
-            self.at
-                .iter()
-                .rev()
-                .find_map(|item| match_query(name, item)),
-        )
-    }
+        let at = self
+            .at
+            .iter()
+            .rev()
+            .find_map(|(key, value)| query_pos_for_key(name, key, value));
 
-    fn param<'b>(&self, name: &'b str, at: Option<&ParamRange>) -> Param<'a, 'b> {
-        Param {
-            encoding: UriEncoding::Unencoded,
-            source: self.query,
-            name,
-            at: at.copied().or(Some((0, Some(0)))),
-        }
+        Param::new(self.query, name, at)
     }
 }
 
 impl<'a, 'b> Param<'a, 'b> {
+    fn new(source: Option<&'a str>, name: &'b str, at: Option<ParamRange>) -> Self {
+        Self {
+            encoding: UriEncoding::Unencoded,
+            source,
+            name,
+            at: at.or(Some((0, Some(0)))),
+        }
+    }
+
     /// Returns a new `Param` that will percent-decode the parameter value with
     /// when the parameter is converted to a result.
     ///

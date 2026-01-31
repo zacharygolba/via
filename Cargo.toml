@@ -1,6 +1,6 @@
 [package]
 name = "via"
-version = "2.0.0-gm.2"
+version = "2.0.0-gm.7"
 authors = ["Zachary Golba <zachary.golba@postlight.com>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -50,7 +50,8 @@ serde = { version = "1", features = ["derive"]  }
 serde_json = "1"
 smallvec = { version = "1", features = ["serde"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
-via-router = { version = "3.0.0-beta.30" }
+tokio-util = { version = "0.7", default-features = false }
+via-router = { version = "3.0.0-beta.32" }
 
 [dependencies.aws-lc-rs]
 version = "1"

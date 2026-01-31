@@ -1,6 +1,10 @@
-use std::sync::Arc;
+use std::fmt::{self, Debug, Formatter};
+use std::ops::Deref;
 
 pub type Param = (usize, Option<usize>);
+
+#[derive(Clone)]
+pub struct Ident(Box<str>);
 
 #[derive(Clone)]
 pub struct Split<'a> {
@@ -8,12 +12,12 @@ pub struct Split<'a> {
     offset: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Pattern {
     Root,
-    Static(String),
-    Dynamic(Arc<str>),
-    Wildcard(Arc<str>),
+    Static(Ident),
+    Dynamic(Ident),
+    Wildcard(Ident),
 }
 
 /// Returns an iterator that yields a `Pattern` for each segment in the uri path.
@@ -39,9 +43,36 @@ pub(crate) fn patterns(path: &str) -> impl Iterator<Item = Pattern> + '_ {
 
             // The segment does not start with a reserved character. We will
             // consider it a static pattern that can be matched by value.
-            _ => Pattern::Static(segment.into()),
+            _ => Pattern::Static(segment.to_owned().into()),
         }
     })
+}
+
+impl AsRef<str> for Ident {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl Debug for Ident {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Debug::fmt(self.as_ref(), f)
+    }
+}
+
+impl Deref for Ident {
+    type Target = str;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<String> for Ident {
+    fn from(value: String) -> Self {
+        Self(value.into_boxed_str())
+    }
 }
 
 impl<'a> Split<'a> {

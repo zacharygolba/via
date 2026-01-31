@@ -1,5 +1,5 @@
 use bytes::{Buf, Bytes, BytesMut};
-use http::HeaderMap;
+use http::{HeaderMap, StatusCode};
 use http_body::Body;
 use http_body_util::{LengthLimitError, Limited};
 use hyper::body::Incoming;
@@ -195,7 +195,14 @@ impl Future for IntoFuture {
                 }
                 Err(frame) => match frame.into_trailers() {
                     Ok(trailers) => trailers,
-                    Err(_) => unreachable!(),
+                    Err(_) => {
+                        let error = Error::new(
+                            StatusCode::BAD_REQUEST,
+                            "unexpected frame type received while reading the request body",
+                        );
+
+                        return Poll::Ready(Err(error));
+                    }
                 },
             };
 

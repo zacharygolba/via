@@ -2,9 +2,8 @@ use smallvec::{SmallVec, smallvec};
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::slice;
-use std::sync::Arc;
 
-use crate::path::{self, Param, Pattern, Split};
+use crate::path::{self, Ident, Param, Pattern, Split};
 
 /// An iterator over the middleware for a matched route.
 ///
@@ -62,12 +61,14 @@ fn match_next<'a, 'b, T>(
     };
 
     if let Some((value, [start, end])) = branch.segment {
+        let value = value.as_bytes();
+
         binding.range = Some((start, Some(end)));
+
         for node in branch.children.iter().rev() {
             match &node.pattern {
-                Pattern::Static(name) if name != value => {}
+                Pattern::Static(name) if value != name.as_bytes() => continue,
                 Pattern::Wildcard(_) => binding.push(node),
-                Pattern::Root => {}
                 _ => {
                     binding.push(node);
                     queue.push(Branch {
@@ -218,7 +219,7 @@ impl<'a, T> Binding<'a, T> {
 }
 
 impl<'a, T> Iterator for Binding<'a, T> {
-    type Item = (Route<'a, T>, Option<(&'a Arc<str>, Param)>);
+    type Item = (Route<'a, T>, Option<(&'a Ident, Param)>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.results.pop()?;
@@ -252,7 +253,7 @@ impl<'a, T> Iterator for Binding<'a, T> {
 }
 
 impl<'a, 'b, T> Iterator for Traverse<'a, 'b, T> {
-    type Item = (Route<'a, T>, Option<(&'a Arc<str>, Param)>);
+    type Item = (Route<'a, T>, Option<(&'a Ident, Param)>);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -301,11 +302,19 @@ where
             None => return parent,
         };
 
-        parent = if let Some(index) = parent
-            .children
-            .iter()
-            .position(|node| pattern == node.pattern)
-        {
+        parent = if let Some(index) =
+            parent
+                .children
+                .iter()
+                .position(|node| match (&pattern, &node.pattern) {
+                    (Pattern::Static(lhs), Pattern::Static(rhs))
+                    | (Pattern::Dynamic(lhs), Pattern::Dynamic(rhs))
+                    | (Pattern::Wildcard(lhs), Pattern::Wildcard(rhs)) => {
+                        lhs.as_bytes() == rhs.as_bytes()
+                    }
+                    (Pattern::Root, Pattern::Root) => true,
+                    _ => false,
+                }) {
             &mut parent.children[index]
         } else {
             parent.push(pattern)
@@ -316,10 +325,9 @@ where
 #[cfg(test)]
 mod tests {
     use std::iter::Map;
-    use std::sync::Arc;
 
     use super::{Route, Router};
-    use crate::path::Param;
+    use crate::path::{Ident, Param};
 
     const PATHS: [&str; 5] = [
         "/",
@@ -329,7 +337,7 @@ mod tests {
         "/*path",
     ];
 
-    type Match<'a, N = Arc<str>> = (
+    type Match<'a, N = Ident> = (
         Map<Route<'a, String>, fn(&'a String) -> &'a str>,
         Option<(&'a N, Param)>,
     );
@@ -347,7 +355,7 @@ mod tests {
 
     #[allow(clippy::type_complexity)]
     fn expect_match<'a>(
-        resolved: Option<(Route<'a, String>, Option<(&'a Arc<str>, Param)>)>,
+        resolved: Option<(Route<'a, String>, Option<(&'a Ident, Param)>)>,
     ) -> Match<'a, str> {
         if let Some((stack, param)) = resolved {
             (
@@ -376,7 +384,7 @@ mod tests {
 
         fn assert_matches_wildcard_at_root<'a, I, F>(results: &mut I, assert_param: F)
         where
-            I: Iterator<Item = (Route<'a, String>, Option<(&'a Arc<str>, Param)>)>,
+            I: Iterator<Item = (Route<'a, String>, Option<(&'a Ident, Param)>)>,
             F: FnOnce(&Option<(&'a str, (usize, Option<usize>))>),
         {
             let (mut stack, param) = expect_match(results.next());

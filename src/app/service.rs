@@ -1,14 +1,20 @@
-use http::request::Parts;
-use http_body_util::Limited;
 use hyper::body::Incoming;
 use hyper::service::Service;
 use std::collections::VecDeque;
+use std::convert::Infallible;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use crate::middleware::BoxFuture;
 use crate::request::{Envelope, Request};
-use crate::response::Response;
-use crate::{Error, Next, Via};
+use crate::response::{Response, ResponseBody};
+use crate::{Next, Via, raise};
+
+const MAX_URI_PATH_LEN: usize = 8092;
+const MAX_PATH_LEN_EXCEEDED: &str = "path exceeds the maximum allowed length of 8 KB";
+
+pub struct FutureResponse(BoxFuture);
 
 pub struct AppService<App> {
     app: Arc<Via<App>>,
@@ -36,9 +42,9 @@ impl<App> Clone for AppService<App> {
 }
 
 impl<App> Service<http::Request<Incoming>> for AppService<App> {
-    type Error = Error;
-    type Future = BoxFuture;
-    type Response = Response;
+    type Error = Infallible;
+    type Future = FutureResponse;
+    type Response = http::Response<ResponseBody>;
 
     fn call(&self, request: http::Request<Incoming>) -> Self::Future {
         // The middleware stack.
@@ -46,34 +52,47 @@ impl<App> Service<http::Request<Incoming>> for AppService<App> {
 
         // Wrap the raw HTTP request in our custom Request struct.
         let mut request = {
-            // Split the incoming request into it's component parts.
-            let (parts, body) = request.into_parts();
+            // Preallocate enough space to store at least 6 path params.
+            let params = Vec::with_capacity(6);
 
-            // Limit the length of the request body to max_request_size.
-            let body = Limited::new(body, self.max_request_size);
+            // Ownership of app is shared with Request.
+            let app = self.app.app.clone();
 
-            Request::new(self.app.app.clone(), parts, body)
+            Request::new(app, self.max_request_size, params, request)
         };
 
-        // Borrow the request params mutably and borrow the uri.
-        let Envelope {
-            ref mut params,
-            parts: Parts { ref uri, .. },
-            ..
-        } = *request.envelope_mut();
+        let Envelope { params, parts, .. } = request.envelope_mut();
+        let path = parts.uri.path();
+
+        if path.len() > MAX_URI_PATH_LEN {
+            return FutureResponse(Box::pin(async {
+                raise!(414, message = MAX_PATH_LEN_EXCEEDED);
+            }));
+        }
 
         // Populate the middleware stack with the resolved routes.
-        for (route, param) in self.app.router.traverse(uri.path()) {
+        for (route, param) in self.app.router.traverse(path) {
             // Extend the deque with the route's middleware stack.
             deque.extend(route.cloned());
 
             if let Some((name, range)) = param {
                 // Include the route's dynamic parameter in params.
-                params.push((Arc::clone(name), range));
+                params.push((name.clone(), range));
             }
         }
 
         // Call the middleware stack to get a response.
-        Next::new(deque).call(request)
+        FutureResponse(Next::new(deque).call(request))
+    }
+}
+
+impl Future for FutureResponse {
+    type Output = Result<http::Response<ResponseBody>, Infallible>;
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        self.0
+            .as_mut()
+            .poll(context)
+            .map(|result| Ok(result.unwrap_or_else(Response::from).into()))
     }
 }
