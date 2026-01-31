@@ -61,12 +61,14 @@ fn match_next<'a, 'b, T>(
     };
 
     if let Some((value, [start, end])) = branch.segment {
+        let value = value.as_bytes();
+
         binding.range = Some((start, Some(end)));
+
         for node in branch.children.iter().rev() {
             match &node.pattern {
-                Pattern::Static(name) if name != value => {}
+                Pattern::Static(name) if value != name.as_bytes() => continue,
                 Pattern::Wildcard(_) => binding.push(node),
-                Pattern::Root => {}
                 _ => {
                     binding.push(node);
                     queue.push(Branch {
@@ -300,11 +302,19 @@ where
             None => return parent,
         };
 
-        parent = if let Some(index) = parent
-            .children
-            .iter()
-            .position(|node| pattern == node.pattern)
-        {
+        parent = if let Some(index) =
+            parent
+                .children
+                .iter()
+                .position(|node| match (&pattern, &node.pattern) {
+                    (Pattern::Static(lhs), Pattern::Static(rhs))
+                    | (Pattern::Dynamic(lhs), Pattern::Dynamic(rhs))
+                    | (Pattern::Wildcard(lhs), Pattern::Wildcard(rhs)) => {
+                        lhs.as_bytes() == rhs.as_bytes()
+                    }
+                    (Pattern::Root, Pattern::Root) => true,
+                    _ => false,
+                }) {
             &mut parent.children[index]
         } else {
             parent.push(pattern)
