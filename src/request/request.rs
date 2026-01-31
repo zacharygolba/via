@@ -9,11 +9,8 @@ use super::params::{Param, PathParamEntry, PathParams};
 use super::payload::IntoFuture;
 use crate::app::Shared;
 use crate::error::Error;
-use crate::raise;
 use crate::request::params::QueryParams;
 use crate::response::{Finalize, Response, ResponseBuilder};
-
-const MAX_PATH_LEN: usize = 8192; // 8 KB
 
 pub struct Envelope {
     pub(crate) parts: Parts,
@@ -180,29 +177,6 @@ impl<App> Request<App> {
     #[inline]
     pub fn into_parts(self) -> (Envelope, Limited<Body>, Shared<App>) {
         (self.envelope, self.body, self.app)
-    }
-}
-
-impl<App> Request<App> {
-    pub(crate) fn params_mut_with_path(
-        &mut self,
-    ) -> Result<(&mut Vec<PathParamEntry>, &str), Error> {
-        let Envelope {
-            ref mut params,
-            parts: Parts { ref uri, .. },
-            ..
-        } = *self.envelope_mut();
-
-        let path = uri.path();
-
-        if path.len() > MAX_PATH_LEN {
-            raise!(
-                414,
-                message = "request URI path exceeds the maximum allowed length of 8192 bytes"
-            );
-        }
-
-        Ok((params, path))
     }
 }
 
