@@ -1,4 +1,3 @@
-use http::request::Parts;
 use hyper::body::Incoming;
 use hyper::service::Service;
 use std::collections::VecDeque;
@@ -10,7 +9,10 @@ use std::task::{Context, Poll};
 use crate::middleware::BoxFuture;
 use crate::request::{Envelope, Request};
 use crate::response::{Response, ResponseBody};
-use crate::{Next, Via};
+use crate::{Next, Via, raise};
+
+const MAX_URI_PATH_LEN: usize = 8092;
+const MAX_PATH_LEN_EXCEEDED: &str = "path exceeds the maximum allowed length of 8 KB";
 
 pub struct FutureResponse(BoxFuture);
 
@@ -50,7 +52,7 @@ impl<App> Service<http::Request<Incoming>> for AppService<App> {
 
         // Wrap the raw HTTP request in our custom Request struct.
         let mut request = {
-            // Preallocate 240 bytes for path parameter ranges.
+            // Preallocate enough space to store at least 6 path params.
             let params = Vec::with_capacity(6);
 
             // Ownership of app is shared with Request.
@@ -59,15 +61,17 @@ impl<App> Service<http::Request<Incoming>> for AppService<App> {
             Request::new(app, self.max_request_size, params, request)
         };
 
-        // Borrow the request params mutably and borrow the uri.
-        let Envelope {
-            ref mut params,
-            parts: Parts { ref uri, .. },
-            ..
-        } = *request.envelope_mut();
+        let Envelope { params, parts, .. } = request.envelope_mut();
+        let path = parts.uri.path();
+
+        if path.len() > MAX_URI_PATH_LEN {
+            return FutureResponse(Box::pin(async {
+                raise!(414, message = MAX_PATH_LEN_EXCEEDED);
+            }));
+        }
 
         // Populate the middleware stack with the resolved routes.
-        for (route, param) in self.app.router.traverse(uri.path()) {
+        for (route, param) in self.app.router.traverse(path) {
             // Extend the deque with the route's middleware stack.
             deque.extend(route.cloned());
 
