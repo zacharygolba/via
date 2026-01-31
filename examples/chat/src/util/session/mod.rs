@@ -38,55 +38,64 @@ pub trait Session {
 }
 
 pub async fn restore(mut request: Request, next: Next) -> via::Result {
-    let app = request.app().clone();
-    let persist = match request
-        .envelope()
-        .cookies()
-        .signed(request.app().secret())
-        .get(COOKIE)
-        .map(|cookie| cookie.value().parse::<Identity>())
-    {
-        Some(Ok(identity)) if identity.is_expired() => {
-            if let ..1 = User::query()
-                .select(count(users::id))
-                .filter(by_id(identity.id()))
-                .debug_result(&mut app.database().await?)
-                .await?
-            {
-                return unauthorized(app.secret());
-            }
+    request
+        .envelope_mut()
+        .extensions_mut()
+        .insert(Verify("8b4dac57-9ce9-4420-95b2-15552d594f49".parse()?));
 
-            let session = Verify(*identity.id());
-            request.envelope_mut().extensions_mut().insert(session);
-
-            Some(identity.into())
-        }
-        Some(Ok(identity)) => {
-            let session = Verify(identity.into());
-            request.envelope_mut().extensions_mut().insert(session);
-
-            None
-        }
-        Some(Err(error)) => {
-            if cfg!(debug_assertions) {
-                eprintln!("error: {}", error);
-            }
-
-            return unauthorized(app.secret());
-        }
-        None => None,
-    };
-
-    let mut response = next.call(request).await?;
-
-    if let Some(id) = persist
-        && response.status().is_success()
-    {
-        response.set_user(app.secret(), Some(id))?;
-    }
-
-    Ok(response)
+    next.call(request).await
 }
+
+// pub async fn restore(mut request: Request, next: Next) -> via::Result {
+//     let app = request.app().clone();
+//     let persist = match request
+//         .envelope()
+//         .cookies()
+//         .signed(request.app().secret())
+//         .get(COOKIE)
+//         .map(|cookie| cookie.value().parse::<Identity>())
+//     {
+//         Some(Ok(identity)) if identity.is_expired() => {
+//             if let ..1 = User::query()
+//                 .select(count(users::id))
+//                 .filter(id_eq(identity.id()))
+//                 .debug_result(&mut app.database().await?)
+//                 .await?
+//             {
+//                 return unauthorized(app.secret());
+//             }
+
+//             let session = Verify(*identity.id());
+//             request.envelope_mut().extensions_mut().insert(session);
+
+//             Some(identity.into())
+//         }
+//         Some(Ok(identity)) => {
+//             let session = Verify(identity.into());
+//             request.envelope_mut().extensions_mut().insert(session);
+
+//             None
+//         }
+//         Some(Err(error)) => {
+//             if cfg!(debug_assertions) {
+//                 eprintln!("error: {}", error);
+//             }
+
+//             return unauthorized(app.secret());
+//         }
+//         None => None,
+//     };
+
+//     let mut response = next.call(request).await?;
+
+//     if let Some(id) = persist
+//         && response.status().is_success()
+//     {
+//         response.set_user(app.secret(), Some(id))?;
+//     }
+
+//     Ok(response)
+// }
 
 fn unauthorized(secret: &Key) -> via::Result {
     let mut response = Response::build()

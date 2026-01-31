@@ -5,9 +5,12 @@ use bytestring::ByteString;
 use cookie::Key;
 use diesel_async::AsyncPgConnection;
 use diesel_async::pooled_connection::AsyncDieselConnectionManager;
+use fred::clients::Pool as Redis;
+use fred::interfaces::{ClientLike, KeysInterface};
+use fred::types::Key as RedisKey;
 use http::header;
 use serde::Serialize;
-use std::env::{self, VarError};
+use serde::de::DeserializeOwned;
 use tokio::sync::broadcast;
 use tokio::task::coop::unconstrained;
 use via::response::{Finalize, ResponseBuilder};
@@ -15,7 +18,7 @@ use via::{raise, ws};
 
 use crate::models::conversation::Conversation;
 use crate::models::reaction::Reaction;
-use crate::util::Id;
+use crate::util::{Id, require_env};
 
 pub type Connection<'a> = PooledConnection<'a, ConnectionManager>;
 pub type ConnectionError = RunError<<ConnectionManager as ManageConnection>::Error>;
@@ -26,6 +29,11 @@ type Receiver = broadcast::Receiver<(EventContext, EventPayload)>;
 
 #[derive(Clone)]
 pub struct EventPayload(ByteString);
+
+pub enum Cache<T> {
+    Hit(T),
+    Miss(RedisKey),
+}
 
 #[derive(Serialize)]
 #[serde(content = "data", rename_all = "lowercase", tag = "type")]
@@ -38,25 +46,13 @@ pub struct Chat {
     database: Pool<ConnectionManager>,
     channel: (Sender, Receiver),
     secret: Key,
+    redis: Redis,
 }
 
 #[derive(Clone, Debug)]
 pub struct EventContext {
     channel_id: Option<Id>,
     user_id: Id,
-}
-
-pub async fn establish_pg_connection() -> Pool<ConnectionManager> {
-    let database_url = require_env("DATABASE_URL");
-    let manager = ConnectionManager::new(&database_url);
-    let result = Pool::builder().build(manager).await;
-
-    result.unwrap_or_else(|error| {
-        panic!(
-            "failed to establish database connection: url = {}, error = {}",
-            database_url, error
-        );
-    })
 }
 
 pub fn load_session_secret() -> Key {
@@ -66,21 +62,24 @@ pub fn load_session_secret() -> Key {
     result.expect("unexpected end of input while parsing VIA_SECRET_KEY")
 }
 
-fn require_env(var: &str) -> String {
-    env::var(var).unwrap_or_else(|error| match error {
-        VarError::NotPresent => panic!("missing required env var: {}", var),
-        VarError::NotUnicode(_) => panic!("env var \"{}\" is not valid UTF-8", var),
-    })
+pub async fn init_redis_pool() -> Redis {
+    let pool = fred::types::Builder::default_centralized()
+        .build_pool(8)
+        .expect("invalid redis config");
+
+    pool.init().await.expect("unable to connect to redis");
+    pool
 }
 
 impl Chat {
-    pub fn new(database: Pool<ConnectionManager>, secret: Key) -> Self {
+    pub fn new(database: Pool<ConnectionManager>, secret: Key, redis: Redis) -> Self {
         let channel = broadcast::channel(1024);
 
         Self {
             database,
             channel,
             secret,
+            redis,
         }
     }
 
@@ -95,6 +94,35 @@ impl Chat {
         unconstrained(self.database.get())
     }
 
+    pub async fn get<K, V>(&self, key: K) -> via::Result<Cache<V>>
+    where
+        K: Into<RedisKey>,
+        V: DeserializeOwned,
+    {
+        let key = key.into();
+
+        Ok(match self.redis.get::<Option<String>, _>(&key).await? {
+            Some(json) => Cache::Hit(serde_json::from_str(&json)?),
+            None => Cache::Miss(key),
+        })
+    }
+
+    pub async fn set<T>(&self, key: &RedisKey, value: &T) -> via::Result<()>
+    where
+        T: Serialize,
+    {
+        use fred::types::Expiration;
+        const TTL_IN_SECONDS: Expiration = Expiration::EX(1800);
+
+        let value = serde_json::to_string(value)?;
+
+        self.redis
+            .set::<(), _, &str>(key, &value, Some(TTL_IN_SECONDS), None, true)
+            .await?;
+
+        Ok(())
+    }
+
     pub fn publish(&self, context: EventContext, event: Event) -> via::Result<EventPayload> {
         let payload = EventPayload(serde_json::to_string(&event)?.into());
 
@@ -103,6 +131,10 @@ impl Chat {
         }
 
         Ok(payload)
+    }
+
+    pub fn redis(&self) -> &Redis {
+        &self.redis
     }
 
     pub fn secret(&self) -> &Key {

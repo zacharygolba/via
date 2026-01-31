@@ -1,4 +1,5 @@
 mod chat;
+mod database;
 mod models;
 mod routes;
 mod schema;
@@ -20,10 +21,11 @@ async fn main() -> Result<ExitCode, Error> {
     dotenvy::dotenv()?;
 
     let mut app = via::app({
-        let pool = chat::establish_pg_connection().await;
+        let database = database::establish_connection().await;
         let secret = chat::load_session_secret();
+        let redis = chat::init_redis_pool().await;
 
-        Chat::new(pool, secret)
+        Chat::new(database, secret, redis)
     });
 
     app.uses(Cookies::new().allow(session::COOKIE));
