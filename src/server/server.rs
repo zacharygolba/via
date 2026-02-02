@@ -143,53 +143,47 @@ where
     /// process supervisor of an individual node and the replacement and
     /// decommissioning logic of the cluster.
     ///
-    pub fn listen<A>(self, address: A) -> impl Future<Output = Result<ExitCode, Error>>
+    pub async fn listen<A>(self, address: A) -> Result<ExitCode, Error>
     where
         A: ToSocketAddrs,
     {
         let acceptor = TcpAcceptor::new();
+        let listener = TcpListener::bind(address).await?;
         let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
-        async move {
-            let listener = TcpListener::bind(address).await?;
-            Ok(accept(self.config, acceptor, service, listener).await)
-        }
+        Ok(accept(self.config, acceptor, service, listener).await)
     }
 
     #[cfg(feature = "native-tls")]
-    pub fn listen_native_tls<A>(
+    pub async fn listen_native_tls<A>(
         self,
         address: A,
         identity: native_tls::Identity,
-    ) -> impl Future<Output = Result<ExitCode, Error>>
+    ) -> Result<ExitCode, Error>
     where
         A: ToSocketAddrs,
     {
         let acceptor = NativeTlsAcceptor::new(identity);
+        let listener = TcpListener::bind(address).await?;
         let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
-        async {
-            let listener = TcpListener::bind(address).await?;
-            Ok(accept(self.config, acceptor, service, listener).await)
-        }
+        Ok(accept(self.config, acceptor, service, listener).await)
     }
 
     #[cfg(feature = "rustls")]
-    pub fn listen_rustls<A>(
+    pub async fn listen_rustls<A>(
         self,
         address: A,
         rustls_config: rustls::ServerConfig,
-    ) -> impl Future<Output = Result<ExitCode, Error>>
+    ) -> Result<ExitCode, Error>
     where
         A: ToSocketAddrs,
     {
         let acceptor = RustlsAcceptor::new(rustls_config);
+        let listener = TcpListener::bind(address).await?;
         let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
-        async {
-            let listener = TcpListener::bind(address).await?;
-            Ok(accept(self.config, acceptor, service, listener).await)
-        }
+        Ok(accept(self.config, acceptor, service, listener).await)
     }
 }
 
