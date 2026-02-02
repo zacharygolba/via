@@ -8,12 +8,6 @@ use super::tls::TcpAcceptor;
 use crate::app::{AppService, Via};
 use crate::error::Error;
 
-#[cfg(feature = "native-tls")]
-use super::tls::NativeTlsAcceptor;
-
-#[cfg(feature = "rustls")]
-use super::tls::RustlsAcceptor;
-
 /// Serve an app over HTTP.
 ///
 pub struct Server<App> {
@@ -150,7 +144,7 @@ where
     where
         A: ToSocketAddrs,
     {
-        let acceptor = TcpAcceptor::new();
+        let acceptor = TcpAcceptor;
         let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
         async move {
@@ -168,7 +162,7 @@ where
     where
         A: ToSocketAddrs,
     {
-        let acceptor = NativeTlsAcceptor::new(identity);
+        let acceptor = super::tls::NativeTlsAcceptor::new(identity);
         let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
         async {
@@ -186,7 +180,7 @@ where
     where
         A: ToSocketAddrs,
     {
-        let acceptor = RustlsAcceptor::new(rustls_config);
+        let acceptor = super::tls::RustlsAcceptor::new(rustls_config);
         let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
         async {

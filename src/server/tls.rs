@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::io;
-use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 
@@ -10,38 +9,29 @@ pub use native::NativeTlsAcceptor;
 #[cfg(feature = "rustls")]
 pub use rustls::RustlsAcceptor;
 
-pub struct TcpAcceptor(Arc<()>);
+pub struct TcpAcceptor;
 
 pub trait Acceptor {
     type Io: AsyncRead + AsyncWrite;
     type Error: Error;
 
+    #[cfg_attr(not(any(feature = "native-tls", feature = "rustls")), allow(dead_code))]
     fn accept(
         &self,
         io: TcpStream,
     ) -> impl Future<Output = Result<Self::Io, Self::Error>> + Send + 'static;
 }
 
-impl TcpAcceptor {
-    pub fn new() -> Self {
-        Self(Arc::new(()))
-    }
-}
-
 impl Acceptor for TcpAcceptor {
     type Io = TcpStream;
     type Error = io::Error;
 
+    #[allow(clippy::manual_async_fn)]
     fn accept(
         &self,
-        io: TcpStream,
+        _: TcpStream,
     ) -> impl Future<Output = Result<Self::Io, Self::Error>> + Send + 'static {
-        let acceptor = Arc::clone(&self.0);
-
-        async move {
-            drop(acceptor);
-            Ok(io)
-        }
+        async { unreachable!() }
     }
 }
 
