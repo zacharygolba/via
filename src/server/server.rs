@@ -26,6 +26,8 @@ pub struct ServerConfig {
     pub(super) max_connections: usize,
     pub(super) max_request_size: usize,
     pub(super) shutdown_timeout: Duration,
+
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub(super) tls_handshake_timeout: Option<Duration>,
 }
 
@@ -93,6 +95,7 @@ where
     ///
     /// **Default:** `10s`
     ///
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub fn tls_handshake_timeout(self, tls_handshake_timeout: Option<Duration>) -> Self {
         Self {
             config: ServerConfig {
@@ -199,6 +202,8 @@ impl Default for ServerConfig {
             max_connections: 1000,
             max_request_size: 104_857_600, // 100 MB
             shutdown_timeout: Duration::from_secs(30),
+
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
             tls_handshake_timeout: Some(Duration::from_secs(10)),
         }
     }

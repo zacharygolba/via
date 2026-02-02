@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io;
+use tokio::time::error::Elapsed;
 
 use super::BoxError;
 
@@ -24,12 +25,6 @@ impl Display for HandshakeTimeoutError {
     }
 }
 
-impl ServerError {
-    pub fn handshake_timeout() -> Self {
-        Self::Other(Box::new(HandshakeTimeoutError))
-    }
-}
-
 impl Display for ServerError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
@@ -45,6 +40,12 @@ impl Error for ServerError {
             Self::Http(error) => error.source(),
             Self::Other(error) => error.source(),
         }
+    }
+}
+
+impl From<Elapsed> for ServerError {
+    fn from(_: Elapsed) -> Self {
+        Self::Other(Box::new(HandshakeTimeoutError))
     }
 }
 

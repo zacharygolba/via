@@ -51,8 +51,6 @@ where
     TlsAcceptor: Acceptor,
     TlsAcceptor::Io: Send + Unpin + 'static,
 {
-    let tls_timeout_in_seconds = config.tls_handshake_timeout;
-
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently.
     let semaphore = Arc::new(Semaphore::new(config.max_connections));
@@ -97,16 +95,13 @@ where
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            let io = if let Some(duration) = tls_timeout_in_seconds
-                && cfg!(any(feature = "native-tls", feature = "rustls"))
-            {
-                let Ok(result) = time::timeout(duration, handshake).await else {
-                    return Err(ServerError::handshake_timeout());
-                };
+            #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+            let io = handshake.await?;
 
-                result?
-            } else {
-                handshake.await?
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            let io = match config.tls_handshake_timeout {
+                Some(duration) => time::timeout(duration, handshake).await??,
+                None => handshake.await?,
             };
 
             serve_connection(IoWithPermit::new(io, permit), service, shutdown).await
