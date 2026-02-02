@@ -51,7 +51,8 @@ where
     TlsAcceptor: Acceptor,
     TlsAcceptor::Io: Send + Unpin + 'static,
 {
-    let tls_timeout_in_seconds = config.tls_handshake_timeout;
+    #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+    drop(acceptor);
 
     // Create a semaphore with a number of permits equal to the maximum number
     // of connections that the server can handle concurrently.
@@ -91,22 +92,18 @@ where
             continue;
         };
 
+        #[cfg(any(feature = "native-tls", feature = "rustls"))]
         let handshake = acceptor.accept(io);
+
         let service = service.clone();
         let shutdown = shutdown.clone();
 
         // Spawn a task to serve the connection.
         connections.spawn(async move {
-            let io = if let Some(duration) = tls_timeout_in_seconds
-                && cfg!(any(feature = "native-tls", feature = "rustls"))
-            {
-                let Ok(result) = time::timeout(duration, handshake).await else {
-                    return Err(ServerError::handshake_timeout());
-                };
-
-                result?
-            } else {
-                handshake.await?
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            let io = match config.tls_handshake_timeout {
+                Some(duration) => time::timeout(duration, handshake).await??,
+                None => handshake.await?,
             };
 
             serve_connection(IoWithPermit::new(io, permit), service, shutdown).await

@@ -8,12 +8,6 @@ use super::tls::TcpAcceptor;
 use crate::app::{AppService, Via};
 use crate::error::Error;
 
-#[cfg(feature = "native-tls")]
-use super::tls::NativeTlsAcceptor;
-
-#[cfg(feature = "rustls")]
-use super::tls::RustlsAcceptor;
-
 /// Serve an app over HTTP.
 ///
 pub struct Server<App> {
@@ -26,6 +20,8 @@ pub struct ServerConfig {
     pub(super) max_connections: usize,
     pub(super) max_request_size: usize,
     pub(super) shutdown_timeout: Duration,
+
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub(super) tls_handshake_timeout: Option<Duration>,
 }
 
@@ -93,6 +89,7 @@ where
     ///
     /// **Default:** `10s`
     ///
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub fn tls_handshake_timeout(self, tls_handshake_timeout: Option<Duration>) -> Self {
         Self {
             config: ServerConfig {
@@ -147,7 +144,7 @@ where
     where
         A: ToSocketAddrs,
     {
-        let acceptor = TcpAcceptor::new();
+        let acceptor = TcpAcceptor;
         let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
         async move {
@@ -165,7 +162,7 @@ where
     where
         A: ToSocketAddrs,
     {
-        let acceptor = NativeTlsAcceptor::new(identity);
+        let acceptor = super::tls::NativeTlsAcceptor::new(identity);
         let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
         async {
@@ -183,7 +180,7 @@ where
     where
         A: ToSocketAddrs,
     {
-        let acceptor = RustlsAcceptor::new(rustls_config);
+        let acceptor = super::tls::RustlsAcceptor::new(rustls_config);
         let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
         async {
@@ -199,6 +196,8 @@ impl Default for ServerConfig {
             max_connections: 1000,
             max_request_size: 104_857_600, // 100 MB
             shutdown_timeout: Duration::from_secs(30),
+
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
             tls_handshake_timeout: Some(Duration::from_secs(10)),
         }
     }
