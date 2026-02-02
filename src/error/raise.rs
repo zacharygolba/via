@@ -72,16 +72,16 @@
 ///
 #[macro_export]
 macro_rules! raise {
-    (@ctor $status:expr, message = $message:expr $(,)?) => {
+    (#[ctor] $status:expr, message = $message:expr $(,)?) => {
         return Err($crate::Error::new($status, $message))
     };
-    (@ctor $status:expr, boxed = $source:expr $(,)?) => {
+    (#[ctor] $status:expr, boxed = $source:expr $(,)?) => {
         return Err($crate::Error::from_source($status, $source))
     };
-    (@ctor $status:expr, $source:expr $(,)?) => {
+    (#[ctor] $status:expr, $source:expr $(,)?) => {
         return Err($crate::Error::from_source($status, Box::new($source)))
     };
-    (@ctor $status:expr) => {{
+    (#[ctor] $status:expr) => {{
         let status = $status;
         let message = status.canonical_reason().unwrap_or_default().to_owned();
         return Err($crate::Error::new(status, message))
@@ -133,7 +133,7 @@ macro_rules! raise {
     (511 $($args:tt)*) => { $crate::raise!(NETWORK_AUTHENTICATION_REQUIRED $($args)*) };
 
     ($status:ident $($args:tt)*) => {
-        $crate::raise!(@ctor $crate::error::StatusCode::$status $($args)*)
+        $crate::raise!(#[ctor] $crate::error::StatusCode::$status $($args)*)
     };
 
     ($code:literal $($args:tt)*) => {{
@@ -147,6 +147,6 @@ macro_rules! raise {
             unreachable!()
         };
 
-        $crate::raise!(@ctor status $($args)*)
+        $crate::raise!(#[ctor] status $($args)*)
     }};
 }
