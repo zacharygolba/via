@@ -8,15 +8,14 @@ use std::sync::Arc;
 /// resources whose liveness matches that of the process in which it is
 /// created.
 ///
-/// `Shared` is a wrapper around your application. It provides per-request
-/// ownership of the application container, allowing these resources to be
-/// passed through async code without creating dangling borrows or implicit
-/// lifetimes.
+/// `Shared` wraps your application and provides per-request ownership of the
+/// container. This allows resources to be passed through async code without
+/// creating dangling borrows or introducing implicit lifetimes.
 ///
-/// Cloning a `Shared<App>` is as inexpensive as it's cost is that of an atomic
-/// increment at the time of construction and an atomic decrement when dropped.
+/// Cloning a `Shared<App>` is inexpensive: it performs an atomic increment
+/// when cloned and an atomic decrement when dropped.
 ///
-/// ## Safe Access
+/// # Safe Access
 ///
 /// Async functions are transformed into state machines that may be suspended
 /// across `.await` points. Any borrow that outlives the data it references
@@ -24,14 +23,12 @@ use std::sync::Arc;
 /// guarantees.
 ///
 /// When a client request is received, the `Shared` wrapper around your
-/// application is cloned by incrementing the strong reference count to
-/// the original allocation created for the application at the time of it's
+/// application is cloned by incrementing the strong reference count of the
+/// original allocation created for the application at the time of its
 /// construction.
 ///
-/// For many
-/// ["safe" (or read-only)](http::Method::is_safe)
-/// requests, you can borrow the application as you would with any other field
-/// of the request struct.
+/// For many ["safe" (read-only)](http::Method::is_safe) requests, you can
+/// borrow the application as you would any other field of the request struct.
 ///
 /// ### Example
 ///
@@ -73,26 +70,23 @@ use std::sync::Arc;
 /// }
 /// ```
 ///
-/// For non-idempotent HTTP requests (mutations), it is often times required
-/// that the request is deconstructed in order to read the message contained in
-/// the body.
+/// ## Handling mutations
 ///
-/// This introduces a problem where the lifetime of the `Shared<App>` that is
-/// owned by the request does not outlive that of the future returned by the
-/// service fullfilling the request. However, we'll likely need to borrow the
-/// app in order to acquire a connection from a database pool and persist
-/// whatever mutation is described in the payload of the request body.
+/// For non-idempotent HTTP requests (e.g., POST, PUT, DELETE), it is often
+/// necessary to deconstruct the request in order to read the message body.
 ///
-/// Requiring our users to clone the application in order to safely access the
-/// application after the request adds unnecessary cost. We solve this problem
-/// by giving ownership of the `Shared<App>` instance to the caller of
-/// [Request::into_future](crate::Request::into_future)
+/// This can create a situation where the lifetime of the `Shared<App>` owned
+/// by the request does not outlive the future returned by the service. However,
+/// you may need to borrow the application to acquire a database connection or
+/// persist mutations described in the request payload.
+///
+/// To solve this, ownership of the `Shared<App>` instance is transferred to
+/// the caller via
+/// [`Request::into_future`](crate::Request::into_future)
 /// or
-/// [Request::into_future](crate::Request::into_parts).
-///
-/// This access pattern is safe but can introduce both contention and leaks if
-/// the clone of `Shared<App>` escapes the future returned by an async
-/// middleware function.
+/// [`Request::into_parts`](crate::Request::into_parts).
+/// This access pattern is safe, but clones of `Shared<App>` that escape the
+/// future can introduce contention or leaks if not managed carefully.
 ///
 /// ### Example
 ///
