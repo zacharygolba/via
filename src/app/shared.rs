@@ -2,7 +2,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::ops::Deref;
 use std::sync::Arc;
 
-/// A thread-safe, reference-counted pointer to the application.
+/// A thread-safe, reference-counting pointer to the application.
 ///
 /// An application is a user-defined struct that bundles together singleton
 /// resources whose liveness matches that of the process in which it is
