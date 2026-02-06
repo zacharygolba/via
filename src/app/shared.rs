@@ -173,25 +173,24 @@ use std::sync::Arc;
 /// threads. In normal request handling, the clone/drop rhythm follows the
 /// request lifecycle.
 ///
-/// This predictable rhythm keeps **atomic contention low**. Think of
-/// contention like **waves**:
+/// This predictable rhythm helps keep **atomic contention low**. Think of
+/// contention like waves:
 ///
-/// - Each request incrementing or decrementing the Arc is a wave peak.
+/// - Each request incrementing or decrementing the Arc is a wave peak
 ///
-/// - If all requests hit at exactly the same moment, peaks **add up**,
-///   creating contention.
+/// - If all requests hit at exactly the same moment, peaks add up, creating
+///   contention
 ///
-/// - If requests are **staggered in time** (naturally spread by route latency
-///   or concurrency limits), the waves **partially cancel**, flattening the
-///   peaks.
+/// - Since requests are naturally staggered in time, the waves partially
+///   cancel, flattening the peaks
 ///
 /// Detached tasks break this rhythm:
 ///
-/// - The Arc increment/decrement of the detached task is **out of phase** with
-///   the main request waves.
+/// - The Arc increment/decrement of the detached task is out of phase with the
+///   main request waves
 ///
 /// - This can spike contention temporarily and extend the logical lifetime of
-///   resources beyond the request.
+///   resources beyond the request
 ///
 /// ```text
 /// 'process: ──────────────────────────────────────────────────────────────────────────>
@@ -225,13 +224,11 @@ use std::sync::Arc;
 ///       uncontended                   uncontended                     contended
 /// ```
 ///
-/// **Guideline:**
-///
-/// - Detached tasks should be rare. Only clone the `Shared<App>` into a task
-///   when necessary.
-///
-/// - Most requests should follow the normal rhythm to keep contention low and
-///   resource lifetimes predictable.
+/// The diagram above demonstrates how keeping `Shared<App>` clones phase-aligned
+/// with the request lifecycle can minimize atomic contention and keep resource
+/// lifetimes predictable. It's easier to find a memory leak if you know that
+/// the Arc pointing to your application is dropped determinstically by the
+/// time the future returned from the middleware stack is ready.
 ///
 /// ### Example
 ///
@@ -271,14 +268,6 @@ use std::sync::Arc;
 ///     Response::build().text(format!("Hello, {}!", name))
 /// }
 /// ```
-///
-/// The guidance above favors keeping `Shared<App>` clones phase-aligned with
-/// the request lifecycle in order to minimize atomic contention and keep
-/// resource lifetimes predictable.
-///
-/// However, this is a *performance and observability* guideline — not a hard
-/// safety rule. In some contexts, intentionally *avoiding* a detached clone
-/// may be the correct choice.
 ///
 /// #### Timing and Side-Channel Awareness
 ///
