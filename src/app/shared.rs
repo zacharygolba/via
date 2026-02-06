@@ -185,52 +185,53 @@ use std::sync::Arc;
 ///   or concurrency limits), the waves **partially cancel**, flattening the
 ///   peaks.
 ///
-/// ### Contention Over Time
-///
-/// ```text
-/// 'process: ─────────────────────────────────────────────────────────────────────────>
-///            |                             |                             |
-///        HTTP GET                          |                             |
-///       app.clone()                        |                             |
-///    incr strong_count                 HTTP GET                          |
-///            |                        app.clone()                    HTTP POST
-///            |                     incr strong_count                app.clone()
-///        List Users                        |                     incr strong_count
-/// ┌──────────────────────┐                 |                             |
-/// |   borrow req.app()   |        Web Socket Upgrade                     |
-/// |  acquire connection  |      ┌─────────────────────┐             Create User
-/// |   respond with json  |      |     app.clone()     |      ┌──────────────────────┐
-/// └──────────────────────┘      |   spawn async task  |─┐    |   req.into_future()  |
-///     decr strong_count         | switching protocols | |    |     database trx     |
-///            |                  └─────────────────────┘ |    |       respond        |
-///            |                     decr strong_count    |    └──────────────────────┘
-///            |                             |            |        decr strong_count
-///            |                             |            |                |
-///            |                             |            └─>┌─────────────┐
-///            |                             |               |  websocket  |
-///            |                             |               └─────────────┘
-///            |                             |              decr strong_count
-///            |                             |                             |
-/// ┌──────────|─────────────────────────────|─────────────────────────────|───────────┐
-/// | | | | | | | | | | | | | | | | | | | | | | | | | | |  | | | | | | | | | | | | | | |
-/// └──────────|─────────────────────────────|─────────────────────────────|───────────┘
-///            |                             |                             |
-///       uncontended                   uncontended                    contended
-/// ```
-///
 /// Detached tasks break this rhythm:
 ///
 /// - The Arc increment/decrement of the detached task is **out of phase** with
 ///   the main request waves.
+///
 /// - This can spike contention temporarily and extend the logical lifetime of
 ///   resources beyond the request.
+///
+/// ```text
+/// 'process: ──────────────────────────────────────────────────────────────────────────>
+///            |                             |                              |
+///        HTTP GET                          |                              |
+///       app.clone()                        |                              |
+///    incr strong_count                 HTTP GET                           |
+///            |                        app.clone()                         |
+///            |                     incr strong_count                  HTTP POST
+///        List Users                        |                         app.clone()
+/// ┌──────────────────────┐                 |                      incr strong_count
+/// |   borrow req.app()   |        Web Socket Upgrade                      |
+/// |  acquire connection  |      ┌─────────────────────┐                   |
+/// |   respond with json  |      |     app.clone()     |              Create User
+/// └──────────────────────┘      |   spawn async task  |─┐     ┌──────────────────────┐
+///     decr strong_count         | switching protocols | |     |   req.into_future()  |
+///            |                  └─────────────────────┘ |     |     database trx     |
+///            |                     decr strong_count    |     |       respond        |
+///            |                             |            |     └──────────────────────┘
+///            |                             |            |        decr strong_count
+///            |                             |            |                 |
+///            |                             |            └─>┌──────────────┐
+///            |                             |               |  web socket  |
+///            |                             |               └──────────────┘
+///            |                             |               decr strong_count
+///            |                             |                              |
+/// ┌──────────|─────────────────────────────|──────────────────────────────|───────────┐
+/// | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | |
+/// └──────────|─────────────────────────────|──────────────────────────────|───────────┘
+///            |                             |                              |
+///       uncontended                   uncontended                     contended
+/// ```
 ///
 /// **Guideline:**
 ///
 /// - Detached tasks should be rare. Only clone the `Shared<App>` into a task
 ///   when necessary.
-/// - Most requests should follow the normal rhythm to **keep contention low
-///   and resource lifetimes predictable**.
+///
+/// - Most requests should follow the normal rhythm to keep contention low and
+///   resource lifetimes predictable.
 ///
 /// ### Example
 ///
@@ -276,10 +277,8 @@ use std::sync::Arc;
 /// resource lifetimes predictable.
 ///
 /// However, this is a *performance and observability* guideline — not a hard
-/// safety rule.
-///
-/// In some contexts, intentionally *avoiding* a detached clone may be the
-/// correct choice.
+/// safety rule. In some contexts, intentionally *avoiding* a detached clone
+/// may be the correct choice.
 ///
 /// #### Timing and Side-Channel Awareness
 ///
@@ -291,25 +290,16 @@ use std::sync::Arc;
 /// In high-assurance systems, such differences may:
 ///
 /// - Act as unintended signals to an attacker
-/// - Reveal the presence of privileged handlers
-///   (e.g., [websocket upgrades])
+/// - Reveal the presence of privileged handlers (e.g., [web socket upgrades])
 /// - Correlate background activity with specific request types
 ///
 /// In these cases, preserving a uniform request rhythm may be more valuable
 /// than minimizing contention.
 ///
-/// #### Intentional Deviations
-///
-/// You may choose to deviate from the standard pattern when:
-///
-/// - A detached task would introduce a distinctive timing profile
-/// - Uniformity across request types is more important than peak throughput
-/// - The background work can be structured to avoid accessing `App` entirely
-///
 /// Such decisions should be made deliberately and documented, as they trade
 /// throughput and modularity for reduced observability.
 ///
-/// [websocket upgrades]: ../src/via/ws/upgrade.rs.html#256-262
+/// [web socket upgrades]: ../src/via/ws/upgrade.rs.html#256-262
 ///
 pub struct Shared<App>(Arc<App>);
 
