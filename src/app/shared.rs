@@ -291,7 +291,8 @@ use std::sync::Arc;
 /// In high-assurance systems, such differences may:
 ///
 /// - Act as unintended signals to an attacker
-/// - Reveal the presence of privileged handlers (e.g., websocket upgrades)
+/// - Reveal the presence of privileged handlers
+///   (e.g., [websocket upgrades])
 /// - Correlate background activity with specific request types
 ///
 /// In these cases, preserving a uniform request rhythm may be more valuable
@@ -307,6 +308,8 @@ use std::sync::Arc;
 ///
 /// Such decisions should be made deliberately and documented, as they trade
 /// throughput and modularity for reduced observability.
+///
+/// [websocket upgrades]: ../src/via/ws/upgrade.rs.html#256-262
 ///
 pub struct Shared<App>(Arc<App>);
 
