@@ -95,6 +95,7 @@ use std::sync::Arc;
 /// use diesel::prelude::*;
 /// use diesel_async::AsyncPgConnection;
 /// use diesel_async::pooled_connection::AsyncDieselConnectionManager;
+/// use http::StatusCode;
 /// use via::request::Payload;
 /// use via::{Next, Request, Response};
 ///
@@ -136,7 +137,7 @@ use std::sync::Arc;
 ///     // We are given ownership of the app owned by request so we can reference
 ///     // it after the future containing the JSON payload is ready.
 ///     //
-///     // This is fine so long as app is dropped when the create_user terminates.
+///     // This is fine so long as app is dropped when this function returns.
 ///     //
 ///     let new_user = future.await?.json::<NewUser>()?;
 ///     let user = diesel::insert_into(users::table)
@@ -145,7 +146,7 @@ use std::sync::Arc;
 ///         .debug_result(&mut app.database.get().await?)
 ///         .await?;
 ///
-///     Response::build().status(201).json(&user)
+///     Response::build().status(StatusCode::CREATED).json(&user)
 /// }
 /// ```
 ///
@@ -170,7 +171,8 @@ use std::sync::Arc;
 ///
 /// impl Telemetry {
 ///     async fn report(&self, mut visitor: &[u8]) -> io::Result<()> {
-///         io::copy(&mut visitor, &mut *self.0.lock().await).await?;
+///         let mut guard = self.0.lock().await;
+///         io::copy(&mut visitor, &mut *guard).await?;
 ///         Ok(())
 ///     }
 /// }
