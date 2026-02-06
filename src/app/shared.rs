@@ -93,13 +93,13 @@ use std::sync::Arc;
 /// ```
 /// use bb8::{ManageConnection, Pool};
 /// use diesel::prelude::*;
-/// use diesel_async::AsyncPgConnection;
+/// use diesel_async::{AsyncPgConnection, RunQueryDsl};
 /// use diesel_async::pooled_connection::AsyncDieselConnectionManager;
 /// use http::StatusCode;
 /// use via::request::Payload;
 /// use via::{Next, Request, Response};
 ///
-/// use models::{NewUser, User};
+/// use models::{users, NewUser, User};
 ///
 /// type ConnectionManager = AsyncDieselConnectionManager<AsyncPgConnection>;
 ///
@@ -107,12 +107,19 @@ use std::sync::Arc;
 /// struct Unicorn {
 ///     database: Pool<ConnectionManager>,
 /// }
-///
+/// #
 /// # mod models {
-/// #     use chrono::{DateTime, Utc};
 /// #     use diesel::prelude::*;
-/// #     use serde::Deserialize;
+/// #     use serde::{Deserialize, Serialize};
 /// #     use uuid::Uuid;
+/// #
+/// #     diesel::table! {
+/// #        users (id) {
+/// #            id -> Uuid,
+/// #            email -> Text,
+/// #            username -> Text,
+/// #        }
+/// #     }
 /// #
 /// #     #[derive(Deserialize, Insertable)]
 /// #     #[diesel(table_name = users)]
@@ -121,16 +128,15 @@ use std::sync::Arc;
 /// #         username: String,
 /// #     }
 /// #
-/// #     #[derive(Clone, Deserialize, Identifiable, Queryable, Selectable, Serialize)]
+/// #     #[derive(Clone, Queryable, Selectable, Serialize)]
 /// #     pub struct User {
 /// #         id: Uuid,
 /// #         email: String,
 /// #         username: String,
-/// #         created_at: DateTime<Utc>,
-/// #         updated_at: DateTime<Utc>,
 /// #     }
 /// # }
 /// #
+///
 /// async fn create_user(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
 ///     let (future, app) = request.into_future();
 ///     //           ^^^
@@ -143,7 +149,7 @@ use std::sync::Arc;
 ///     let user = diesel::insert_into(users::table)
 ///         .values(new_user)
 ///         .returning(User::as_returning())
-///         .debug_result(&mut app.database.get().await?)
+///         .get_result(&mut app.database.get().await?)
 ///         .await?;
 ///
 ///     Response::build().status(StatusCode::CREATED).json(&user)
