@@ -53,7 +53,7 @@ mod cookies;
 mod guard;
 mod middleware;
 mod next;
-mod resources;
+mod rest;
 mod server;
 mod util;
 
