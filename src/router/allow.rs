@@ -113,7 +113,7 @@ impl<T, U> Branch<T, U> {
     /// # use via::{Next, Request, Response};
     /// #
     /// # async fn greet(request: Request, _: Next) -> via::Result {
-    /// #   let name = request.envelope().param("name").into_result()?;
+    /// #   let name = request.param("name").into_result()?;
     /// #   Response::build().text(format!("Hello, {}!", name))
     /// # }
     /// #

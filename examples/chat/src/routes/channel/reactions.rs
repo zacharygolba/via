@@ -68,7 +68,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 
 pub async fn show(request: Request, _: Next) -> via::Result {
     // Parse a uuid from the reaction-id param in the URI path.
-    let id = request.envelope().param("reaction-id").parse()?;
+    let id = request.param("reaction-id").parse()?;
 
     // Acquire a database connection and find the reaction by id.
     let reaction = Reaction::with_user()
@@ -82,7 +82,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 
 pub async fn update(request: Request, _: Next) -> via::Result {
     let user_id = request.user().copied()?;
-    let id = request.envelope().param("reaction-id").parse()?;
+    let id = request.param("reaction-id").parse()?;
 
     // Deserialize a reaction changeset from the request body.
     let (body, app) = request.into_future();
@@ -106,7 +106,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 
 pub async fn destroy(request: Request, _: Next) -> via::Result {
     let user_id = request.user()?;
-    let id = request.envelope().param("reaction-id").parse()?;
+    let id = request.param("reaction-id").parse()?;
 
     // Acquire a database connection and delete the reaction.
     let 1.. = diesel::delete(reactions::table)

@@ -41,7 +41,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result {
-    let id = request.envelope().param("user-id").parse()?;
+    let id = request.param("user-id").parse()?;
 
     // Acquire a database connection and find the user.
     let user = User::query()
@@ -54,7 +54,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result {
-    let id = request.envelope().param("user-id").parse()?;
+    let id = request.param("user-id").parse()?;
 
     if id != *request.user()? {
         return forbidden();
@@ -76,7 +76,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn destroy(request: Request, _: Next) -> via::Result {
-    let id = request.envelope().param("user-id").parse()?;
+    let id = request.param("user-id").parse()?;
 
     if id != *request.user()? {
         return forbidden();

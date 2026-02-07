@@ -5,7 +5,7 @@ use via::{Error, Next, Request, Response, Server};
 
 async fn hello(request: Request, _: Next) -> via::Result {
     // Get a reference to the path parameter `name` from the request uri.
-    let name = request.envelope().param("name").decode().into_result()?;
+    let name = request.param("name").decode().into_result()?;
 
     // Send a plain text response with our greeting message.
     Response::build().text(format!("Hello, {}! (via TLS)", name))
