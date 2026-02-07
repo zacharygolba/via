@@ -28,42 +28,77 @@ use std::sync::Arc;
 ///
 /// ### Example
 ///
-/// ```
-/// use std::sync::atomic::{AtomicU32, Ordering};
-/// use via::{Next, Request, Response};
+/// ```no_run
+/// # mod models {
+/// #     use diesel::prelude::*;
+/// #     use serde::Serialize;
+/// #     use uuid::Uuid;
+/// #
+/// #     diesel::table! {
+/// #        users (id) {
+/// #            id -> Uuid,
+/// #            email -> Text,
+/// #            username -> Text,
+/// #        }
+/// #     }
+/// #
+/// #     #[derive(Clone, Queryable, Selectable, Serialize)]
+/// #     pub struct User {
+/// #         id: Uuid,
+/// #         email: String,
+/// #         username: String,
+/// #     }
+/// # }
+/// #
+/// use bb8::{ManageConnection, Pool};
+/// use diesel::prelude::*;
+/// use diesel_async::{AsyncPgConnection, RunQueryDsl};
+/// use diesel_async::pooled_connection::AsyncDieselConnectionManager;
+/// use http::StatusCode;
+/// use std::process::ExitCode;
+/// use tokio::io::{self, AsyncWriteExt, Sink};
+/// use tokio::sync::Mutex;
+/// use uuid::Uuid;
+/// use via::request::Payload;
+/// use via::{Error, Next, Request, Response, Server};
+///
+/// use models::{users, User};
+///
+/// /// An imaginary analytics service.
+/// struct Telemetry(Mutex<Sink>);
 ///
 /// /// Our billion dollar application.
 /// struct Unicorn {
-///     visits: AtomicU32,
+///     database: Pool<AsyncDieselConnectionManager<AsyncPgConnection>>,
+///     telemetry: Telemetry,
 /// }
 ///
-/// fn inflect(place: u32) -> &'static str {
-///     if (11..=13).contains(&place) {
-///         return "th";
-///     }
+/// impl Telemetry {
+///     async fn report(&self, message: String) -> io::Result<()> {
+///         let mut guard = self.0.lock().await;
 ///
-///     match place % 10 {
-///         1 => "st",
-///         2 => "nd",
-///         3 => "rd",
-///         _ => "th",
+///         guard.write_all(message.as_bytes()).await?;
+///         guard.flush().await
 ///     }
 /// }
 ///
-/// async fn greet(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
-///     let name = request.envelope().param("name").decode().into_result()?;
+/// impl Unicorn {
+///     fn new() -> Self {
+///         unimplemented!()
+///     }
+/// }
 ///
-///     let place = request.app().visits.fetch_add(1, Ordering::Relaxed);
-///     //                  ^^^
-///     // The application may be borrowed here because the request remains
-///     // intact for the duration of this function and no detached tasks
-///     // are spawned.
-///     let suffix = inflect(place);
+/// async fn find_user(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
+///     let id = request.envelope().param("user-id").parse::<Uuid>()?;
 ///
-///     Response::build().text(format!(
-///         "Hello, {}! You are the {}{} visitor.",
-///         name, place, suffix,
-///     ))
+///     // Acquire a database connection and find the user.
+///     let user = users::table
+///         .select(User::as_select())
+///         .filter(users::id.eq(id))
+///         .first(&mut request.app().database.get().await?)
+///         .await?;
+///
+///     Response::build().json(&user)
 /// }
 /// ```
 ///
@@ -83,6 +118,49 @@ use std::sync::Arc;
 /// ### Example
 ///
 /// ```
+/// # mod models {
+/// #     use diesel::prelude::*;
+/// #     use serde::{Deserialize, Serialize};
+/// #     use uuid::Uuid;
+/// #
+/// #     diesel::table! {
+/// #        users (id) {
+/// #            id -> Uuid,
+/// #            email -> Text,
+/// #            username -> Text,
+/// #        }
+/// #     }
+/// #
+/// #     #[derive(Deserialize, Insertable)]
+/// #     #[diesel(table_name = users)]
+/// #     pub struct NewUser {
+/// #         email: String,
+/// #         username: String,
+/// #     }
+/// #
+/// #     #[derive(Clone, Queryable, Selectable, Serialize)]
+/// #     pub struct User {
+/// #         id: Uuid,
+/// #         email: String,
+/// #         username: String,
+/// #     }
+/// # }
+/// #
+/// # use bb8::{ManageConnection, Pool};
+/// # use diesel::prelude::*;
+/// # use diesel_async::{AsyncPgConnection, RunQueryDsl};
+/// # use diesel_async::pooled_connection::AsyncDieselConnectionManager;
+/// # use http::StatusCode;
+/// # use via::request::Payload;
+/// # use via::{Next, Request, Response};
+/// #
+/// # use models::{users, NewUser, User};
+/// #
+/// # /// Our billion dollar application.
+/// # struct Unicorn {
+/// #     database: Pool<AsyncDieselConnectionManager<AsyncPgConnection>>,
+/// # }
+/// #
 /// async fn create_user(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
 ///     let (future, app) = request.into_future();
 ///     //           ^^^
@@ -91,16 +169,12 @@ use std::sync::Arc;
 ///     //
 ///     // This is correct so long as `app` is dropped before the function
 ///     // returns.
-///     let new_user = future.await?.json::<NewUser>()?;
 ///
-///     let user = {
-///         let mut connection = app.database.get().await?;
-///         diesel::insert_into(users::table)
-///             .values(new_user)
-///             .returning(User::as_returning())
-///             .get_result(&mut connection)
-///             .await?
-///     };
+///     let user = diesel::insert_into(users::table)
+///         .values(future.await?.json::<NewUser>()?)
+///         .returning(User::as_returning())
+///         .get_result(&mut app.database.get().await?)
+///         .await?;
 ///
 ///     Response::build()
 ///         .status(StatusCode::CREATED)
@@ -171,17 +245,61 @@ use std::sync::Arc;
 /// ### Example
 ///
 /// ```
-/// async fn greet(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
-///     let name = request.envelope().param("name").decode().into_result()?;
+/// # mod models {
+/// #     use uuid::Uuid;
+/// #
+/// #     diesel::table! {
+/// #        users (id) {
+/// #            id -> Uuid,
+/// #            email -> Text,
+/// #            username -> Text,
+/// #        }
+/// #     }
+/// # }
+/// #
+/// # use bb8::{ManageConnection, Pool};
+/// # use diesel::prelude::*;
+/// # use diesel_async::{AsyncPgConnection, RunQueryDsl};
+/// # use diesel_async::pooled_connection::AsyncDieselConnectionManager;
+/// # use http::StatusCode;
+/// # use tokio::io::{self, Sink};
+/// # use tokio::sync::Mutex;
+/// # use uuid::Uuid;
+/// # use via::request::Payload;
+/// # use via::{Next, Request, Response};
+/// #
+/// # use models::users;
+/// #
+/// # struct Telemetry(Mutex<Sink>);
+/// #
+/// # struct Unicorn {
+/// #     database: Pool<AsyncDieselConnectionManager<AsyncPgConnection>>,
+/// #     telemetry: Telemetry,
+/// # }
+/// #
+/// # impl Telemetry {
+/// #     async fn report(&self, message: String) -> io::Result<()> { todo!() }
+/// # }
+/// #
+/// async fn destroy_user(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
+///     let id = request.envelope().param("user-id").parse::<Uuid>()?;
 ///
-///     // Spawn a detached task that explicitly owns all of its dependencies.
+///     // Acquire a database connection and delete the user.
+///     diesel::delete(users::table)
+///         .filter(users::id.eq(id))
+///         .execute(&mut request.app().database.get().await?)
+///         .await?;
+///
+///     // Spawn a task that takes ownership of all of its dependencies.
 ///     tokio::spawn({
 ///         let app = request.app().clone();
-///         let name = name.clone().into_owned();
-///         async move { app.telemetry.report(name.as_bytes()).await }
+///         let message = format!("delete: resource = users, id = {}", &id);
+///         async move { app.telemetry.report(message).await }
 ///     });
 ///
-///     Response::build().text(format!("Hello, {}!", name))
+///     Response::build()
+///         .status(StatusCode::NO_CONTENT)
+///         .finish()
 /// }
 /// ```
 ///
