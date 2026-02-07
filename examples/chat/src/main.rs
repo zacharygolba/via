@@ -6,7 +6,7 @@ mod util;
 
 use std::process::ExitCode;
 use via::error::{Error, Rescue};
-use via::{Cookies, Guard, Server, resources, ws};
+use via::{Cookies, Guard, Server, ws};
 
 use chat::Chat;
 use routes::{channel, channels, chat, home, users};
@@ -50,7 +50,7 @@ async fn main() -> Result<ExitCode, Error> {
         //
         // These are commonly referred to as "collection" routes because they
         // operate on a collection of a resource.
-        path.route("/").to(resources!(channels as collection));
+        path.route("/").to(via::rest!(channels as collection));
 
         // Bind `path` to /api/channels/:channel-id.
         let mut path = path.route("/:channel-id");
@@ -71,19 +71,19 @@ async fn main() -> Result<ExitCode, Error> {
         //
         // These are commonly referred to as "member" actions because they
         // operate on a single existing resource.
-        path.route("/").to(resources!(channel as member));
+        path.route("/").to(via::rest!(channel as member));
 
         // Continue defining the dependencies of a channel.
 
         path.route("/reactions").scope(|reactions| {
-            let (collection, member) = resources!(channel::reactions);
+            let (collection, member) = via::rest!(channel::reactions);
 
             reactions.route("/").to(collection);
             reactions.route("/:reaction-id").to(member);
         });
 
         path.route("/subscriptions").scope(|subscriptions| {
-            let (collection, member) = resources!(channel::subscriptions);
+            let (collection, member) = via::rest!(channel::subscriptions);
 
             subscriptions.route("/").to(collection);
             subscriptions.route("/:subscription-id").to(member);
@@ -93,7 +93,7 @@ async fn main() -> Result<ExitCode, Error> {
             use channel::reactions::create as react;
 
             let mut thread = {
-                let (collection, member) = resources!(channel::threads);
+                let (collection, member) = via::rest!(channel::threads);
 
                 threads.route("/").to(collection);
                 threads.route("/:thread-id").to(member)
@@ -102,7 +102,7 @@ async fn main() -> Result<ExitCode, Error> {
             thread.route("/reactions").to(via::post(react));
 
             thread.route("/replies").scope(|replies| {
-                let (collection, member) = resources!(channel::threads);
+                let (collection, member) = via::rest!(channel::threads);
                 replies.route("/").to(collection);
 
                 let mut reply = replies.route("/:reply-id").to(member);
@@ -127,7 +127,7 @@ async fn main() -> Result<ExitCode, Error> {
         path.uses(Guard::new(Request::authenticate));
 
         path.route("/").to(via::get(users::index));
-        path.route("/:user-id").to(resources!(users as member));
+        path.route("/:user-id").to(via::rest!(users as member));
     });
 
     // Start listening at http://localhost:8080 for incoming requests.
