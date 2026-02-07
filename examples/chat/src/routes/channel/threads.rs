@@ -21,7 +21,7 @@ pub(super) struct ThreadArgs {
 pub async fn index(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the channel.
     let channel_id = request.can(AuthClaims::VIEW)?;
-    let params = request.envelope().params::<ThreadArgs>()?;
+    let params = request.params::<ThreadArgs>()?;
 
     let query = {
         let keyset = request.envelope().query::<Keyset>()?;
@@ -56,7 +56,7 @@ pub async fn index(request: Request, _: Next) -> via::Result {
 pub async fn create(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the channel.
     let channel_id = request.can(AuthClaims::WRITE).copied()?;
-    let path_args = request.envelope().params::<ThreadArgs>()?;
+    let path_args = request.params::<ThreadArgs>()?;
     let user_id = request.user().copied()?;
 
     // Deserialize a new conversation from the request body.
@@ -85,7 +85,7 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 pub async fn show(request: Request, _: Next) -> via::Result {
     // The current user is subscribed to the channel.
     let channel_id = request.can(AuthClaims::WRITE)?;
-    let params = request.envelope().params::<ThreadArgs>()?;
+    let params = request.params::<ThreadArgs>()?;
     let id = params.id()?;
 
     let mut connection = request.app().database().await?;
@@ -135,7 +135,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
 
 pub async fn update(request: Request, _: Next) -> via::Result {
     let user_id = *request.user()?;
-    let id = request.envelope().params::<ThreadArgs>()?.try_into()?;
+    let id = request.params::<ThreadArgs>()?.try_into()?;
 
     // Deserialize the request body into conversation params.
     let (body, app) = request.into_future();
@@ -157,7 +157,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn destroy(request: Request, _: Next) -> via::Result {
-    let id = request.envelope().params::<ThreadArgs>()?.try_into()?;
+    let id = request.params::<ThreadArgs>()?.try_into()?;
 
     // Acquire a database connection.
     let mut connection = request.app().database().await?;

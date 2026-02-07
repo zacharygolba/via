@@ -30,14 +30,14 @@ pub async fn create(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn show(request: Request, _: Next) -> via::Result {
-    let id = request.envelope().param("id").parse()?;
+    let id = request.param("id").parse()?;
     let post_by_id = Post::find(request.app().pool(), id).await?;
 
     Response::build().json(&post_by_id)
 }
 
 pub async fn update(request: Request, _: Next) -> via::Result {
-    let id = request.envelope().param("id").parse()?;
+    let id = request.param("id").parse()?;
 
     let (body, app) = request.into_future();
     let change_set = body.await?.json::<ChangeSet>()?;
@@ -48,7 +48,7 @@ pub async fn update(request: Request, _: Next) -> via::Result {
 }
 
 pub async fn destroy(request: Request, _: Next) -> via::Result {
-    let id = request.envelope().param("id").parse()?;
+    let id = request.param("id").parse()?;
 
     Post::delete(request.app().pool(), id).await?;
     Response::build().status(StatusCode::NO_CONTENT).finish()
