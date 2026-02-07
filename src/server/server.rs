@@ -155,7 +155,7 @@ where
 
         async move {
             let listener = TcpListener::bind(address).await?;
-            Ok(accept(self.config, acceptor, service, listener).await)
+            Ok(accept(acceptor, listener, service, self.config).await)
         }
     }
 
@@ -173,7 +173,7 @@ where
 
         async {
             let listener = TcpListener::bind(address).await?;
-            Ok(accept(self.config, acceptor, service, listener).await)
+            Ok(accept(acceptor, listener, service, self.config).await)
         }
     }
 
@@ -191,7 +191,7 @@ where
 
         async {
             let listener = TcpListener::bind(address).await?;
-            Ok(accept(self.config, acceptor, service, listener).await)
+            Ok(accept(acceptor, listener, service, self.config).await)
         }
     }
 }
