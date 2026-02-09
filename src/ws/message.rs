@@ -133,12 +133,12 @@ impl TryFrom<tokio_websockets::Message> for Message {
 }
 
 impl Payload for ByteString {
-    fn coallesce(self) -> Result<Vec<u8>, Error> {
-        self.into_bytes().coallesce()
+    fn coalesce(self) -> Result<Vec<u8>, Error> {
+        self.into_bytes().coalesce()
     }
 
-    fn z_coallesce(self) -> Result<Vec<u8>, Error> {
-        self.into_bytes().z_coallesce()
+    fn z_coalesce(self) -> Result<Vec<u8>, Error> {
+        self.into_bytes().z_coalesce()
     }
 
     fn json<T>(self) -> Result<T, Error>

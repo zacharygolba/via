@@ -11,6 +11,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, ready};
+use zeroize::Zeroize;
 
 use crate::error::{BoxError, Error};
 use crate::raise;
@@ -18,14 +19,14 @@ use crate::raise;
 /// Interact with data received from a client.
 ///
 pub trait Payload: Sized {
-    /// Coallesces the bytes in self into a `Vec<u8>`.
+    /// coalesces the bytes in self into a `Vec<u8>`.
     ///
-    fn coallesce(self) -> Result<Vec<u8>, Error>;
+    fn coalesce(self) -> Result<Vec<u8>, Error>;
 
-    /// Coallesces the bytes in self into a `Vec<u8>`. Then, zeroes the
+    /// coalesces the bytes in self into a `Vec<u8>`. Then, zeroes the
     /// original buffer of each frame in the Payload.
     ///
-    fn z_coallesce(self) -> Result<Vec<u8>, Error>;
+    fn z_coalesce(self) -> Result<Vec<u8>, Error>;
 
     /// Deserialize and extract `T` as JSON from the top-level data field of
     /// the object contained by the bytes in self.
@@ -53,7 +54,7 @@ pub trait Payload: Sized {
     where
         T: DeserializeOwned,
     {
-        self.coallesce().and_then(|data| deserialize_json(&data))
+        self.coalesce().and_then(|data| deserialize_json(&data))
     }
 
     /// Deserialize and extract `T` as JSON from the top-level data field of
@@ -64,7 +65,7 @@ pub trait Payload: Sized {
     where
         T: DeserializeOwned,
     {
-        self.z_coallesce().and_then(|data| deserialize_json(&data))
+        self.z_coalesce().and_then(|data| deserialize_json(&data))
     }
 
     /// Copy the bytes in self into an owned, contiguous `String`.
@@ -74,7 +75,7 @@ pub trait Payload: Sized {
     /// If the payload is not valid `UTF-8`.
     ///
     fn into_utf8(self) -> Result<String, Error> {
-        self.coallesce()
+        self.coalesce()
             .and_then(|data| match String::from_utf8(data) {
                 Ok(string) => Ok(string),
                 Err(error) => raise!(400, message = error.to_string()),
@@ -104,10 +105,11 @@ macro_rules! zeroed {
     ($bytes:expr) => {
         match $bytes.try_into_mut() {
             Ok(mut buf) => {
-                buf.fill(0);
+                buf.zeroize();
                 buf.advance(buf.len());
             }
             Err(mut buf) => {
+                // TODO: placeholder for tracing...
                 buf.advance(buf.len());
             }
         }
@@ -181,7 +183,7 @@ impl Aggregate {
 }
 
 impl Payload for Aggregate {
-    fn coallesce(mut self) -> Result<Vec<u8>, Error> {
+    fn coalesce(mut self) -> Result<Vec<u8>, Error> {
         let Some(mut data) = self.len().map(Vec::with_capacity) else {
             raise!(400, message = "payload length would overflow usize::MAX");
         };
@@ -194,7 +196,7 @@ impl Payload for Aggregate {
         Ok(data)
     }
 
-    fn z_coallesce(self) -> Result<Vec<u8>, Error> {
+    fn z_coalesce(self) -> Result<Vec<u8>, Error> {
         let Some(mut data) = self.len().map(Vec::with_capacity) else {
             raise!(400, message = "payload length would overflow usize::MAX");
         };
@@ -209,13 +211,13 @@ impl Payload for Aggregate {
 }
 
 impl Payload for Bytes {
-    fn coallesce(mut self) -> Result<Vec<u8>, Error> {
+    fn coalesce(mut self) -> Result<Vec<u8>, Error> {
         let data = self.to_vec();
         self.advance(self.len());
         Ok(data)
     }
 
-    fn z_coallesce(self) -> Result<Vec<u8>, Error> {
+    fn z_coalesce(self) -> Result<Vec<u8>, Error> {
         let data = self.to_vec();
         zeroed!(self);
         Ok(data)
