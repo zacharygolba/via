@@ -1,4 +1,4 @@
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Buf, Bytes};
 use http::{HeaderMap, StatusCode};
 use http_body::Body;
 use http_body_util::{LengthLimitError, Limited};
@@ -7,8 +7,9 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use smallvec::SmallVec;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::pin::Pin;
-use std::slice;
+use std::rc::Rc;
 use std::task::{Context, Poll, ready};
 
 use crate::error::{BoxError, Error};
@@ -16,30 +17,15 @@ use crate::raise;
 
 /// Interact with data received from a client.
 ///
-pub trait Payload {
-    /// Copy the bytes in self into a unique, contiguous `Bytes` instance.
+pub trait Payload: Sized {
+    /// Coallesces the bytes in self into a `Vec<u8>`.
     ///
-    fn copy_to_unique(&mut self) -> Result<Bytes, Error>;
+    fn coallesce(self) -> Result<Vec<u8>, Error>;
 
-    /// Copy the bytes in self into an owned, contiguous `String`.
+    /// Coallesces the bytes in self into a `Vec<u8>`. Then, zeroes the
+    /// original buffer of each frame in the Payload.
     ///
-    /// # Errors
-    ///
-    /// If the payload is not valid `UTF-8`.
-    ///
-    fn copy_to_utf8(&mut self) -> Result<String, Error> {
-        let vec = self.copy_to_vec()?;
-        String::from_utf8(vec).map_err(|error| {
-            let error = error.utf8_error();
-            Error::from_utf8_error(error)
-        })
-    }
-
-    /// Copy the bytes in self into a contiguous `Vec<u8>`.
-    ///
-    fn copy_to_vec(&mut self) -> Result<Vec<u8>, Error> {
-        self.copy_to_unique().map(Vec::from)
-    }
+    fn z_coallesce(self) -> Result<Vec<u8>, Error>;
 
     /// Deserialize and extract `T` as JSON from the top-level data field of
     /// the object contained by the bytes in self.
@@ -63,25 +49,69 @@ pub trait Payload {
     /// // => Meow, Ciro!
     /// ```
     ///
-    fn json<T>(&mut self) -> Result<T, Error>
+    fn json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        deserialize_json(&self.copy_to_unique()?)
+        self.coallesce().and_then(|data| deserialize_json(&data))
+    }
+
+    /// Deserialize and extract `T` as JSON from the top-level data field of
+    /// the object contained by the bytes in self. Then, zeroes each frame of
+    /// the underlying buffer.
+    ///
+    fn z_json<T>(self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        self.z_coallesce().and_then(|data| deserialize_json(&data))
+    }
+
+    /// Copy the bytes in self into an owned, contiguous `String`.
+    ///
+    /// # Errors
+    ///
+    /// If the payload is not valid `UTF-8`.
+    ///
+    fn into_utf8(self) -> Result<String, Error> {
+        self.coallesce()
+            .and_then(|data| match String::from_utf8(data) {
+                Ok(string) => Ok(string),
+                Err(error) => raise!(400, message = error.to_string()),
+            })
     }
 }
 
 /// The data and trailers of a request body.
 ///
-pub struct DataAndTrailers {
+pub struct Aggregate {
+    payload: RequestPayload,
+    _unsend: PhantomData<Rc<()>>,
+}
+
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct Coalesce {
+    body: Limited<Incoming>,
+    payload: Option<RequestPayload>,
+}
+
+struct RequestPayload {
     frames: SmallVec<[Bytes; 1]>,
     trailers: Option<HeaderMap>,
 }
 
-#[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct IntoFuture {
-    body: Limited<Incoming>,
-    payload: Option<DataAndTrailers>,
+macro_rules! zeroed {
+    ($bytes:expr) => {
+        match $bytes.try_into_mut() {
+            Ok(mut buf) => {
+                buf.fill(0);
+                buf.advance(buf.len());
+            }
+            Err(mut buf) => {
+                buf.advance(buf.len());
+            }
+        }
+    };
 }
 
 fn already_read<T>() -> Result<T, Error> {
@@ -114,59 +144,109 @@ fn into_future_error<T>(error: BoxError) -> Result<T, Error> {
     raise!(400, boxed = error);
 }
 
-impl DataAndTrailers {
+impl Aggregate {
+    fn new(payload: RequestPayload) -> Self {
+        Self {
+            payload,
+            _unsend: PhantomData,
+        }
+    }
+
     pub fn len(&self) -> Option<usize> {
-        self.iter()
-            .try_fold(0usize, |len, frame| len.checked_add(frame.len()))
+        self.frames()
+            .iter()
+            .map(Bytes::len)
+            .try_fold(0usize, |sum, len| sum.checked_add(len))
     }
 
     pub fn is_empty(&self) -> bool {
         self.len().is_some_and(|len| len == 0)
     }
 
-    pub fn iter(&self) -> slice::Iter<'_, Bytes> {
-        self.frames.iter()
+    pub fn frames(&self) -> &[Bytes] {
+        &self.payload.frames
     }
 
-    pub fn iter_mut(&mut self) -> slice::IterMut<'_, Bytes> {
-        self.frames.iter_mut()
+    pub fn frames_mut(&mut self) -> &mut [Bytes] {
+        &mut self.payload.frames
     }
 
     pub fn trailers(&self) -> Option<&HeaderMap> {
-        self.trailers.as_ref()
+        self.payload.trailers.as_ref()
+    }
+
+    pub fn mut_trailers(&mut self) -> &mut Option<HeaderMap> {
+        &mut self.payload.trailers
     }
 }
 
-impl Payload for DataAndTrailers {
-    fn copy_to_unique(&mut self) -> Result<Bytes, Error> {
-        let Some(mut bytes) = self.len().map(BytesMut::with_capacity) else {
-            raise!(400, message = "payload length would overflow usize::MAX.");
+impl Payload for Aggregate {
+    fn coallesce(mut self) -> Result<Vec<u8>, Error> {
+        let Some(mut data) = self.len().map(Vec::with_capacity) else {
+            raise!(400, message = "payload length would overflow usize::MAX");
         };
 
-        for frame in self.iter_mut() {
-            bytes.extend_from_slice(&*frame);
+        for frame in &mut self.payload.frames {
+            data.extend_from_slice(frame);
             frame.advance(frame.len());
         }
 
-        Ok(bytes.freeze())
+        Ok(data)
     }
 
-    fn json<T>(&mut self) -> Result<T, Error>
-    where
-        T: DeserializeOwned,
-    {
-        match &mut *self.frames {
-            [frame] => frame.json(),
-            _ => deserialize_json(&self.copy_to_unique()?),
+    fn z_coallesce(self) -> Result<Vec<u8>, Error> {
+        let Some(mut data) = self.len().map(Vec::with_capacity) else {
+            raise!(400, message = "payload length would overflow usize::MAX");
+        };
+
+        for frame in self.payload.frames {
+            data.extend_from_slice(&frame);
+            zeroed!(frame);
         }
+
+        Ok(data)
     }
 }
 
-impl IntoFuture {
+impl Payload for Bytes {
+    fn coallesce(mut self) -> Result<Vec<u8>, Error> {
+        let data = self.to_vec();
+        self.advance(self.len());
+        Ok(data)
+    }
+
+    fn z_coallesce(self) -> Result<Vec<u8>, Error> {
+        let data = self.to_vec();
+        zeroed!(self);
+        Ok(data)
+    }
+
+    #[inline]
+    fn json<T>(mut self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        let result = deserialize_json(&self);
+        self.advance(self.len());
+        result
+    }
+
+    #[inline]
+    fn z_json<T>(self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        let result = deserialize_json(&self);
+        zeroed!(self);
+        result
+    }
+}
+
+impl Coalesce {
     pub(super) fn new(body: Limited<Incoming>) -> Self {
         Self {
             body,
-            payload: Some(DataAndTrailers {
+            payload: Some(RequestPayload {
                 frames: SmallVec::new(),
                 trailers: None,
             }),
@@ -174,8 +254,8 @@ impl IntoFuture {
     }
 }
 
-impl Future for IntoFuture {
-    type Output = Result<DataAndTrailers, Error>;
+impl Future for Coalesce {
+    type Output = Result<Aggregate, Error>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context) -> Poll<Self::Output> {
         let Self { body, payload } = self.get_mut();
@@ -183,7 +263,10 @@ impl Future for IntoFuture {
 
         loop {
             let Some(result) = ready!(body.as_mut().poll_frame(context)) else {
-                return Poll::Ready(payload.take().map_or_else(already_read, Ok));
+                return Poll::Ready(match payload.take() {
+                    Some(payload) => Ok(Aggregate::new(payload)),
+                    None => already_read(),
+                });
             };
 
             let frame = result.or_else(into_future_error)?;
@@ -193,17 +276,16 @@ impl Future for IntoFuture {
                     payload.frames.push(data);
                     continue;
                 }
-                Err(frame) => match frame.into_trailers() {
-                    Ok(trailers) => trailers,
-                    Err(_) => {
-                        let error = Error::new(
+                Err(frame) => {
+                    let Ok(trailers) = frame.into_trailers() else {
+                        return Poll::Ready(Err(Error::new(
                             StatusCode::BAD_REQUEST,
                             "unexpected frame type received while reading the request body",
-                        );
+                        )));
+                    };
 
-                        return Poll::Ready(Err(error));
-                    }
-                },
+                    trailers
+                }
             };
 
             if let Some(existing) = payload.trailers.as_mut() {
@@ -212,35 +294,5 @@ impl Future for IntoFuture {
                 payload.trailers = Some(trailers);
             }
         }
-    }
-}
-
-impl Payload for Bytes {
-    fn copy_to_unique(&mut self) -> Result<Bytes, Error> {
-        let bytes = Bytes::copy_from_slice(&*self);
-
-        self.advance(self.len());
-
-        Ok(bytes)
-    }
-
-    fn copy_to_vec(&mut self) -> Result<Vec<u8>, Error> {
-        let vec = self.to_vec();
-
-        self.advance(self.len());
-
-        Ok(vec)
-    }
-
-    fn json<T>(&mut self) -> Result<T, Error>
-    where
-        T: DeserializeOwned,
-    {
-        let remaining = self.len();
-        let result = deserialize_json(&*self);
-
-        self.advance(remaining);
-
-        result
     }
 }
