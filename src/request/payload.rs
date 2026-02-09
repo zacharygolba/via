@@ -19,11 +19,11 @@ use crate::raise;
 /// Interact with data received from a client.
 ///
 pub trait Payload: Sized {
-    /// coalesces the bytes in self into a `Vec<u8>`.
+    /// Coalesces the bytes in self into a `Vec<u8>`.
     ///
     fn coalesce(self) -> Result<Vec<u8>, Error>;
 
-    /// coalesces the bytes in self into a `Vec<u8>`. Then, zeroes the
+    /// Coalesces the bytes in self into a `Vec<u8>`. Then, zeroes the
     /// original buffer of each frame in the Payload.
     ///
     fn z_coalesce(self) -> Result<Vec<u8>, Error>;
