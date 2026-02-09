@@ -38,7 +38,6 @@ macro_rules! log {
     };
 }
 
-#[inline(never)]
 pub async fn accept<App, TlsAcceptor>(
     acceptor: TlsAcceptor,
     listener: TcpListener,
