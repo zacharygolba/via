@@ -101,8 +101,12 @@ features = ["aws_lc_rs", "server"]
 optional = true
 
 [dev-dependencies]
+bb8 = "0.9"
+diesel = { features = ["chrono", "uuid"], version = "2" }
+diesel-async = { version = "0.7", features = ["bb8", "postgres"] }
 cookie = { version = "0.18", features = ["percent-encode", "private"] }
 time = { version = "0.3" }
+uuid = { version = "1", features = ["v4", "serde"] }
 
 [package.metadata.docs.rs]
 features = ["file", "native-tls", "rustls", "ws"]
