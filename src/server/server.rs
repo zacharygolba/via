@@ -147,7 +147,7 @@ where
     /// decommissioning logic of the cluster.
     ///
     #[inline(never)]
-    pub async fn listen<A>(self, address: impl ToSocketAddrs) -> Result<ExitCode, Error> {
+    pub async fn listen(self, address: impl ToSocketAddrs) -> Result<ExitCode, Error> {
         let listener = TcpListener::bind(address).await?;
         let service = AppService::new(Arc::new(self.app), self.config.max_request_size);
 
@@ -156,7 +156,7 @@ where
 
     #[cfg(feature = "native-tls")]
     #[inline(never)]
-    pub async fn listen_native_tls<A>(
+    pub async fn listen_native_tls(
         self,
         address: impl ToSocketAddrs,
         identity: native_tls::Identity,
@@ -170,7 +170,7 @@ where
 
     #[cfg(feature = "rustls")]
     #[inline(never)]
-    pub async fn listen_rustls<A>(
+    pub async fn listen_rustls(
         self,
         address: impl ToSocketAddrs,
         rustls_config: rustls::ServerConfig,
