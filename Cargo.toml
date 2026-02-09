@@ -38,6 +38,7 @@ bitflags = "2"
 bytes = "1"
 bytestring = { version = "1", optional = true }
 cookie = { version = "0.18", features = ["percent-encode"] }
+delegate = "0.13"
 futures-core = "0.3"
 http = "1"
 http-body = "1"
@@ -100,8 +101,12 @@ features = ["aws_lc_rs", "server"]
 optional = true
 
 [dev-dependencies]
+bb8 = "0.9"
+diesel = { features = ["chrono", "uuid"], version = "2" }
+diesel-async = { version = "0.7", features = ["bb8", "postgres"] }
 cookie = { version = "0.18", features = ["percent-encode", "private"] }
 time = { version = "0.3" }
+uuid = { version = "1", features = ["v4", "serde"] }
 
 [package.metadata.docs.rs]
 features = ["file", "native-tls", "rustls", "ws"]

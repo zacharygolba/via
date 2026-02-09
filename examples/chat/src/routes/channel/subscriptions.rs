@@ -51,7 +51,7 @@ pub async fn show(request: Request, _: Next) -> via::Result {
     let channel_id = request.can(AuthClaims::VIEW)?;
 
     // The id of the subscription.
-    let id = request.envelope().param("subscription-id").parse()?;
+    let id = request.param("subscription-id").parse()?;
 
     // Acquire a database connection and find the subscription.
     let subscription = Subscription::users()
@@ -72,7 +72,7 @@ fn is_owner_or_moderator(request: &Request) -> via::Result<Id> {
     let subscription = request.subscription()?;
 
     // The id of the subscription that the user wants to mutate.
-    let id = request.envelope().param("subscription-id").parse()?;
+    let id = request.param("subscription-id").parse()?;
 
     if subscription.id() == &id || subscription.can(AuthClaims::MODERATE).is_ok() {
         Ok(id)

@@ -28,7 +28,7 @@ pub trait Subscriber {
 /// Confirm that the current user is subscribed to the channel.
 pub async fn authorization(mut request: Request, next: Next) -> via::Result {
     let user_id = request.user()?;
-    let channel_id = request.envelope().param("channel-id").parse()?;
+    let channel_id = request.param("channel-id").parse()?;
 
     // Acquire a database connection and execute the query.
     let Some(subscription) = subscriptions::table

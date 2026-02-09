@@ -1,8 +1,9 @@
 use cookie::CookieJar;
+use delegate::delegate;
 use http::request::Parts;
 use http::{Extensions, HeaderMap, Method, StatusCode, Uri, Version};
 use http_body_util::Limited;
-use hyper::body::Incoming as Body;
+use hyper::body::Incoming;
 use std::fmt::{self, Debug, Formatter};
 
 use super::params::{Param, PathParamEntry, PathParams};
@@ -20,7 +21,7 @@ pub struct Envelope {
 
 pub struct Request<App = ()> {
     envelope: Envelope,
-    body: Limited<Body>,
+    body: Limited<Incoming>,
     app: Shared<App>,
 }
 
@@ -136,7 +137,7 @@ impl<App> Request<App> {
         app: Shared<App>,
         limit: usize,
         params: Vec<PathParamEntry>,
-        request: http::Request<Body>,
+        request: http::Request<Incoming>,
     ) -> Self {
         let (parts, body) = request.into_parts();
 
@@ -162,6 +163,44 @@ impl<App> Request<App> {
         &mut self.envelope
     }
 
+    delegate! {
+        to self.envelope() {
+            /// Returns a reference to the request's method.
+            pub fn method(&self) -> &Method;
+
+            /// Returns a reference to the request's URI.
+            pub fn uri(&self) -> &Uri;
+
+            /// Returns the HTTP version that was used to make the request.
+            pub fn version(&self) -> Version;
+
+            /// Returns a reference to the request's headers.
+            pub fn headers(&self) -> &HeaderMap;
+
+            /// Returns a reference to the associated extensions.
+            pub fn extensions(&self) -> &Extensions;
+
+            /// Returns a mutable reference to the associated extensions.
+            pub fn cookies(&self) -> &CookieJar;
+
+            pub fn params<'a, T>(&'a self) -> crate::Result<T>
+            where
+                T: TryFrom<PathParams<'a>>,
+                Error: From<T::Error>;
+
+            /// Returns reference to the cookies associated with the request.
+            pub fn param<'b>(&self, name: &'b str) -> Param<'_, 'b>;
+
+            pub fn query<'a, T>(&'a self) -> crate::Result<T>
+            where
+                T: TryFrom<QueryParams<'a>, Error = Error>;
+        }
+
+        to self.envelope_mut() {
+            pub fn extensions_mut(&mut self) -> &mut Extensions;
+        }
+    }
+
     /// Consumes the request and returns a tuple containing a future that
     /// resolves with the data and trailers of the body as well as a shared
     /// copy of `App`.
@@ -175,7 +214,7 @@ impl<App> Request<App> {
     /// Consumes the request and returns a tuple containing it's parts.
     ///
     #[inline]
-    pub fn into_parts(self) -> (Envelope, Limited<Body>, Shared<App>) {
+    pub fn into_parts(self) -> (Envelope, Limited<Incoming>, Shared<App>) {
         (self.envelope, self.body, self.app)
     }
 }
