@@ -1,9 +1,9 @@
 #[macro_export]
-macro_rules! resources {
+macro_rules! rest {
     ($mod:path) => {
         (
-            $crate::resources!($mod as collection),
-            $crate::resources!($mod as member),
+            $crate::rest!($mod as collection),
+            $crate::rest!($mod as member),
         )
     };
     ($mod:path as collection) => {{
