@@ -133,12 +133,14 @@ impl TryFrom<tokio_websockets::Message> for Message {
 }
 
 impl Payload for ByteString {
-    fn coalesce(self) -> Result<Vec<u8>, Error> {
+    fn coalesce(self) -> Vec<u8> {
         self.into_bytes().coalesce()
     }
 
-    fn z_coalesce(self) -> Result<Vec<u8>, Error> {
-        self.into_bytes().z_coalesce()
+    fn z_coalesce(self) -> Result<Vec<u8>, Self> {
+        self.into_bytes()
+            .z_coalesce()
+            .map_err(|bytes| unsafe { ByteString::from_bytes_unchecked(bytes) })
     }
 
     fn json<T>(self) -> Result<T, Error>
@@ -148,11 +150,13 @@ impl Payload for ByteString {
         self.into_bytes().json()
     }
 
-    fn z_json<T>(self) -> Result<T, Error>
+    fn z_json<T>(self) -> Result<Result<T, Error>, Self>
     where
         T: DeserializeOwned,
     {
-        self.into_bytes().z_json()
+        self.into_bytes()
+            .z_json()
+            .map_err(|bytes| unsafe { ByteString::from_bytes_unchecked(bytes) })
     }
 }
 

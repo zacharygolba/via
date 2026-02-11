@@ -10,6 +10,7 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::rc::Rc;
+use std::slice;
 use std::task::{Context, Poll, ready};
 use zeroize::Zeroize;
 
@@ -19,14 +20,20 @@ use crate::raise;
 /// Interact with data received from a client.
 ///
 pub trait Payload: Sized {
-    /// Coalesces the bytes in self into a `Vec<u8>`.
+    /// Coalesces the non-contiguous bytes in self into a `Vec<u8>`.
     ///
-    fn coalesce(self) -> Result<Vec<u8>, Error>;
+    /// The buffer that backs each frame of the original payload is zeroized
+    /// after the data contained in the frame is read into `dest`.
+    ///
+    fn coalesce(self) -> Vec<u8>;
 
-    /// Coalesces the bytes in self into a `Vec<u8>`. Then, zeroes the
-    /// original buffer of each frame in the Payload.
+    /// Coalesces the non-contiguous bytes in self into a `Vec<u8>`.
     ///
-    fn z_coalesce(self) -> Result<Vec<u8>, Error>;
+    /// The buffer that backs each frame of the original payload is zeroized
+    /// after the data contained in the frame is read into the vec returned by
+    /// this function.
+    ///
+    fn z_coalesce(self) -> Result<Vec<u8>, Self>;
 
     /// Deserialize and extract `T` as JSON from the top-level data field of
     /// the object contained by the bytes in self.
@@ -54,18 +61,18 @@ pub trait Payload: Sized {
     where
         T: DeserializeOwned,
     {
-        self.coalesce().and_then(|data| deserialize_json(&data))
+        deserialize_json(&self.coalesce())
     }
 
     /// Deserialize and extract `T` as JSON from the top-level data field of
     /// the object contained by the bytes in self. Then, zeroes each frame of
     /// the underlying buffer.
     ///
-    fn z_json<T>(self) -> Result<T, Error>
+    fn z_json<T>(self) -> Result<Result<T, Error>, Self>
     where
         T: DeserializeOwned,
     {
-        self.z_coalesce().and_then(|data| deserialize_json(&data))
+        self.z_coalesce().map(|data| deserialize_json(&data))
     }
 
     /// Copy the bytes in self into an owned, contiguous `String`.
@@ -74,12 +81,18 @@ pub trait Payload: Sized {
     ///
     /// If the payload is not valid `UTF-8`.
     ///
-    fn into_utf8(self) -> Result<String, Error> {
-        self.coalesce()
-            .and_then(|data| match String::from_utf8(data) {
-                Ok(string) => Ok(string),
-                Err(error) => raise!(400, message = error.to_string()),
+    fn utf8(self) -> Result<String, Error> {
+        String::from_utf8(self.coalesce()).or_else(|error| {
+            raise!(400, message = error.to_string());
+        })
+    }
+
+    fn z_utf8(self) -> Result<Result<String, Error>, Self> {
+        self.z_coalesce().map(|data| {
+            String::from_utf8(data).or_else(|error| {
+                raise!(400, message = error.to_string());
             })
+        })
     }
 }
 
@@ -99,21 +112,6 @@ pub struct Coalesce {
 struct RequestPayload {
     frames: SmallVec<[Bytes; 1]>,
     trailers: Option<HeaderMap>,
-}
-
-macro_rules! zeroed {
-    ($bytes:expr) => {
-        match $bytes.try_into_mut() {
-            Ok(mut buf) => {
-                buf.zeroize();
-                buf.advance(buf.len());
-            }
-            Err(mut buf) => {
-                // TODO: placeholder for tracing...
-                buf.advance(buf.len());
-            }
-        }
-    };
 }
 
 fn already_read<T>() -> Result<T, Error> {
@@ -155,7 +153,7 @@ impl Aggregate {
     }
 
     pub fn len(&self) -> Option<usize> {
-        self.frames()
+        self.payload
             .iter()
             .map(Bytes::len)
             .try_fold(0usize, |sum, len| sum.checked_add(len))
@@ -163,14 +161,6 @@ impl Aggregate {
 
     pub fn is_empty(&self) -> bool {
         self.len().is_some_and(|len| len == 0)
-    }
-
-    pub fn frames(&self) -> &[Bytes] {
-        &self.payload.frames
-    }
-
-    pub fn frames_mut(&mut self) -> &mut [Bytes] {
-        &mut self.payload.frames
     }
 
     pub fn trailers(&self) -> Option<&HeaderMap> {
@@ -183,64 +173,35 @@ impl Aggregate {
 }
 
 impl Payload for Aggregate {
-    fn coalesce(mut self) -> Result<Vec<u8>, Error> {
-        let Some(mut data) = self.len().map(Vec::with_capacity) else {
-            raise!(400, message = "payload length would overflow usize::MAX");
-        };
+    fn coalesce(self) -> Vec<u8> {
+        let mut dest = Vec::new();
 
-        for frame in &mut self.payload.frames {
-            data.extend_from_slice(frame);
-            frame.advance(frame.len());
+        for frame in self.payload.iter() {
+            dest.extend_from_slice(frame);
         }
 
-        Ok(data)
+        dest
     }
 
-    fn z_coalesce(self) -> Result<Vec<u8>, Error> {
-        let Some(mut data) = self.len().map(Vec::with_capacity) else {
-            raise!(400, message = "payload length would overflow usize::MAX");
-        };
+    fn z_coalesce(mut self) -> Result<Vec<u8>, Self> {
+        let mut dest = Vec::new();
 
-        for frame in self.payload.frames {
-            data.extend_from_slice(&frame);
-            zeroed!(frame);
+        if !self.payload.iter().all(Bytes::is_unique) {
+            return Err(self);
         }
 
-        Ok(data)
-    }
-}
+        for frame in self.payload.iter_mut() {
+            let ptr = frame.as_ptr() as *mut u8;
+            let len = frame.len();
+            let src = unsafe { slice::from_raw_parts_mut(ptr, len) };
 
-impl Payload for Bytes {
-    fn coalesce(mut self) -> Result<Vec<u8>, Error> {
-        let data = self.to_vec();
-        self.advance(self.len());
-        Ok(data)
-    }
+            dest.extend_from_slice(&*src);
 
-    fn z_coalesce(self) -> Result<Vec<u8>, Error> {
-        let data = self.to_vec();
-        zeroed!(self);
-        Ok(data)
-    }
+            src.zeroize();
+            frame.advance(len);
+        }
 
-    #[inline]
-    fn json<T>(mut self) -> Result<T, Error>
-    where
-        T: DeserializeOwned,
-    {
-        let result = deserialize_json(&self);
-        self.advance(self.len());
-        result
-    }
-
-    #[inline]
-    fn z_json<T>(self) -> Result<T, Error>
-    where
-        T: DeserializeOwned,
-    {
-        let result = deserialize_json(&self);
-        zeroed!(self);
-        result
+        Ok(dest)
     }
 }
 
@@ -248,10 +209,7 @@ impl Coalesce {
     pub(super) fn new(body: Limited<Incoming>) -> Self {
         Self {
             body,
-            payload: Some(RequestPayload {
-                frames: SmallVec::new(),
-                trailers: None,
-            }),
+            payload: Some(RequestPayload::new()),
         }
     }
 }
@@ -296,5 +254,74 @@ impl Future for Coalesce {
                 payload.trailers = Some(trailers);
             }
         }
+    }
+}
+
+impl RequestPayload {
+    fn new() -> Self {
+        Self {
+            frames: SmallVec::new(),
+            trailers: None,
+        }
+    }
+
+    #[inline]
+    fn iter(&self) -> slice::Iter<'_, Bytes> {
+        self.frames.iter()
+    }
+
+    #[inline]
+    fn iter_mut(&mut self) -> slice::IterMut<'_, Bytes> {
+        self.frames.iter_mut()
+    }
+}
+
+impl Payload for Bytes {
+    fn coalesce(mut self) -> Vec<u8> {
+        let mut dest = Vec::new();
+
+        dest.extend_from_slice(self.as_ref());
+        self.advance(self.len());
+
+        dest
+    }
+
+    fn z_coalesce(self) -> Result<Vec<u8>, Self> {
+        let mut dest = Vec::new();
+
+        dest.extend_from_slice(self.as_ref());
+        match self.try_into_mut() {
+            Err(mut bytes) => bytes.advance(bytes.len()),
+            Ok(mut bytes) => {
+                bytes.zeroize();
+                bytes.advance(bytes.len());
+            }
+        }
+
+        Ok(dest)
+    }
+
+    fn json<T>(mut self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        let json = deserialize_json(self.as_ref())?;
+        self.advance(self.len());
+        Ok(json)
+    }
+
+    fn z_json<T>(self) -> Result<Result<T, Error>, Self>
+    where
+        T: DeserializeOwned,
+    {
+        let mut bytes = self.try_into_mut()?;
+        let result = deserialize_json(bytes.as_ref());
+
+        if result.is_ok() {
+            bytes.zeroize();
+            bytes.advance(bytes.len());
+        }
+
+        Ok(result)
     }
 }
