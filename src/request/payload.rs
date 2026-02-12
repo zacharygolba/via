@@ -161,7 +161,7 @@ fn into_future_error<T>(error: BoxError) -> Result<T, Error> {
 /// [zeroize]: https://crates.io/crates/zeroize/
 #[inline(never)]
 unsafe fn unfenced_zeroize(frame: &mut Bytes) {
-    let len = frame.len();
+    let len = frame.remaining();
     let ptr = frame.as_ptr() as *mut u8;
 
     for idx in 0..len {
@@ -184,8 +184,8 @@ impl Aggregate {
     pub fn len(&self) -> Option<usize> {
         self.payload
             .iter()
-            .map(Bytes::len)
-            .try_fold(0usize, |sum, len| sum.checked_add(len))
+            .map(Buf::remaining)
+            .try_fold(0usize, |len, remaining| len.checked_add(remaining))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -327,7 +327,7 @@ impl Payload for Bytes {
 
         // The transport layer sufficiently chunks each frame.
         dest.extend_from_slice(self.as_ref());
-        self.advance(self.len());
+        self.advance(self.remaining());
 
         dest
     }
@@ -363,7 +363,7 @@ impl Payload for Bytes {
         T: DeserializeOwned,
     {
         let json = deserialize_json(self.as_ref())?;
-        self.advance(self.len());
+        self.advance(self.remaining());
         Ok(json)
     }
 
