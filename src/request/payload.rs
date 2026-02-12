@@ -30,10 +30,9 @@ mod sealed {
 
 /// Represents an optionally contiguous source of data received from a client.
 ///
-/// The methods provided by this trait also provide counterparts with zeroization
-/// guarantees, ensuring that the original buffers are securely cleared after the
-/// data is read. This makes `Payload` suitable for handling sensitive
-/// information.
+/// The methods provided by the `Payload` trait also provide counterparts with
+/// zeroization guarantees, ensuring that the original buffers are securely
+/// cleared after the data is read.
 ///
 /// # Memory Hygiene
 ///
