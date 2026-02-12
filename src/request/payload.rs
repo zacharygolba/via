@@ -17,45 +17,63 @@ use std::{ptr, slice};
 use crate::error::{BoxError, Error};
 use crate::raise;
 
-/// Interact with data received from a client.
+/// Represents an optionally contiguous source of data received from a client.
+///
+/// The methods provided by this trait also provide counterparts with zeroization
+/// guarantees, ensuring that the original buffers are securely cleared after the
+/// data is read. This makes `Payload` suitable for handling sensitive
+/// information.
+///
+/// # Memory Hygiene
+///
+/// Payload methods take ownership of `self` to prevent accidental reuse of
+/// volatile buffers. This behavior ensures that once the data is coalesced or
+/// deserialized, the original memory is unreachable.
+///
+/// ## Zeroization
+///
+/// The majority of use-cases where zeroization is preferred but not strictly
+/// necessary can benefit from using the `be_z_*` prefixed versions of the
+/// methods provided by the `Payload` trait. The `be_z` prefix stands for
+/// "best-effort zeroization". If zeroization is impossible due to non-unique
+/// access of a buffer contained in the payload, `be_z_*` variations fall back
+/// to their non-zeroing counterparts.
+///
+/// If zeroization is a hard requirement, we recommend defining a policy that
+/// is sufficient for your business use-case. For example, returning an opaque
+/// 500 error to the client and immediately stopping request processing is likely
+/// enough to satisfy the definition of "fair handling of user data". As always,
+/// we suggest defining a policy and working with compliance and legal to
+/// determine what is right for your situation.
+///
+/// In any case, users should avoid retaining the payload returned in the `Err`
+/// branch of strict zeroizing methods prefixed by `z_*` and stop processing
+/// the request as soon as possible. This reduces the likelihood of a panic
+/// crashing a connection task, potentially (albeit unlikely) exposing
+/// un-zeroed memory.
 ///
 pub trait Payload: Sized {
-    /// Coalesces the non-contiguous bytes in self into a `Vec<u8>`.
-    ///
-    /// The buffer that backs each frame of the original payload is zeroized
-    /// after the data contained in the frame is read into `dest`.
+    /// Coalesces all non-contiguous bytes into a single contiguous `Vec<u8>`.
     ///
     fn coalesce(self) -> Vec<u8>;
 
-    /// Coalesces the non-contiguous bytes in self into a `Vec<u8>`.
+    /// Coalesces all non-contiguous bytes into a single contiguous `Vec<u8>`.
     ///
-    /// The buffer that backs each frame of the original payload is zeroized
-    /// after the data contained in the frame is read into the vec returned by
-    /// this function.
+    /// If zeroization is impossible due to non-unique access of an underlying
+    /// frame buffer, `self` is returned to the caller.
+    ///
+    /// # Security
+    ///
+    /// Users should avoid retaining the returned `Self` in `Err` longer than
+    /// necessary, as it contains un-zeroed memory.
     ///
     fn z_coalesce(self) -> Result<Vec<u8>, Self>;
 
-    /// Deserialize and extract `T` as JSON from the top-level data field of
-    /// the object contained by the bytes in self.
+    /// Deserialize the payload as JSON into the specified type `T`.
     ///
-    /// # Example
+    /// # Errors
     ///
-    /// ```
-    /// # use bytes::Bytes;
-    /// # use serde::Deserialize;
-    /// # use via::Payload;
-    /// #
-    /// #[derive(Deserialize)]
-    /// struct Cat {
-    ///     name: String,
-    /// }
-    ///
-    /// let mut payload = Bytes::copy_from_slice(b"{\"data\":{\"name\":\"Ciro\"}}");
-    /// let cat = payload.json::<Cat>().expect("invalid payload");
-    ///
-    /// println!("Meow, {}!", cat.name);
-    /// // => Meow, Ciro!
-    /// ```
+    /// - `Err(Error)` if `T` cannot be deserialized from the data in `self`
     ///
     fn json<T>(self) -> Result<T, Error>
     where
@@ -64,9 +82,18 @@ pub trait Payload: Sized {
         deserialize_json(&self.coalesce())
     }
 
-    /// Deserialize and extract `T` as JSON from the top-level data field of
-    /// the object contained by the bytes in self. Then, zeroes each frame of
-    /// the underlying buffer.
+    /// Deserialize the payload as JSON into the specified type `T`, zeroizing
+    /// the original data from which the `T` is deserialized.
+    ///
+    /// # Errors
+    ///
+    /// - `Err(Self)` if zeroization is impossible due to non-unique access
+    /// - `Ok(Err(Error))` if `T` cannot be deserialized from the data in `self`
+    ///
+    /// # Security
+    ///
+    /// Users should avoid retaining the returned `Self` in `Err` longer than
+    /// necessary, as it contains un-zeroed memory.
     ///
     fn z_json<T>(self) -> Result<Result<T, Error>, Self>
     where
@@ -75,6 +102,16 @@ pub trait Payload: Sized {
         self.z_coalesce().map(|data| deserialize_json(&data))
     }
 
+    /// Deserialize the payload as JSON into the specified type `T`, zeroizing
+    /// the original data from which the `T` is deserialized.
+    ///
+    /// If zeroization is impossible due to non-unique access, falls back to
+    /// [`Payload::json`].
+    ///
+    /// # Errors
+    ///
+    /// - `Err(Error)` if `T` cannot be deserialized from the data in `self`
+    ///
     fn be_z_json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
@@ -82,20 +119,39 @@ pub trait Payload: Sized {
         self.z_json().unwrap_or_else(Self::json)
     }
 
-    /// Copy the bytes in self into an owned, contiguous `String`.
+    /// Converts the payload into a UTF-8 `String`.
     ///
     /// # Errors
     ///
-    /// If the payload is not valid `UTF-8`.
+    /// - `Err(Error)` if the payload contains an invalid UTF-8 byte sequence
     ///
     fn utf8(self) -> Result<String, Error> {
         deserialize_utf8(self.coalesce())
     }
 
+    /// Converts the payload into a UTF-8 `String`, zeroizing the original data
+    /// from which the `String` is constructed.
+    ///
+    /// # Errors
+    ///
+    /// - `Err(Self)` if zeroization is impossible due to non-unique access
+    /// - `Ok(Err(Error))` if the payload contains an invalid UTF-8 byte
+    ///   sequence
+    ///
     fn z_utf8(self) -> Result<Result<String, Error>, Self> {
         self.z_coalesce().map(deserialize_utf8)
     }
 
+    /// Converts the payload into a UTF-8 `String`, zeroizing the original data
+    /// from which the `String` is constructed.
+    ///
+    /// If zeroization is impossible due to non-unique access, falls back to
+    /// [`Payload::utf8`].
+    ///
+    /// # Errors
+    ///
+    /// - `Err(Error)` if the payload contains an invalid UTF-8 byte sequence
+    ///
     fn be_z_utf8(self) -> Result<String, Error> {
         self.z_utf8().unwrap_or_else(Self::utf8)
     }
