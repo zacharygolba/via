@@ -25,7 +25,7 @@ pub trait Payload: Sized {
     /// The buffer that backs each frame of the original payload is zeroized
     /// after the data contained in the frame is read into `dest`.
     ///
-    fn coalesce(self) -> Vec<u8>;
+    fn coalesce(self) -> Result<Vec<u8>, Error>;
 
     /// Coalesces the non-contiguous bytes in self into a `Vec<u8>`.
     ///
@@ -33,7 +33,7 @@ pub trait Payload: Sized {
     /// after the data contained in the frame is read into the vec returned by
     /// this function.
     ///
-    fn z_coalesce(self) -> Result<Vec<u8>, Self>;
+    fn z_coalesce(self) -> Result<Result<Vec<u8>, Error>, Self>;
 
     /// Deserialize and extract `T` as JSON from the top-level data field of
     /// the object contained by the bytes in self.
@@ -61,7 +61,7 @@ pub trait Payload: Sized {
     where
         T: DeserializeOwned,
     {
-        deserialize_json(&self.coalesce())
+        self.coalesce().and_then(|data| deserialize_json(&data))
     }
 
     /// Deserialize and extract `T` as JSON from the top-level data field of
@@ -72,17 +72,15 @@ pub trait Payload: Sized {
     where
         T: DeserializeOwned,
     {
-        self.z_coalesce().map(|data| deserialize_json(&data))
+        self.z_coalesce()
+            .map(|result| result.and_then(|data| deserialize_json(&data)))
     }
 
     fn be_z_json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
-        self.z_json().unwrap_or_else(|payload| {
-            // TODO: Placeholder for tracing...
-            payload.json()
-        })
+        self.z_json().unwrap_or_else(Self::json)
     }
 
     /// Copy the bytes in self into an owned, contiguous `String`.
@@ -92,26 +90,16 @@ pub trait Payload: Sized {
     /// If the payload is not valid `UTF-8`.
     ///
     fn utf8(self) -> Result<String, Error> {
-        let data = self.coalesce();
-
-        String::from_utf8(data).or_else(|error| {
-            raise!(400, message = error.to_string());
-        })
+        self.coalesce().and_then(deserialize_utf8)
     }
 
     fn z_utf8(self) -> Result<Result<String, Error>, Self> {
-        self.z_coalesce().map(|data| {
-            String::from_utf8(data).or_else(|error| {
-                raise!(400, message = error.to_string());
-            })
-        })
+        self.z_coalesce()
+            .map(|result| result.and_then(deserialize_utf8))
     }
 
     fn be_z_utf8(self) -> Result<String, Error> {
-        self.z_utf8().unwrap_or_else(|payload| {
-            // TODO: Placeholder for tracing...
-            payload.utf8()
-        })
+        self.z_utf8().unwrap_or_else(Self::utf8)
     }
 }
 
@@ -137,7 +125,6 @@ fn already_read<T>() -> Result<T, Error> {
     raise!(500, message = "The request body has already been read.")
 }
 
-#[inline]
 fn deserialize_json<T>(buf: &[u8]) -> Result<T, Error>
 where
     T: DeserializeOwned,
@@ -153,6 +140,11 @@ where
     }
 }
 
+#[inline]
+fn deserialize_utf8(data: Vec<u8>) -> Result<String, Error> {
+    String::from_utf8(data).or_else(|error| raise!(400, error.utf8_error()))
+}
+
 fn into_future_error<T>(error: BoxError) -> Result<T, Error> {
     if error.is::<LengthLimitError>() {
         // Payload Too Large
@@ -166,13 +158,13 @@ fn into_future_error<T>(error: BoxError) -> Result<T, Error> {
 /// Zeroize the buffer backing the provided `Bytes`. Afterwards, the data in
 /// `frame` is unreachable and the visible length is 0.
 ///
+/// Adapted from the [zeroize] crate in order to prevent an O(n) call to
+/// compiler_fence where n is the number of frames in a payload.
+///
 /// To safely call this fn, you must guarantee the following invariants:
 ///
 ///   1. `Bytes::is_unique` is true for `frame`
 ///   2. `compiler_fence` is called after each frame is zeroized
-///
-/// Adapted from the [zeroize] crate in order to prevent an O(n) call to
-/// compiler_fence where n is the number of frames in a payload.
 ///
 /// [zeroize]: https://crates.io/crates/zeroize/
 #[inline(never)]
@@ -196,6 +188,24 @@ fn release_compiler_fence() {
 }
 
 impl Aggregate {
+    pub fn trailers(&self) -> Option<&HeaderMap> {
+        self.payload.trailers.as_ref()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len().is_some_and(|len| len == 0)
+    }
+
+    #[inline]
+    pub fn len(&self) -> Option<usize> {
+        self.payload
+            .iter()
+            .map(Buf::remaining)
+            .try_fold(0usize, |len, remaining| len.checked_add(remaining))
+    }
+}
+
+impl Aggregate {
     fn new(payload: RequestPayload) -> Self {
         Self {
             payload,
@@ -203,29 +213,18 @@ impl Aggregate {
         }
     }
 
-    pub fn len(&self) -> Option<usize> {
-        self.payload
-            .iter()
-            .map(Buf::remaining)
-            .try_fold(0usize, |len, remaining| len.checked_add(remaining))
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len().is_some_and(|len| len == 0)
-    }
-
-    pub fn trailers(&self) -> Option<&HeaderMap> {
-        self.payload.trailers.as_ref()
-    }
-
-    pub fn mut_trailers(&mut self) -> &mut Option<HeaderMap> {
-        &mut self.payload.trailers
+    #[inline]
+    fn try_prealloc(&self) -> Result<Vec<u8>, Error> {
+        self.len().map_or_else(
+            || raise!(400, message = "payload length would overflow usize::MAX"),
+            |exact| Ok(Vec::with_capacity(exact)),
+        )
     }
 }
 
 impl Payload for Aggregate {
-    fn coalesce(mut self) -> Vec<u8> {
-        let mut dest = Vec::new();
+    fn coalesce(mut self) -> Result<Vec<u8>, Error> {
+        let mut dest = self.try_prealloc()?;
 
         for frame in self.payload.iter_mut() {
             // The transport layer sufficiently chunks each frame.
@@ -235,17 +234,20 @@ impl Payload for Aggregate {
             frame.advance(frame.remaining());
         }
 
-        dest
+        Ok(dest)
     }
 
-    fn z_coalesce(mut self) -> Result<Vec<u8>, Self> {
+    fn z_coalesce(mut self) -> Result<Result<Vec<u8>, Error>, Self> {
+        let mut dest = match self.try_prealloc() {
+            error @ Err(_) => return Ok(error),
+            Ok(vec) => vec,
+        };
+
         // If we do not have unique access to each frame in self, return back
         // to the caller.
         if !self.payload.iter().all(Bytes::is_unique) {
             return Err(self);
         }
-
-        let mut dest = Vec::new();
 
         for frame in self.payload.iter_mut() {
             // The transport layer sufficiently chunks each frame.
@@ -271,7 +273,7 @@ impl Payload for Aggregate {
         // A necessary step after zeroization.
         release_compiler_fence();
 
-        Ok(dest)
+        Ok(Ok(dest))
     }
 }
 
@@ -347,8 +349,8 @@ impl RequestPayload {
 }
 
 impl Payload for Bytes {
-    fn coalesce(mut self) -> Vec<u8> {
-        let mut dest = Vec::new();
+    fn coalesce(mut self) -> Result<Vec<u8>, Error> {
+        let mut dest = Vec::with_capacity(self.remaining());
 
         // The transport layer sufficiently chunks each frame.
         dest.extend_from_slice(self.as_ref());
@@ -356,16 +358,16 @@ impl Payload for Bytes {
         // Make the visible length of the frame buffer 0.
         self.advance(self.remaining());
 
-        dest
+        Ok(dest)
     }
 
-    fn z_coalesce(mut self) -> Result<Vec<u8>, Self> {
+    fn z_coalesce(mut self) -> Result<Result<Vec<u8>, Error>, Self> {
         // If we do not have unique access to self, return back to the caller.
         if !self.is_unique() {
             return Err(self);
         }
 
-        let mut dest = Vec::new();
+        let mut dest = Vec::with_capacity(self.remaining());
 
         // The transport layer sufficiently chunks each frame.
         dest.extend_from_slice(self.as_ref());
@@ -382,7 +384,7 @@ impl Payload for Bytes {
         // A necessary step after zeroization.
         release_compiler_fence();
 
-        Ok(dest)
+        Ok(Ok(dest))
     }
 
     fn json<T>(mut self) -> Result<T, Error>

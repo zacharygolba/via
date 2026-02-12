@@ -26,6 +26,20 @@ pub enum Message {
     Text(ByteString),
 }
 
+/// Converts a `Bytes` instance that was previously wrapped in a `ByteString`
+/// back to a `ByteString`.
+///
+/// *Note: This fn is safe as long as `bytes` is valid UTF-8.*
+///
+fn back_to_bytestring(bytes: Bytes) -> ByteString {
+    // Safety:
+    //
+    // We know this is safe because `self` is guaranteed to be
+    // valid UTF-8 and z_json failed before zeroizing the backing
+    // buffer.
+    unsafe { ByteString::from_bytes_unchecked(bytes) }
+}
+
 impl Channel {
     pub(super) fn new(tx: Sender, rx: Receiver) -> Self {
         Self(tx, rx)
@@ -133,14 +147,12 @@ impl TryFrom<tokio_websockets::Message> for Message {
 }
 
 impl Payload for ByteString {
-    fn coalesce(self) -> Vec<u8> {
+    fn coalesce(self) -> Result<Vec<u8>, Error> {
         self.into_bytes().coalesce()
     }
 
-    fn z_coalesce(self) -> Result<Vec<u8>, Self> {
-        self.into_bytes()
-            .z_coalesce()
-            .map_err(|bytes| unsafe { ByteString::from_bytes_unchecked(bytes) })
+    fn z_coalesce(self) -> Result<Result<Vec<u8>, Error>, Self> {
+        self.into_bytes().z_coalesce().map_err(back_to_bytestring)
     }
 
     fn json<T>(self) -> Result<T, Error>
@@ -154,9 +166,7 @@ impl Payload for ByteString {
     where
         T: DeserializeOwned,
     {
-        self.into_bytes()
-            .z_json()
-            .map_err(|bytes| unsafe { ByteString::from_bytes_unchecked(bytes) })
+        self.into_bytes().z_json().map_err(back_to_bytestring)
     }
 }
 
