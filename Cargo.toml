@@ -96,8 +96,8 @@ optional = true
 default-features = false
 
 [dependencies.tokio-websockets]
-version = "0.12"
-features = ["aws_lc_rs", "server"]
+version = "0.13"
+features = ["server"]
 optional = true
 
 [dev-dependencies]
