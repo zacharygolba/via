@@ -177,6 +177,7 @@ impl Payload for Aggregate {
         let mut dest = Vec::new();
 
         for frame in self.payload.iter() {
+            // The transport layer already sufficiently chunks each frame.
             dest.extend_from_slice(frame);
         }
 
@@ -186,19 +187,41 @@ impl Payload for Aggregate {
     fn z_coalesce(mut self) -> Result<Vec<u8>, Self> {
         let mut dest = Vec::new();
 
+        // If we do not have unique access to each frame in self, return self
+        // back to the caller. This precondition confirms that we can safely
+        // zeroize the underlying buffer of each frame.
         if !self.payload.iter().all(Bytes::is_unique) {
             return Err(self);
         }
 
         for frame in self.payload.iter_mut() {
-            let ptr = frame.as_ptr() as *mut u8;
             let len = frame.len();
-            let src = unsafe { slice::from_raw_parts_mut(ptr, len) };
 
+            // Safety:
+            //
+            // The precondition at the top of this function ensures that we
+            // have unique access to every frame contained in self.
+            //
+            // Since Aggregate is also !Send + !Sync, it is impossible to wrap
+            // an instance of Aggregate in an Arc and send or share a clone of
+            // self with another task.
+            //
+            // The combination of the aforementioned proofs confirms that we
+            // can safely mutate the buffer backing each frame in the payload.
+            let src = unsafe { slice::from_raw_parts_mut(frame.as_ptr() as *mut u8, len) };
+
+            // The transport layer already sufficiently chunks each frame.
             dest.extend_from_slice(&*src);
 
+            // Overwrite the bytes in the frame with zeros to guarentee
+            // hygienic memory handling.
             src.zeroize();
-            frame.advance(len);
+
+            // Advance the start offset of the frame to the end of the buffer.
+            // This makes the length of the frame effectively 0. If an attacker
+            // attempts to tamper with the buffer downstream, the task will
+            // panic–making their presence known.
+            frame.advance(frame.len());
         }
 
         Ok(dest)
