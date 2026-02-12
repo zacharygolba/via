@@ -147,11 +147,11 @@ impl TryFrom<tokio_websockets::Message> for Message {
 }
 
 impl Payload for ByteString {
-    fn coalesce(self) -> Result<Vec<u8>, Error> {
+    fn coalesce(self) -> Vec<u8> {
         self.into_bytes().coalesce()
     }
 
-    fn z_coalesce(self) -> Result<Result<Vec<u8>, Error>, Self> {
+    fn z_coalesce(self) -> Result<Vec<u8>, Self> {
         self.into_bytes().z_coalesce().map_err(back_to_bytestring)
     }
 
