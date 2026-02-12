@@ -61,8 +61,7 @@ pub trait Payload: Sized {
     where
         T: DeserializeOwned,
     {
-        let data = self.coalesce();
-        deserialize_json(&data)
+        deserialize_json(&self.coalesce())
     }
 
     /// Deserialize and extract `T` as JSON from the top-level data field of
@@ -187,6 +186,7 @@ unsafe fn unfenced_zeroize(frame: &mut Bytes) {
         }
     }
 
+    // Make the visible length of the frame buffer 0.
     frame.advance(len);
 }
 
@@ -219,12 +219,15 @@ impl Aggregate {
 }
 
 impl Payload for Aggregate {
-    fn coalesce(self) -> Vec<u8> {
+    fn coalesce(mut self) -> Vec<u8> {
         let mut dest = Vec::new();
 
-        for frame in self.payload.iter() {
+        for frame in self.payload.iter_mut() {
             // The transport layer sufficiently chunks each frame.
             dest.extend_from_slice(frame.as_ref());
+
+            // Make the visible length of the frame buffer 0.
+            frame.advance(frame.remaining());
         }
 
         dest
@@ -344,6 +347,8 @@ impl Payload for Bytes {
 
         // The transport layer sufficiently chunks each frame.
         dest.extend_from_slice(self.as_ref());
+
+        // Make the visible length of the frame buffer 0.
         self.advance(self.remaining());
 
         dest
@@ -379,9 +384,13 @@ impl Payload for Bytes {
     where
         T: DeserializeOwned,
     {
-        let json = deserialize_json(self.as_ref())?;
+        // Attempt to deserialize `T` from the bytes in self.
+        let result = deserialize_json(self.as_ref());
+
+        // Make the visible length of the frame buffer 0.
         self.advance(self.remaining());
-        Ok(json)
+
+        result
     }
 
     fn z_json<T>(mut self) -> Result<Result<T, Error>, Self>
