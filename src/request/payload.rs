@@ -1,5 +1,4 @@
 use bytes::{Buf, Bytes};
-use bytestring::ByteString;
 use http::{HeaderMap, StatusCode};
 use http_body::Body;
 use http_body_util::{LengthLimitError, Limited};
@@ -192,13 +191,13 @@ fn release_compiler_fence() {
 /// *Note: This fn is safe as long as `bytes` is valid UTF-8.*
 ///
 #[cfg(feature = "ws")]
-fn back_to_bytestring(bytes: Bytes) -> ByteString {
+fn back_to_bytestring(bytes: Bytes) -> bytestring::ByteString {
     // Safety:
     //
     // We know this is safe because `self` is guaranteed to be
     // valid UTF-8 and z_json failed before zeroizing the backing
     // buffer.
-    unsafe { ByteString::from_bytes_unchecked(bytes) }
+    unsafe { bytestring::ByteString::from_bytes_unchecked(bytes) }
 }
 
 impl Aggregate {
