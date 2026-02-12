@@ -30,7 +30,7 @@ mod sealed {
 
 /// Represents an optionally contiguous source of data received from a client.
 ///
-/// The methods provided by the `Payload` trait also provide counterparts with
+/// The methods defined in the `Payload` trait also provide counterparts with
 /// zeroization guarantees, ensuring that the original buffers are securely
 /// cleared after the data is read.
 ///
@@ -44,7 +44,7 @@ mod sealed {
 ///
 /// The majority of use-cases where zeroization is preferred but not strictly
 /// necessary can benefit from using the `be_z_*` prefixed versions of the
-/// methods provided by the `Payload` trait. The `be_z` prefix stands for
+/// methods defined in the `Payload` trait. The `be_z` prefix stands for
 /// "best-effort zeroization". If zeroization is impossible due to non-unique
 /// access of a buffer contained in the payload, `be_z_*` variations fall back
 /// to their non-zeroing counterparts.
