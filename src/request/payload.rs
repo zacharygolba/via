@@ -115,7 +115,7 @@ pub trait Payload: sealed::Sealed + Sized {
     /// Deserialize the payload as JSON into the specified type `T`, zeroizing
     /// the original data from which the `T` is deserialized.
     ///
-    /// If zeroization is impossible due to non-unique access, falls back to
+    /// If zeroization is impossible due to non-unique access, fallback to
     /// [`Payload::json`].
     ///
     /// # Errors
@@ -155,7 +155,7 @@ pub trait Payload: sealed::Sealed + Sized {
     /// Converts the payload into a UTF-8 `String`, zeroizing the original data
     /// from which the `String` is constructed.
     ///
-    /// If zeroization is impossible due to non-unique access, falls back to
+    /// If zeroization is impossible due to non-unique access, fallback to
     /// [`Payload::utf8`].
     ///
     /// # Errors
