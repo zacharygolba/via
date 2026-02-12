@@ -1,7 +1,6 @@
 use bytes::{Buf, Bytes, TryGetError};
 use bytestring::ByteString;
 use serde::Serialize;
-use serde::de::DeserializeOwned;
 use std::ops::ControlFlow;
 use tokio::sync::mpsc;
 use tokio::task::coop;
@@ -9,7 +8,6 @@ use tokio_websockets::proto::ProtocolError;
 
 use super::error::ErrorKind;
 use crate::error::Error;
-use crate::request::Payload;
 
 pub use tokio_websockets::CloseCode;
 
@@ -24,20 +22,6 @@ pub enum Message {
     Binary(Bytes),
     Close(Option<(CloseCode, Option<ByteString>)>),
     Text(ByteString),
-}
-
-/// Converts a `Bytes` instance that was previously wrapped in a `ByteString`
-/// back to a `ByteString`.
-///
-/// *Note: This fn is safe as long as `bytes` is valid UTF-8.*
-///
-fn back_to_bytestring(bytes: Bytes) -> ByteString {
-    // Safety:
-    //
-    // We know this is safe because `self` is guaranteed to be
-    // valid UTF-8 and z_json failed before zeroizing the backing
-    // buffer.
-    unsafe { ByteString::from_bytes_unchecked(bytes) }
 }
 
 impl Channel {
@@ -143,30 +127,6 @@ impl TryFrom<tokio_websockets::Message> for Message {
                 }
             }
         }
-    }
-}
-
-impl Payload for ByteString {
-    fn coalesce(self) -> Vec<u8> {
-        self.into_bytes().coalesce()
-    }
-
-    fn z_coalesce(self) -> Result<Vec<u8>, Self> {
-        self.into_bytes().z_coalesce().map_err(back_to_bytestring)
-    }
-
-    fn json<T>(self) -> Result<T, Error>
-    where
-        T: DeserializeOwned,
-    {
-        self.into_bytes().json()
-    }
-
-    fn z_json<T>(self) -> Result<Result<T, Error>, Self>
-    where
-        T: DeserializeOwned,
-    {
-        self.into_bytes().z_json().map_err(back_to_bytestring)
     }
 }
 

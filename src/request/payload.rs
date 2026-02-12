@@ -1,4 +1,5 @@
 use bytes::{Buf, Bytes};
+use bytestring::ByteString;
 use http::{HeaderMap, StatusCode};
 use http_body::Body;
 use http_body_util::{LengthLimitError, Limited};
@@ -185,6 +186,21 @@ fn release_compiler_fence() {
     compiler_fence(Ordering::Release);
 }
 
+/// Converts a `Bytes` instance that was previously wrapped in a `ByteString`
+/// back to a `ByteString`.
+///
+/// *Note: This fn is safe as long as `bytes` is valid UTF-8.*
+///
+#[cfg(feature = "ws")]
+fn back_to_bytestring(bytes: Bytes) -> ByteString {
+    // Safety:
+    //
+    // We know this is safe because `self` is guaranteed to be
+    // valid UTF-8 and z_json failed before zeroizing the backing
+    // buffer.
+    unsafe { ByteString::from_bytes_unchecked(bytes) }
+}
+
 impl Aggregate {
     pub fn trailers(&self) -> Option<&HeaderMap> {
         self.payload.trailers.as_ref()
@@ -335,36 +351,40 @@ impl RequestPayload {
     }
 }
 
-impl Payload for Bytes {
-    fn coalesce(mut self) -> Vec<u8> {
-        let mut dest = Vec::with_capacity(self.remaining());
+#[cfg(feature = "ws")]
+impl Payload for bytestring::ByteString {
+    fn coalesce(self) -> Vec<u8> {
+        let mut src = self.into_bytes();
+        let mut dest = Vec::with_capacity(src.remaining());
 
         // The transport layer sufficiently chunks each frame.
-        dest.extend_from_slice(self.as_ref());
+        dest.extend_from_slice(src.as_ref());
 
         // Make the visible length of the frame buffer 0.
-        self.advance(self.remaining());
+        src.advance(src.remaining());
 
         dest
     }
 
-    fn z_coalesce(mut self) -> Result<Vec<u8>, Self> {
+    fn z_coalesce(self) -> Result<Vec<u8>, Self> {
+        let mut src = self.into_bytes();
+
         // If we do not have unique access to self, return back to the caller.
-        if !self.is_unique() {
-            return Err(self);
+        if !src.is_unique() {
+            return Err(back_to_bytestring(src));
         }
 
-        let mut dest = Vec::with_capacity(self.remaining());
+        let mut dest = Vec::with_capacity(src.remaining());
 
         // The transport layer sufficiently chunks each frame.
-        dest.extend_from_slice(self.as_ref());
+        dest.extend_from_slice(src.as_ref());
 
         // Safety:
         //
         // The precondition at the top of this function ensures that we
         // have unique access to self and therefore, can mutate the buffer.
         unsafe {
-            unfenced_zeroize(&mut self);
+            unfenced_zeroize(&mut src);
         }
 
         // Ensures sequential access to the buffers contained in self.
@@ -374,37 +394,41 @@ impl Payload for Bytes {
         Ok(dest)
     }
 
-    fn json<T>(mut self) -> Result<T, Error>
+    fn json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned,
     {
+        let mut src = self.into_bytes();
+
         // Attempt to deserialize `T` from the bytes in self.
-        let result = deserialize_json(self.as_ref());
+        let result = deserialize_json(src.as_ref());
 
         // Make the visible length of the frame buffer 0.
-        self.advance(self.remaining());
+        src.advance(src.remaining());
 
         result
     }
 
-    fn z_json<T>(mut self) -> Result<Result<T, Error>, Self>
+    fn z_json<T>(self) -> Result<Result<T, Error>, Self>
     where
         T: DeserializeOwned,
     {
+        let mut src = self.into_bytes();
+
         // If we do not have unique access to self, return back to the caller.
-        if !self.is_unique() {
-            return Err(self);
+        if !src.is_unique() {
+            return Err(back_to_bytestring(src));
         }
 
         // Attempt to deserialize `T` from the bytes in self.
-        let result = deserialize_json(self.as_ref());
+        let result = deserialize_json(src.as_ref());
 
         // Safety:
         //
         // The precondition at the top of this function ensures that we
         // have unique access to self and therefore, can mutate the buffer.
         unsafe {
-            unfenced_zeroize(&mut self);
+            unfenced_zeroize(&mut src);
         }
 
         // Ensures sequential access to the buffers contained in self.
