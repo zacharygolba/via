@@ -76,6 +76,16 @@ pub trait Payload: Sized {
         self.z_coalesce().map(|data| deserialize_json(&data))
     }
 
+    fn be_z_json<T>(self) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        self.z_json().unwrap_or_else(|payload| {
+            // TODO: Placeholder for tracing...
+            payload.json()
+        })
+    }
+
     /// Copy the bytes in self into an owned, contiguous `String`.
     ///
     /// # Errors
@@ -95,6 +105,13 @@ pub trait Payload: Sized {
             String::from_utf8(data).or_else(|error| {
                 raise!(400, message = error.to_string());
             })
+        })
+    }
+
+    fn be_z_utf8(self) -> Result<String, Error> {
+        self.z_utf8().unwrap_or_else(|payload| {
+            // TODO: Placeholder for tracing...
+            payload.utf8()
         })
     }
 }
