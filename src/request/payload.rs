@@ -17,6 +17,17 @@ use std::{ptr, slice};
 use crate::error::{BoxError, Error};
 use crate::raise;
 
+mod sealed {
+    /// Prevents external implementations of Payload. Allowing us to make
+    /// assumptions about the data contained by implementations of Payload.
+    pub trait Sealed {}
+
+    impl Sealed for super::Aggregate {}
+
+    #[cfg(feature = "ws")]
+    impl Sealed for bytestring::ByteString {}
+}
+
 /// Represents an optionally contiguous source of data received from a client.
 ///
 /// The methods provided by this trait also provide counterparts with zeroization
@@ -52,7 +63,7 @@ use crate::raise;
 /// crashing a connection task, potentially (albeit unlikely) exposing
 /// un-zeroed memory.
 ///
-pub trait Payload: Sized {
+pub trait Payload: sealed::Sealed + Sized {
     /// Coalesces all non-contiguous bytes into a single contiguous `Vec<u8>`.
     ///
     fn coalesce(self) -> Vec<u8>;
