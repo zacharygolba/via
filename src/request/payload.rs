@@ -190,6 +190,11 @@ unsafe fn unfenced_zeroize(frame: &mut Bytes) {
     frame.advance(len);
 }
 
+#[inline(always)]
+fn release_compiler_fence() {
+    compiler_fence(Ordering::Release);
+}
+
 impl Aggregate {
     fn new(payload: RequestPayload) -> Self {
         Self {
@@ -264,7 +269,7 @@ impl Payload for Aggregate {
 
         // Ensures sequential access to the buffers contained in self.
         // A necessary step after zeroization.
-        compiler_fence(Ordering::SeqCst);
+        release_compiler_fence();
 
         Ok(dest)
     }
@@ -375,7 +380,7 @@ impl Payload for Bytes {
 
         // Ensures sequential access to the buffers contained in self.
         // A necessary step after zeroization.
-        compiler_fence(Ordering::SeqCst);
+        release_compiler_fence();
 
         Ok(dest)
     }
@@ -415,7 +420,7 @@ impl Payload for Bytes {
 
         // Ensures sequential access to the buffers contained in self.
         // A necessary step after zeroization.
-        compiler_fence(Ordering::SeqCst);
+        release_compiler_fence();
 
         Ok(result)
     }
