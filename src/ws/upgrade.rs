@@ -2,14 +2,14 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as base64_engine;
 use futures_util::{SinkExt, StreamExt};
 use http::{StatusCode, header};
+use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
-use std::mem::swap;
+use std::mem::{self, swap};
 use std::ops::ControlFlow::{Break, Continue};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::coop;
-use tokio_websockets::server::Builder;
-use tokio_websockets::{Config, Limits};
+use tungstenite::protocol::{Role, WebSocketConfig};
 
 #[cfg(feature = "aws-lc-rs")]
 use aws_lc_rs::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
@@ -17,8 +17,8 @@ use aws_lc_rs::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 #[cfg(feature = "ring")]
 use ring::digest::{Context as Hasher, SHA1_FOR_LEGACY_USE_ONLY};
 
-use super::error::{ErrorKind, try_rescue_ws};
-use super::message::{Channel, Message};
+use super::channel::Channel;
+use super::error::{WebSocketError, is_recoverable};
 use crate::app::Shared;
 use crate::middleware::{BoxFuture, Middleware};
 use crate::next::Next;
@@ -28,6 +28,8 @@ use crate::response::Response;
 
 const DEFAULT_FRAME_SIZE: usize = 16 * 1024; // 16KB
 
+type WebSocketStream = tokio_tungstenite::WebSocketStream<TokioIo<Upgraded>>;
+
 #[derive(Debug)]
 pub struct Request<App = ()> {
     envelope: Arc<Envelope>,
@@ -35,9 +37,17 @@ pub struct Request<App = ()> {
 }
 
 pub struct Upgrade<F> {
-    config: Config,
-    limits: Limits,
     listen: Arc<F>,
+    config: WebSocketConfig,
+}
+
+macro_rules! debug {
+    (#[$ctx:meta], $($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprint!("error(ws: {}) = ", stringify!($ctx));
+            eprintln!($($arg)*);
+        }
+    };
 }
 
 fn gen_accept_key(key: &[u8]) -> String {
@@ -49,107 +59,79 @@ fn gen_accept_key(key: &[u8]) -> String {
     base64_engine.encode(hasher.finish())
 }
 
-fn handle_error(error: &impl std::error::Error) {
-    if cfg!(debug_assertions) {
-        eprintln!("error(ws): {}", error);
-    }
-}
-
-async fn start<App, F, R>(
-    app: Shared<App>,
-    listen: Arc<F>,
-    mut envelope: Envelope,
-    builder: Builder,
-) where
+async fn start<App, F, R>(listen: Arc<F>, config: WebSocketConfig, mut request: crate::Request<App>)
+where
     F: Fn(Channel, Request<App>) -> R + Send + Sync + 'static,
     R: Future<Output = super::Result> + Send,
 {
-    let stream = {
-        let mut upgrade = http::Request::new(());
-        swap(envelope.extensions_mut(), upgrade.extensions_mut());
+    let mut upgradeable = http::Request::new(());
+    swap(request.extensions_mut(), upgradeable.extensions_mut());
 
-        let result = hyper::upgrade::on(&mut upgrade).await;
-        swap(envelope.extensions_mut(), upgrade.extensions_mut());
+    let mut stream = match hyper::upgrade::on(&mut upgradeable).await {
+        Err(error) => return debug!(#[upgrade], "{}", error),
+        Ok(upgraded) => {
+            let io = TokioIo::new(upgraded);
 
-        match result {
-            Ok(upgraded) => builder.serve(TokioIo::new(upgraded)),
-            Err(error) => return handle_error(&error),
+            swap(request.extensions_mut(), upgradeable.extensions_mut());
+            WebSocketStream::from_raw_socket(io, Role::Server, Some(config)).await
         }
     };
 
-    let envelope = Arc::new(envelope);
-    tokio::pin!(stream);
+    let request = {
+        let (envelope, _, app) = request.into_parts();
+        Request::new(app, envelope)
+    };
 
     'session: loop {
         let (sender, mut rx) = mpsc::channel(1);
         let (tx, receiver) = mpsc::channel(1);
         let mut listener = {
             let channel = Channel::new(sender, receiver);
-            let request = Request {
-                envelope: Arc::clone(&envelope),
-                app: app.clone(),
-            };
-
-            Box::pin(listen(channel, request))
+            Box::pin(listen(channel, request.clone()))
         };
 
         loop {
-            let flow = tokio::select! {
+            tokio::select! {
                 biased;
 
                 // The future returned from app code is ready.
-                result = listener.as_mut() => match result {
-                    Err(Continue(error)) => Continue(Some(error.into())),
-                    Err(Break(error)) => Break(Some(error.into())),
-                    Ok(_) => Break(None),
+                result = listener.as_mut() => {
+                    if let Err(ref flow @ (Break(ref error) | Continue(ref error))) = result {
+                        debug!(#[listener], "{}", error);
+                        if flow.is_continue() {
+                            continue 'session;
+                        }
+                    }
+
+                    break 'session;
                 },
 
                 // Forward the outbound message to the stream.
-                Some(message) = coop::unconstrained(rx.recv()) => {
-                    let result = stream.feed(message.into()).await;
-
+                Some(next) = coop::unconstrained(rx.recv()) => {
                     coop::consume_budget().await;
 
-                    if let Err(error) = result {
-                        try_rescue_ws(error)
-                    } else {
-                        Continue(None)
+                    if let Err(error) = stream.feed(next).await {
+                        debug!(#[socket], "{}", error);
+                        if !is_recoverable(&error) {
+                            break 'session;
+                        }
                     }
                 }
 
                 // Forward the incoming message to the channel.
                 Some(result) = stream.next() => {
-                    coop::consume_budget().await;
+                    let error = match result {
+                        Err(error) => error,
+                        Ok(message) => match tx.send(message).await {
+                            Err(_) => WebSocketError::AlreadyClosed,
+                            Ok(_) => continue,
+                        },
+                    };
 
-                    match result.and_then(Message::try_from) {
-                        Ok(message) => {
-                            if tx.send(message).await.is_ok() {
-                                Continue(None)
-                            } else {
-                                Break(Some(ErrorKind::CLOSED))
-                            }
-                        }
-                        Err(error) => try_rescue_ws(error),
+                    debug!(#[socket], "{}", error);
+                    if !is_recoverable(&error) {
+                        break 'session;
                     }
-                }
-            };
-
-            match &flow {
-                Continue(None) => {}
-                Continue(Some(error)) => {
-                    handle_error(error);
-                    if matches!(error, ErrorKind::Listener(_)) {
-                        continue 'session;
-                    }
-                }
-
-                Break(None) => {
-                    let _ = stream.flush().await.inspect_err(handle_error);
-                    break 'session;
-                }
-                Break(Some(error)) => {
-                    handle_error(error);
-                    break 'session;
                 }
             }
         }
@@ -172,27 +154,35 @@ impl<App> Request<App> {
     }
 }
 
-impl<F> Upgrade<F> {
-    pub(super) fn new(upgraded: F) -> Self {
-        let frame_size = DEFAULT_FRAME_SIZE;
-
+impl<App> Request<App> {
+    fn new(app: Shared<App>, envelope: Envelope) -> Self {
         Self {
-            config: Config::default()
-                .flush_threshold(frame_size)
-                .frame_size(frame_size),
-            limits: Limits::default().max_payload_len(Some(frame_size)),
-            listen: Arc::new(upgraded),
+            envelope: Arc::new(envelope),
+            app,
         }
     }
+}
 
-    /// The threshold at which the bytes queued at socket are flushed.
-    ///
-    /// **Default:** `16 KB`
-    ///
-    pub fn flush_threshold(self, flush_threshold: usize) -> Self {
+impl<App> Clone for Request<App> {
+    fn clone(&self) -> Self {
         Self {
-            config: self.config.flush_threshold(flush_threshold),
-            ..self
+            envelope: self.envelope.clone(),
+            app: self.app.clone(),
+        }
+    }
+}
+
+impl<F> Upgrade<F> {
+    pub(super) fn new(upgraded: F) -> Self {
+        Self {
+            listen: Arc::new(upgraded),
+            config: WebSocketConfig::default()
+                .accept_unmasked_frames(false)
+                .read_buffer_size(DEFAULT_FRAME_SIZE)
+                .write_buffer_size(0)
+                .max_write_buffer_size(DEFAULT_FRAME_SIZE)
+                .max_frame_size(Some(DEFAULT_FRAME_SIZE))
+                .max_message_size(Some(DEFAULT_FRAME_SIZE)),
         }
     }
 
@@ -202,7 +192,7 @@ impl<F> Upgrade<F> {
     ///
     pub fn frame_size(self, frame_size: usize) -> Self {
         Self {
-            config: self.config.frame_size(frame_size),
+            config: self.config.max_frame_size(Some(frame_size)),
             ..self
         }
     }
@@ -213,8 +203,17 @@ impl<F> Upgrade<F> {
     ///
     pub fn max_payload_size(self, max_payload_size: Option<usize>) -> Self {
         Self {
-            limits: self.limits.max_payload_len(max_payload_size),
+            config: self.config.max_message_size(max_payload_size),
             ..self
+        }
+    }
+}
+
+impl<T> Clone for Upgrade<T> {
+    fn clone(&self) -> Self {
+        Self {
+            listen: Arc::clone(&self.listen),
+            config: self.config,
         }
     }
 }
@@ -254,11 +253,12 @@ where
         };
 
         tokio::spawn({
-            let (envelope, _, app) = request.into_parts();
-            let builder = Builder::new().config(self.config).limits(self.limits);
-            let listen = Arc::clone(&self.listen);
+            let Upgrade { ref listen, config } = *self;
+            let task = start(Arc::clone(listen), config, request);
 
-            start(app, listen, envelope, builder)
+            println!("task = {}", mem::size_of_val(&task));
+
+            task
         });
 
         Box::pin(async {

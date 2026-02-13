@@ -1,9 +1,9 @@
+mod channel;
 mod error;
-mod message;
 mod upgrade;
 
+pub use channel::{Channel, CloseFrame, Message, Utf8Bytes};
 pub use error::{Result, ResultExt};
-pub use message::{Channel, CloseCode, Message};
 pub use upgrade::{Request, Upgrade};
 
 /// Upgrade the connection to a web socket.

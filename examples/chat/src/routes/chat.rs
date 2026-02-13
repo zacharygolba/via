@@ -40,7 +40,12 @@ pub async fn chat(mut socket: Channel, request: Request<Chat>) -> ws::Result {
                 // Received a message from the websocket channel.
                 Some(message) = socket.recv() => match message {
                     Message::Text(payload) => {
-                        let mut new_convo = payload.json::<NewConversation>().or_continue()?;
+                        let Ok(result) = payload.z_json::<NewConversation>() else {
+                            println!("non-unique access detected");
+                            continue 'recv;
+                        };
+
+                        let mut new_convo = result.or_continue()?;
 
                         // Confirm that the current user can write in the
                         // channel before we proceed.
