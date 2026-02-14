@@ -3,10 +3,9 @@ use futures_util::{SinkExt, StreamExt};
 use http::{StatusCode, header};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
+use std::convert::Infallible;
 use std::mem;
-use std::ops::ControlFlow;
-use std::ops::Deref;
-use std::pin::Pin;
+use std::ops::{ControlFlow, Deref};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::coop;
@@ -29,10 +28,24 @@ pub struct Ws<F> {
     config: WebSocketConfig,
 }
 
-macro_rules! warn {
-    (#[$ctx:meta], $($arg:tt)*) => {
-        eprint!("warn(ws: {}) = ", stringify!($ctx));
-        eprintln!($($arg)*);
+macro_rules! match_control_flow {
+    ($break:tt on $flow:expr) => {
+        match $flow {
+            ControlFlow::Break(err) => {
+                if let Some(error) = &err
+                    && cfg!(debug_assertions)
+                {
+                    eprintln!("error(ws): {}", error);
+                }
+
+                $break;
+            }
+            ControlFlow::Continue(error) => {
+                if cfg!(debug_assertions) {
+                    eprintln!("warn(ws): {}", error);
+                }
+            }
+        }
     };
 }
 
@@ -48,67 +61,11 @@ fn gen_accept_key(key: &[u8]) -> String {
     base64.encode(hasher.finish())
 }
 
-async fn start<App, F, R>(
-    mut stream: Pin<Box<WebSocketStream>>,
-    listener: Arc<F>,
-    context: Request<App>,
-) -> crate::Result<()>
-where
-    F: Fn(Channel, Request<App>) -> R + Send + Sync + 'static,
-    R: Future<Output = super::Result> + Send,
-{
-    'run: loop {
-        let (sender, mut rx) = mpsc::channel(1);
-        let (tx, receiver) = mpsc::channel(1);
-        let mut listen = Box::pin(listener(Channel::new(sender, receiver), context.clone()));
-
-        loop {
-            tokio::select! {
-                biased;
-
-                // The future returned from app code is ready.
-                result = &mut listen => {
-                    return match result {
-                        Ok(_) => Ok(()),
-                        Err(ControlFlow::Break(fatal)) => Err(fatal),
-                        Err(ControlFlow::Continue(recoverable)) => {
-                            warn!(#[listener], "{}", recoverable);
-                            continue 'run;
-                        }
-                    };
-                }
-
-                // Forward the outbound message to the stream.
-                Some(next) = coop::unconstrained(rx.recv()) => {
-                    coop::consume_budget().await;
-                    if let Err(error) = stream.feed(next).await {
-                        if is_recoverable(&error) {
-                            warn!(#[send], "{}", error);
-                        } else {
-                            return Err(error.into());
-                        }
-                    }
-                }
-
-                // Forward the incoming message to the channel.
-                Some(result) = stream.next() => {
-                    match result {
-                        Ok(next) => {
-                            if tx.send(next).await.is_err() {
-                                return Err(WebSocketError::AlreadyClosed.into());
-                            }
-                        }
-                        Err(error) => {
-                            if is_recoverable(&error) {
-                                warn!(#[recv], "{}", error);
-                            } else {
-                                return Err(error.into());
-                            }
-                        }
-                    }
-                }
-            }
-        }
+fn from_ws_error(error: WebSocketError) -> ControlFlow<Option<Error>, Error> {
+    if is_recoverable(&error) {
+        ControlFlow::Continue(error.into())
+    } else {
+        ControlFlow::Break(Some(error.into()))
     }
 }
 
@@ -179,7 +136,7 @@ where
     Await: Future<Output = super::Result> + Send + 'static,
     App: Send + Sync + 'static,
 {
-    fn call(&self, request: crate::Request<App>, next: Next<App>) -> BoxFuture {
+    fn call(&self, mut request: crate::Request<App>, next: Next<App>) -> BoxFuture {
         if request
             .headers()
             .get(header::UPGRADE)
@@ -208,31 +165,63 @@ where
             });
         };
 
-        tokio::spawn({
-            let mut request = Request(Arc::new(request));
-            let listener = Arc::clone(&self.listen);
-            let config = self.config;
+        let listener = Arc::clone(&self.listen);
+        let config = self.config;
+        tokio::spawn(async move {
+            let mut stream = {
+                let mut upgradeable = http::Request::new(());
 
-            async move {
-                if let Some(original) = Arc::get_mut(&mut request.0) {
-                    let mut upgradeable = http::Request::new(());
-
-                    mem::swap(original.extensions_mut(), upgradeable.extensions_mut());
-
-                    if let Err(error) = match upgrade(config, &mut upgradeable).await {
-                        Err(error) => Err(error),
-                        Ok(stream) => {
-                            mem::swap(original.extensions_mut(), upgradeable.extensions_mut());
-                            start(Box::pin(stream), listener, request).await
-                        }
-                    } {
-                        eprintln!("error(ws): {}", error);
+                mem::swap(request.extensions_mut(), upgradeable.extensions_mut());
+                match upgrade(config, &mut upgradeable).await {
+                    Err(error) => return eprintln!("error(upgrade): {}", error),
+                    Ok(stream) => {
+                        mem::swap(request.extensions_mut(), upgradeable.extensions_mut());
+                        stream
                     }
                 }
+            };
 
-                if cfg!(debug_assertions) {
-                    eprintln!("info(ws): websocket session ended");
-                }
+            let request = Request(Arc::new(request));
+
+            loop {
+                let (sender, mut rx) = mpsc::channel(1);
+                let (tx, receiver) = mpsc::channel(1);
+                let channel = Channel::new(sender, receiver);
+                let trx = Box::pin(async {
+                    loop {
+                        tokio::select! {
+                            // Receive a message from the channel and feed it to the stream.
+                            Some(message) = coop::unconstrained(rx.recv()) => {
+                                coop::consume_budget().await;
+                                stream.feed(message).await.map_err(from_ws_error)?;
+                            }
+                            // Receive a message from the stream and send it to the channel.
+                            Some(result) = stream.next() => {
+                                let message = result.map_err(from_ws_error)?;
+                                if tx.send(message).await.is_err() {
+                                    let error = WebSocketError::AlreadyClosed.into();
+                                    return Err::<Infallible, _>(ControlFlow::Break(Some(error)));
+                                }
+                            }
+                        }
+                    }
+                });
+
+                match_control_flow!(break on tokio::select! {
+                    // Send and receive messages to and from the channel.
+                    Err(error) = trx => error,
+                    // The future returned from the listener is ready.
+                    result = Box::pin(listener(channel, request.clone())) => {
+                        result.map_or_else(
+                            |error| error.map_break(Some),
+                            |_| ControlFlow::Break(None),
+                        )
+                    }
+                });
+            }
+
+            if cfg!(debug_assertions) {
+                eprintln!("info(ws): websocket session ended");
             }
         });
 
