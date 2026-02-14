@@ -167,6 +167,7 @@ where
 
         let listener = Arc::clone(&self.listen);
         let config = self.config;
+
         tokio::spawn(async move {
             let mut stream = {
                 let mut upgradeable = http::Request::new(());
