@@ -483,8 +483,6 @@ impl Payload for Utf8Bytes {
     {
         let mut src = Bytes::from(self);
 
-        println!("strong_count = {}", src.is_unique());
-
         // If we do not have unique access to self, return back to the caller.
         if !src.is_unique() {
             return Err(back_to_utf8_bytes(src));
