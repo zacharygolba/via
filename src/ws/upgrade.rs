@@ -194,7 +194,7 @@ where
                             // Receive a message from the channel and feed it to the stream.
                             Some(message) = coop::unconstrained(rx.recv()) => {
                                 coop::consume_budget().await;
-                                stream.feed(message).await.map_err(from_ws_error)?;
+                                stream.send(message).await.map_err(from_ws_error)?;
                             }
                             // Receive a message from the stream and send it to the channel.
                             Some(result) = stream.next() => {
