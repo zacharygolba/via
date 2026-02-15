@@ -88,10 +88,10 @@ where
     Await: Future<Output = super::Result> + Send,
 {
     loop {
-        let (channel, remote) = Channel::new();
-        let listen = Box::pin(listener(channel, request.clone()));
-        let trx = Box::pin(async {
-            let (tx, mut rx) = remote;
+        let (rendezvous, transport) = Channel::new();
+        let listen = Box::pin(listener(rendezvous, request.clone()));
+        let trx = async {
+            let (tx, mut rx) = transport;
 
             loop {
                 tokio::select! {
@@ -114,7 +114,7 @@ where
                     }
                 }
             }
-        });
+        };
 
         match_control_flow!(break on tokio::select! {
             // Send and receive messages to and from the channel.
