@@ -15,16 +15,16 @@ macro_rules! debug {
     ($($args:tt)+) => { if cfg!(debug_assertions) { eprintln!($($args)+); } };
 }
 
-pub async fn chat(mut socket: Channel, context: ws::Request<Chat>) -> ws::Result {
+pub async fn chat(mut socket: Channel, request: ws::Request<Chat>) -> ws::Result {
     // The current user that opened the websocket.
-    let user_id = context.user().cloned().or_break()?;
+    let user_id = request.user().cloned().or_break()?;
 
     // Subscribe to event notifications from peers.
-    let mut pubsub = context.app().subscribe();
+    let mut pubsub = request.app().subscribe();
 
     // The current users channel subscription claims keyed by channel id.
     let subscriptions: HashMap<Id, AuthClaims> = {
-        let acquire = context.app().database().await;
+        let acquire = request.app().database().await;
         let result = Subscription::query()
             .select((subscriptions::channel_id, subscriptions::claims))
             .filter(by_user(&user_id))
@@ -81,7 +81,7 @@ pub async fn chat(mut socket: Channel, context: ws::Request<Chat>) -> ws::Result
         let conversation = diesel::insert_into(conversations::table)
             .values(new_conversation)
             .returning(Conversation::as_returning())
-            .debug_result(&mut context.app().database().await.or_continue()?)
+            .debug_result(&mut request.app().database().await.or_continue()?)
             .await
             .or_continue()?;
 
@@ -94,6 +94,6 @@ pub async fn chat(mut socket: Channel, context: ws::Request<Chat>) -> ws::Result
         let event = Event::Message(conversation);
 
         // Publish the event over the broadcast channel to notify peers.
-        context.app().publish(data, event).or_continue()?;
+        request.app().publish(data, event).or_continue()?;
     }
 }

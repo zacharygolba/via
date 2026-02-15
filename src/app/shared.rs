@@ -202,11 +202,11 @@ use std::sync::Arc;
 /// 'process: ──────────────────────────────────────────────────────────────────────────>
 ///            |                             |                              |
 ///        HTTP GET                          |                              |
-///       app.clone()                        |                              |
+///      to_owned_app()                      |                              |
 ///    incr strong_count                 HTTP GET                           |
-///            |                        app.clone()                         |
+///            |                       to_owned_app()                       |
 ///            |                     incr strong_count                  HTTP POST
-///        List Users                        |                         app.clone()
+///        List Users                        |                        to_owned_app()
 /// ┌──────────────────────┐                 |                      incr strong_count
 /// |   borrow req.app()   |        Web Socket Upgrade                      |
 /// |  acquire connection  |      ┌─────────────────────┐                   |
@@ -282,7 +282,7 @@ use std::sync::Arc;
 /// # }
 /// #
 /// async fn destroy_user(request: Request<Unicorn>, _: Next<Unicorn>) -> via::Result {
-///     let id = request.envelope().param("user-id").parse::<Uuid>()?;
+///     let id = request.param("user-id").parse::<Uuid>()?;
 ///
 ///     // Acquire a database connection and delete the user.
 ///     diesel::delete(users::table)
@@ -292,7 +292,7 @@ use std::sync::Arc;
 ///
 ///     // Spawn a task that takes ownership of all of its dependencies.
 ///     tokio::spawn({
-///         let app = request.app().clone();
+///         let app = request.to_owned_app();
 ///         let message = format!("delete: resource = users, id = {}", &id);
 ///         async move { app.telemetry.report(message).await }
 ///     });

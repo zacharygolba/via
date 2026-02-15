@@ -5,10 +5,11 @@ use diesel::dsl::count;
 use diesel::prelude::*;
 use http::{Extensions, StatusCode};
 use time::{Duration, OffsetDateTime};
-use via::Response;
+use via::{Response, ws};
 
 use self::identity::Identity;
 use super::error;
+use crate::chat::Chat;
 use crate::models::user::*;
 use crate::schema::users;
 use crate::util::{DebugQueryDsl, Id};
@@ -37,7 +38,7 @@ pub trait Session {
 }
 
 pub async fn restore(mut request: Request, next: Next) -> via::Result {
-    let app = request.app().clone();
+    let app = request.to_owned_app();
     let persist = match request
         .envelope()
         .cookies()
@@ -108,6 +109,12 @@ fn identify(extensions: &Extensions) -> via::Result<&Id> {
 impl Session for Request {
     fn user(&self) -> via::Result<&Id> {
         identify(self.extensions())
+    }
+}
+
+impl Session for ws::Request<Chat> {
+    fn user(&self) -> via::Result<&Id> {
+        identify(self.envelope().extensions())
     }
 }
 

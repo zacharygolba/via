@@ -45,7 +45,7 @@ pub mod request;
 pub mod response;
 pub mod router;
 
-#[cfg(all(feature = "ws", any(feature = "aws-lc-rs", feature = "ring")))]
+#[cfg(feature = "ws")]
 pub mod ws;
 
 mod app;
@@ -67,3 +67,6 @@ pub use request::{Payload, Request};
 pub use response::{Finalize, Response};
 pub use router::{connect, delete, get, head, options, patch, post, put, trace};
 pub use server::Server;
+
+#[cfg(feature = "ws")]
+pub use ws::ws;

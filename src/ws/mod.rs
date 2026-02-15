@@ -16,43 +16,43 @@ pub use upgrade::{Request, Ws};
 ///
 /// # Example
 ///
-/// ```
-/// use via::ws::{self, Channel, Message, Request};
-/// use via::{Error, Payload};
+/// ```no_run
+/// use std::process::ExitCode;
+/// use via::ws::{self, Channel, Message};
+/// use via::{Error, Server};
 ///
-/// async fn echo(mut channel: Channel, _: Request) -> ws::Result {
-///     loop {
-///         let Some(message) = channel.recv().await else {
-///             break Ok(());
-///         };
-///
-///         if let Message::Close(close) = &message {
-///             close.as_ref().inspect(|(code, reason)| {
-///                 eprintln!("{:?}: {:?}", code, reason);
-///             });
-///
-///             break Ok(());
+/// async fn echo(mut channel: Channel, _: ws::Request<()>) -> ws::Result {
+///     while let Some(message) = channel.recv().await {
+///         match message {
+///             forward @ (Message::Binary(_) | Message::Text(_)) => {
+///                 channel.send(forward).await?;
+///             }
+///             ignore => {
+///                 if cfg!(debug_assertions) {
+///                     println!("{:?}", ignore);
+///                 }
+///             }
 ///         }
-///
-///         channel.send(message).await?;
 ///     }
-/// }
-///
-/// #[tokio::main]
-/// async fn main() -> Result<(), Error> {
-///     let mut app = via::app(());
-///
-///     // GET /echo ~> web socket upgrade.
-///     app.route("/echo").to(ws::upgrade(echo));
 ///
 ///     Ok(())
 /// }
+///
+/// #[tokio::main]
+/// async fn main() -> Result<ExitCode, Error> {
+///     let mut app = via::app(());
+///
+///     // GET /echo ~> web socket upgrade.
+///     app.route("/echo").to(via::ws(echo));
+///
+///     Server::new(app).listen(("127.0.0.1", 8080)).await
+/// }
 ///```
 ///
-pub fn upgrade<App, F, R>(upgraded: F) -> Ws<F>
+pub fn ws<T, App, Await>(upgraded: T) -> Ws<T>
 where
-    F: Fn(Channel, Request<App>) -> R + Send + Sync + 'static,
-    R: Future<Output = Result> + Send,
+    T: Fn(Channel, Request<App>) -> Await,
+    Await: Future<Output = Result> + Send,
 {
     Ws::new(upgraded)
 }

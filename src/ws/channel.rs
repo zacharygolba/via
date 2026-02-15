@@ -13,8 +13,10 @@ pub(super) type Receiver = mpsc::Receiver<Message>;
 pub struct Channel(Sender, Receiver);
 
 impl Channel {
-    pub(super) fn new(tx: Sender, rx: Receiver) -> Self {
-        Self(tx, rx)
+    pub(super) fn new(buffer: usize) -> (Self, (Sender, Receiver)) {
+        let (sender, rx) = mpsc::channel(buffer);
+        let (tx, receiver) = mpsc::channel(buffer);
+        (Self(sender, receiver), (tx, rx))
     }
 
     pub async fn send(&mut self, message: impl Into<Message>) -> super::Result<()> {
