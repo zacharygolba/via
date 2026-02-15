@@ -25,7 +25,6 @@ pub fn is_recoverable(error: &WebSocketError) -> bool {
     use std::io::ErrorKind;
 
     match &error {
-        WebSocketError::Capacity(_) => true,
         WebSocketError::Io(io) => matches!(io.kind(), ErrorKind::Interrupted | ErrorKind::TimedOut),
         _ => false,
     }
