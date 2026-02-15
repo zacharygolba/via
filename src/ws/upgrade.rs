@@ -3,7 +3,6 @@ use futures_util::{SinkExt, StreamExt};
 use http::{Method, StatusCode, header};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
-use std::convert::Infallible;
 use std::mem::swap;
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -102,11 +101,15 @@ where
                         stream.send(message).await.map_err(from_ws_error)?;
                     }
                     // Receive a message from the stream and send it to the channel.
-                    Some(result) = stream.next() => {
-                        let message = result.map_err(from_ws_error)?;
+                    next = stream.next() => {
+                        let message = match next {
+                            Some(result) => result.map_err(from_ws_error)?,
+                            None => break Ok(()),
+                        };
+
                         if tx.send(message).await.is_err() {
                             let error = WebSocketError::AlreadyClosed.into();
-                            return Err::<Infallible, _>(ControlFlow::Break(Some(error)));
+                            break Err(ControlFlow::Break(Some(error)));
                         }
                     }
                 }
@@ -115,7 +118,9 @@ where
 
         match_control_flow!(break on tokio::select! {
             // Send and receive messages to and from the channel.
-            Err(error) = trx => error,
+            result = trx => {
+                result.map_or_else(|error| error, |_| ControlFlow::Break(None))
+            }
             // The future returned from the listener is ready.
             result = listen => {
                 result.map_or_else(|error| error.map_break(Some), |_| ControlFlow::Break(None))
