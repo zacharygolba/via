@@ -204,14 +204,16 @@ where
     Await: Future<Output = super::Result> + Send,
 {
     fn call(&self, request: crate::Request<App>, next: Next<App>) -> BoxFuture {
-        if request.method() != Method::GET {
-            return next.call(request);
-        }
-
-        if request
-            .headers()
-            .get(header::UPGRADE)
-            .is_none_or(|value| value != "websocket")
+        // Confirm that the request is for a websocket upgrade.
+        if request.method() != Method::GET
+            || !request
+                .headers()
+                .get(header::CONNECTION)
+                .zip(request.headers().get(header::UPGRADE))
+                .is_some_and(|(connection, upgrade)| {
+                    connection.as_bytes().eq_ignore_ascii_case(b"upgrade")
+                        && upgrade.as_bytes().eq_ignore_ascii_case(b"websocket")
+                })
         {
             return next.call(request);
         }
@@ -219,7 +221,7 @@ where
         if request
             .headers()
             .get(header::SEC_WEBSOCKET_VERSION)
-            .is_none_or(|value| value != "13")
+            .is_none_or(|value| value.as_bytes() != b"13")
         {
             return Box::pin(async {
                 raise!(400, message = "sec-websocket-version header must be \"13\"");
@@ -229,7 +231,7 @@ where
         let Some(accept) = request
             .headers()
             .get(header::SEC_WEBSOCKET_KEY)
-            .map(|value| gen_accept_key(value.as_ref()))
+            .map(|value| gen_accept_key(value.as_bytes()))
         else {
             return Box::pin(async {
                 raise!(400, message = "missing required header: sec-websocket-key.")
