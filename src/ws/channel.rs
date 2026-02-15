@@ -13,9 +13,9 @@ pub(super) type Receiver = mpsc::Receiver<Message>;
 pub struct Channel(Sender, Receiver);
 
 impl Channel {
-    pub(super) fn new(buffer: usize) -> (Self, (Sender, Receiver)) {
-        let (sender, rx) = mpsc::channel(buffer);
-        let (tx, receiver) = mpsc::channel(buffer);
+    pub(super) fn new() -> (Self, (Sender, Receiver)) {
+        let (sender, rx) = mpsc::channel(1);
+        let (tx, receiver) = mpsc::channel(1);
         (Self(sender, receiver), (tx, rx))
     }
 

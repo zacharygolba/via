@@ -88,7 +88,7 @@ where
     Await: Future<Output = super::Result> + Send,
 {
     loop {
-        let (channel, remote) = Channel::new(1);
+        let (channel, remote) = Channel::new();
         let listen = Box::pin(listener(channel, request.clone()));
         let trx = Box::pin(async {
             let (tx, mut rx) = remote;
