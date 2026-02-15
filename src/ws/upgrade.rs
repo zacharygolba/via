@@ -97,7 +97,6 @@ where
                 tokio::select! {
                     // Receive a message from the channel and send it to the stream.
                     Some(message) = coop::unconstrained(rx.recv()) => {
-                        coop::consume_budget().await;
                         stream.send(message).await.map_err(from_ws_error)?;
                     }
                     // Receive a message from the stream and send it to the channel.
